@@ -80,6 +80,7 @@ public class MapRoomEntity : GlobalRootEntity
         ScanResultGeneration = scanResultGeneration == 0 && ScanResults.Count == 0 && metadata is MapRoomMetadata mapRoomMetadata
             ? mapRoomMetadata.Generation
             : scanResultGeneration;
+        NormalizeCameraState();
     }
 
     public NitroxId? GetDockedCamera(int dockingIndex) => dockingIndex == 0 ? LeftDockCameraId : RightDockCameraId;
@@ -138,6 +139,57 @@ public class MapRoomEntity : GlobalRootEntity
     }
 
     public MapRoomCameraRecord? GetCameraRecord(NitroxId cameraId) => CameraRegistry.Find(record => record.CameraId == cameraId);
+
+    public int NormalizeCameraState()
+    {
+        CameraRegistry ??= [];
+        int changes = 0;
+        HashSet<NitroxId> seenIds = [];
+        HashSet<int> seenNumbers = [];
+        for (int i = 0; i < CameraRegistry.Count; i++)
+        {
+            MapRoomCameraRecord? record = CameraRegistry[i];
+            if (record == null || record.CameraId == null || !seenIds.Add(record.CameraId))
+            {
+                CameraRegistry.RemoveAt(i);
+                i--;
+                changes++;
+            }
+        }
+        seenNumbers.Clear();
+        int nextNumber = 1;
+        foreach (MapRoomCameraRecord record in CameraRegistry)
+        {
+            if (record.CameraNumber > 0 && seenNumbers.Add(record.CameraNumber))
+            {
+                continue;
+            }
+            while (seenNumbers.Contains(nextNumber))
+            {
+                nextNumber++;
+            }
+            record.CameraNumber = nextNumber;
+            seenNumbers.Add(nextNumber);
+            changes++;
+        }
+        if (LeftDockCameraId != null && LeftDockCameraId == RightDockCameraId)
+        {
+            RightDockCameraId = null;
+            DockingRevision++;
+            changes++;
+        }
+        if (LeftDockCameraId != null && GetCameraRecord(LeftDockCameraId) == null)
+        {
+            GetOrAssignCameraNumber(LeftDockCameraId, 1);
+            changes++;
+        }
+        if (RightDockCameraId != null && GetCameraRecord(RightDockCameraId) == null)
+        {
+            GetOrAssignCameraNumber(RightDockCameraId, 2);
+            changes++;
+        }
+        return changes;
+    }
 
     public bool RemoveCamera(NitroxId cameraId, out int dockingIndex)
     {

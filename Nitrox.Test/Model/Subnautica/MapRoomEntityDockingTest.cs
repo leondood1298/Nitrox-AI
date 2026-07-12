@@ -92,5 +92,29 @@ public sealed class MapRoomEntityDockingTest
         Assert.AreEqual(2, room.DockingRevision);
     }
 
+    [TestMethod]
+    public void NormalizesDuplicateLegacyCameraState()
+    {
+        MapRoomEntity room = CreateRoom();
+        NitroxId camera = new();
+        NitroxId other = new();
+        room.LeftDockCameraId = camera;
+        room.RightDockCameraId = camera;
+        room.CameraRegistry =
+        [
+            new MapRoomCameraRecord(camera, 1),
+            new MapRoomCameraRecord(camera, 1),
+            new MapRoomCameraRecord(other, 1)
+        ];
+
+        Assert.IsTrue(room.NormalizeCameraState() > 0);
+        Assert.AreEqual(2, room.CameraRegistry.Count);
+        Assert.AreEqual(2, room.CameraRegistry.Select(record => record.CameraId).Distinct().Count());
+        Assert.AreEqual(2, room.CameraRegistry.Select(record => record.CameraNumber).Distinct().Count());
+        Assert.AreEqual(camera, room.LeftDockCameraId);
+        Assert.IsNull(room.RightDockCameraId);
+        Assert.AreEqual(0, room.NormalizeCameraState());
+    }
+
     private static MapRoomEntity CreateRoom() => new(new NitroxId(), new NitroxId(), new NitroxInt3());
 }

@@ -321,7 +321,7 @@ public class MapRoomCameras
 		return -1;
 	}
 
-	private static NitroxId GetDeterministicCameraId(NitroxId mapRoomId, Vector3 localDockPosition)
+	public static NitroxId GetDeterministicCameraId(NitroxId mapRoomId, Vector3 localDockPosition)
 	{
 		int value = Mathf.RoundToInt(localDockPosition.x * 10f);
 		int value2 = Mathf.RoundToInt(localDockPosition.y * 10f);
