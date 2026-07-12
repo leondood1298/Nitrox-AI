@@ -12,13 +12,16 @@ internal sealed class MapRoomCameraComponentStateProcessor(SimulationOwnershipDa
 {
     public async Task Process(AuthProcessorContext context, MapRoomCameraComponentState packet)
     {
-        List<MapRoomCameraRecord> records = entityRegistry.GetEntities<MapRoomEntity>().Select(room => room.GetCameraRecord(packet.CameraId)).Where(record => record != null).ToList()!;
-        if (packet.IsServerResponse || records.Count != 1 || simulationOwnershipData.GetPlayerForLock(packet.CameraId) != context.Sender || packet.Energy < 0f || packet.Health < 0f)
+        List<MapRoomEntity> rooms = entityRegistry.GetEntities<MapRoomEntity>().Where(room => room.GetCameraRecord(packet.CameraId) != null).ToList();
+        MapRoomEntity? room = rooms.Count == 1 ? rooms[0] : null;
+        bool senderIsCameraOwner = simulationOwnershipData.GetPlayerForLock(packet.CameraId) == context.Sender;
+        bool senderIsDockedRoomOwner = room != null && room.IsCameraDocked(packet.CameraId) && simulationOwnershipData.GetPlayerForLock(room.Id) == context.Sender;
+        if (packet.IsServerResponse || room == null || (!senderIsCameraOwner && !senderIsDockedRoomOwner) || packet.Energy < 0f || packet.Health < 0f)
         {
             await context.ReplyAsync(new MapRoomCameraComponentState(packet.CameraId, packet.Energy, packet.Health, 0, true, false));
             return;
         }
-        MapRoomCameraRecord record = records[0];
+        MapRoomCameraRecord record = room.GetCameraRecord(packet.CameraId)!;
         lock (record)
         {
             record.Energy = packet.Energy;

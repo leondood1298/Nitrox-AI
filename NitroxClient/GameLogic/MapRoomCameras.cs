@@ -17,6 +17,7 @@ public class MapRoomCameras
 	private readonly IPacketSender packetSender;
 	private readonly IMultiplayerSession multiplayerSession;
 	private readonly LiveMixinManager liveMixinManager;
+	private readonly SimulationOwnership simulationOwnership;
 
 	private readonly Dictionary<NitroxId, bool> lastBroadcastLightState = new Dictionary<NitroxId, bool>();
 
@@ -27,11 +28,12 @@ public class MapRoomCameras
 	private readonly Dictionary<NitroxId, (float Energy, float Health)> lastComponents = new();
 	private readonly Dictionary<NitroxId, long> componentRevisions = new();
 
-	public MapRoomCameras(IPacketSender packetSender, IMultiplayerSession multiplayerSession, LiveMixinManager liveMixinManager)
+	public MapRoomCameras(IPacketSender packetSender, IMultiplayerSession multiplayerSession, LiveMixinManager liveMixinManager, SimulationOwnership simulationOwnership)
 	{
 		this.packetSender = packetSender;
 		this.multiplayerSession = multiplayerSession;
 		this.liveMixinManager = liveMixinManager;
+		this.simulationOwnership = simulationOwnership;
 	}
 
 	public void BroadcastControl(MapRoomCamera camera, bool isControlling)
@@ -150,7 +152,7 @@ public class MapRoomCameras
 
 	public void BroadcastComponentStateIfChanged(MapRoomCamera camera)
 	{
-		if (!camera || !camera.TryGetNitroxId(out NitroxId id) || !locallyControlled.Contains(id)) return;
+		if (!camera || !camera.TryGetNitroxId(out NitroxId id) || !locallyControlled.Contains(id) && !CanSimulateDockedCamera(camera)) return;
 		float energy = camera.energyMixin.charge;
 		float health = camera.liveMixin.health;
 		if (!lastComponents.TryGetValue(id, out var state) || Math.Abs(state.Energy - energy) >= 0.05f || Math.Abs(state.Health - health) >= 0.05f)
@@ -158,6 +160,12 @@ public class MapRoomCameras
 			lastComponents[id] = (energy, health);
 			packetSender.Send(new MapRoomCameraComponentState(id, energy, health));
 		}
+	}
+
+	public bool CanSimulateDockedCamera(MapRoomCamera camera)
+	{
+		MapRoomFunctionality mapRoom = camera ? GetMapRoomForDock(camera.dockingPoint) : null;
+		return mapRoom && mapRoom.TryGetNitroxId(out NitroxId mapRoomId) && simulationOwnership.HasAnyLockType(mapRoomId);
 	}
 
 	public void ProcessComponentState(MapRoomCameraComponentState packet)
