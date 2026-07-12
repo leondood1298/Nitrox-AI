@@ -44,7 +44,8 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
 					mapRoom.SetDockedCamera(packet.DockingIndex, packet.CameraId);
 				}
 			}
-			response = new MapRoomCameraDock(packet.CameraId, packet.MapRoomId, packet.DockingIndex, mapRoom.DockingRevision, true, granted, packet.IsDocked);
+			int cameraNumber = granted ? mapRoom.GetOrAssignCameraNumber(packet.CameraId, packet.DockingIndex + 1) : 0;
+			response = new MapRoomCameraDock(packet.CameraId, packet.MapRoomId, packet.DockingIndex, mapRoom.DockingRevision, true, granted, packet.IsDocked, cameraNumber);
 		}
 
 		if (response.Granted)
@@ -53,7 +54,7 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
 			{
 				simulationOwnershipData.RevokeOwnerOfId(packet.CameraId);
 			}
-			logger.ZLogInformation($"Accepted camera {(packet.IsDocked ? "dock" : "undock")}: room {packet.MapRoomId}, camera {packet.CameraId}, slot {packet.DockingIndex}, revision {response.Revision}, session {context.Sender.SessionId}");
+			logger.ZLogInformation($"Accepted camera {(packet.IsDocked ? "dock" : "undock")}: room {packet.MapRoomId}, camera {packet.CameraId}, number {response.CameraNumber}, slot {packet.DockingIndex}, revision {response.Revision}, session {context.Sender.SessionId}");
 			await context.SendToAllAsync(response);
 		}
 		else

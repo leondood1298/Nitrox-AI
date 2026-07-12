@@ -433,6 +433,12 @@ internal sealed class WorldServiceTest
                                         Assert.AreEqual(mapRoomEntity.LeftDockCameraId, mapRoomEntityAfter.LeftDockCameraId);
                                         Assert.AreEqual(mapRoomEntity.RightDockCameraId, mapRoomEntityAfter.RightDockCameraId);
                                         Assert.AreEqual(mapRoomEntity.DockingRevision, mapRoomEntityAfter.DockingRevision);
+                                        Assert.AreEqual(mapRoomEntity.CameraRegistry.Count, mapRoomEntityAfter.CameraRegistry.Count);
+                                        for (int i = 0; i < mapRoomEntity.CameraRegistry.Count; i++)
+                                        {
+                                            Assert.AreEqual(mapRoomEntity.CameraRegistry[i].CameraId, mapRoomEntityAfter.CameraRegistry[i].CameraId);
+                                            Assert.AreEqual(mapRoomEntity.CameraRegistry[i].CameraNumber, mapRoomEntityAfter.CameraRegistry[i].CameraNumber);
+                                        }
                                         break;
                                     case ModuleEntity moduleEntity when globalRootEntityAfter is ModuleEntity moduleEntityAfter:
                                         Assert.AreEqual(moduleEntity.ConstructedAmount, moduleEntityAfter.ConstructedAmount);
