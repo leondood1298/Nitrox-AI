@@ -25,7 +25,7 @@ Status values: `PASS`, `FAIL`, `BLOCKED`, `NOT RUN`. Record failures as `test ID
 | F2 | 2 | Repeat ordinary base and lifepod crafts from both clients | Existing five-power accounting remains once per logical craft | NOT RUN |
 | D1 | 2–3 | Fresh room, relog, restart, late join | Exactly two default drones unless deliberately changed; stable IDs/numbers | NOT RUN |
 | D2 | 2 | Each client controls each drone; simultaneous same/different drone attempts | Exclusive same-drone control; separate drones work; clean handoff | NOT RUN |
-| D3 | 2 | Drive/collide/range loss; lights; drain/recharge; damage/repair/death | Transform and component state converge; death cleans locks/registry | NOT RUN |
+| D3 | 2 | Drive/collide/weak-signal fade; lights; drain/recharge; damage/repair/death | Control persists through vanilla signal fade; state converges; death cleans locks/registry | NOT RUN |
 | D4 | 2–3 | Dock/undock both slots rapidly; two cameras race one slot; pickup/drop/redock crafted cameras | Atomic slots, stable identity, no duplicates or stuck ownership | NOT RUN |
 | D5 | 2 | Stalker grab/chew/release while idle and controlled | Ownership transfers and returns; no frozen/duplicated camera | NOT RUN |
 | D6 | 2–3 | Controller dies/disconnects; deconstruct with docked/loose cameras; test two rooms | Locks release, player safe, vanilla cleanup, no wrong/stale camera selection | NOT RUN |

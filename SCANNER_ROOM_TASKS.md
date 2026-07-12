@@ -55,13 +55,17 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Initialize missing legacy camera batteries during restore (#48)
 - [x] Bound dock charging and preserve pending camera control mode (#48)
 - [x] Prevent pending camera control from latching the No Signal overlay (#48)
+- [x] Validate restored camera control, loose control, drain, and dock recharge (#48)
+- [x] Confirm vanilla weak-signal and screenshot-preview behavior (#48)
 
 ## Remaining
 
+- [ ] Distinguish stale preview image from an actual camera label/selection mismatch
 - [ ] Execute in-game acceptance matrix (`SCANNER_ROOM_ACCEPTANCE.md`; requires 2–3 game clients)
 
 ## Next
 
+- [ ] Distinguish stale preview image from an actual camera label/selection mismatch
 - [ ] Execute in-game acceptance matrix (`SCANNER_ROOM_ACCEPTANCE.md`; requires 2–3 game clients)
 
 ## Rules
