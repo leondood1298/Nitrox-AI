@@ -113,6 +113,42 @@ public sealed class MapRoomScanResultAuthorityTest
         Assert.AreEqual(0, room.ScanResults.Count);
     }
 
+    [TestMethod]
+    public void EntityRemovalInvalidatesMatchingResultsAcrossRooms()
+    {
+        NitroxId resourceId = new();
+        MapRoomEntity first = CreateRoom();
+        MapRoomEntity second = CreateRoom();
+        MapRoomEntity unaffected = CreateRoom();
+        first.TryApplyScanResult(5, new MapRoomScanResultRecord(resourceId.ToString(), quartz, NitroxVector3.Zero));
+        second.TryApplyScanResult(5, new MapRoomScanResultRecord(resourceId.ToString(), quartz, NitroxVector3.One));
+        unaffected.TryApplyScanResult(5, new MapRoomScanResultRecord("other", quartz, NitroxVector3.Zero));
+        long firstRevision = first.ScanResultRevision;
+
+        List<MapRoomScanResultChanged> removals = MapRoomScanResultAuthority.InvalidateResource([first, second, unaffected], resourceId);
+
+        Assert.AreEqual(2, removals.Count);
+        Assert.AreEqual(firstRevision + 1, first.ScanResultRevision);
+        Assert.IsTrue(removals.All(packet => packet.Removed && packet.IsServerResponse && packet.Granted && packet.ResourceId == resourceId.ToString()));
+        Assert.AreEqual(0, first.ScanResults.Count);
+        Assert.AreEqual(0, second.ScanResults.Count);
+        Assert.AreEqual(1, unaffected.ScanResults.Count);
+    }
+
+    [TestMethod]
+    public void UnknownEntityRemovalDoesNotMutateResultsOrRevisions()
+    {
+        MapRoomEntity room = CreateRoom();
+        room.TryApplyScanResult(5, new MapRoomScanResultRecord("known", quartz, NitroxVector3.Zero));
+        long revision = room.ScanResultRevision;
+
+        List<MapRoomScanResultChanged> removals = MapRoomScanResultAuthority.InvalidateResource([room], new NitroxId());
+
+        Assert.AreEqual(0, removals.Count);
+        Assert.AreEqual(revision, room.ScanResultRevision);
+        Assert.AreEqual(1, room.ScanResults.Count);
+    }
+
     private static MapRoomEntity CreateRoom()
     {
         MapRoomEntity room = new(new NitroxId(), new NitroxId(), new NitroxInt3())

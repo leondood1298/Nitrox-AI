@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
@@ -60,6 +61,26 @@ internal static class MapRoomScanResultAuthority
             }
             return room.TryApplyScanResult(requested.Generation, new MapRoomScanResultRecord(requested.ResourceId, requested.TechType, requested.Position));
         }
+    }
+
+    public static List<MapRoomScanResultChanged> InvalidateResource(IEnumerable<MapRoomEntity> rooms, NitroxId resourceId)
+    {
+        string id = resourceId.ToString();
+        List<MapRoomScanResultChanged> removals = [];
+        foreach (MapRoomEntity room in rooms)
+        {
+            lock (room)
+            {
+                MapRoomScanResultRecord? result = room.ScanResults.Find(record => record.ResourceId == id);
+                if (result == null || !room.TryRemoveScanResult(room.ScanResultGeneration, id))
+                {
+                    continue;
+                }
+                removals.Add(new MapRoomScanResultChanged(room.Id, room.ScanResultGeneration, id, result.TechType, result.Position,
+                    removed: true, revision: room.ScanResultRevision, isServerResponse: true, granted: true));
+            }
+        }
+        return removals;
     }
 
     private static bool IsValidResourceId(string resourceId) => !string.IsNullOrEmpty(resourceId) && resourceId.Length <= MAX_RESOURCE_ID_LENGTH;

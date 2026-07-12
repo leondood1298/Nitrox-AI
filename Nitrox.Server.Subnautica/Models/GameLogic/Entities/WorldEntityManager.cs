@@ -6,6 +6,7 @@ using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Helper;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities.Spawning;
@@ -291,6 +292,7 @@ internal sealed class WorldEntityManager
 
     public void StopTrackingEntity(WorldEntity entity)
     {
+        InvalidateMapRoomScanResults(entity.Id);
         if (entity is GlobalRootEntity)
         {
             RemoveGlobalRootEntity(entity.Id, false);
@@ -316,8 +318,20 @@ internal sealed class WorldEntityManager
         {
             StopTrackingEntity(worldEntity);
         }
+        else
+        {
+            InvalidateMapRoomScanResults(entityId);
+        }
 
         return true;
+    }
+
+    private void InvalidateMapRoomScanResults(NitroxId entityId)
+    {
+        foreach (MapRoomScanResultChanged removal in MapRoomScanResultAuthority.InvalidateResource(entityRegistry.GetEntities<MapRoomEntity>(), entityId))
+        {
+            packetSender.SendPacketToAllAsync(removal);
+        }
     }
 
     /// <summary>
