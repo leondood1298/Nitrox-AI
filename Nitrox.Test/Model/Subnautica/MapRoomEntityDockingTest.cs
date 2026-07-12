@@ -50,6 +50,21 @@ public sealed class MapRoomEntityDockingTest
     }
 
     [TestMethod]
+    public void PickupStyleClearFindsSlotAndAdvancesRevision()
+    {
+        MapRoomEntity room = CreateRoom();
+        NitroxId cameraId = new();
+        room.SetDockedCamera(1, cameraId);
+
+        Assert.IsTrue(room.TryClearDockedCamera(cameraId, out int dockingIndex));
+        Assert.AreEqual(1, dockingIndex);
+        Assert.IsNull(room.RightDockCameraId);
+        Assert.AreEqual(2, room.DockingRevision);
+        Assert.IsFalse(room.TryClearDockedCamera(cameraId, out dockingIndex));
+        Assert.AreEqual(-1, dockingIndex);
+    }
+
+    [TestMethod]
     public void CameraNumbersAreStableAndUnique()
     {
         MapRoomEntity room = CreateRoom();

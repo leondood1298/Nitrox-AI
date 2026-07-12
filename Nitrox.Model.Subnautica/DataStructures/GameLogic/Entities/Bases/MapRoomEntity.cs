@@ -117,6 +117,12 @@ public class MapRoomEntity : GlobalRootEntity
 
     public bool IsCameraDocked(NitroxId cameraId) => LeftDockCameraId == cameraId || RightDockCameraId == cameraId;
 
+    public bool TryClearDockedCamera(NitroxId cameraId, out int dockingIndex)
+    {
+        dockingIndex = LeftDockCameraId == cameraId ? 0 : RightDockCameraId == cameraId ? 1 : -1;
+        return dockingIndex >= 0 && TryClearDockedCamera(dockingIndex, cameraId);
+    }
+
     public int GetOrAssignCameraNumber(NitroxId cameraId, int preferredNumber)
     {
         MapRoomCameraRecord? existing = CameraRegistry.Find(record => record.CameraId == cameraId);

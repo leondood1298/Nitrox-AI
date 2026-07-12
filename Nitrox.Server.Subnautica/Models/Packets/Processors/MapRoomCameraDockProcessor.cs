@@ -2,6 +2,7 @@ using System.Threading.Tasks;
 using System.Linq;
 using Nitrox.Model.Packets.Core;
 using Nitrox.Model.Subnautica.Packets;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
@@ -18,7 +19,8 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
 
 	public async Task Process(AuthProcessorContext context, MapRoomCameraDock packet)
 	{
-		if (packet.IsServerResponse || packet.DockingIndex is < 0 or > 1 || !entityRegistry.TryGetEntityById(packet.MapRoomId, out MapRoomEntity mapRoom))
+        bool validWorldCamera = entityRegistry.TryGetEntityById(packet.CameraId, out WorldEntity camera) && camera.TechType.Equals(new Nitrox.Model.Subnautica.DataStructures.GameLogic.NitroxTechType("MapRoomCamera"));
+        if (packet.IsServerResponse || packet.DockingIndex is < 0 or > 1 || !validWorldCamera || !entityRegistry.TryGetEntityById(packet.MapRoomId, out MapRoomEntity mapRoom))
 		{
 			logger.ZLogWarning($"Rejected camera dock from session {context.Sender.SessionId}: room {packet.MapRoomId}, camera {packet.CameraId}, slot {packet.DockingIndex}");
 			await context.ReplyAsync(new MapRoomCameraDock(packet.CameraId, packet.MapRoomId, packet.DockingIndex, 0, true, false, packet.IsDocked));

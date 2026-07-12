@@ -2,6 +2,8 @@ using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
+using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
@@ -27,6 +29,25 @@ internal sealed class PickupItemPacketProcessor(EntityRegistry entityRegistry, W
         StopTrackingExistingWorldEntity(id);
 
         entityRegistry.AddOrUpdate(packet.Item);
+
+        foreach (MapRoomEntity mapRoom in entityRegistry.GetEntities<MapRoomEntity>())
+        {
+            MapRoomCameraDock? undock = null;
+            lock (mapRoom)
+            {
+                if (mapRoom.TryClearDockedCamera(id, out int dockingIndex))
+                {
+                    MapRoomCameraRecord? record = mapRoom.GetCameraRecord(id);
+                    undock = new MapRoomCameraDock(id, mapRoom.Id, dockingIndex, mapRoom.DockingRevision, true, true, false,
+                        record?.CameraNumber ?? 0, record?.LightOn ?? false, record?.LightRevision ?? 0,
+                        record?.Energy ?? 100f, record?.Health ?? 100f, record?.ComponentRevision ?? 0);
+                }
+            }
+            if (undock != null)
+            {
+                await context.SendToAllAsync(undock);
+            }
+        }
 
         // Have other players respawn the item inside the inventory.
         await context.SendToOthersAsync(new SpawnEntities(packet.Item, forceRespawn: true));

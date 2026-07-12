@@ -37,10 +37,10 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Restrict continuous Scanner Room power drain to its simulation owner (#31)
 - [x] Persist and owner-gate Scanner Room fabricator state (#32)
 - [x] Cover 0-4 mixed upgrade modules and deterministic derived effects (#33)
+- [x] Clear dock state on camera pickup and reject inventory-camera dock races (#34)
 
 ## Remaining
 
-- [ ] Camera pickup/drop inventory lifecycle and dock race handling
 - [ ] Stalker grab/chew/drop ownership handoff
 - [ ] Camera repair/death cleanup and lock release
 - [ ] Camera viewer vs controller behavior and screen selection audit
@@ -55,7 +55,7 @@ Update this file after each completed work slice. Keep entries short; link the P
 
 ## Next
 
-- [ ] Camera pickup/drop inventory lifecycle and dock race handling
+- [ ] Stalker grab/chew/drop ownership handoff
 
 ## Rules
 
