@@ -1,0 +1,43 @@
+using System.Collections.Generic;
+using System.Linq;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
+using Nitrox.Model.Subnautica.Packets;
+
+namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities;
+
+internal static class MapRoomScanTypesAuthority
+{
+    private const int MAX_SCAN_TYPES = 512;
+
+    public static bool TryApply(MapRoomEntity room, MapRoomScanTypesSnapshot requested, out List<NitroxTechType> accepted, out long revision)
+    {
+        lock (room)
+        {
+            accepted = [];
+            revision = room.AvailableScanTypesRevision;
+            if (requested.IsServerResponse || requested.MapRoomId != room.Id || requested.TechTypes == null || requested.TechTypes.Count > MAX_SCAN_TYPES)
+            {
+                return false;
+            }
+            HashSet<NitroxTechType> unique = [];
+            foreach (NitroxTechType techType in requested.TechTypes)
+            {
+                if (techType == null || techType.Equals(NitroxTechType.None) || !unique.Add(techType))
+                {
+                    return false;
+                }
+            }
+            List<NitroxTechType> normalized = unique.OrderBy(type => type.ToString(), System.StringComparer.Ordinal).ToList();
+            if (room.AvailableScanTypesRevision > 0 && room.AvailableScanTypes.SequenceEqual(normalized))
+            {
+                return false;
+            }
+            room.AvailableScanTypes = normalized;
+            room.AvailableScanTypesRevision++;
+            revision = room.AvailableScanTypesRevision;
+            accepted = room.AvailableScanTypes.ToList();
+            return true;
+        }
+    }
+}

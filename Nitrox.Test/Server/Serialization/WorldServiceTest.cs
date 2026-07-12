@@ -453,6 +453,8 @@ internal sealed class WorldServiceTest
                                             Assert.AreEqual(mapRoomEntity.ScanResults[i].TechType, mapRoomEntityAfter.ScanResults[i].TechType);
                                             Assert.AreEqual(mapRoomEntity.ScanResults[i].Position, mapRoomEntityAfter.ScanResults[i].Position);
                                         }
+                                        Assert.AreEqual(mapRoomEntity.AvailableScanTypesRevision, mapRoomEntityAfter.AvailableScanTypesRevision);
+                                        CollectionAssert.AreEqual(mapRoomEntity.AvailableScanTypes, mapRoomEntityAfter.AvailableScanTypes);
                                         break;
                                     case ModuleEntity moduleEntity when globalRootEntityAfter is ModuleEntity moduleEntityAfter:
                                         Assert.AreEqual(moduleEntity.ConstructedAmount, moduleEntityAfter.ConstructedAmount);
