@@ -18,7 +18,7 @@ public sealed partial class GhostCrafter_OnCraftingEnd_Patch : NitroxPatch, IDyn
         // the crafting player will intiate a lock request when pushing the craft button - OnCraftingStart().
 
         // See GhostCrafter_OnCraftingBegin_Patch.Postfix to know why we get NitroxId on CrafterLogic
-        if (__instance._logic.TryGetIdOrWarn(out NitroxId id) && Resolve<SimulationOwnership>().HasExclusiveLock(id))
+        if (CrafterIdentity.TryGetId(__instance._logic, out NitroxId id) && Resolve<SimulationOwnership>().HasExclusiveLock(id))
         {
             // once an item is crafted, we no longer require an exclusive lock.
             Resolve<SimulationOwnership>().RequestSimulationLock(id, SimulationLockType.TRANSIENT);
