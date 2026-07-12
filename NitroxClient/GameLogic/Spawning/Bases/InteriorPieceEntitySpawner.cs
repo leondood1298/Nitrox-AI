@@ -186,6 +186,7 @@ public class InteriorPieceEntitySpawner : EntitySpawner<InteriorPieceEntity>
         NitroxEntity.SetNewId(mapRoomFunctionality.gameObject, mapRoomEntity.Id);
         entityMetadataManager.ApplyMetadata(mapRoomFunctionality.gameObject, mapRoomEntity.Metadata);
         MapRoomScanResults.ApplySnapshot(mapRoomFunctionality, mapRoomEntity.ScanResultGeneration, mapRoomEntity.ScanResultRevision, mapRoomEntity.ScanResults);
+        MapRoomScanTypes.ApplySnapshot(mapRoomFunctionality, mapRoomEntity.AvailableScanTypesRevision, mapRoomEntity.AvailableScanTypes);
         yield return entities.SpawnBatchAsync(mapRoomEntity.ChildEntities.OfType<InventoryItemEntity>().ToList<Entity>(), true);
         yield return MapRoomCameras.EnsureCameraIdsDeferred(mapRoomFunctionality);
     }
