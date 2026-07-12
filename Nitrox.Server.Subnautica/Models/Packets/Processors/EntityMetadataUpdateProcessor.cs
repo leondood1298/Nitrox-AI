@@ -24,7 +24,10 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
         EntityMetadata acceptedMetadata = packet.NewValue;
         if (TryProcessMetadata(context.Sender, entity, ref acceptedMetadata))
         {
-            entity.Metadata = acceptedMetadata;
+            if (acceptedMetadata is not MapRoomMetadata)
+            {
+                entity.Metadata = acceptedMetadata;
+            }
             EntityMetadataUpdate acceptedUpdate = new(packet.Id, acceptedMetadata);
             await SendUpdateToVisiblePlayersAsync(context, acceptedUpdate, entity, acceptedMetadata is MapRoomMetadata);
         }
@@ -46,13 +49,13 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
     {
         if (metadata is MapRoomMetadata requestedMapRoomMetadata)
         {
-            if (entity is not MapRoomEntity)
+            if (entity is not MapRoomEntity mapRoom)
             {
                 logger.ZLogWarning($"Player {sendingPlayer.Name} tried applying Map Room metadata to non-Map Room entity {entity.Id}");
                 return false;
             }
 
-            if (!MapRoomMetadataAuthority.TryAccept(entity.Metadata as MapRoomMetadata, requestedMapRoomMetadata, out MapRoomMetadata acceptedMapRoomMetadata))
+            if (!MapRoomMetadataAuthority.TryAcceptAndApply(mapRoom, requestedMapRoomMetadata, out MapRoomMetadata acceptedMapRoomMetadata))
             {
                 logger.ZLogDebug($"Rejected stale or duplicate Map Room metadata for {entity.Id}: requested {requestedMapRoomMetadata}, current {entity.Metadata}");
                 return false;

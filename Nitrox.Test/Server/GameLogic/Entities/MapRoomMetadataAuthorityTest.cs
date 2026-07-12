@@ -1,4 +1,7 @@
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
+using Nitrox.Model.DataStructures;
+using Nitrox.Model.DataStructures.Unity;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 
 namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities;
@@ -75,5 +78,39 @@ public sealed class MapRoomMetadataAuthorityTest
         Assert.IsTrue(MapRoomMetadataAuthority.TryAccept(null, requested, out MapRoomMetadata accepted));
         Assert.AreEqual(1, accepted.Generation);
         Assert.AreEqual(1, accepted.Revision);
+    }
+
+    [TestMethod]
+    public void AcceptedTargetChangeAtomicallyClearsOldResults()
+    {
+        MapRoomEntity room = CreateRoom(new MapRoomMetadata(quartz, 2, 3, 8));
+        room.BeginScanResultGeneration(3);
+        room.TryApplyScanResult(3, new MapRoomScanResultRecord("old", quartz, NitroxVector3.Zero));
+
+        Assert.IsTrue(MapRoomMetadataAuthority.TryAcceptAndApply(room, new MapRoomMetadata(titanium, 2, 3, 8), out MapRoomMetadata accepted));
+
+        Assert.AreSame(accepted, room.Metadata);
+        Assert.AreEqual(4, room.ScanResultGeneration);
+        Assert.AreEqual(0, room.ScanResults.Count);
+    }
+
+    [TestMethod]
+    public void AcceptedProgressUpdateRetainsCurrentGenerationResults()
+    {
+        MapRoomEntity room = CreateRoom(new MapRoomMetadata(quartz, 2, 3, 8));
+        room.BeginScanResultGeneration(3);
+        room.TryApplyScanResult(3, new MapRoomScanResultRecord("current", quartz, NitroxVector3.Zero));
+
+        Assert.IsTrue(MapRoomMetadataAuthority.TryAcceptAndApply(room, new MapRoomMetadata(quartz, 3, 3, 8), out _));
+
+        Assert.AreEqual(3, room.ScanResultGeneration);
+        Assert.AreEqual(1, room.ScanResults.Count);
+    }
+
+    private static MapRoomEntity CreateRoom(MapRoomMetadata metadata)
+    {
+        MapRoomEntity room = new(new NitroxId(), new NitroxId(), new NitroxInt3());
+        room.Metadata = metadata;
+        return room;
     }
 }
