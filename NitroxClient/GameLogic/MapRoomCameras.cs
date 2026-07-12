@@ -325,8 +325,10 @@ public class MapRoomCameras
 		if (packet.IsDocked)
 		{
 			pendingControl.Remove(packet.CameraId);
-			locallyControlled.Remove(packet.CameraId);
-			MovementBroadcaster.UnregisterWatched(packet.CameraId);
+			if (!locallyControlled.Contains(packet.CameraId))
+			{
+				MovementBroadcaster.UnregisterWatched(packet.CameraId);
+			}
 		}
 		if (!NitroxEntity.TryGetObjectFrom(packet.CameraId, out GameObject gameObject) || !gameObject || !gameObject.TryGetComponent<MapRoomCamera>(out var component) || !NitroxEntity.TryGetObjectFrom(packet.MapRoomId, out GameObject gameObject2) || !gameObject2 || !gameObject2.TryGetComponent<MapRoomFunctionality>(out var component2))
 		{
@@ -351,6 +353,21 @@ public class MapRoomCameras
 			{
 				dockingPoints[packet.DockingIndex].UndockCamera();
 			}
+		}
+		if (!packet.IsDocked && remotelyControlled.Contains(packet.CameraId))
+		{
+			UWE.CoroutineHost.StartCoroutine(RestoreRemoteMovementAfterUndock(packet.CameraId, gameObject));
+		}
+	}
+
+	private IEnumerator RestoreRemoteMovementAfterUndock(NitroxId cameraId, GameObject cameraObject)
+	{
+		// Destroy is deferred until the end of the frame. Waiting prevents a rapid
+		// dock/undock pair from seeing the old component just before it disappears.
+		yield return null;
+		if ((bool)cameraObject && remotelyControlled.Contains(cameraId) && !cameraObject.GetComponent<MapRoomCameraMovementReplicator>())
+		{
+			cameraObject.AddComponent<MapRoomCameraMovementReplicator>();
 		}
 	}
 

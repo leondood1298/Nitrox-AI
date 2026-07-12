@@ -1,4 +1,5 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Nitrox.Model.DataStructures;
 using Nitrox.Server.Subnautica.Models.Packets.Processors;
 
 namespace Nitrox.Test.Server.Subnautica;
@@ -26,5 +27,14 @@ public sealed class MapRoomCameraDockValidationTest
     public void BootstrapRequiresOwnedEmptyRestoredSlot(bool isDocked, bool senderOwnsRoom, bool slotAvailable, int registeredCameraCount, bool expected)
     {
         Assert.AreEqual(expected, MapRoomCameraDockProcessor.CanBootstrapRestoredCamera(isDocked, senderOwnsRoom, slotAvailable, registeredCameraCount));
+    }
+
+    [DataTestMethod]
+    [DataRow(true, SimulationLockType.EXCLUSIVE, true)]
+    [DataRow(false, SimulationLockType.EXCLUSIVE, false)]
+    [DataRow(true, SimulationLockType.TRANSIENT, false)]
+    public void DockingPreservesOnlyTheControllersExclusiveLock(bool senderOwnsLock, SimulationLockType lockType, bool expected)
+    {
+        Assert.AreEqual(expected, MapRoomCameraDockProcessor.ShouldPreserveControlLock(senderOwnsLock, lockType));
     }
 }

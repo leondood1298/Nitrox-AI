@@ -57,6 +57,7 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Prevent pending camera control from latching the No Signal overlay (#48)
 - [x] Validate restored camera control, loose control, drain, and dock recharge (#48)
 - [x] Confirm vanilla weak-signal and screenshot-preview behavior (#48)
+- [x] Preserve two-client camera movement through rapid dock/undock (#49)
 
 ## Remaining
 
