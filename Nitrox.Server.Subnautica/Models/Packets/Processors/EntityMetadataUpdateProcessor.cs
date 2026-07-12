@@ -7,7 +7,7 @@ using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
-internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager, EntityRegistry entityRegistry, ILogger<EntityMetadataUpdateProcessor> logger) : IAuthPacketProcessor<EntityMetadataUpdate>
+internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager, EntityRegistry entityRegistry, SimulationOwnershipData simulationOwnershipData, ILogger<EntityMetadataUpdateProcessor> logger) : IAuthPacketProcessor<EntityMetadataUpdate>
 {
     private readonly PlayerManager playerManager = playerManager;
     private readonly EntityRegistry entityRegistry = entityRegistry;
@@ -52,6 +52,18 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
             if (entity is not MapRoomEntity mapRoom)
             {
                 logger.ZLogWarning($"Player {sendingPlayer.Name} tried applying Map Room metadata to non-Map Room entity {entity.Id}");
+                return false;
+            }
+
+            if (!sendingPlayer.CanSee(entity))
+            {
+                logger.ZLogWarning($"Player {sendingPlayer.Name} tried updating Map Room {entity.Id} while it was not visible");
+                return false;
+            }
+
+            if (MapRoomMetadataAuthority.IsProgressUpdate(entity.Metadata as MapRoomMetadata, requestedMapRoomMetadata) && simulationOwnershipData.GetPlayerForLock(entity.Id) != sendingPlayer)
+            {
+                logger.ZLogWarning($"Player {sendingPlayer.Name} tried updating scan progress for Map Room {entity.Id} without simulation ownership");
                 return false;
             }
 

@@ -6,6 +6,9 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 
 internal static class MapRoomMetadataAuthority
 {
+    public static bool IsProgressUpdate(MapRoomMetadata? current, MapRoomMetadata requested) =>
+        current != null && requested.TypeToScan.Equals(current.TypeToScan) && requested.NumNodesScanned > current.NumNodesScanned;
+
     public static bool TryAcceptAndApply(MapRoomEntity room, MapRoomMetadata requested, out MapRoomMetadata accepted)
     {
         lock (room)
