@@ -40,10 +40,10 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Clear dock state on camera pickup and reject inventory-camera dock races (#34)
 - [x] Hand camera simulation ownership to Stalkers during grab/chew/drop (#35)
 - [x] Synchronize camera repair/damage and clean death state/locks (#36)
+- [x] Filter remotely controlled cameras from Scanner Room screen selection (#37)
 
 ## Remaining
 
-- [ ] Camera viewer vs controller behavior and screen selection audit
 - [ ] Default/crafted camera migration and duplicate-save recovery tests
 - [ ] Base split/merge, partial construction, rebuild, and room identity audit
 - [ ] Result invalidation from all server entity-destruction/pickup paths
@@ -55,7 +55,7 @@ Update this file after each completed work slice. Keep entries short; link the P
 
 ## Next
 
-- [ ] Camera viewer vs controller behavior and screen selection audit
+- [ ] Default/crafted camera migration and duplicate-save recovery tests
 
 ## Rules
 

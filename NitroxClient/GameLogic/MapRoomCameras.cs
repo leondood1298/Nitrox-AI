@@ -23,6 +23,7 @@ public class MapRoomCameras
 
 	private readonly HashSet<NitroxId> locallyControlled = new HashSet<NitroxId>();
 	private readonly HashSet<NitroxId> pendingControl = new HashSet<NitroxId>();
+	private readonly HashSet<NitroxId> remotelyControlled = new HashSet<NitroxId>();
 	private readonly Dictionary<NitroxId, long> dockingRevisions = new Dictionary<NitroxId, long>();
 	private readonly Dictionary<NitroxId, long> lightRevisions = new Dictionary<NitroxId, long>();
 	private readonly Dictionary<NitroxId, (float Energy, float Health)> lastComponents = new();
@@ -79,6 +80,10 @@ public class MapRoomCameras
 		bool isLocalController = packet.ControllerSessionId == multiplayerSession.Reservation.SessionId;
 		if (!packet.Granted)
 		{
+			if (!isLocalController)
+			{
+				remotelyControlled.Add(packet.CameraId);
+			}
 			if (pendingControl.Remove(packet.CameraId) && NitroxEntity.TryGetObjectFrom(packet.CameraId, out GameObject deniedObject) && deniedObject.TryGetComponent(out MapRoomCamera deniedCamera))
 			{
 				deniedCamera.enabled = true;
@@ -102,6 +107,7 @@ public class MapRoomCameras
 			SetLight(gameObject, packet.LightOn);
 			if (isLocalController)
 			{
+				remotelyControlled.Remove(packet.CameraId);
 				pendingControl.Remove(packet.CameraId);
 				locallyControlled.Add(packet.CameraId);
 				if (gameObject.TryGetComponent(out MapRoomCamera localCamera))
@@ -115,10 +121,15 @@ public class MapRoomCameras
 			{
 				gameObject.AddComponent<MapRoomCameraMovementReplicator>();
 			}
+			remotelyControlled.Add(packet.CameraId);
 		}
 		else if (NitroxEntity.TryGetObjectFrom(packet.CameraId, out gameObject2) && gameObject2.TryGetComponent<MapRoomCameraMovementReplicator>(out component))
 		{
 			UnityEngine.Object.Destroy(component);
+		}
+		if (!packet.IsControlling)
+		{
+			remotelyControlled.Remove(packet.CameraId);
 		}
 		if (!packet.IsControlling && isLocalController)
 		{
@@ -127,6 +138,17 @@ public class MapRoomCameras
 			MovementBroadcaster.UnregisterWatched(packet.CameraId);
 		}
 	}
+
+	public bool CanSelectForControl(MapRoomCamera camera)
+	{
+		if (!camera || !camera.TryGetNitroxId(out NitroxId cameraId))
+		{
+			return true;
+		}
+		return CanSelectForControl(pendingControl.Contains(cameraId), locallyControlled.Contains(cameraId), remotelyControlled.Contains(cameraId));
+	}
+
+	public static bool CanSelectForControl(bool pending, bool locallyControlled, bool remotelyControlled) => locallyControlled || (!pending && !remotelyControlled);
 
 	public void BroadcastLightIfChanged(MapRoomCamera camera)
 	{
