@@ -20,6 +20,9 @@ public sealed class MapRoomFunctionality_UpdateScanRangeAndInterval_Patch : Nitr
 
     public static void Postfix(MapRoomFunctionality __instance, float __state)
     {
+        __instance.scanRange = MapRoomUpgradeEffects.ScanRange(__instance.storageContainer.container.GetCount(TechType.MapRoomUpgradeScanRange));
+        __instance.scanInterval = MapRoomUpgradeEffects.ScanInterval(__instance.storageContainer.container.GetCount(TechType.MapRoomUpgradeScanSpeed));
+
         if (__instance.typeToScan != TechType.None && __instance.GetScanRange() != __state)
         {
             Resolve<MapRoomScanResultBroadcaster>().BroadcastSnapshot(__instance);
