@@ -63,9 +63,11 @@ public class MapRoomEntity : GlobalRootEntity
         RightDockCameraId = rightDockCameraId;
         DockingRevision = dockingRevision;
         CameraRegistry = cameraRegistry ?? [];
-        ScanResultGeneration = scanResultGeneration;
         ScanResultRevision = scanResultRevision;
         ScanResults = scanResults ?? [];
+        ScanResultGeneration = scanResultGeneration == 0 && ScanResults.Count == 0 && metadata is MapRoomMetadata mapRoomMetadata
+            ? mapRoomMetadata.Generation
+            : scanResultGeneration;
     }
 
     public NitroxId? GetDockedCamera(int dockingIndex) => dockingIndex == 0 ? LeftDockCameraId : RightDockCameraId;
