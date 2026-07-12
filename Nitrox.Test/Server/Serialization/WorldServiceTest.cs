@@ -444,6 +444,15 @@ internal sealed class WorldServiceTest
                                             Assert.AreEqual(mapRoomEntity.CameraRegistry[i].Health, mapRoomEntityAfter.CameraRegistry[i].Health);
                                             Assert.AreEqual(mapRoomEntity.CameraRegistry[i].ComponentRevision, mapRoomEntityAfter.CameraRegistry[i].ComponentRevision);
                                         }
+                                        Assert.AreEqual(mapRoomEntity.ScanResultGeneration, mapRoomEntityAfter.ScanResultGeneration);
+                                        Assert.AreEqual(mapRoomEntity.ScanResultRevision, mapRoomEntityAfter.ScanResultRevision);
+                                        Assert.AreEqual(mapRoomEntity.ScanResults.Count, mapRoomEntityAfter.ScanResults.Count);
+                                        for (int i = 0; i < mapRoomEntity.ScanResults.Count; i++)
+                                        {
+                                            Assert.AreEqual(mapRoomEntity.ScanResults[i].ResourceId, mapRoomEntityAfter.ScanResults[i].ResourceId);
+                                            Assert.AreEqual(mapRoomEntity.ScanResults[i].TechType, mapRoomEntityAfter.ScanResults[i].TechType);
+                                            Assert.AreEqual(mapRoomEntity.ScanResults[i].Position, mapRoomEntityAfter.ScanResults[i].Position);
+                                        }
                                         break;
                                     case ModuleEntity moduleEntity when globalRootEntityAfter is ModuleEntity moduleEntityAfter:
                                         Assert.AreEqual(moduleEntity.ConstructedAmount, moduleEntityAfter.ConstructedAmount);
