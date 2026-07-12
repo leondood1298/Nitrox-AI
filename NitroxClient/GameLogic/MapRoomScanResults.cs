@@ -9,8 +9,26 @@ using UnityEngine;
 
 namespace NitroxClient.GameLogic;
 
-internal static class MapRoomScanResults
+public static class MapRoomScanResults
 {
+    public static void Cleanup(MapRoomFunctionality mapRoom)
+    {
+        mapRoom.resourceNodes.Clear();
+        mapRoom.numNodesScanned = 0;
+        foreach (GameObject blip in mapRoom.mapBlips)
+        {
+            if (blip)
+            {
+                blip.SetActive(false);
+            }
+        }
+        uGUI_ResourceTracker resourceTracker = Object.FindObjectOfType<uGUI_ResourceTracker>();
+        if (resourceTracker)
+        {
+            resourceTracker.gatherNextTick = true;
+        }
+    }
+
     public static void ApplySnapshot(MapRoomFunctionality mapRoom, long generation, long revision, IEnumerable<MapRoomScanResultRecord> results)
     {
         MapRoomNetworkState state = mapRoom.gameObject.EnsureComponent<MapRoomNetworkState>();
