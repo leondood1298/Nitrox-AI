@@ -42,6 +42,17 @@ public sealed class MapRoomMetadataAuthorityTest
     }
 
     [TestMethod]
+    public void ProgressClassificationExcludesTargetChangesAndRegressions()
+    {
+        MapRoomMetadata current = new(quartz, 2, 4, 9);
+
+        Assert.IsTrue(MapRoomMetadataAuthority.IsProgressUpdate(current, new MapRoomMetadata(quartz, 3, 4, 9)));
+        Assert.IsFalse(MapRoomMetadataAuthority.IsProgressUpdate(current, new MapRoomMetadata(titanium, 3, 4, 9)));
+        Assert.IsFalse(MapRoomMetadataAuthority.IsProgressUpdate(current, new MapRoomMetadata(quartz, 1, 4, 9)));
+        Assert.IsFalse(MapRoomMetadataAuthority.IsProgressUpdate(null, new MapRoomMetadata(quartz, 1)));
+    }
+
+    [TestMethod]
     public void StaleGenerationIsRejected()
     {
         MapRoomMetadata current = new(quartz, 2, 4, 9);
