@@ -34,10 +34,10 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Persistent owner-validated scan-type set (#28)
 - [x] Publish/apply canonical scan types in Scanner Room UI (#29)
 - [x] Refresh hologram/HUD markers after canonical result changes (#30)
+- [x] Restrict continuous Scanner Room power drain to its simulation owner (#31)
 
 ## Remaining
 
-- [ ] Scanner Room continuous power ownership/accounting audit and fix
 - [ ] Scanner Room fabricator identity, concurrency, reconnect, output/pickup audit
 - [ ] Upgrade live-sync/resync tests for 0-4 mixed modules and derived effects
 - [ ] Camera pickup/drop inventory lifecycle and dock race handling
@@ -55,7 +55,7 @@ Update this file after each completed work slice. Keep entries short; link the P
 
 ## Next
 
-- [ ] Scanner Room continuous power ownership/accounting audit and fix
+- [ ] Scanner Room fabricator identity, concurrency, reconnect, output/pickup audit
 
 ## Rules
 
