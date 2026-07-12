@@ -1,6 +1,7 @@
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 
 namespace Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 
@@ -49,6 +50,17 @@ public sealed class MapRoomScanResultsTest
         Assert.IsTrue(room.TryRemoveScanResult(2, "resource"));
         Assert.IsFalse(room.TryRemoveScanResult(2, "resource"));
         Assert.AreEqual(revision + 1, room.ScanResultRevision);
+    }
+
+    [TestMethod]
+    public void EmptyLegacyResultStoreAdoptsMetadataGeneration()
+    {
+        MapRoomMetadata metadata = new(new NitroxTechType("Quartz"), 2, 7, 11);
+
+        MapRoomEntity room = new(new NitroxInt3(), null, null, 0, [], 0, 0, [], new NitroxTransform(), 0, string.Empty, false, new NitroxId(), new NitroxTechType("BaseMapRoom"), metadata, new NitroxId(), []);
+
+        Assert.AreEqual(7, room.ScanResultGeneration);
+        Assert.AreEqual(0, room.ScanResults.Count);
     }
 
     private static MapRoomScanResultRecord Result(string id, float x) => new(id, new NitroxTechType("Quartz"), new NitroxVector3(x, 0f, 0f));
