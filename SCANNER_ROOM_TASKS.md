@@ -63,6 +63,8 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Suppress loose-world duplicates for cameras currently recorded as docked (#50)
 - [x] Validate restored cameras across save reload and two clients (#50)
 - [x] Resynchronize non-owner red blips after scan-target changes (#51)
+- [x] Validate shared Scanner Room results and HUD chips on two clients (#51)
+- [x] Remove a collected resource's HUD marker for the collecting client (#51)
 
 ## Remaining
 
@@ -71,7 +73,7 @@ Update this file after each completed work slice. Keep entries short; link the P
 
 ## Next
 
-- [ ] Verify limestone, lead, and ruby red blips on both clients (#51)
+- [ ] Verify collected-resource HUD markers disappear for collector and observer (#51)
 - [ ] Execute in-game acceptance matrix (`SCANNER_ROOM_ACCEPTANCE.md`; requires 2–3 game clients)
 
 ## Rules

@@ -69,6 +69,7 @@ public class Items
 
             if (packetSender.Send(pickupItem))
             {
+                MapRoomScanResults.RemoveLocalResource(inventoryItemEntity.Id);
                 Log.Debug($"Picked up item {inventoryItemEntity}");
             }
         }

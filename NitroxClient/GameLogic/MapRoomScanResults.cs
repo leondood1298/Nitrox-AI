@@ -11,6 +11,19 @@ namespace NitroxClient.GameLogic;
 
 public static class MapRoomScanResults
 {
+    public static void RemoveLocalResource(NitroxId resourceId)
+    {
+        string id = resourceId.ToString();
+        foreach (MapRoomFunctionality mapRoom in MapRoomFunctionality.mapRooms)
+        {
+            if (mapRoom && RemoveFromList(mapRoom.resourceNodes, id))
+            {
+                mapRoom.numNodesScanned = System.Math.Min(mapRoom.numNodesScanned, mapRoom.resourceNodes.Count);
+                RefreshResultConsumers(mapRoom);
+            }
+        }
+    }
+
     public static void Cleanup(MapRoomFunctionality mapRoom)
     {
         mapRoom.resourceNodes.Clear();
@@ -103,6 +116,17 @@ public static class MapRoomScanResults
         {
             target.Add(updated);
         }
+    }
+
+    internal static bool RemoveFromList(List<ResourceTrackerDatabase.ResourceInfo> target, string resourceId)
+    {
+        int index = target.FindIndex(info => info.uniqueId == resourceId);
+        if (index < 0)
+        {
+            return false;
+        }
+        target.RemoveAt(index);
+        return true;
     }
 
     internal static void RefreshResultConsumers(MapRoomFunctionality mapRoom)
