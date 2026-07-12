@@ -50,6 +50,7 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Add executable 2–3 client acceptance matrix (#44)
 - [x] Final automated build/test and protocol/save/limitations report (#45)
 - [x] Persist shared lifepod and radio repairs across account joins (#46)
+- [x] Repair Scanner Room UI startup patch and restored camera registration (#47)
 
 ## Remaining
 

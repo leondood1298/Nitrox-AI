@@ -352,6 +352,7 @@ public class MapRoomCameras
 		}
 		List<MapRoomCameraDocking> dockingPoints = GetDockingPoints(mapRoom);
 		int num = 0;
+		int registered = 0;
 		foreach (MapRoomCameraDocking item in dockingPoints)
 		{
 			MapRoomCamera camera = item.camera;
@@ -360,8 +361,12 @@ public class MapRoomCameras
 				NitroxEntity.SetNewId(camera.gameObject, GetDeterministicCameraId(nitroxId, GetLocalDockPosition(mapRoom, item)));
 				num++;
 			}
+			if ((bool)camera && RegisterRestoredDockedCamera(camera))
+			{
+				registered++;
+			}
 		}
-		Log.Info(string.Format("[{0}] EnsureCameraIds map room {1}: found {2} dock(s), assigned {3} camera id(s)", "MapRoomCameras", nitroxId, dockingPoints.Count, num));
+		Log.Info(string.Format("[{0}] EnsureCameraIds map room {1}: found {2} dock(s), assigned {3} camera id(s), registered {4} restored camera(s)", "MapRoomCameras", nitroxId, dockingPoints.Count, num, registered));
 		NormalizeCameraList();
 	}
 
@@ -385,7 +390,34 @@ public class MapRoomCameras
 				Log.Info(string.Format("[{0}] assigned camera id {1} (map room {2}, localPos {3:F2},{4:F2},{5:F2})", "MapRoomCameras", deterministicCameraId, nitroxId2, localDockPosition.x, localDockPosition.y, localDockPosition.z));
 			}
 		}
+		if ((bool)camera)
+		{
+			RegisterRestoredDockedCamera(camera);
+		}
 		NormalizeCameraList();
+	}
+
+	private static bool RegisterRestoredDockedCamera(MapRoomCamera camera)
+	{
+		if (!camera || MapRoomCamera.cameras.Contains(camera))
+		{
+			return false;
+		}
+
+		if (camera.TryGetNitroxId(out NitroxId cameraId))
+		{
+			for (int i = MapRoomCamera.cameras.Count - 1; i >= 0; i--)
+			{
+				MapRoomCamera existing = MapRoomCamera.cameras[i];
+				if ((bool)existing && existing != camera && existing.TryGetNitroxId(out NitroxId existingId) && existingId == cameraId)
+				{
+					MapRoomCamera.cameras.RemoveAt(i);
+				}
+			}
+		}
+
+		MapRoomCamera.cameras.Add(camera);
+		return true;
 	}
 
 	public static void NormalizeCameraList()
