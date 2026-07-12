@@ -1,6 +1,7 @@
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Extensions;
 using NitroxClient.GameLogic.Spawning.Metadata.Extractor.Abstract;
+using NitroxClient.MonoBehaviours;
 
 namespace NitroxClient.GameLogic.Spawning.Metadata.Extractor;
 
@@ -8,7 +9,10 @@ public class MapRoomMetadataExtractor : EntityMetadataExtractor<MapRoomFunctiona
 {
 	public override MapRoomMetadata Extract(MapRoomFunctionality entity)
 	{
-		return new MapRoomMetadata(entity.typeToScan.ToDto(), entity.numNodesScanned);
+		MapRoomNetworkState state = entity.GetComponent<MapRoomNetworkState>();
+		long generation = state ? state.Generation : 0;
+		long revision = state ? state.Revision : 0;
+		return new MapRoomMetadata(entity.typeToScan.ToDto(), entity.numNodesScanned, generation, revision);
 	}
 }
 

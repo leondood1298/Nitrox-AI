@@ -60,7 +60,7 @@ public class BuildEntitySpawner : EntitySpawner<BuildEntity>
             switch (childEntity)
             {
                 case MapRoomEntity mapRoomEntity:
-                    yield return InteriorPieceEntitySpawner.RestoreMapRoom(@base, mapRoomEntity, entityMetadataManager);
+                    yield return InteriorPieceEntitySpawner.RestoreMapRoom(@base, mapRoomEntity, entities, entityMetadataManager);
                     break;
                 case BaseLeakEntity baseLeakEntity:
                     atLeastOneLeak = true;

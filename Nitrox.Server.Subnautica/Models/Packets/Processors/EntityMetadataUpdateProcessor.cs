@@ -1,5 +1,6 @@
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
@@ -20,27 +21,47 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
             return;
         }
 
-        if (TryProcessMetadata(context.Sender, entity, packet.NewValue))
+        EntityMetadata acceptedMetadata = packet.NewValue;
+        if (TryProcessMetadata(context.Sender, entity, ref acceptedMetadata))
         {
-            entity.Metadata = packet.NewValue;
-            await SendUpdateToVisiblePlayersAsync(context, packet, entity);
+            entity.Metadata = acceptedMetadata;
+            EntityMetadataUpdate acceptedUpdate = new(packet.Id, acceptedMetadata);
+            await SendUpdateToVisiblePlayersAsync(context, acceptedUpdate, entity, acceptedMetadata is MapRoomMetadata);
         }
     }
 
-    private async Task SendUpdateToVisiblePlayersAsync(AuthProcessorContext context, EntityMetadataUpdate packet, Entity entity)
+    private async Task SendUpdateToVisiblePlayersAsync(AuthProcessorContext context, EntityMetadataUpdate packet, Entity entity, bool includeSender)
     {
         foreach (Player player in playerManager.GetConnectedPlayers())
         {
             bool updateVisibleToPlayer = player.CanSee(entity);
-            if (player != context.Sender && updateVisibleToPlayer)
+            if ((includeSender || player != context.Sender) && updateVisibleToPlayer)
             {
                 await context.SendAsync(packet, player.SessionId);
             }
         }
     }
 
-    private bool TryProcessMetadata(Player sendingPlayer, Entity entity, EntityMetadata metadata)
+    private bool TryProcessMetadata(Player sendingPlayer, Entity entity, ref EntityMetadata metadata)
     {
+        if (metadata is MapRoomMetadata requestedMapRoomMetadata)
+        {
+            if (entity is not MapRoomEntity)
+            {
+                logger.ZLogWarning($"Player {sendingPlayer.Name} tried applying Map Room metadata to non-Map Room entity {entity.Id}");
+                return false;
+            }
+
+            if (!MapRoomMetadataAuthority.TryAccept(entity.Metadata as MapRoomMetadata, requestedMapRoomMetadata, out MapRoomMetadata acceptedMapRoomMetadata))
+            {
+                logger.ZLogDebug($"Rejected stale or duplicate Map Room metadata for {entity.Id}: requested {requestedMapRoomMetadata}, current {entity.Metadata}");
+                return false;
+            }
+
+            metadata = acceptedMapRoomMetadata;
+            return true;
+        }
+
         return metadata switch
         {
             PlayerMetadata playerMetadata => ProcessPlayerMetadata(sendingPlayer, entity, playerMetadata),
