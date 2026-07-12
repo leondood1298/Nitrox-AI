@@ -51,6 +51,20 @@ public sealed class MapRoomScanResultAuthorityTest
     }
 
     [TestMethod]
+    public void RejectsOversizedIdsAndNonFinitePositions()
+    {
+        MapRoomEntity room = CreateRoom();
+        string oversizedId = new('x', 257);
+
+        Assert.IsFalse(MapRoomScanResultAuthority.TryApply(room, new MapRoomScanResultChanged(room.Id, 5, oversizedId, quartz, NitroxVector3.Zero)));
+        Assert.IsFalse(MapRoomScanResultAuthority.TryApply(room, new MapRoomScanResultChanged(room.Id, 5, "nan", quartz, new NitroxVector3(float.NaN, 0f, 0f))));
+        Assert.IsFalse(MapRoomScanResultAuthority.TryApply(room, new MapRoomScanResultChanged(room.Id, 5, "infinity", quartz, new NitroxVector3(0f, float.PositiveInfinity, 0f))));
+        Assert.IsTrue(MapRoomScanResultAuthority.TryApply(room, new MapRoomScanResultChanged(room.Id, 5, "remove", quartz, NitroxVector3.Zero)));
+        Assert.IsTrue(MapRoomScanResultAuthority.TryApply(room, new MapRoomScanResultChanged(room.Id, 5, "remove", quartz, new NitroxVector3(float.NaN, 0f, 0f), removed: true)));
+        Assert.AreEqual(0, room.ScanResults.Count);
+    }
+
+    [TestMethod]
     public void SnapshotAtomicallyReplacesResultsWithOneRevision()
     {
         MapRoomEntity room = CreateRoom();
@@ -81,6 +95,21 @@ public sealed class MapRoomScanResultAuthorityTest
         Assert.IsFalse(MapRoomScanResultAuthority.TryApplySnapshot(room, new MapRoomScanResultSnapshot(room.Id, 5, duplicate), out _, out _));
         Assert.IsFalse(MapRoomScanResultAuthority.TryApplySnapshot(room, new MapRoomScanResultSnapshot(room.Id, 5, wrongTarget), out _, out _));
         Assert.IsFalse(MapRoomScanResultAuthority.TryApplySnapshot(room, new MapRoomScanResultSnapshot(room.Id, 4, []), out _, out _));
+        Assert.AreEqual(0, room.ScanResults.Count);
+    }
+
+    [TestMethod]
+    public void SnapshotRejectsInvalidIdsAndPositionsWithoutPartialMutation()
+    {
+        MapRoomEntity room = CreateRoom();
+        List<MapRoomScanResultRecord> invalid =
+        [
+            new("valid", quartz, NitroxVector3.Zero),
+            new(new string('x', 257), quartz, NitroxVector3.One),
+            new("nan", quartz, new NitroxVector3(0f, 0f, float.NaN))
+        ];
+
+        Assert.IsFalse(MapRoomScanResultAuthority.TryApplySnapshot(room, new MapRoomScanResultSnapshot(room.Id, 5, invalid), out _, out _));
         Assert.AreEqual(0, room.ScanResults.Count);
     }
 
