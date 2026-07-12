@@ -46,16 +46,16 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Invalidate scan results on server entity destruction and pickup (#40)
 - [x] Scope scan-result snapshots/deltas to subscribed Scanner Room clients (#41)
 - [x] Clean Scanner Room results, markers, subscriptions, and locks on deconstruction (#42)
+- [x] Cover handheld scanner popups and fabricator power deduplication (#43)
 
 ## Remaining
 
-- [ ] Regression tests: handheld scanner popup and fabricator power deduplication
 - [ ] Manual 2-3 client acceptance matrix: join/restart/resync/races/power
 - [ ] Final full build/test, protocol/save report, limitations, and cleanup
 
 ## Next
 
-- [ ] Regression tests: handheld scanner popup and fabricator power deduplication
+- [ ] Manual 2-3 client acceptance matrix: join/restart/resync/races/power
 
 ## Rules
 

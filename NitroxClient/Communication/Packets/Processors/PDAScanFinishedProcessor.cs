@@ -27,10 +27,12 @@ internal sealed class PDAScanFinishedProcessor : IClientPacketProcessor<PDAScanF
         }
         int previousUnlocked = PDAScanner.GetPartialEntryByKey(packetTechType, out PDAScanner.Entry entry) ? entry.unlocked : 0;
         PDAScanner.Entry updatedEntry = PDAScanner.Add(packetTechType, packet.UnlockedAmount);
-        if (updatedEntry != null && updatedEntry.unlocked > previousUnlocked && Multiplayer.Main && Multiplayer.Main.InitialSyncCompleted)
+        if (updatedEntry != null)
         {
             int totalFragments = PDAScanner.GetEntryData(packetTechType)?.totalFragments ?? 1;
-            if (totalFragments > 1)
+            bool multiplayerActive = Multiplayer.Main;
+            bool initialSyncCompleted = multiplayerActive && Multiplayer.Main.InitialSyncCompleted;
+            if (ScannerProgressPopupPolicy.ShouldShow(packet.WasAlreadyResearched, packet.FullyResearched, previousUnlocked, updatedEntry.unlocked, totalFragments, multiplayerActive, initialSyncCompleted))
             {
                 float percentage = Mathf.RoundToInt((float)updatedEntry.unlocked / totalFragments * 100f);
                 ErrorMessage.AddError(Language.main.GetFormat("ScannerInstanceScanned", Language.main.Get(packetTechType.AsString()), percentage, updatedEntry.unlocked, totalFragments));

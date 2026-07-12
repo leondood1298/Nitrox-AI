@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using Nitrox.Model.DataStructures;
 using NitroxClient.GameLogic.Spawning.Metadata.Processor.Abstract;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
@@ -14,8 +13,6 @@ public class CrafterMetadataProcessor : EntityMetadataProcessor<CrafterMetadata>
     // small increase to prevent this player from swiping item from remote player
     public const float ANTI_GRIEF_DURATION_BUFFER = 0.2f;
     private const float CRAFT_ENERGY_COST = 5f;
-
-    private static readonly Dictionary<NitroxId, float> lastConsumedCraftStartById = [];
 
     public override void ProcessMetadata(GameObject gameObject, CrafterMetadata metadata)
     {
@@ -68,16 +65,9 @@ public class CrafterMetadataProcessor : EntityMetadataProcessor<CrafterMetadata>
 
     private static void ConsumeCraftPower(GameObject gameObject, CrafterLogic crafterLogic, CrafterMetadata metadata)
     {
-        if (gameObject.TryGetNitroxId(out NitroxId crafterId))
-        {
-            if (lastConsumedCraftStartById.TryGetValue(crafterId, out float previousStart) && previousStart == metadata.StartTime)
-            {
-                return;
-            }
-            lastConsumedCraftStartById[crafterId] = metadata.StartTime;
-        }
-
-        if (!Multiplayer.Main || !Multiplayer.Main.InitialSyncCompleted)
+        gameObject.TryGetNitroxId(out NitroxId crafterId);
+        bool initialSyncCompleted = Multiplayer.Main && Multiplayer.Main.InitialSyncCompleted;
+        if (!CrafterPowerAccounting.TryAccount(crafterId, metadata.StartTime, initialSyncCompleted))
         {
             return;
         }
@@ -97,7 +87,7 @@ public class CrafterMetadataProcessor : EntityMetadataProcessor<CrafterMetadata>
     {
         if (crafterId != null)
         {
-            lastConsumedCraftStartById[crafterId] = startTime;
+            CrafterPowerAccounting.MarkAccounted(crafterId, startTime);
         }
     }
 
