@@ -4,6 +4,7 @@ using Nitrox.Model.Subnautica.Extensions;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication;
 using NitroxClient.GameLogic.Spawning.Metadata.Processor.Abstract;
+using NitroxClient.MonoBehaviours;
 using UnityEngine;
 
 namespace NitroxClient.GameLogic.Spawning.Metadata.Processor;
@@ -19,6 +20,12 @@ public class MapRoomMetadataProcessor : EntityMetadataProcessor<MapRoomMetadata>
 		}
 		TechType techType = metadata.TypeToScan.ToUnity();
 		bool flag = component.typeToScan != techType;
+		MapRoomNetworkState state = gameObject.EnsureComponent<MapRoomNetworkState>();
+		if (metadata.Generation < state.Generation || metadata.Revision < state.Revision)
+		{
+			Log.Warn($"Ignoring stale Map Room metadata for {gameObject.name}: incoming generation/revision {metadata.Generation}/{metadata.Revision}, current {state.Generation}/{state.Revision}");
+			return;
+		}
 		using (PacketSuppressor<EntityMetadataUpdate>.Suppress())
 		{
 			if (flag)
@@ -27,6 +34,8 @@ public class MapRoomMetadataProcessor : EntityMetadataProcessor<MapRoomMetadata>
 			}
 			component.numNodesScanned = metadata.NumNodesScanned;
 		}
+		state.Generation = metadata.Generation;
+		state.Revision = metadata.Revision;
 		if (flag)
 		{
 			uGUI_MapRoomScanner componentInChildren = component.GetComponentInChildren<uGUI_MapRoomScanner>(includeInactive: true);

@@ -223,10 +223,20 @@ public static class BuildUtils
         return baseGhost.targetBase.NormalizeCell(baseGhost.targetBase.WorldToGrid(baseGhost.ghostBase.occupiedBounds.center));
     }
 
-    public static MapRoomEntity CreateMapRoomEntityFrom(MapRoomFunctionality mapRoomFunctionality, Base @base, NitroxId id, NitroxId parentId)
+    public static MapRoomEntity CreateMapRoomEntityFrom(MapRoomFunctionality mapRoomFunctionality, Base @base, NitroxId id, NitroxId parentId, EntityMetadataManager entityMetadataManager)
     {
         Int3 mapRoomCell = @base.NormalizeCell(@base.WorldToGrid(mapRoomFunctionality.transform.position));
-        return new(id, parentId, mapRoomCell.ToDto());
+        MapRoomEntity mapRoomEntity = new(id, parentId, mapRoomCell.ToDto());
+
+        foreach (ItemsContainer.ItemGroup itemGroup in mapRoomFunctionality.storageContainer.container._items.Values)
+        {
+            foreach (InventoryItem item in itemGroup.items)
+            {
+                mapRoomEntity.ChildEntities.Add(Items.ConvertToInventoryItemEntity(item.item.gameObject, id, entityMetadataManager));
+            }
+        }
+
+        return mapRoomEntity;
     }
 
     // TODO: Use this for a latter singleplayer save converter
@@ -270,7 +280,7 @@ public static class BuildUtils
                 {
                     continue;
                 }
-                AddChild(CreateMapRoomEntityFrom(mapRoomFunctionality, targetBase, mapRoomId, baseId));
+                AddChild(CreateMapRoomEntityFrom(mapRoomFunctionality, targetBase, mapRoomId, baseId, entityMetadataManager));
             }
             else if (transform.TryGetComponent(out IBaseModule baseModule))
             {
