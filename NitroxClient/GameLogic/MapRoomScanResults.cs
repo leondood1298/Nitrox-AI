@@ -22,6 +22,7 @@ internal static class MapRoomScanResults
         state.ResultGeneration = generation;
         state.ResultRevision = revision;
         mapRoom.numNodesScanned = System.Math.Min(mapRoom.numNodesScanned, mapRoom.resourceNodes.Count);
+        RefreshResultConsumers(mapRoom);
     }
 
     public static void ProcessDelta(MapRoomScanResultChanged packet)
@@ -43,6 +44,7 @@ internal static class MapRoomScanResults
         ApplyDeltaToList(mapRoom.resourceNodes, packet);
         state.ResultRevision = packet.Revision;
         mapRoom.numNodesScanned = System.Math.Min(mapRoom.numNodesScanned, mapRoom.resourceNodes.Count);
+        RefreshResultConsumers(mapRoom);
     }
 
     public static void ProcessSnapshot(MapRoomScanResultSnapshot packet)
@@ -82,6 +84,46 @@ internal static class MapRoomScanResults
         else
         {
             target.Add(updated);
+        }
+    }
+
+    private static void RefreshResultConsumers(MapRoomFunctionality mapRoom)
+    {
+        RefreshHologramBlips(mapRoom);
+
+        // Vanilla only gathers Scanner HUD nodes every ten seconds (or after a local database removal).
+        // Schedule the same gather on the next HUD tick so canonical removals cannot leave ghost markers.
+        uGUI_ResourceTracker resourceTracker = Object.FindObjectOfType<uGUI_ResourceTracker>();
+        if (resourceTracker)
+        {
+            resourceTracker.gatherNextTick = true;
+        }
+    }
+
+    private static void RefreshHologramBlips(MapRoomFunctionality mapRoom)
+    {
+        if (!mapRoom.mapBlipRoot)
+        {
+            return;
+        }
+
+        int visibleCount = System.Math.Min(mapRoom.numNodesScanned, mapRoom.resourceNodes.Count);
+        Vector3 origin = mapRoom.mapBlipRoot.transform.position;
+        for (int i = 0; i < visibleCount; i++)
+        {
+            Vector3 localPosition = (mapRoom.resourceNodes[i].position - origin) * mapRoom.mapScale;
+            if (i >= mapRoom.mapBlips.Count)
+            {
+                GameObject blip = Object.Instantiate(mapRoom.blipPrefab);
+                blip.transform.SetParent(mapRoom.mapBlipRoot.transform, false);
+                mapRoom.mapBlips.Add(blip);
+            }
+            mapRoom.mapBlips[i].transform.localPosition = localPosition;
+            mapRoom.mapBlips[i].SetActive(true);
+        }
+        for (int i = visibleCount; i < mapRoom.mapBlips.Count; i++)
+        {
+            mapRoom.mapBlips[i].SetActive(false);
         }
     }
 
