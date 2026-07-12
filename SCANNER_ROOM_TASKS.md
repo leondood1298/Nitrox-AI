@@ -42,10 +42,10 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Synchronize camera repair/damage and clean death state/locks (#36)
 - [x] Filter remotely controlled cameras from Scanner Room screen selection (#37)
 - [x] Normalize legacy/duplicate camera saves and test deterministic IDs (#38)
+- [x] Validate Scanner Room identity during base topology updates (#39)
 
 ## Remaining
 
-- [ ] Base split/merge, partial construction, rebuild, and room identity audit
 - [ ] Result invalidation from all server entity-destruction/pickup paths
 - [ ] Result snapshot/delta visibility scoping (avoid unrelated-client broadcast)
 - [ ] Deconstruction cleanup for scan results, markers, subscriptions, and locks
@@ -55,7 +55,7 @@ Update this file after each completed work slice. Keep entries short; link the P
 
 ## Next
 
-- [ ] Base split/merge, partial construction, rebuild, and room identity audit
+- [ ] Result invalidation from all server entity-destruction/pickup paths
 
 ## Rules
 
