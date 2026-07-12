@@ -27,6 +27,15 @@ public class MapRoomEntity : GlobalRootEntity
     [DataMember(Order = 5)]
     public List<MapRoomCameraRecord> CameraRegistry { get; set; } = [];
 
+    [DataMember(Order = 6)]
+    public long ScanResultGeneration { get; set; }
+
+    [DataMember(Order = 7)]
+    public long ScanResultRevision { get; set; }
+
+    [DataMember(Order = 8)]
+    public List<MapRoomScanResultRecord> ScanResults { get; set; } = [];
+
     [IgnoreConstructor]
     protected MapRoomEntity()
     {
@@ -46,7 +55,7 @@ public class MapRoomEntity : GlobalRootEntity
     /// Used for deserialization.
     /// <see cref="WorldEntity.SpawnedByServer"/> is set to true because this entity is meant to receive simulation locks
     /// </remarks>
-    public MapRoomEntity(NitroxInt3 cell, NitroxId? leftDockCameraId, NitroxId? rightDockCameraId, long dockingRevision, List<MapRoomCameraRecord> cameraRegistry, NitroxTransform transform, int level, string classId, bool spawnedByServer, NitroxId id, NitroxTechType techType, EntityMetadata metadata, NitroxId parentId, List<Entity> childEntities) :
+    public MapRoomEntity(NitroxInt3 cell, NitroxId? leftDockCameraId, NitroxId? rightDockCameraId, long dockingRevision, List<MapRoomCameraRecord> cameraRegistry, long scanResultGeneration, long scanResultRevision, List<MapRoomScanResultRecord> scanResults, NitroxTransform transform, int level, string classId, bool spawnedByServer, NitroxId id, NitroxTechType techType, EntityMetadata metadata, NitroxId parentId, List<Entity> childEntities) :
         base(transform, level, classId, true, id, techType, metadata, parentId, childEntities)
     {
         Cell = cell;
@@ -54,6 +63,9 @@ public class MapRoomEntity : GlobalRootEntity
         RightDockCameraId = rightDockCameraId;
         DockingRevision = dockingRevision;
         CameraRegistry = cameraRegistry ?? [];
+        ScanResultGeneration = scanResultGeneration;
+        ScanResultRevision = scanResultRevision;
+        ScanResults = scanResults ?? [];
     }
 
     public NitroxId? GetDockedCamera(int dockingIndex) => dockingIndex == 0 ? LeftDockCameraId : RightDockCameraId;
@@ -107,8 +119,58 @@ public class MapRoomEntity : GlobalRootEntity
 
     public MapRoomCameraRecord? GetCameraRecord(NitroxId cameraId) => CameraRegistry.Find(record => record.CameraId == cameraId);
 
+    public bool TryApplyScanResult(long generation, MapRoomScanResultRecord result)
+    {
+        if (generation != ScanResultGeneration || string.IsNullOrEmpty(result.ResourceId))
+        {
+            return false;
+        }
+        MapRoomScanResultRecord? current = ScanResults.Find(record => record.ResourceId == result.ResourceId);
+        if (current == null)
+        {
+            ScanResults.Add(result);
+        }
+        else
+        {
+            if (current.TechType.Equals(result.TechType) && current.Position.Equals(result.Position))
+            {
+                return false;
+            }
+            current.TechType = result.TechType;
+            current.Position = result.Position;
+        }
+        ScanResultRevision++;
+        return true;
+    }
+
+    public bool TryRemoveScanResult(long generation, string resourceId)
+    {
+        if (generation != ScanResultGeneration)
+        {
+            return false;
+        }
+        int removed = ScanResults.RemoveAll(record => record.ResourceId == resourceId);
+        if (removed == 0)
+        {
+            return false;
+        }
+        ScanResultRevision++;
+        return true;
+    }
+
+    public void BeginScanResultGeneration(long generation)
+    {
+        if (generation <= ScanResultGeneration)
+        {
+            return;
+        }
+        ScanResultGeneration = generation;
+        ScanResultRevision++;
+        ScanResults.Clear();
+    }
+
     public override string ToString()
     {
-        return $"[MapRoomEntity Id: {Id}, Cell: {Cell}, LeftDockCameraId: {LeftDockCameraId}, RightDockCameraId: {RightDockCameraId}, DockingRevision: {DockingRevision}, RegisteredCameras: {CameraRegistry.Count}]";
+        return $"[MapRoomEntity Id: {Id}, Cell: {Cell}, LeftDockCameraId: {LeftDockCameraId}, RightDockCameraId: {RightDockCameraId}, DockingRevision: {DockingRevision}, RegisteredCameras: {CameraRegistry.Count}, ScanResultGeneration: {ScanResultGeneration}, ScanResultRevision: {ScanResultRevision}, ScanResults: {ScanResults.Count}]";
     }
 }
