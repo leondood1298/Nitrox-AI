@@ -32,10 +32,10 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Authoritative scan progress publication/validation (#26)
 - [x] Harden result IDs and coordinates (#27)
 - [x] Persistent owner-validated scan-type set (#28)
+- [x] Publish/apply canonical scan types in Scanner Room UI (#29)
 
 ## Remaining
 
-- [ ] Publish/apply canonical scan types in Scanner Room UI
 - [ ] Immediate hologram/HUD marker refresh and ghost-marker cleanup audit
 - [ ] Scanner Room continuous power ownership/accounting audit and fix
 - [ ] Scanner Room fabricator identity, concurrency, reconnect, output/pickup audit
@@ -55,7 +55,7 @@ Update this file after each completed work slice. Keep entries short; link the P
 
 ## Next
 
-- [ ] Publish/apply canonical scan types in Scanner Room UI
+- [ ] Immediate hologram/HUD marker refresh and ghost-marker cleanup audit
 
 ## Rules
 
