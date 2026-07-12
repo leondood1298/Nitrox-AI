@@ -50,6 +50,40 @@ public sealed class MapRoomScanResultAuthorityTest
         Assert.IsFalse(MapRoomScanResultAuthority.TryApply(room, Change(room, "missing", 0f, removed: true)));
     }
 
+    [TestMethod]
+    public void SnapshotAtomicallyReplacesResultsWithOneRevision()
+    {
+        MapRoomEntity room = CreateRoom();
+        room.TryApplyScanResult(5, new MapRoomScanResultRecord("old", quartz, NitroxVector3.Zero));
+        long revision = room.ScanResultRevision;
+        MapRoomScanResultSnapshot snapshot = new(room.Id, 5,
+        [
+            new MapRoomScanResultRecord("first", quartz, new NitroxVector3(1f, 0f, 0f)),
+            new MapRoomScanResultRecord("second", quartz, new NitroxVector3(2f, 0f, 0f))
+        ]);
+
+        Assert.IsTrue(MapRoomScanResultAuthority.TryApplySnapshot(room, snapshot, out List<MapRoomScanResultRecord> accepted, out long acceptedRevision));
+
+        CollectionAssert.AreEqual(new[] { "first", "second" }, accepted.Select(result => result.ResourceId).ToArray());
+        Assert.AreEqual(revision + 1, acceptedRevision);
+        Assert.AreEqual(2, room.ScanResults.Count);
+        Assert.IsFalse(MapRoomScanResultAuthority.TryApplySnapshot(room, snapshot, out _, out long replayRevision));
+        Assert.AreEqual(acceptedRevision, replayRevision);
+    }
+
+    [TestMethod]
+    public void SnapshotRejectsDuplicatesWrongTargetAndStaleGenerationWithoutMutation()
+    {
+        MapRoomEntity room = CreateRoom();
+        List<MapRoomScanResultRecord> duplicate = [new("same", quartz, NitroxVector3.Zero), new("same", quartz, NitroxVector3.One)];
+        List<MapRoomScanResultRecord> wrongTarget = [new("wrong", titanium, NitroxVector3.Zero)];
+
+        Assert.IsFalse(MapRoomScanResultAuthority.TryApplySnapshot(room, new MapRoomScanResultSnapshot(room.Id, 5, duplicate), out _, out _));
+        Assert.IsFalse(MapRoomScanResultAuthority.TryApplySnapshot(room, new MapRoomScanResultSnapshot(room.Id, 5, wrongTarget), out _, out _));
+        Assert.IsFalse(MapRoomScanResultAuthority.TryApplySnapshot(room, new MapRoomScanResultSnapshot(room.Id, 4, []), out _, out _));
+        Assert.AreEqual(0, room.ScanResults.Count);
+    }
+
     private static MapRoomEntity CreateRoom()
     {
         MapRoomEntity room = new(new NitroxId(), new NitroxId(), new NitroxInt3())

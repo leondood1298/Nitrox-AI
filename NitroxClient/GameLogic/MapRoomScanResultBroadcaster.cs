@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.Extensions;
 using Nitrox.Model.Subnautica.Packets;
@@ -15,13 +16,15 @@ public sealed class MapRoomScanResultBroadcaster(IPacketSender packetSender, Sim
         {
             return;
         }
+        List<Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases.MapRoomScanResultRecord> results = [];
         foreach (ResourceTrackerDatabase.ResourceInfo info in mapRoom.resourceNodes)
         {
             if (IsCurrentInRangeResult(mapRoom, info))
             {
-                Send(roomId, generation, info, removed: false);
+                results.Add(new(info.uniqueId, info.techType.ToDto(), info.position.ToDto()));
             }
         }
+        packetSender.Send(new MapRoomScanResultSnapshot(roomId, generation, results));
     }
 
     public void BroadcastDiscovered(MapRoomFunctionality mapRoom, ResourceTrackerDatabase.ResourceInfo info)
