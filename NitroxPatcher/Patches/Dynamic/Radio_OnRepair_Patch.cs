@@ -3,6 +3,8 @@ using NitroxClient.GameLogic;
 using NitroxClient.GameLogic.Spawning.Metadata;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
+using NitroxClient.Communication;
+using Nitrox.Model.Subnautica.Packets;
 
 namespace NitroxPatcher.Patches.Dynamic;
 
@@ -10,9 +12,10 @@ public sealed partial class Radio_OnRepair_Patch : NitroxPatch, IDynamicPatch
 {
     private static readonly MethodInfo TARGET_METHOD = Reflect.Method((Radio t) => t.OnRepair());
 
-    public static void Prefix(Radio __instance)
+    public static void Postfix(Radio __instance)
     {
-        if (__instance.TryGetComponentInParent(out EscapePod pod) &&
+        if (!PacketSuppressor<EntityMetadataUpdate>.IsSuppressed &&
+            __instance.TryGetComponentInParent(out EscapePod pod) &&
             pod.TryGetIdOrWarn(out NitroxId id) &&
             Resolve<EntityMetadataManager>().TryExtract(pod, out EntityMetadata metadata))
         {
