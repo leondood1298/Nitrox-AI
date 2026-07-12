@@ -19,10 +19,22 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
 
 	public async Task Process(AuthProcessorContext context, MapRoomCameraDock packet)
 	{
-        bool validWorldCamera = entityRegistry.TryGetEntityById(packet.CameraId, out WorldEntity camera) && camera.TechType.Equals(new Nitrox.Model.Subnautica.DataStructures.GameLogic.NitroxTechType("MapRoomCamera"));
-        if (packet.IsServerResponse || packet.DockingIndex is < 0 or > 1 || !validWorldCamera || !entityRegistry.TryGetEntityById(packet.MapRoomId, out MapRoomEntity mapRoom))
+		if (packet.IsServerResponse || packet.DockingIndex is < 0 or > 1 || !entityRegistry.TryGetEntityById(packet.MapRoomId, out MapRoomEntity mapRoom))
 		{
 			logger.ZLogWarning($"Rejected camera dock from session {context.Sender.SessionId}: room {packet.MapRoomId}, camera {packet.CameraId}, slot {packet.DockingIndex}");
+			await context.ReplyAsync(new MapRoomCameraDock(packet.CameraId, packet.MapRoomId, packet.DockingIndex, 0, true, false, packet.IsDocked));
+			return;
+		}
+
+		bool validWorldCamera = entityRegistry.TryGetEntityById(packet.CameraId, out WorldEntity camera) && camera.TechType.Equals(new Nitrox.Model.Subnautica.DataStructures.GameLogic.NitroxTechType("MapRoomCamera"));
+		bool registeredCamera;
+		lock (mapRoom)
+		{
+			registeredCamera = mapRoom.GetCameraRecord(packet.CameraId) != null;
+		}
+		if (!IsKnownCamera(validWorldCamera, registeredCamera))
+		{
+			logger.ZLogWarning($"Rejected unknown camera dock from session {context.Sender.SessionId}: room {packet.MapRoomId}, camera {packet.CameraId}, slot {packet.DockingIndex}");
 			await context.ReplyAsync(new MapRoomCameraDock(packet.CameraId, packet.MapRoomId, packet.DockingIndex, 0, true, false, packet.IsDocked));
 			return;
 		}
@@ -72,6 +84,8 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
 			await context.ReplyAsync(response);
 		}
 	}
+
+	internal static bool IsKnownCamera(bool validWorldCamera, bool registeredCamera) => validWorldCamera || registeredCamera;
 
 	private bool TryTransferRegistration(MapRoomEntity targetRoom, Nitrox.Model.DataStructures.NitroxId cameraId)
 	{
