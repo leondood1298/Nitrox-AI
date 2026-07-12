@@ -61,6 +61,8 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Validate two-client camera movement after rapid redocking (#49)
 - [x] Republish early scan progress and refresh non-owner hologram blips (#50)
 - [x] Suppress loose-world duplicates for cameras currently recorded as docked (#50)
+- [x] Validate restored cameras across save reload and two clients (#50)
+- [x] Resynchronize non-owner red blips after scan-target changes (#51)
 
 ## Remaining
 
@@ -69,14 +71,14 @@ Update this file after each completed work slice. Keep entries short; link the P
 
 ## Next
 
-- [ ] Distinguish stale preview image from an actual camera label/selection mismatch
+- [ ] Verify limestone, lead, and ruby red blips on both clients (#51)
 - [ ] Execute in-game acceptance matrix (`SCANNER_ROOM_ACCEPTANCE.md`; requires 2–3 game clients)
 
 ## Rules
 
 - Push only to `leondood1298/Nitrox-AI`; upstream push stays disabled.
 - One focused draft PR at a time; merge before starting the next branch.
-- Compile local test builds to Desktop folders using `1.16.1`, `1.16.2`, etc.; do not update GitHub Releases.
+- Publish each two-client test build as the next `1.16.x` GitHub prerelease.
 - Keep updating the current Scanner Room repair PR until the user merges it.
 - Preserve unrelated custom fixes.
 - Build and run the full test suite before every PR.
