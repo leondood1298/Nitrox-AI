@@ -26,6 +26,7 @@ internal sealed class WorldEntityManager
     private readonly BatchEntitySpawner batchEntitySpawner;
     private readonly IPacketSender packetSender;
     private readonly EntityRegistry entityRegistry;
+    private readonly MapRoomScanResultSubscriptions mapRoomScanResultSubscriptions;
 
     /// <summary>
     ///     Global root entities that are always visible.
@@ -44,12 +45,13 @@ internal sealed class WorldEntityManager
     /// </summary>
     internal Dictionary<AbsoluteEntityCell, Dictionary<NitroxId, WorldEntity>> worldEntitiesByCell = [];
 
-    public WorldEntityManager(IPacketSender packetSender, EntityRegistry entityRegistry, BatchEntitySpawner batchEntitySpawner, PlayerManager playerManager, ILogger<WorldEntityManager> logger)
+    public WorldEntityManager(IPacketSender packetSender, EntityRegistry entityRegistry, BatchEntitySpawner batchEntitySpawner, PlayerManager playerManager, MapRoomScanResultSubscriptions mapRoomScanResultSubscriptions, ILogger<WorldEntityManager> logger)
     {
         this.packetSender = packetSender;
         this.entityRegistry = entityRegistry;
         this.batchEntitySpawner = batchEntitySpawner;
         this.playerManager = playerManager;
+        this.mapRoomScanResultSubscriptions = mapRoomScanResultSubscriptions;
         this.logger = logger;
     }
 
@@ -330,7 +332,10 @@ internal sealed class WorldEntityManager
     {
         foreach (MapRoomScanResultChanged removal in MapRoomScanResultAuthority.InvalidateResource(entityRegistry.GetEntities<MapRoomEntity>(), entityId))
         {
-            packetSender.SendPacketToAllAsync(removal);
+            foreach (Player player in playerManager.GetConnectedPlayers().Where(player => mapRoomScanResultSubscriptions.Contains(removal.MapRoomId, player.SessionId)))
+            {
+                packetSender.SendPacketAsync(removal, player.SessionId);
+            }
         }
     }
 
