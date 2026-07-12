@@ -47,15 +47,16 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Scope scan-result snapshots/deltas to subscribed Scanner Room clients (#41)
 - [x] Clean Scanner Room results, markers, subscriptions, and locks on deconstruction (#42)
 - [x] Cover handheld scanner popups and fabricator power deduplication (#43)
+- [x] Add executable 2–3 client acceptance matrix (#44)
 
 ## Remaining
 
-- [ ] Manual 2-3 client acceptance matrix: join/restart/resync/races/power
+- [ ] Execute in-game acceptance matrix (`SCANNER_ROOM_ACCEPTANCE.md`; requires 2–3 game clients)
 - [ ] Final full build/test, protocol/save report, limitations, and cleanup
 
 ## Next
 
-- [ ] Manual 2-3 client acceptance matrix: join/restart/resync/races/power
+- [ ] Final full build/test, protocol/save report, limitations, and cleanup
 
 ## Rules
 
