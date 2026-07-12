@@ -69,6 +69,8 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Apply an authoritative stopped scan state and refresh UI on client join (#51)
 - [x] Publish scan cancellation immediately and discard queued progress metadata (#51)
 - [x] Remove prefab dock cameras from authoritatively empty restored slots (#51)
+- [x] Validate scan cancellation and camera reload without duplicates (#51)
+- [x] Remove every duplicate stable-ID result on pickup and server removal (#51)
 
 ## Remaining
 
@@ -77,8 +79,6 @@ Update this file after each completed work slice. Keep entries short; link the P
 
 ## Next
 
-- [ ] Verify client 2 joins a Scanner Room that client 1 stopped before join (#51)
-- [ ] Verify a controlled/redocked camera does not duplicate across server restart (#51)
 - [ ] Verify collected-resource HUD markers disappear for collector and observer (#51)
 - [ ] Execute in-game acceptance matrix (`SCANNER_ROOM_ACCEPTANCE.md`; requires 2–3 game clients)
 

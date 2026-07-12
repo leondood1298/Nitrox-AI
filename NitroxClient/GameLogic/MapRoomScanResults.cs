@@ -99,15 +99,12 @@ public static class MapRoomScanResults
 
     internal static void ApplyDeltaToList(List<ResourceTrackerDatabase.ResourceInfo> target, MapRoomScanResultChanged packet)
     {
-        int index = target.FindIndex(info => info.uniqueId == packet.ResourceId);
         if (packet.Removed)
         {
-            if (index >= 0)
-            {
-                target.RemoveAt(index);
-            }
+            RemoveFromList(target, packet.ResourceId);
             return;
         }
+        int index = target.FindIndex(info => info.uniqueId == packet.ResourceId);
         ResourceTrackerDatabase.ResourceInfo updated = ToResourceInfo(packet.ResourceId, packet.TechType, packet.Position.ToUnity());
         if (index >= 0)
         {
@@ -121,13 +118,7 @@ public static class MapRoomScanResults
 
     internal static bool RemoveFromList(List<ResourceTrackerDatabase.ResourceInfo> target, string resourceId)
     {
-        int index = target.FindIndex(info => info.uniqueId == resourceId);
-        if (index < 0)
-        {
-            return false;
-        }
-        target.RemoveAt(index);
-        return true;
+        return target.RemoveAll(info => info.uniqueId == resourceId) > 0;
     }
 
     internal static bool RemoveFromSet(HashSet<ResourceTrackerDatabase.ResourceInfo> target, string resourceId) =>

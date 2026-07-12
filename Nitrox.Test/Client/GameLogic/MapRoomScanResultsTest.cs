@@ -30,7 +30,7 @@ public sealed class MapRoomScanResultsTest
     [TestMethod]
     public void DeltaAddsUpdatesAndRemovesByStableId()
     {
-        List<ResourceTrackerDatabase.ResourceInfo> local = [Info("resource", 1f)];
+        List<ResourceTrackerDatabase.ResourceInfo> local = [Info("resource", 1f), Info("resource", 1f)];
         Nitrox.Model.DataStructures.NitroxId roomId = new();
 
         MapRoomScanResults.ApplyDeltaToList(local, new MapRoomScanResultChanged(roomId, 1, "resource", quartz, new NitroxVector3(4f, 0f, 0f)));
@@ -44,7 +44,7 @@ public sealed class MapRoomScanResultsTest
     [TestMethod]
     public void LocalPickupRemovesMatchingStableIdOnly()
     {
-        List<ResourceTrackerDatabase.ResourceInfo> local = [Info("collected", 1f), Info("remaining", 2f)];
+        List<ResourceTrackerDatabase.ResourceInfo> local = [Info("collected", 1f), Info("collected", 1f), Info("remaining", 2f)];
 
         Assert.IsTrue(MapRoomScanResults.RemoveFromList(local, "collected"));
         Assert.IsFalse(MapRoomScanResults.RemoveFromList(local, "missing"));
