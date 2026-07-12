@@ -29,6 +29,8 @@ public class MapRoomCameras
 	private readonly Dictionary<NitroxId, long> lightRevisions = new Dictionary<NitroxId, long>();
 	private readonly Dictionary<NitroxId, (float Energy, float Health)> lastComponents = new();
 	private readonly Dictionary<NitroxId, long> componentRevisions = new();
+	private readonly Dictionary<NitroxId, float> pendingCameraEnergy = new();
+	private readonly HashSet<NitroxId> initializingCameraBatteries = new();
 
 	public MapRoomCameras(IPacketSender packetSender, IMultiplayerSession multiplayerSession, LiveMixinManager liveMixinManager, SimulationOwnership simulationOwnership)
 	{
@@ -201,8 +203,36 @@ public class MapRoomCameras
 			{
 				camera.energyMixin.battery.charge = packet.Energy;
 			}
+			else
+			{
+				pendingCameraEnergy[packet.CameraId] = packet.Energy;
+				if (initializingCameraBatteries.Add(packet.CameraId))
+				{
+					UWE.CoroutineHost.StartCoroutine(InitializeCameraBattery(camera, packet.CameraId));
+				}
+			}
 			liveMixinManager.SyncRemoteHealth(camera.liveMixin, packet.Health);
 		}
+	}
+
+	private IEnumerator InitializeCameraBattery(MapRoomCamera camera, NitroxId cameraId)
+	{
+		if ((bool)camera && camera.energyMixin.battery == null)
+		{
+			yield return camera.energyMixin.SpawnDefaultAsync(1f, DiscardTaskResult<bool>.Instance);
+		}
+
+		if ((bool)camera && camera.energyMixin.battery != null && pendingCameraEnergy.TryGetValue(cameraId, out float energy))
+		{
+			camera.energyMixin.battery.charge = energy;
+			Log.Info($"[MapRoomCameras] Initialized restored camera {cameraId} battery with {energy:F2} energy");
+		}
+		else
+		{
+			Log.Warn($"[MapRoomCameras] Could not initialize restored camera {cameraId} battery");
+		}
+		pendingCameraEnergy.Remove(cameraId);
+		initializingCameraBatteries.Remove(cameraId);
 	}
 
 	public void BroadcastDock(MapRoomCameraDocking dockingPoint, MapRoomCamera camera)

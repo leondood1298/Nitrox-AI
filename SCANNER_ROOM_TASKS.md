@@ -52,6 +52,7 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Persist shared lifepod and radio repairs across account joins (#46)
 - [x] Repair Scanner Room UI startup patch and restored camera registration (#47)
 - [x] Bootstrap legacy docked cameras and prefer physical restored instances (#48)
+- [x] Initialize missing legacy camera batteries during restore (#48)
 
 ## Remaining
 
