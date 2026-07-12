@@ -105,7 +105,7 @@ public static class MapRoomScanResults
         }
     }
 
-    private static void RefreshResultConsumers(MapRoomFunctionality mapRoom)
+    internal static void RefreshResultConsumers(MapRoomFunctionality mapRoom)
     {
         RefreshHologramBlips(mapRoom);
 
@@ -117,6 +117,10 @@ public static class MapRoomScanResults
             resourceTracker.gatherNextTick = true;
         }
     }
+
+    internal static bool ShouldRepublishProgress(long previousGeneration, long acceptedGeneration, bool targetAlreadySelected,
+        int localProgress, int acceptedProgress, bool hasOwnership) =>
+        hasOwnership && targetAlreadySelected && acceptedGeneration > previousGeneration && localProgress > acceptedProgress;
 
     private static void RefreshHologramBlips(MapRoomFunctionality mapRoom)
     {

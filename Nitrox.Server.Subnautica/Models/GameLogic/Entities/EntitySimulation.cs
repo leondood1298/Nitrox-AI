@@ -133,7 +133,7 @@ internal sealed class EntitySimulation : ISessionCleaner
     public List<SimulatedEntity> AssignGlobalRootEntitiesAndGetData(Player player)
     {
         List<SimulatedEntity> simulatedEntities = new();
-        foreach (GlobalRootEntity entity in worldEntityManager.GetGlobalRootEntities())
+        foreach (GlobalRootEntity entity in worldEntityManager.GetInitialSyncGlobalRootEntities())
         {
             simulationOwnershipData.TryToAcquire(entity.Id, player, SimulationLockType.TRANSIENT);
             if (!simulationOwnershipData.TryGetLock(entity.Id, out SimulationOwnershipData.PlayerLock playerLock))

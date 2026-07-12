@@ -178,7 +178,7 @@ internal sealed class JoiningManager(
 
         player.Entity = wasBrandNewPlayer ? SetupNewPlayerEntity(player) : RespawnExistingEntity(player);
 
-        List<GlobalRootEntity> globalRootEntities = worldEntityManager.GetGlobalRootEntities(true);
+        List<GlobalRootEntity> globalRootEntities = worldEntityManager.GetInitialSyncGlobalRootEntities(true);
         bool isFirstPlayer = playerManager.GetConnectedPlayers().Count == 1;
 
         InitialPlayerSync initialPlayerSync = new(

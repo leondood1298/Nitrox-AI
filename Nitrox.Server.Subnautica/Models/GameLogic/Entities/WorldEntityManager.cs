@@ -72,6 +72,29 @@ internal sealed class WorldEntityManager
         }
     }
 
+    public List<GlobalRootEntity> GetInitialSyncGlobalRootEntities(bool rootOnly = false)
+    {
+        HashSet<NitroxId> dockedCameraIds = [];
+        foreach (MapRoomEntity mapRoom in entityRegistry.GetEntities<MapRoomEntity>())
+        {
+            lock (mapRoom)
+            {
+                if (mapRoom.LeftDockCameraId != null)
+                {
+                    dockedCameraIds.Add(mapRoom.LeftDockCameraId);
+                }
+                if (mapRoom.RightDockCameraId != null)
+                {
+                    dockedCameraIds.Add(mapRoom.RightDockCameraId);
+                }
+            }
+        }
+        return GetGlobalRootEntities(rootOnly).Where(entity => ShouldIncludeInInitialSync(entity.Id, dockedCameraIds)).ToList();
+    }
+
+    internal static bool ShouldIncludeInInitialSync(NitroxId entityId, ISet<NitroxId> dockedCameraIds) =>
+        !dockedCameraIds.Contains(entityId);
+
     public List<GlobalRootEntity> GetPersistentGlobalRootEntities()
     {
         // TODO: refactor if there are more entities that should not be persisted
