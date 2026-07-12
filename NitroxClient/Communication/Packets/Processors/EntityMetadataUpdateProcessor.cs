@@ -10,7 +10,7 @@ using UnityEngine;
 
 namespace NitroxClient.Communication.Packets.Processors;
 
-internal sealed class EntityMetadataUpdateProcessor(Entities entities, EntityMetadataManager entityMetadataManager) : IClientPacketProcessor<EntityMetadataUpdate>
+internal sealed class EntityMetadataUpdateProcessor(Entities entities, EntityMetadataManager entityMetadataManager, MapRoomScanResultBroadcaster scanResultBroadcaster) : IClientPacketProcessor<EntityMetadataUpdate>
 {
     private readonly Entities entities = entities;
     private readonly EntityMetadataManager entityMetadataManager = entityMetadataManager;
@@ -30,7 +30,12 @@ internal sealed class EntityMetadataUpdateProcessor(Entities entities, EntityMet
         Optional<IEntityMetadataProcessor> metadataProcessor = entityMetadataManager.FromMetaData(update.NewValue);
         Validate.IsTrue(metadataProcessor.HasValue, $"No processor found for EntityMetadata of type {update.NewValue.GetType()}");
 
+        long previousGeneration = gameObject.TryGetComponent(out MapRoomNetworkState previousState) ? previousState.Generation : 0;
         metadataProcessor.Value.ProcessMetadata(gameObject, update.NewValue);
+        if (update.NewValue is Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata.MapRoomMetadata metadata && metadata.Generation > previousGeneration && gameObject.TryGetComponent(out MapRoomFunctionality mapRoom))
+        {
+            scanResultBroadcaster.BroadcastSnapshot(mapRoom);
+        }
         return Task.CompletedTask;
     }
 }
