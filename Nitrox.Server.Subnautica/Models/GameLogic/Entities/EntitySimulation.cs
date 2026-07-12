@@ -189,20 +189,26 @@ internal sealed class EntitySimulation : ISessionCleaner
 
     public async Task OnEventAsync(ISessionCleaner.Args args)
     {
-        List<SimulatedEntity> ownershipChanges = CalculateSimulationChangesFromPlayerDisconnect(args.Session.Id);
+        List<SimulatedEntity> ownershipChanges = CalculateSimulationChangesFromPlayerDisconnect(args.Session.Id, out List<NitroxId> unregisteredRevokedIds);
         if (ownershipChanges.Count > 0)
         {
             SimulationOwnershipChange ownershipChange = new(ownershipChanges);
             await packetSender.SendPacketToAllAsync(ownershipChange);
         }
+        foreach (NitroxId revokedId in unregisteredRevokedIds)
+        {
+            logger.ZLogInformation($"Dropping unregistered simulation lock {revokedId} after session {args.Session.Id} disconnected");
+            await packetSender.SendPacketToAllAsync(new DropSimulationOwnership(revokedId));
+        }
     }
 
-    private List<SimulatedEntity> CalculateSimulationChangesFromPlayerDisconnect(SessionId sessionId)
+    private List<SimulatedEntity> CalculateSimulationChangesFromPlayerDisconnect(SessionId sessionId, out List<NitroxId> unregisteredRevokedIds)
     {
         List<SimulatedEntity> ownershipChanges = new();
 
         List<NitroxId> revokedEntityIds = simulationOwnershipData.RevokeAllForOwner(sessionId);
         List<Entity> revokedEntities = entityRegistry.GetEntities(revokedEntityIds);
+        unregisteredRevokedIds = revokedEntityIds.Except(revokedEntities.Select(entity => entity.Id)).ToList();
 
         AssignEntitiesToOtherPlayers(sessionId, revokedEntities, ownershipChanges);
 

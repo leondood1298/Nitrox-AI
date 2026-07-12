@@ -127,6 +127,7 @@ namespace NitroxClient.GameLogic
         {
             StopSimulatingEntity(entityId);
             EntityPositionBroadcaster.StopWatchingEntity(entityId);
+            MovementBroadcaster.UnregisterWatched(entityId);
             if (!NitroxEntity.TryGetObjectFrom(entityId, out GameObject gameObject))
             {
                 return;
@@ -135,6 +136,10 @@ namespace NitroxClient.GameLogic
             if (gameObject.TryGetComponent(out RemotelyControlled remotelyControlled))
             {
                 Object.Destroy(remotelyControlled);
+            }
+            if (gameObject.TryGetComponent(out MapRoomCameraMovementReplicator cameraReplicator))
+            {
+                Object.Destroy(cameraReplicator);
             }
         }
 
