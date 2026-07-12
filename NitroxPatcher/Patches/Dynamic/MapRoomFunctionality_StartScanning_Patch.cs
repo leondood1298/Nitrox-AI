@@ -19,9 +19,19 @@ public sealed class MapRoomFunctionality_StartScanning_Patch : NitroxPatch, IDyn
 	{
 		if (!PacketSuppressor<EntityMetadataUpdate>.IsSuppressed && __instance.TryGetNitroxId(out NitroxId nitroxId))
 		{
-			NitroxPatch.Resolve<Entities>().EntityMetadataChangedThrottled(__instance, nitroxId);
+			Entities entities = NitroxPatch.Resolve<Entities>();
+			if (ShouldPublishImmediately(__instance.typeToScan))
+			{
+				entities.EntityMetadataChangedImmediately(__instance, nitroxId);
+			}
+			else
+			{
+				entities.EntityMetadataChangedThrottled(__instance, nitroxId);
+			}
 		}
 	}
+
+	internal static bool ShouldPublishImmediately(TechType typeToScan) => typeToScan == TechType.None;
 
 	[GeneratedCode("Nitrox.Analyzers", "1.0.13.0")]
 	public override void Patch(Harmony harmony)

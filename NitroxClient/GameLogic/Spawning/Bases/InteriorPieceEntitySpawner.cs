@@ -192,6 +192,6 @@ public class InteriorPieceEntitySpawner : EntitySpawner<InteriorPieceEntity>
         MapRoomScanResults.ApplySnapshot(mapRoomFunctionality, mapRoomEntity.ScanResultGeneration, mapRoomEntity.ScanResultRevision, mapRoomEntity.ScanResults);
         MapRoomScanTypes.ApplySnapshot(mapRoomFunctionality, mapRoomEntity.AvailableScanTypesRevision, mapRoomEntity.AvailableScanTypes);
         yield return entities.SpawnBatchAsync(mapRoomEntity.ChildEntities.OfType<InventoryItemEntity>().ToList<Entity>(), true);
-        yield return MapRoomCameras.EnsureCameraIdsDeferred(mapRoomFunctionality);
+        yield return MapRoomCameras.EnsureCameraIdsDeferred(mapRoomFunctionality, mapRoomEntity.LeftDockCameraId, mapRoomEntity.RightDockCameraId);
     }
 }

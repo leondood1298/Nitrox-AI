@@ -21,4 +21,11 @@ public sealed class MapRoomCameraMigrationTest
         Assert.AreNotEqual(first, MapRoomCameras.GetDeterministicCameraId(room, rightDock));
         Assert.AreNotEqual(first, MapRoomCameras.GetDeterministicCameraId(new NitroxId(), leftDock));
     }
+
+    [TestMethod]
+    public void RestoredPrefabCameraOnlySurvivesAnAuthoritativelyOccupiedSlot()
+    {
+        Assert.IsFalse(MapRoomCameras.ShouldRestoreDefaultCamera(null));
+        Assert.IsTrue(MapRoomCameras.ShouldRestoreDefaultCamera(new NitroxId()));
+    }
 }

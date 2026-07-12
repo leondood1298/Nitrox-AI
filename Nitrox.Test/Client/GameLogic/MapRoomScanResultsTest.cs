@@ -3,6 +3,7 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.GameLogic.Spawning.Metadata.Processor;
+using NitroxPatcher.Patches.Dynamic;
 
 namespace NitroxClient.GameLogic;
 
@@ -72,6 +73,13 @@ public sealed class MapRoomScanResultsTest
     public void InitialMetadataAppliesStoppedStateEvenWhenTargetAlreadyMatches(bool metadataInitialized, bool targetChanged, bool expected)
     {
         Assert.AreEqual(expected, MapRoomMetadataProcessor.ShouldApplyScanningState(metadataInitialized, targetChanged));
+    }
+
+    [TestMethod]
+    public void ScanCancellationPublishesImmediately()
+    {
+        Assert.IsTrue(MapRoomFunctionality_StartScanning_Patch.ShouldPublishImmediately(TechType.None));
+        Assert.IsFalse(MapRoomFunctionality_StartScanning_Patch.ShouldPublishImmediately(TechType.ShaleChunk));
     }
 
     [DataTestMethod]
