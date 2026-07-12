@@ -16,17 +16,13 @@ public sealed class MapRoomCamera_UpdateEnergyRecharge_Patch : NitroxPatch, IDyn
 
 	public static bool Prefix(MapRoomCamera __instance)
 	{
-		return NitroxPatch.Resolve<MapRoomCameras>().CanSimulateDockedCamera(__instance);
-	}
-
-	public static void Postfix(MapRoomCamera __instance)
-	{
-		NitroxPatch.Resolve<MapRoomCameras>().BroadcastComponentStateIfChanged(__instance);
+		NitroxPatch.Resolve<MapRoomCameras>().UpdateEnergyRecharge(__instance);
+		return false;
 	}
 
 	[GeneratedCode("Nitrox.Analyzers", "1.0.13.0")]
 	public override void Patch(Harmony harmony)
 	{
-		PatchMultiple(harmony, TARGET_METHOD, new Func<MapRoomCamera, bool>(Prefix).Method, new Action<MapRoomCamera>(Postfix).Method);
+		PatchMultiple(harmony, TARGET_METHOD, new Func<MapRoomCamera, bool>(Prefix).Method);
 	}
 }

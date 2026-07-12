@@ -8,6 +8,7 @@ using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication;
 using NitroxClient.Communication.Abstract;
 using NitroxClient.Extensions;
+using NitroxClient.GameLogic.Helper;
 using NitroxClient.MonoBehaviours;
 using UnityEngine;
 
@@ -61,7 +62,6 @@ public class MapRoomCameras
 			bool flag = (bool)camera.lightsParent && camera.lightsParent.activeSelf;
 			lastBroadcastLightState[idOrGenerateNew] = flag;
 			pendingControl.Add(idOrGenerateNew);
-			camera.enabled = false;
 			packetSender.Send(new MapRoomCameraControl(idOrGenerateNew, mapRoomId, cameraIndex, isControlling: true, flag));
 		}
 		else if (camera.TryGetNitroxId(out nitroxId2))
@@ -180,7 +180,7 @@ public class MapRoomCameras
 		if (!camera || !camera.TryGetNitroxId(out NitroxId id) || (!locallyControlled.Contains(id) && !simulationOwnership.HasAnyLockType(id) && !CanSimulateDockedCamera(camera))) return;
 		float energy = camera.energyMixin.charge;
 		float health = camera.liveMixin.health;
-		if (!lastComponents.TryGetValue(id, out var state) || Math.Abs(state.Energy - energy) >= 0.05f || Math.Abs(state.Health - health) >= 0.05f)
+		if (!lastComponents.TryGetValue(id, out var state) || Math.Abs(state.Energy - energy) >= 0.5f || Math.Abs(state.Health - health) >= 0.05f)
 		{
 			lastComponents[id] = (energy, health);
 			packetSender.Send(new MapRoomCameraComponentState(id, energy, health));
@@ -215,11 +215,51 @@ public class MapRoomCameras
 		}
 	}
 
+	public void UpdateEnergyRecharge(MapRoomCamera camera)
+	{
+		bool charging = false;
+		if (CanSimulateDockedCamera(camera) && camera.energyMixin.battery != null)
+		{
+			float current = camera.energyMixin.charge;
+			float amount = CalculateDockCharge(current, camera.energyMixin.capacity, Time.deltaTime);
+			if (amount > 0f)
+			{
+				PowerRelay relay = camera.dockingPoint.GetComponentInParent<PowerRelay>();
+				float consumed = 0f;
+				if (!GameModeUtils.RequiresPower() || ((bool)relay && PowerSystem.ConsumeEnergy(relay, amount, out consumed) && consumed > 0f))
+				{
+					camera.energyMixin.AddEnergy(GameModeUtils.RequiresPower() ? consumed : amount);
+					charging = true;
+				}
+			}
+		}
+		if (charging)
+		{
+			camera.chargingSound.Play();
+		}
+		else
+		{
+			camera.chargingSound.Stop(global::FMOD.Studio.STOP_MODE.IMMEDIATE);
+		}
+		BroadcastComponentStateIfChanged(camera);
+	}
+
+	public static float CalculateDockCharge(float current, float capacity, float deltaTime)
+	{
+		if (capacity <= 0f || deltaTime <= 0f || current >= capacity)
+		{
+			return 0f;
+		}
+		return Math.Min(capacity - Math.Max(0f, current), capacity * 0.01f * deltaTime);
+	}
+
 	private IEnumerator InitializeCameraBattery(MapRoomCamera camera, NitroxId cameraId)
 	{
 		if ((bool)camera && camera.energyMixin.battery == null)
 		{
-			yield return camera.energyMixin.SpawnDefaultAsync(1f, DiscardTaskResult<bool>.Instance);
+			BatteryChildEntityHelper.PopulateInstalledBattery(camera.energyMixin, [], cameraId);
+			float timeoutAt = Time.time + 10f;
+			yield return new WaitUntil(() => !camera || camera.energyMixin.battery != null || Time.time >= timeoutAt);
 		}
 
 		if ((bool)camera && camera.energyMixin.battery != null && pendingCameraEnergy.TryGetValue(cameraId, out float energy))

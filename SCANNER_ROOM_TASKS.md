@@ -53,6 +53,7 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Repair Scanner Room UI startup patch and restored camera registration (#47)
 - [x] Bootstrap legacy docked cameras and prefer physical restored instances (#48)
 - [x] Initialize missing legacy camera batteries during restore (#48)
+- [x] Bound dock charging and preserve pending camera control mode (#48)
 
 ## Remaining
 
