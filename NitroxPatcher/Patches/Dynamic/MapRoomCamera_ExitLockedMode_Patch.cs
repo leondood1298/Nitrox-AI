@@ -4,6 +4,8 @@ using System.Reflection;
 using HarmonyLib;
 using Nitrox.Model.Helper;
 using NitroxClient.GameLogic;
+using Nitrox.Model.Subnautica.Packets;
+using NitroxClient.Communication;
 
 namespace NitroxPatcher.Patches.Dynamic;
 
@@ -13,7 +15,10 @@ public sealed class MapRoomCamera_ExitLockedMode_Patch : NitroxPatch, IDynamicPa
 
 	public static void Postfix(MapRoomCamera __instance)
 	{
-		NitroxPatch.Resolve<MapRoomCameras>().BroadcastControl(__instance, isControlling: false);
+		if (!PacketSuppressor<MapRoomCameraControl>.IsSuppressed)
+		{
+			NitroxPatch.Resolve<MapRoomCameras>().BroadcastControl(__instance, isControlling: false);
+		}
 	}
 
 	[GeneratedCode("Nitrox.Analyzers", "1.0.13.0")]
