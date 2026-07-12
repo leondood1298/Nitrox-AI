@@ -60,6 +60,7 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Preserve two-client camera movement through rapid dock/undock (#49)
 - [x] Validate two-client camera movement after rapid redocking (#49)
 - [x] Republish early scan progress and refresh non-owner hologram blips (#50)
+- [x] Suppress loose-world duplicates for cameras currently recorded as docked (#50)
 
 ## Remaining
 
