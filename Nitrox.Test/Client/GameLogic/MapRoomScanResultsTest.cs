@@ -51,6 +51,18 @@ public sealed class MapRoomScanResultsTest
         Assert.AreEqual("remaining", local[0].uniqueId);
     }
 
+    [TestMethod]
+    public void LocalPickupEvictsMatchingHudCacheNodeOnly()
+    {
+        HashSet<ResourceTrackerDatabase.ResourceInfo> local = [Info("collected", 1f), Info("remaining", 2f)];
+
+        Assert.IsTrue(MapRoomScanResults.RemoveFromSet(local, "collected"));
+        Assert.IsFalse(MapRoomScanResults.RemoveFromSet(local, "missing"));
+
+        Assert.AreEqual(1, local.Count);
+        Assert.AreEqual("remaining", local.Single().uniqueId);
+    }
+
     [DataTestMethod]
     [DataRow(0L, 1L, true, 1, 0, true, true)]
     [DataRow(1L, 1L, true, 1, 0, true, false)]

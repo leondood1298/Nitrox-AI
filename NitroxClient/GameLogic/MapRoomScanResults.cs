@@ -22,6 +22,7 @@ public static class MapRoomScanResults
                 RefreshResultConsumers(mapRoom);
             }
         }
+        RemoveHudNode(id);
     }
 
     public static void Cleanup(MapRoomFunctionality mapRoom)
@@ -129,6 +130,9 @@ public static class MapRoomScanResults
         return true;
     }
 
+    internal static bool RemoveFromSet(HashSet<ResourceTrackerDatabase.ResourceInfo> target, string resourceId) =>
+        target.RemoveWhere(info => info.uniqueId == resourceId) > 0;
+
     internal static void RefreshResultConsumers(MapRoomFunctionality mapRoom)
     {
         RefreshHologramBlips(mapRoom);
@@ -140,6 +144,18 @@ public static class MapRoomScanResults
         {
             resourceTracker.gatherNextTick = true;
         }
+    }
+
+    private static void RemoveHudNode(string resourceId)
+    {
+        uGUI_ResourceTracker resourceTracker = Object.FindObjectOfType<uGUI_ResourceTracker>();
+        if (!resourceTracker)
+        {
+            return;
+        }
+        RemoveFromSet(resourceTracker.nodes, resourceId);
+        resourceTracker.gatherNextTick = true;
+        resourceTracker.UpdateBlips();
     }
 
     internal static bool ShouldRepublishProgress(long previousGeneration, long acceptedGeneration, bool targetAlreadySelected,

@@ -64,7 +64,8 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Validate restored cameras across save reload and two clients (#50)
 - [x] Resynchronize non-owner red blips after scan-target changes (#51)
 - [x] Validate shared Scanner Room results and HUD chips on two clients (#51)
-- [x] Remove a collected resource's HUD marker for the collecting client (#51)
+- [x] Remove collected resources from the collector's local result list (#51)
+- [x] Evict collected resources from the collector's rendered HUD cache after pickup (#51)
 
 ## Remaining
 
