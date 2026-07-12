@@ -24,7 +24,11 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
         EntityMetadata acceptedMetadata = packet.NewValue;
         if (TryProcessMetadata(context.Sender, entity, ref acceptedMetadata))
         {
-            if (acceptedMetadata is not MapRoomMetadata)
+            if (entity is MapRoomEntity mapRoom && acceptedMetadata is CrafterMetadata crafterMetadata)
+            {
+                mapRoom.FabricatorMetadata = crafterMetadata;
+            }
+            else if (acceptedMetadata is not MapRoomMetadata)
             {
                 entity.Metadata = acceptedMetadata;
             }
@@ -74,6 +78,16 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
             }
 
             metadata = acceptedMapRoomMetadata;
+            return true;
+        }
+
+        if (metadata is CrafterMetadata && entity is MapRoomEntity)
+        {
+            if (simulationOwnershipData.GetPlayerForLock(entity.Id) != sendingPlayer)
+            {
+                logger.ZLogWarning($"Player {sendingPlayer.Name} tried updating Scanner Room fabricator {entity.Id} without simulation ownership");
+                return false;
+            }
             return true;
         }
 

@@ -17,7 +17,7 @@ public sealed partial class CrafterLogic_NotifyPickup_Patch : NitroxPatch, IDyna
     public static void Prefix(CrafterLogic __instance)
     {
         // See GhostCrafter_OnCraftingBegin_Patch.Postfix to know why we get NitroxId on CrafterLogic
-        if (__instance.TryGetIdOrWarn(out NitroxId crafterId))
+        if (CrafterIdentity.TryGetId(__instance, out NitroxId crafterId))
         {
             // Below code is adapted from CrafterLogic.TryPickupAsync
 

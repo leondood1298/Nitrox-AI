@@ -42,6 +42,9 @@ public class MapRoomEntity : GlobalRootEntity
     [DataMember(Order = 10)]
     public List<NitroxTechType> AvailableScanTypes { get; set; } = [];
 
+    [DataMember(Order = 11)]
+    public CrafterMetadata? FabricatorMetadata { get; set; }
+
     [IgnoreConstructor]
     protected MapRoomEntity()
     {
@@ -61,7 +64,7 @@ public class MapRoomEntity : GlobalRootEntity
     /// Used for deserialization.
     /// <see cref="WorldEntity.SpawnedByServer"/> is set to true because this entity is meant to receive simulation locks
     /// </remarks>
-    public MapRoomEntity(NitroxInt3 cell, NitroxId? leftDockCameraId, NitroxId? rightDockCameraId, long dockingRevision, List<MapRoomCameraRecord> cameraRegistry, long scanResultGeneration, long scanResultRevision, List<MapRoomScanResultRecord> scanResults, long availableScanTypesRevision, List<NitroxTechType> availableScanTypes, NitroxTransform transform, int level, string classId, bool spawnedByServer, NitroxId id, NitroxTechType techType, EntityMetadata metadata, NitroxId parentId, List<Entity> childEntities) :
+    public MapRoomEntity(NitroxInt3 cell, NitroxId? leftDockCameraId, NitroxId? rightDockCameraId, long dockingRevision, List<MapRoomCameraRecord> cameraRegistry, long scanResultGeneration, long scanResultRevision, List<MapRoomScanResultRecord> scanResults, long availableScanTypesRevision, List<NitroxTechType> availableScanTypes, CrafterMetadata? fabricatorMetadata, NitroxTransform transform, int level, string classId, bool spawnedByServer, NitroxId id, NitroxTechType techType, EntityMetadata metadata, NitroxId parentId, List<Entity> childEntities) :
         base(transform, level, classId, true, id, techType, metadata, parentId, childEntities)
     {
         Cell = cell;
@@ -73,6 +76,7 @@ public class MapRoomEntity : GlobalRootEntity
         ScanResults = scanResults ?? [];
         AvailableScanTypesRevision = availableScanTypesRevision;
         AvailableScanTypes = availableScanTypes ?? [];
+        FabricatorMetadata = fabricatorMetadata;
         ScanResultGeneration = scanResultGeneration == 0 && ScanResults.Count == 0 && metadata is MapRoomMetadata mapRoomMetadata
             ? mapRoomMetadata.Generation
             : scanResultGeneration;
