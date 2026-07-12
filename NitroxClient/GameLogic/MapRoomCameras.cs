@@ -116,6 +116,10 @@ public class MapRoomCameras
 				if (gameObject.TryGetComponent(out MapRoomCamera localCamera))
 				{
 					localCamera.enabled = true;
+					if (uGUI_CameraDrone.main && uGUI_CameraDrone.main.GetCamera() == localCamera)
+					{
+						uGUI_CameraDrone.main.noSignal.SetActive(false);
+					}
 				}
 				MovementBroadcaster.RegisterWatched(gameObject, packet.CameraId);
 				return;
@@ -148,10 +152,11 @@ public class MapRoomCameras
 		{
 			return true;
 		}
-		return CanSelectForControl(pendingControl.Contains(cameraId), locallyControlled.Contains(cameraId), remotelyControlled.Contains(cameraId));
+		return CanSelectForControl(pendingControl.Contains(cameraId), locallyControlled.Contains(cameraId), remotelyControlled.Contains(cameraId), camera.IsControlled());
 	}
 
-	public static bool CanSelectForControl(bool pending, bool locallyControlled, bool remotelyControlled) => locallyControlled || (!pending && !remotelyControlled);
+	public static bool CanSelectForControl(bool pending, bool locallyControlled, bool remotelyControlled, bool activelyControlled) =>
+		locallyControlled || (!remotelyControlled && (!pending || activelyControlled));
 
 	public void BroadcastLightIfChanged(MapRoomCamera camera)
 	{

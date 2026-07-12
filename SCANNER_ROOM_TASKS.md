@@ -54,6 +54,7 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Bootstrap legacy docked cameras and prefer physical restored instances (#48)
 - [x] Initialize missing legacy camera batteries during restore (#48)
 - [x] Bound dock charging and preserve pending camera control mode (#48)
+- [x] Prevent pending camera control from latching the No Signal overlay (#48)
 
 ## Remaining
 
