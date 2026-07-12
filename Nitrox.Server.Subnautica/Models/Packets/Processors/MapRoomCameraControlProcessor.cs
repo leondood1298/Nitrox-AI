@@ -50,8 +50,39 @@ internal sealed class MapRoomCameraControlProcessor(SimulationOwnershipData simu
 		}
 	}
 
-	private bool IsValidAssociation(MapRoomCameraControl packet) => !packet.MapRoomId.HasValue ||
-		(packet.CameraIndex is >= 0 and < 2 && entityRegistry.TryGetEntityById<MapRoomEntity>(packet.MapRoomId.Value, out _));
+	private bool IsValidAssociation(MapRoomCameraControl packet)
+	{
+		if (!packet.IsControlling)
+		{
+			return true;
+		}
+		if (packet.MapRoomId.HasValue)
+		{
+			if (packet.CameraIndex is < 0 or > 1 || !entityRegistry.TryGetEntityById(packet.MapRoomId.Value, out MapRoomEntity mapRoom))
+			{
+				return false;
+			}
+			lock (mapRoom)
+			{
+				return mapRoom.GetCameraRecord(packet.CameraId) != null && mapRoom.GetDockedCamera(packet.CameraIndex) == packet.CameraId;
+			}
+		}
+
+		int registrations = 0;
+		bool isDocked = false;
+		foreach (MapRoomEntity room in entityRegistry.GetEntities<MapRoomEntity>())
+		{
+			lock (room)
+			{
+				if (room.GetCameraRecord(packet.CameraId) != null)
+				{
+					registrations++;
+					isDocked |= room.IsCameraDocked(packet.CameraId);
+				}
+			}
+		}
+		return registrations == 0 || (registrations == 1 && !isDocked);
+	}
 
 	private static MapRoomCameraControl CreateResponse(MapRoomCameraControl packet, bool granted, SessionId controller) =>
 		new(packet.CameraId, packet.MapRoomId, packet.CameraIndex, packet.IsControlling, packet.LightOn, true, granted, controller);
