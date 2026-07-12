@@ -15,14 +15,17 @@ namespace NitroxClient.GameLogic;
 public class MapRoomCameras
 {
 	private readonly IPacketSender packetSender;
+	private readonly IMultiplayerSession multiplayerSession;
 
 	private readonly Dictionary<NitroxId, bool> lastBroadcastLightState = new Dictionary<NitroxId, bool>();
 
 	private readonly HashSet<NitroxId> locallyControlled = new HashSet<NitroxId>();
+	private readonly HashSet<NitroxId> pendingControl = new HashSet<NitroxId>();
 
-	public MapRoomCameras(IPacketSender packetSender)
+	public MapRoomCameras(IPacketSender packetSender, IMultiplayerSession multiplayerSession)
 	{
 		this.packetSender = packetSender;
+		this.multiplayerSession = multiplayerSession;
 	}
 
 	public void BroadcastControl(MapRoomCamera camera, bool isControlling)
@@ -45,12 +48,14 @@ public class MapRoomCameras
 			NitroxId idOrGenerateNew = NitroxEntity.GetIdOrGenerateNew(camera.gameObject);
 			bool flag = (bool)camera.lightsParent && camera.lightsParent.activeSelf;
 			lastBroadcastLightState[idOrGenerateNew] = flag;
-			locallyControlled.Add(idOrGenerateNew);
-			MovementBroadcaster.RegisterWatched(camera.gameObject, idOrGenerateNew);
+			pendingControl.Add(idOrGenerateNew);
+			camera.enabled = false;
 			packetSender.Send(new MapRoomCameraControl(idOrGenerateNew, mapRoomId, cameraIndex, isControlling: true, flag));
 		}
 		else if (camera.TryGetNitroxId(out nitroxId2))
 		{
+			pendingControl.Remove(nitroxId2);
+			locallyControlled.Remove(nitroxId2);
 			MovementBroadcaster.UnregisterWatched(nitroxId2);
 			lastBroadcastLightState.Remove(nitroxId2);
 			packetSender.Send(new MapRoomCameraControl(nitroxId2, Optional.Empty, -1, isControlling: false, lightOn: false));
@@ -59,6 +64,23 @@ public class MapRoomCameras
 
 	public void ProcessControl(MapRoomCameraControl packet)
 	{
+		if (!packet.IsServerResponse)
+		{
+			return;
+		}
+		bool isLocalController = packet.ControllerSessionId == multiplayerSession.Reservation.SessionId;
+		if (!packet.Granted)
+		{
+			if (pendingControl.Remove(packet.CameraId) && NitroxEntity.TryGetObjectFrom(packet.CameraId, out GameObject deniedObject) && deniedObject.TryGetComponent(out MapRoomCamera deniedCamera))
+			{
+				deniedCamera.enabled = true;
+				using (PacketSuppressor<MapRoomCameraControl>.Suppress())
+				{
+					deniedCamera.ExitLockedMode(resetPlayerPosition: false);
+				}
+			}
+			return;
+		}
 		GameObject gameObject2;
 		MapRoomCameraMovementReplicator component;
 		if (packet.IsControlling)
@@ -70,6 +92,17 @@ public class MapRoomCameras
 				return;
 			}
 			SetLight(gameObject, packet.LightOn);
+			if (isLocalController)
+			{
+				pendingControl.Remove(packet.CameraId);
+				locallyControlled.Add(packet.CameraId);
+				if (gameObject.TryGetComponent(out MapRoomCamera localCamera))
+				{
+					localCamera.enabled = true;
+				}
+				MovementBroadcaster.RegisterWatched(gameObject, packet.CameraId);
+				return;
+			}
 			if (!gameObject.GetComponent<MapRoomCameraMovementReplicator>())
 			{
 				gameObject.AddComponent<MapRoomCameraMovementReplicator>();
@@ -78,6 +111,12 @@ public class MapRoomCameras
 		else if (NitroxEntity.TryGetObjectFrom(packet.CameraId, out gameObject2) && gameObject2.TryGetComponent<MapRoomCameraMovementReplicator>(out component))
 		{
 			UnityEngine.Object.Destroy(component);
+		}
+		if (!packet.IsControlling && isLocalController)
+		{
+			pendingControl.Remove(packet.CameraId);
+			locallyControlled.Remove(packet.CameraId);
+			MovementBroadcaster.UnregisterWatched(packet.CameraId);
 		}
 	}
 
