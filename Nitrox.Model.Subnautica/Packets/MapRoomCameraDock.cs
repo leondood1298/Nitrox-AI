@@ -15,8 +15,9 @@ public class MapRoomCameraDock : Packet
 	public long Revision { get; }
 	public bool IsServerResponse { get; }
 	public bool Granted { get; }
+	public bool IsDocked { get; }
 
-	public MapRoomCameraDock(NitroxId cameraId, NitroxId mapRoomId, int dockingIndex, long revision = 0, bool isServerResponse = false, bool granted = false)
+	public MapRoomCameraDock(NitroxId cameraId, NitroxId mapRoomId, int dockingIndex, long revision = 0, bool isServerResponse = false, bool granted = false, bool isDocked = true)
 	{
 		CameraId = cameraId;
 		MapRoomId = mapRoomId;
@@ -24,11 +25,12 @@ public class MapRoomCameraDock : Packet
 		Revision = revision;
 		IsServerResponse = isServerResponse;
 		Granted = granted;
+		IsDocked = isDocked;
 	}
 
 	public override string ToString()
 	{
-		return $"[MapRoomCameraDock - CameraId: {CameraId}, MapRoomId: {MapRoomId}, DockingIndex: {DockingIndex}, Revision: {Revision}, IsServerResponse: {IsServerResponse}, Granted: {Granted}]";
+		return $"[MapRoomCameraDock - CameraId: {CameraId}, MapRoomId: {MapRoomId}, DockingIndex: {DockingIndex}, Revision: {Revision}, IsServerResponse: {IsServerResponse}, Granted: {Granted}, IsDocked: {IsDocked}]";
 	}
 }
 

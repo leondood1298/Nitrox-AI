@@ -19,30 +19,41 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
 		if (packet.IsServerResponse || packet.DockingIndex is < 0 or > 1 || !entityRegistry.TryGetEntityById(packet.MapRoomId, out MapRoomEntity mapRoom))
 		{
 			logger.ZLogWarning($"Rejected camera dock from session {context.Sender.SessionId}: room {packet.MapRoomId}, camera {packet.CameraId}, slot {packet.DockingIndex}");
-			await context.ReplyAsync(new MapRoomCameraDock(packet.CameraId, packet.MapRoomId, packet.DockingIndex, 0, true, false));
+			await context.ReplyAsync(new MapRoomCameraDock(packet.CameraId, packet.MapRoomId, packet.DockingIndex, 0, true, false, packet.IsDocked));
 			return;
 		}
 
 		MapRoomCameraDock response;
 		lock (mapRoom)
 		{
-			Nitrox.Model.DataStructures.NitroxId? occupyingCamera = mapRoom.GetDockedCamera(packet.DockingIndex);
-			bool granted = (occupyingCamera == null || occupyingCamera == packet.CameraId) && !mapRoom.IsCameraDocked(packet.CameraId);
-			if (occupyingCamera == packet.CameraId)
+			bool granted;
+			if (!packet.IsDocked)
 			{
-				granted = true;
+				granted = mapRoom.TryClearDockedCamera(packet.DockingIndex, packet.CameraId);
 			}
-			if (granted && occupyingCamera == null)
+			else
 			{
-				mapRoom.SetDockedCamera(packet.DockingIndex, packet.CameraId);
+				Nitrox.Model.DataStructures.NitroxId? occupyingCamera = mapRoom.GetDockedCamera(packet.DockingIndex);
+				granted = (occupyingCamera == null || occupyingCamera == packet.CameraId) && !mapRoom.IsCameraDocked(packet.CameraId);
+				if (occupyingCamera == packet.CameraId)
+				{
+					granted = true;
+				}
+				if (granted && occupyingCamera == null)
+				{
+					mapRoom.SetDockedCamera(packet.DockingIndex, packet.CameraId);
+				}
 			}
-			response = new MapRoomCameraDock(packet.CameraId, packet.MapRoomId, packet.DockingIndex, mapRoom.DockingRevision, true, granted);
+			response = new MapRoomCameraDock(packet.CameraId, packet.MapRoomId, packet.DockingIndex, mapRoom.DockingRevision, true, granted, packet.IsDocked);
 		}
 
 		if (response.Granted)
 		{
-			simulationOwnershipData.RevokeOwnerOfId(packet.CameraId);
-			logger.ZLogInformation($"Accepted camera dock: room {packet.MapRoomId}, camera {packet.CameraId}, slot {packet.DockingIndex}, revision {response.Revision}, session {context.Sender.SessionId}");
+			if (packet.IsDocked)
+			{
+				simulationOwnershipData.RevokeOwnerOfId(packet.CameraId);
+			}
+			logger.ZLogInformation($"Accepted camera {(packet.IsDocked ? "dock" : "undock")}: room {packet.MapRoomId}, camera {packet.CameraId}, slot {packet.DockingIndex}, revision {response.Revision}, session {context.Sender.SessionId}");
 			await context.SendToAllAsync(response);
 		}
 		else
