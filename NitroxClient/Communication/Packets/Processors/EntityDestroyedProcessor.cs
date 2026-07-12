@@ -7,15 +7,17 @@ using UnityEngine;
 
 namespace NitroxClient.Communication.Packets.Processors;
 
-public sealed class EntityDestroyedProcessor(Entities entities) : IClientPacketProcessor<EntityDestroyed>
+public sealed class EntityDestroyedProcessor(Entities entities, SimulationOwnership simulationOwnership) : IClientPacketProcessor<EntityDestroyed>
 {
     public const DamageType DAMAGE_TYPE_RUN_ORIGINAL = (DamageType)100;
 
     private readonly Entities entities = entities;
+    private readonly SimulationOwnership simulationOwnership = simulationOwnership;
 
     public Task Process(ClientProcessorContext context, EntityDestroyed packet)
     {
         entities.RemoveEntity(packet.Id);
+        simulationOwnership.DropSimulationFrom(packet.Id);
 
         if (entities.SpawningEntities)
         {

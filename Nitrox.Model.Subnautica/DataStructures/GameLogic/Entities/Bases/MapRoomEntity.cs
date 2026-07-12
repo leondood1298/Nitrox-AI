@@ -139,6 +139,13 @@ public class MapRoomEntity : GlobalRootEntity
 
     public MapRoomCameraRecord? GetCameraRecord(NitroxId cameraId) => CameraRegistry.Find(record => record.CameraId == cameraId);
 
+    public bool RemoveCamera(NitroxId cameraId, out int dockingIndex)
+    {
+        bool clearedDock = TryClearDockedCamera(cameraId, out dockingIndex);
+        bool removedRecord = CameraRegistry.RemoveAll(record => record.CameraId == cameraId) > 0;
+        return clearedDock || removedRecord;
+    }
+
     public bool TryApplyScanResult(long generation, MapRoomScanResultRecord result)
     {
         if (generation != ScanResultGeneration || string.IsNullOrEmpty(result.ResourceId))

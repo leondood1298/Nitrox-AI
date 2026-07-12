@@ -77,5 +77,20 @@ public sealed class MapRoomEntityDockingTest
         Assert.AreEqual(2, room.CameraRegistry.Count);
     }
 
+    [TestMethod]
+    public void RemovingDeadCameraClearsDockAndRegistry()
+    {
+        MapRoomEntity room = CreateRoom();
+        NitroxId cameraId = new();
+        room.SetDockedCamera(0, cameraId);
+        room.GetOrAssignCameraNumber(cameraId, 1);
+
+        Assert.IsTrue(room.RemoveCamera(cameraId, out int dockingIndex));
+        Assert.AreEqual(0, dockingIndex);
+        Assert.IsNull(room.LeftDockCameraId);
+        Assert.IsNull(room.GetCameraRecord(cameraId));
+        Assert.AreEqual(2, room.DockingRevision);
+    }
+
     private static MapRoomEntity CreateRoom() => new(new NitroxId(), new NitroxId(), new NitroxInt3());
 }

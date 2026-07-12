@@ -34,6 +34,12 @@ public sealed partial class LiveMixin_TakeDamage_Patch : NitroxPatch, IDynamicPa
             return;
         }
 
+        if (__state != __instance.health && __instance.TryGetComponent(out MapRoomCamera camera))
+        {
+            Resolve<MapRoomCameras>().BroadcastComponentStateIfChanged(camera);
+            return;
+        }
+
         // IsRemoteHealthChanging means we're replicating an action from the server and BaseCell is managed by BaseLeakManager
         if (Resolve<LiveMixinManager>().IsRemoteHealthChanging || __instance.GetComponent<BaseCell>())
         {

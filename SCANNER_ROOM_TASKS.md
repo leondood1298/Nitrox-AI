@@ -39,10 +39,10 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Cover 0-4 mixed upgrade modules and deterministic derived effects (#33)
 - [x] Clear dock state on camera pickup and reject inventory-camera dock races (#34)
 - [x] Hand camera simulation ownership to Stalkers during grab/chew/drop (#35)
+- [x] Synchronize camera repair/damage and clean death state/locks (#36)
 
 ## Remaining
 
-- [ ] Camera repair/death cleanup and lock release
 - [ ] Camera viewer vs controller behavior and screen selection audit
 - [ ] Default/crafted camera migration and duplicate-save recovery tests
 - [ ] Base split/merge, partial construction, rebuild, and room identity audit
@@ -55,7 +55,7 @@ Update this file after each completed work slice. Keep entries short; link the P
 
 ## Next
 
-- [ ] Camera repair/death cleanup and lock release
+- [ ] Camera viewer vs controller behavior and screen selection audit
 
 ## Rules
 

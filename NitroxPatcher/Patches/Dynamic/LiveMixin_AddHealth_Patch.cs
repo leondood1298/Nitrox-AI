@@ -39,6 +39,12 @@ public sealed partial class LiveMixin_AddHealth_Patch : NitroxPatch, IDynamicPat
             return;
         }
 
+        if (__instance.TryGetComponent(out MapRoomCamera camera))
+        {
+            Resolve<MapRoomCameras>().BroadcastComponentStateIfChanged(camera);
+            return;
+        }
+
         // This foreach will detect the presence of some components which need to be handled specifically
         foreach (MonoBehaviour monoBehaviour in __instance.GetComponents<MonoBehaviour>())
         {
