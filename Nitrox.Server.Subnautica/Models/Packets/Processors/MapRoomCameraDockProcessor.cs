@@ -1,5 +1,6 @@
 using System.Threading.Tasks;
 using System.Linq;
+using Nitrox.Model.DataStructures;
 using Nitrox.Model.Packets.Core;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
@@ -77,7 +78,12 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
 
 		if (response.Granted)
 		{
-			if (packet.IsDocked)
+			bool preserveControlLock = false;
+			if (packet.IsDocked && simulationOwnershipData.TryGetLock(packet.CameraId, out SimulationOwnershipData.PlayerLock playerLock))
+			{
+				preserveControlLock = ShouldPreserveControlLock(playerLock.Player == context.Sender, playerLock.LockType);
+			}
+			if (packet.IsDocked && !preserveControlLock)
 			{
 				simulationOwnershipData.RevokeOwnerOfId(packet.CameraId);
 			}
@@ -94,6 +100,8 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
 	internal static bool IsKnownCamera(bool validWorldCamera, bool registeredCamera) => validWorldCamera || registeredCamera;
 	internal static bool CanBootstrapRestoredCamera(bool isDocked, bool senderOwnsRoom, bool slotAvailable, int registeredCameraCount) =>
 		isDocked && senderOwnsRoom && slotAvailable && registeredCameraCount is >= 0 and < 2;
+	internal static bool ShouldPreserveControlLock(bool senderOwnsLock, SimulationLockType lockType) =>
+		senderOwnsLock && lockType == SimulationLockType.EXCLUSIVE;
 
 	private bool TryTransferRegistration(MapRoomEntity targetRoom, Nitrox.Model.DataStructures.NitroxId cameraId)
 	{
