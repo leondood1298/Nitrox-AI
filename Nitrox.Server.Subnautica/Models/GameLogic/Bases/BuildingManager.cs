@@ -187,6 +187,14 @@ internal sealed class BuildingManager
             return false;
         }
 
+        if (!MapRoomTopologyAuthority.Validate(entityRegistry, updateBase))
+        {
+            logger.ZLogWarning($"Rejected invalid Scanner Room topology update for base {updateBase.BaseId} from [{player.Name}]");
+            NotifyPlayerDesync(player);
+            operationId = -1;
+            return false;
+        }
+
         worldEntityManager.RemoveGlobalRootEntity(updateBase.FormerGhostId);
         buildEntity.BaseData = updateBase.BaseData;
 
