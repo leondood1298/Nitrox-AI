@@ -66,6 +66,7 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Validate shared Scanner Room results and HUD chips on two clients (#51)
 - [x] Remove collected resources from the collector's local result list (#51)
 - [x] Evict collected resources from the collector's rendered HUD cache after pickup (#51)
+- [x] Apply an authoritative stopped scan state and refresh UI on client join (#51)
 
 ## Remaining
 
@@ -74,6 +75,7 @@ Update this file after each completed work slice. Keep entries short; link the P
 
 ## Next
 
+- [ ] Verify client 2 joins a Scanner Room that client 1 stopped before join (#51)
 - [ ] Verify collected-resource HUD markers disappear for collector and observer (#51)
 - [ ] Execute in-game acceptance matrix (`SCANNER_ROOM_ACCEPTANCE.md`; requires 2–3 game clients)
 

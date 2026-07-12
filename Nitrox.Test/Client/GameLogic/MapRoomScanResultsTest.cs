@@ -2,6 +2,7 @@ using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.Packets;
+using NitroxClient.GameLogic.Spawning.Metadata.Processor;
 
 namespace NitroxClient.GameLogic;
 
@@ -61,6 +62,16 @@ public sealed class MapRoomScanResultsTest
 
         Assert.AreEqual(1, local.Count);
         Assert.AreEqual("remaining", local.Single().uniqueId);
+    }
+
+    [DataTestMethod]
+    [DataRow(false, false, true)]
+    [DataRow(false, true, true)]
+    [DataRow(true, true, true)]
+    [DataRow(true, false, false)]
+    public void InitialMetadataAppliesStoppedStateEvenWhenTargetAlreadyMatches(bool metadataInitialized, bool targetChanged, bool expected)
+    {
+        Assert.AreEqual(expected, MapRoomMetadataProcessor.ShouldApplyScanningState(metadataInitialized, targetChanged));
     }
 
     [DataTestMethod]

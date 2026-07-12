@@ -26,18 +26,20 @@ public class MapRoomMetadataProcessor : EntityMetadataProcessor<MapRoomMetadata>
 			Log.Warn($"Ignoring stale Map Room metadata for {gameObject.name}: incoming generation/revision {metadata.Generation}/{metadata.Revision}, current {state.Generation}/{state.Revision}");
 			return;
 		}
+		bool applyScanningState = ShouldApplyScanningState(state.MetadataInitialized, flag);
 		using (PacketSuppressor<EntityMetadataUpdate>.Suppress())
 		{
-			if (flag)
+			if (applyScanningState)
 			{
 				component.StartScanning(techType);
 			}
 			component.numNodesScanned = metadata.NumNodesScanned;
 		}
+		state.MetadataInitialized = true;
 		state.Generation = metadata.Generation;
 		state.Revision = metadata.Revision;
 		MapRoomScanResults.RefreshResultConsumers(component);
-		if (flag)
+		if (applyScanningState)
 		{
 			uGUI_MapRoomScanner componentInChildren = component.GetComponentInChildren<uGUI_MapRoomScanner>(includeInactive: true);
 			if ((bool)componentInChildren)
@@ -46,6 +48,9 @@ public class MapRoomMetadataProcessor : EntityMetadataProcessor<MapRoomMetadata>
 			}
 		}
 	}
+
+	internal static bool ShouldApplyScanningState(bool metadataInitialized, bool targetChanged) =>
+		!metadataInitialized || targetChanged;
 }
 
 
