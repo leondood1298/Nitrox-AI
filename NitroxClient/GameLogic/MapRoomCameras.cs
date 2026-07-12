@@ -16,6 +16,7 @@ public class MapRoomCameras
 {
 	private readonly IPacketSender packetSender;
 	private readonly IMultiplayerSession multiplayerSession;
+	private readonly LiveMixinManager liveMixinManager;
 
 	private readonly Dictionary<NitroxId, bool> lastBroadcastLightState = new Dictionary<NitroxId, bool>();
 
@@ -23,11 +24,14 @@ public class MapRoomCameras
 	private readonly HashSet<NitroxId> pendingControl = new HashSet<NitroxId>();
 	private readonly Dictionary<NitroxId, long> dockingRevisions = new Dictionary<NitroxId, long>();
 	private readonly Dictionary<NitroxId, long> lightRevisions = new Dictionary<NitroxId, long>();
+	private readonly Dictionary<NitroxId, (float Energy, float Health)> lastComponents = new();
+	private readonly Dictionary<NitroxId, long> componentRevisions = new();
 
-	public MapRoomCameras(IPacketSender packetSender, IMultiplayerSession multiplayerSession)
+	public MapRoomCameras(IPacketSender packetSender, IMultiplayerSession multiplayerSession, LiveMixinManager liveMixinManager)
 	{
 		this.packetSender = packetSender;
 		this.multiplayerSession = multiplayerSession;
+		this.liveMixinManager = liveMixinManager;
 	}
 
 	public void BroadcastControl(MapRoomCamera camera, bool isControlling)
@@ -144,6 +148,32 @@ public class MapRoomCameras
 		}
 	}
 
+	public void BroadcastComponentStateIfChanged(MapRoomCamera camera)
+	{
+		if (!camera || !camera.TryGetNitroxId(out NitroxId id) || !locallyControlled.Contains(id)) return;
+		float energy = camera.energyMixin.charge;
+		float health = camera.liveMixin.health;
+		if (!lastComponents.TryGetValue(id, out var state) || Math.Abs(state.Energy - energy) >= 0.05f || Math.Abs(state.Health - health) >= 0.05f)
+		{
+			lastComponents[id] = (energy, health);
+			packetSender.Send(new MapRoomCameraComponentState(id, energy, health));
+		}
+	}
+
+	public void ProcessComponentState(MapRoomCameraComponentState packet)
+	{
+		if (!packet.IsServerResponse || !packet.Granted || componentRevisions.TryGetValue(packet.CameraId, out long revision) && packet.Revision < revision) return;
+		componentRevisions[packet.CameraId] = packet.Revision;
+		if (NitroxEntity.TryGetObjectFrom(packet.CameraId, out GameObject gameObject) && gameObject.TryGetComponent(out MapRoomCamera camera))
+		{
+			if (camera.energyMixin.battery != null)
+			{
+				camera.energyMixin.battery.charge = packet.Energy;
+			}
+			liveMixinManager.SyncRemoteHealth(camera.liveMixin, packet.Health);
+		}
+	}
+
 	public void BroadcastDock(MapRoomCameraDocking dockingPoint, MapRoomCamera camera)
 	{
 		if (!PacketSuppressor<MapRoomCameraDock>.IsSuppressed && (bool)dockingPoint && (bool)camera && camera.TryGetNitroxId(out NitroxId nitroxId))
@@ -185,6 +215,7 @@ public class MapRoomCameras
 		{
 			SetLight(lightObject, packet.LightOn);
 		}
+		ProcessComponentState(new MapRoomCameraComponentState(packet.CameraId, packet.Energy, packet.Health, packet.ComponentRevision, true, true));
 		if (packet.IsDocked)
 		{
 			pendingControl.Remove(packet.CameraId);

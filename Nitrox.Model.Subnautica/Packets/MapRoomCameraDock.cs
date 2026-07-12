@@ -19,8 +19,11 @@ public class MapRoomCameraDock : Packet
 	public int CameraNumber { get; }
 	public bool LightOn { get; }
 	public long LightRevision { get; }
+	public float Energy { get; }
+	public float Health { get; }
+	public long ComponentRevision { get; }
 
-	public MapRoomCameraDock(NitroxId cameraId, NitroxId mapRoomId, int dockingIndex, long revision = 0, bool isServerResponse = false, bool granted = false, bool isDocked = true, int cameraNumber = 0, bool lightOn = false, long lightRevision = 0)
+	public MapRoomCameraDock(NitroxId cameraId, NitroxId mapRoomId, int dockingIndex, long revision = 0, bool isServerResponse = false, bool granted = false, bool isDocked = true, int cameraNumber = 0, bool lightOn = false, long lightRevision = 0, float energy = 100f, float health = 100f, long componentRevision = 0)
 	{
 		CameraId = cameraId;
 		MapRoomId = mapRoomId;
@@ -32,6 +35,9 @@ public class MapRoomCameraDock : Packet
 		CameraNumber = cameraNumber;
 		LightOn = lightOn;
 		LightRevision = lightRevision;
+		Energy = energy;
+		Health = health;
+		ComponentRevision = componentRevision;
 	}
 
 	public override string ToString()

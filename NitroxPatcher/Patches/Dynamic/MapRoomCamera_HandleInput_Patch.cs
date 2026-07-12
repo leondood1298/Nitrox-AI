@@ -13,7 +13,9 @@ public sealed class MapRoomCamera_HandleInput_Patch : NitroxPatch, IDynamicPatch
 
 	public static void Postfix(MapRoomCamera __instance)
 	{
-		NitroxPatch.Resolve<MapRoomCameras>().BroadcastLightIfChanged(__instance);
+		MapRoomCameras cameras = NitroxPatch.Resolve<MapRoomCameras>();
+		cameras.BroadcastLightIfChanged(__instance);
+		cameras.BroadcastComponentStateIfChanged(__instance);
 	}
 
 	[GeneratedCode("Nitrox.Analyzers", "1.0.13.0")]
