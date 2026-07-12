@@ -51,18 +51,28 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Final automated build/test and protocol/save/limitations report (#45)
 - [x] Persist shared lifepod and radio repairs across account joins (#46)
 - [x] Repair Scanner Room UI startup patch and restored camera registration (#47)
+- [x] Bootstrap legacy docked cameras and prefer physical restored instances (#48)
+- [x] Initialize missing legacy camera batteries during restore (#48)
+- [x] Bound dock charging and preserve pending camera control mode (#48)
+- [x] Prevent pending camera control from latching the No Signal overlay (#48)
+- [x] Validate restored camera control, loose control, drain, and dock recharge (#48)
+- [x] Confirm vanilla weak-signal and screenshot-preview behavior (#48)
 
 ## Remaining
 
+- [ ] Distinguish stale preview image from an actual camera label/selection mismatch
 - [ ] Execute in-game acceptance matrix (`SCANNER_ROOM_ACCEPTANCE.md`; requires 2–3 game clients)
 
 ## Next
 
+- [ ] Distinguish stale preview image from an actual camera label/selection mismatch
 - [ ] Execute in-game acceptance matrix (`SCANNER_ROOM_ACCEPTANCE.md`; requires 2–3 game clients)
 
 ## Rules
 
 - Push only to `leondood1298/Nitrox-AI`; upstream push stays disabled.
 - One focused draft PR at a time; merge before starting the next branch.
+- Compile local test builds to Desktop folders using `1.16.1`, `1.16.2`, etc.; do not update GitHub Releases.
+- Keep updating the current Scanner Room repair PR until the user merges it.
 - Preserve unrelated custom fixes.
 - Build and run the full test suite before every PR.

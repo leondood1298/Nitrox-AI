@@ -28,11 +28,17 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
 
 		bool validWorldCamera = entityRegistry.TryGetEntityById(packet.CameraId, out WorldEntity camera) && camera.TechType.Equals(new Nitrox.Model.Subnautica.DataStructures.GameLogic.NitroxTechType("MapRoomCamera"));
 		bool registeredCamera;
+		bool canBootstrapRestoredCamera;
+		bool senderOwnsRoom = simulationOwnershipData.GetPlayerForLock(mapRoom.Id) == context.Sender;
 		lock (mapRoom)
 		{
 			registeredCamera = mapRoom.GetCameraRecord(packet.CameraId) != null;
+			canBootstrapRestoredCamera = CanBootstrapRestoredCamera(packet.IsDocked,
+				senderOwnsRoom,
+				mapRoom.GetDockedCamera(packet.DockingIndex) == null,
+				mapRoom.CameraRegistry.Count);
 		}
-		if (!IsKnownCamera(validWorldCamera, registeredCamera))
+		if (!IsKnownCamera(validWorldCamera, registeredCamera) && !canBootstrapRestoredCamera)
 		{
 			logger.ZLogWarning($"Rejected unknown camera dock from session {context.Sender.SessionId}: room {packet.MapRoomId}, camera {packet.CameraId}, slot {packet.DockingIndex}");
 			await context.ReplyAsync(new MapRoomCameraDock(packet.CameraId, packet.MapRoomId, packet.DockingIndex, 0, true, false, packet.IsDocked));
@@ -86,6 +92,8 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
 	}
 
 	internal static bool IsKnownCamera(bool validWorldCamera, bool registeredCamera) => validWorldCamera || registeredCamera;
+	internal static bool CanBootstrapRestoredCamera(bool isDocked, bool senderOwnsRoom, bool slotAvailable, int registeredCameraCount) =>
+		isDocked && senderOwnsRoom && slotAvailable && registeredCameraCount is >= 0 and < 2;
 
 	private bool TryTransferRegistration(MapRoomEntity targetRoom, Nitrox.Model.DataStructures.NitroxId cameraId)
 	{
