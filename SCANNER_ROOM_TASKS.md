@@ -48,15 +48,15 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Clean Scanner Room results, markers, subscriptions, and locks on deconstruction (#42)
 - [x] Cover handheld scanner popups and fabricator power deduplication (#43)
 - [x] Add executable 2–3 client acceptance matrix (#44)
+- [x] Final automated build/test and protocol/save/limitations report (#45)
 
 ## Remaining
 
 - [ ] Execute in-game acceptance matrix (`SCANNER_ROOM_ACCEPTANCE.md`; requires 2–3 game clients)
-- [ ] Final full build/test, protocol/save report, limitations, and cleanup
 
 ## Next
 
-- [ ] Final full build/test, protocol/save report, limitations, and cleanup
+- [ ] Execute in-game acceptance matrix (`SCANNER_ROOM_ACCEPTANCE.md`; requires 2–3 game clients)
 
 ## Rules
 
