@@ -21,6 +21,7 @@ public class MapRoomCameras
 
 	private readonly HashSet<NitroxId> locallyControlled = new HashSet<NitroxId>();
 	private readonly HashSet<NitroxId> pendingControl = new HashSet<NitroxId>();
+	private readonly Dictionary<NitroxId, long> dockingRevisions = new Dictionary<NitroxId, long>();
 
 	public MapRoomCameras(IPacketSender packetSender, IMultiplayerSession multiplayerSession)
 	{
@@ -143,7 +144,7 @@ public class MapRoomCameras
 
 	public void BroadcastDock(MapRoomCameraDocking dockingPoint, MapRoomCamera camera)
 	{
-		if (!PacketSuppressor<MapRoomCameraDock>.IsSuppressed && (bool)dockingPoint && (bool)camera && camera.TryGetNitroxId(out NitroxId nitroxId) && locallyControlled.Remove(nitroxId))
+		if (!PacketSuppressor<MapRoomCameraDock>.IsSuppressed && (bool)dockingPoint && (bool)camera && camera.TryGetNitroxId(out NitroxId nitroxId))
 		{
 			MapRoomFunctionality mapRoomForDock = GetMapRoomForDock(dockingPoint);
 			if ((bool)mapRoomForDock && mapRoomForDock.TryGetNitroxId(out NitroxId nitroxId2))
@@ -155,6 +156,14 @@ public class MapRoomCameras
 
 	public void ProcessDock(MapRoomCameraDock packet)
 	{
+		if (!packet.IsServerResponse || !packet.Granted || (dockingRevisions.TryGetValue(packet.MapRoomId, out long revision) && packet.Revision < revision))
+		{
+			return;
+		}
+		dockingRevisions[packet.MapRoomId] = packet.Revision;
+		pendingControl.Remove(packet.CameraId);
+		locallyControlled.Remove(packet.CameraId);
+		MovementBroadcaster.UnregisterWatched(packet.CameraId);
 		if (!NitroxEntity.TryGetObjectFrom(packet.CameraId, out GameObject gameObject) || !gameObject || !gameObject.TryGetComponent<MapRoomCamera>(out var component) || !NitroxEntity.TryGetObjectFrom(packet.MapRoomId, out GameObject gameObject2) || !gameObject2 || !gameObject2.TryGetComponent<MapRoomFunctionality>(out var component2))
 		{
 			return;
