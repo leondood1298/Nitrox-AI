@@ -291,6 +291,7 @@ public class MapRoomCameras
 			}
 		}
 		Log.Info(string.Format("[{0}] EnsureCameraIds map room {1}: found {2} dock(s), assigned {3} camera id(s)", "MapRoomCameras", nitroxId, dockingPoints.Count, num));
+		NormalizeCameraList();
 	}
 
 	public static IEnumerator EnsureCameraIdsDeferred(MapRoomFunctionality mapRoom)
@@ -312,6 +313,35 @@ public class MapRoomCameras
 				NitroxEntity.SetNewId(camera.gameObject, deterministicCameraId);
 				Log.Info(string.Format("[{0}] assigned camera id {1} (map room {2}, localPos {3:F2},{4:F2},{5:F2})", "MapRoomCameras", deterministicCameraId, nitroxId2, localDockPosition.x, localDockPosition.y, localDockPosition.z));
 			}
+		}
+		NormalizeCameraList();
+	}
+
+	public static void NormalizeCameraList()
+	{
+		HashSet<MapRoomCamera> seenInstances = new HashSet<MapRoomCamera>();
+		HashSet<NitroxId> seenIds = new HashSet<NitroxId>();
+		int removed = 0;
+		for (int i = 0; i < MapRoomCamera.cameras.Count; i++)
+		{
+			MapRoomCamera camera = MapRoomCamera.cameras[i];
+			if (!camera || !seenInstances.Add(camera))
+			{
+				MapRoomCamera.cameras.RemoveAt(i);
+				removed++;
+				i--;
+				continue;
+			}
+			if (camera.TryGetNitroxId(out NitroxId cameraId) && !seenIds.Add(cameraId))
+			{
+				MapRoomCamera.cameras.RemoveAt(i);
+				removed++;
+				i--;
+			}
+		}
+		if (removed > 0)
+		{
+			Log.Warn($"[MapRoomCameras] Removed {removed} stale or duplicate camera reference(s); {MapRoomCamera.cameras.Count} remain");
 		}
 	}
 
