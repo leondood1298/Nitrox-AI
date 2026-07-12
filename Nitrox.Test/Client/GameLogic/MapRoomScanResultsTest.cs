@@ -39,6 +39,19 @@ public sealed class MapRoomScanResultsTest
         Assert.AreEqual("new", local[0].uniqueId);
     }
 
+    [DataTestMethod]
+    [DataRow(0L, 1L, true, 1, 0, true, true)]
+    [DataRow(1L, 1L, true, 1, 0, true, false)]
+    [DataRow(0L, 1L, false, 1, 0, true, false)]
+    [DataRow(0L, 1L, true, 0, 0, true, false)]
+    [DataRow(0L, 1L, true, 1, 0, false, false)]
+    public void RepublishesProgressDiscoveredBeforeTargetAcceptance(long previousGeneration, long acceptedGeneration, bool targetAlreadySelected,
+        int localProgress, int acceptedProgress, bool hasOwnership, bool expected)
+    {
+        Assert.AreEqual(expected, MapRoomScanResults.ShouldRepublishProgress(previousGeneration, acceptedGeneration, targetAlreadySelected,
+            localProgress, acceptedProgress, hasOwnership));
+    }
+
     private static ResourceTrackerDatabase.ResourceInfo Info(string id, float x) => new()
     {
         uniqueId = id,

@@ -58,6 +58,8 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Validate restored camera control, loose control, drain, and dock recharge (#48)
 - [x] Confirm vanilla weak-signal and screenshot-preview behavior (#48)
 - [x] Preserve two-client camera movement through rapid dock/undock (#49)
+- [x] Validate two-client camera movement after rapid redocking (#49)
+- [x] Republish early scan progress and refresh non-owner hologram blips (#50)
 
 ## Remaining
 

@@ -36,6 +36,7 @@ public class MapRoomMetadataProcessor : EntityMetadataProcessor<MapRoomMetadata>
 		}
 		state.Generation = metadata.Generation;
 		state.Revision = metadata.Revision;
+		MapRoomScanResults.RefreshResultConsumers(component);
 		if (flag)
 		{
 			uGUI_MapRoomScanner componentInChildren = component.GetComponentInChildren<uGUI_MapRoomScanner>(includeInactive: true);
