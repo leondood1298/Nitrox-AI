@@ -4,11 +4,12 @@ using Nitrox.Model.Subnautica.Extensions;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication.Abstract;
 using NitroxClient.Extensions;
+using NitroxClient.Helpers;
 using NitroxClient.MonoBehaviours;
 
 namespace NitroxClient.GameLogic;
 
-public sealed class MapRoomScanResultBroadcaster(IPacketSender packetSender, SimulationOwnership simulationOwnership)
+public sealed class MapRoomScanResultBroadcaster(IPacketSender packetSender, ThrottledPacketSender throttledPacketSender, SimulationOwnership simulationOwnership)
 {
     public void BroadcastSnapshot(MapRoomFunctionality mapRoom)
     {
@@ -41,6 +42,17 @@ public sealed class MapRoomScanResultBroadcaster(IPacketSender packetSender, Sim
         {
             Send(roomId, generation, info, removed: true);
         }
+    }
+
+    public void BroadcastMoved(MapRoomFunctionality mapRoom, ResourceTrackerDatabase.ResourceInfo info)
+    {
+        if (info == null || info.techType != mapRoom.typeToScan || !TryGetAuthority(mapRoom, out NitroxId roomId, out long generation))
+        {
+            return;
+        }
+        bool removed = !IsCurrentInRangeResult(mapRoom, info);
+        MapRoomScanResultChanged packet = new(roomId, generation, info.uniqueId, info.techType.ToDto(), info.position.ToDto(), removed);
+        throttledPacketSender.SendThrottled(packet, changed => (changed.MapRoomId, changed.ResourceId), 0.5f);
     }
 
     private bool TryGetAuthority(MapRoomFunctionality mapRoom, out NitroxId roomId, out long generation)
