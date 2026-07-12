@@ -13,6 +13,7 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
 	private readonly EntityRegistry entityRegistry = entityRegistry;
 	private readonly SimulationOwnershipData simulationOwnershipData = simulationOwnershipData;
 	private readonly ILogger<MapRoomCameraDockProcessor> logger = logger;
+	private readonly object dockingLock = new();
 
 	public async Task Process(AuthProcessorContext context, MapRoomCameraDock packet)
 	{
@@ -24,29 +25,33 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
 		}
 
 		MapRoomCameraDock response;
-		lock (mapRoom)
+		lock (dockingLock)
 		{
-			bool granted;
-			if (!packet.IsDocked)
+			lock (mapRoom)
 			{
-				granted = mapRoom.TryClearDockedCamera(packet.DockingIndex, packet.CameraId);
-			}
-			else
-			{
-				Nitrox.Model.DataStructures.NitroxId? occupyingCamera = mapRoom.GetDockedCamera(packet.DockingIndex);
-				granted = (occupyingCamera == null || occupyingCamera == packet.CameraId) && !mapRoom.IsCameraDocked(packet.CameraId);
-				if (occupyingCamera == packet.CameraId)
+				bool granted;
+				if (!packet.IsDocked)
 				{
-					granted = true;
+					granted = mapRoom.TryClearDockedCamera(packet.DockingIndex, packet.CameraId);
 				}
-				if (granted && occupyingCamera == null)
+				else
 				{
-					mapRoom.SetDockedCamera(packet.DockingIndex, packet.CameraId);
+					Nitrox.Model.DataStructures.NitroxId? occupyingCamera = mapRoom.GetDockedCamera(packet.DockingIndex);
+					bool hasOtherRegistration = HasOtherRegistration(mapRoom, packet.CameraId);
+					granted = !hasOtherRegistration && (occupyingCamera == null || occupyingCamera == packet.CameraId) && !mapRoom.IsCameraDocked(packet.CameraId);
+					if (!hasOtherRegistration && occupyingCamera == packet.CameraId)
+					{
+						granted = true;
+					}
+					if (granted && occupyingCamera == null)
+					{
+						mapRoom.SetDockedCamera(packet.DockingIndex, packet.CameraId);
+					}
 				}
+				int cameraNumber = granted ? mapRoom.GetOrAssignCameraNumber(packet.CameraId, packet.DockingIndex + 1) : 0;
+				MapRoomCameraRecord? record = granted ? mapRoom.GetCameraRecord(packet.CameraId) : null;
+				response = new MapRoomCameraDock(packet.CameraId, packet.MapRoomId, packet.DockingIndex, mapRoom.DockingRevision, true, granted, packet.IsDocked, cameraNumber, record?.LightOn ?? false, record?.LightRevision ?? 0);
 			}
-			int cameraNumber = granted ? mapRoom.GetOrAssignCameraNumber(packet.CameraId, packet.DockingIndex + 1) : 0;
-			MapRoomCameraRecord? record = granted ? mapRoom.GetCameraRecord(packet.CameraId) : null;
-			response = new MapRoomCameraDock(packet.CameraId, packet.MapRoomId, packet.DockingIndex, mapRoom.DockingRevision, true, granted, packet.IsDocked, cameraNumber, record?.LightOn ?? false, record?.LightRevision ?? 0);
 		}
 
 		if (response.Granted)
@@ -63,6 +68,25 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
 			logger.ZLogWarning($"Rejected conflicting camera dock: room {packet.MapRoomId}, camera {packet.CameraId}, slot {packet.DockingIndex}, revision {response.Revision}, session {context.Sender.SessionId}");
 			await context.ReplyAsync(response);
 		}
+	}
+
+	private bool HasOtherRegistration(MapRoomEntity targetRoom, Nitrox.Model.DataStructures.NitroxId cameraId)
+	{
+		foreach (MapRoomEntity room in entityRegistry.GetEntities<MapRoomEntity>())
+		{
+			if (room == targetRoom)
+			{
+				continue;
+			}
+			lock (room)
+			{
+				if (room.GetCameraRecord(cameraId) != null || room.IsCameraDocked(cameraId))
+				{
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 }
 
