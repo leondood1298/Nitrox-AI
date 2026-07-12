@@ -44,10 +44,10 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Normalize legacy/duplicate camera saves and test deterministic IDs (#38)
 - [x] Validate Scanner Room identity during base topology updates (#39)
 - [x] Invalidate scan results on server entity destruction and pickup (#40)
+- [x] Scope scan-result snapshots/deltas to subscribed Scanner Room clients (#41)
 
 ## Remaining
 
-- [ ] Result snapshot/delta visibility scoping (avoid unrelated-client broadcast)
 - [ ] Deconstruction cleanup for scan results, markers, subscriptions, and locks
 - [ ] Regression tests: handheld scanner popup and fabricator power deduplication
 - [ ] Manual 2-3 client acceptance matrix: join/restart/resync/races/power
@@ -55,7 +55,7 @@ Update this file after each completed work slice. Keep entries short; link the P
 
 ## Next
 
-- [ ] Result snapshot/delta visibility scoping (avoid unrelated-client broadcast)
+- [ ] Deconstruction cleanup for scan results, markers, subscriptions, and locks
 
 ## Rules
 
