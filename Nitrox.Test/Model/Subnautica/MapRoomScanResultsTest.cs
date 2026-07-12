@@ -57,7 +57,7 @@ public sealed class MapRoomScanResultsTest
     {
         MapRoomMetadata metadata = new(new NitroxTechType("Quartz"), 2, 7, 11);
 
-        MapRoomEntity room = new(new NitroxInt3(), null, null, 0, [], 0, 0, [], new NitroxTransform(), 0, string.Empty, false, new NitroxId(), new NitroxTechType("BaseMapRoom"), metadata, new NitroxId(), []);
+        MapRoomEntity room = new(new NitroxInt3(), null, null, 0, [], 0, 0, [], 0, [], new NitroxTransform(), 0, string.Empty, false, new NitroxId(), new NitroxTechType("BaseMapRoom"), metadata, new NitroxId(), []);
 
         Assert.AreEqual(7, room.ScanResultGeneration);
         Assert.AreEqual(0, room.ScanResults.Count);
