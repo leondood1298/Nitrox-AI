@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using NitroxClient.Communication.Abstract;
+using NitroxClient.GameLogic;
 using NitroxClient.GameLogic.Bases;
 using NitroxClient.GameLogic.Spawning.Bases;
 using NitroxClient.MonoBehaviours;
@@ -144,6 +145,7 @@ public sealed partial class BaseDeconstructable_Deconstruct_Patch : NitroxPatch,
                     MapRoomFunctionality mapRoomFunctionality = @base.GetMapRoomFunctionalityForCell(mapRoomFunctionalityCell);
                     if (mapRoomFunctionality && mapRoomFunctionality.TryGetNitroxId(out NitroxId mapRoomId))
                     {
+                        MapRoomScanResults.Cleanup(mapRoomFunctionality);
                         pieceId = mapRoomId;
                     }
                     else

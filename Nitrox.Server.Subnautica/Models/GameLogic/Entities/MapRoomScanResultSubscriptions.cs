@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Linq;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 
@@ -23,5 +25,15 @@ internal sealed class MapRoomScanResultSubscriptions
     public bool Contains(NitroxId mapRoomId, SessionId sessionId)
     {
         return subscribers.ContainsKey((mapRoomId, sessionId));
+    }
+
+    public List<SessionId> RemoveRoom(NitroxId mapRoomId)
+    {
+        List<SessionId> removed = subscribers.Keys.Where(key => key.MapRoomId == mapRoomId).Select(key => key.SessionId).ToList();
+        foreach (SessionId sessionId in removed)
+        {
+            subscribers.TryRemove((mapRoomId, sessionId), out _);
+        }
+        return removed;
     }
 }

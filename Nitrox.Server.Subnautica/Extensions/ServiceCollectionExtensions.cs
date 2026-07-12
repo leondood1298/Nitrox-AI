@@ -167,6 +167,8 @@ internal static partial class ServiceCollectionExtensions
                     .AddSingleton<StoryManager>()
                     .AddSingleton<StoryScheduler>()
                     .AddSingleton<SimulationOwnershipData>()
+                    .AddSingleton<MapRoomScanResultSubscriptions>()
+                    .AddSingleton<MapRoomDeconstructionCleanup>()
                     .AddSingleton<WorldEntityManager>()
                     .AddSingleton<EntitySimulation>()
                     .AddSingleton<EscapePodManager>()

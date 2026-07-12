@@ -42,4 +42,22 @@ public sealed class MapRoomScanResultSubscriptionsTest
         Assert.IsFalse(subscriptions.Contains(room, firstPlayer));
         Assert.IsTrue(subscriptions.Contains(room, secondPlayer));
     }
+
+    [TestMethod]
+    public void RemovingRoomReturnsItsSubscribersAndLeavesOtherRoomsUntouched()
+    {
+        MapRoomScanResultSubscriptions subscriptions = new();
+        NitroxId removedRoom = new();
+        NitroxId retainedRoom = new();
+        subscriptions.Set(removedRoom, 1, true);
+        subscriptions.Set(removedRoom, 2, true);
+        subscriptions.Set(retainedRoom, 2, true);
+
+        List<SessionId> removed = subscriptions.RemoveRoom(removedRoom);
+
+        CollectionAssert.AreEquivalent(new SessionId[] { 1, 2 }, removed);
+        Assert.IsFalse(subscriptions.Contains(removedRoom, 1));
+        Assert.IsFalse(subscriptions.Contains(removedRoom, 2));
+        Assert.IsTrue(subscriptions.Contains(retainedRoom, 2));
+    }
 }
