@@ -45,6 +45,15 @@ internal static class MapRoomScanResults
         mapRoom.numNodesScanned = System.Math.Min(mapRoom.numNodesScanned, mapRoom.resourceNodes.Count);
     }
 
+    public static void ProcessSnapshot(MapRoomScanResultSnapshot packet)
+    {
+        if (!packet.IsServerResponse || !packet.Granted || !NitroxEntity.TryGetObjectFrom(packet.MapRoomId, out GameObject gameObject) || !gameObject.TryGetComponent(out MapRoomFunctionality mapRoom))
+        {
+            return;
+        }
+        ApplySnapshot(mapRoom, packet.Generation, packet.Revision, packet.Results);
+    }
+
     internal static void ReconcileSnapshot(List<ResourceTrackerDatabase.ResourceInfo> target, IEnumerable<MapRoomScanResultRecord> results)
     {
         target.Clear();
