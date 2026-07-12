@@ -1,5 +1,7 @@
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using NitroxClient.GameLogic.Spawning.Metadata.Processor.Abstract;
+using NitroxClient.Communication;
+using Nitrox.Model.Subnautica.Packets;
 using UnityEngine;
 
 namespace NitroxClient.GameLogic.Spawning.Metadata.Processor;
@@ -9,6 +11,7 @@ public class EscapePodMetadataProcessor : EntityMetadataProcessor<EscapePodMetad
     // For metadata changes outside initial sync we only care about broken -> repaired
     public override void ProcessMetadata(GameObject gameObject, EscapePodMetadata metadata)
     {
+        using PacketSuppressor<EntityMetadataUpdate> packetSuppressor = PacketSuppressor<EntityMetadataUpdate>.Suppress();
         if (!gameObject.TryGetComponent(out EscapePod pod))
         {
             Log.Error($"[{nameof(EscapePodMetadataProcessor)}] Could not get the EscapePod component from the provided gameobject.");
