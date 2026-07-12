@@ -368,7 +368,7 @@ public class MapRoomCameras
 			{
 				reconciled++;
 			}
-			if ((bool)camera && cameraManager.simulationOwnership.HasAnyLockType(nitroxId))
+			if ((bool)camera)
 			{
 				cameraManager.BroadcastDock(item, camera);
 				broadcast++;
@@ -418,19 +418,22 @@ public class MapRoomCameras
 			for (int i = MapRoomCamera.cameras.Count - 1; i >= 0; i--)
 			{
 				MapRoomCamera existing = MapRoomCamera.cameras[i];
-				if ((bool)existing && existing != camera && existing.TryGetNitroxId(out NitroxId existingId) && existingId == cameraId)
+				if (existing == camera || ((bool)existing && existing.TryGetNitroxId(out NitroxId existingId) && existingId == cameraId))
 				{
 					MapRoomCamera.cameras.RemoveAt(i);
 					changed = true;
 				}
 			}
 		}
-
-		if (!MapRoomCamera.cameras.Contains(camera))
+		else
 		{
-			MapRoomCamera.cameras.Add(camera);
-			changed = true;
+			while (MapRoomCamera.cameras.Remove(camera))
+			{
+				changed = true;
+			}
 		}
+
+		MapRoomCamera.cameras.Add(camera);
 		return changed;
 	}
 

@@ -66,5 +66,6 @@ Update this file after each completed work slice. Keep entries short; link the P
 - Push only to `leondood1298/Nitrox-AI`; upstream push stays disabled.
 - One focused draft PR at a time; merge before starting the next branch.
 - Compile local test builds to Desktop folders using `1.16.1`, `1.16.2`, etc.; do not update GitHub Releases.
+- Keep updating the current Scanner Room repair PR until the user merges it.
 - Preserve unrelated custom fixes.
 - Build and run the full test suite before every PR.

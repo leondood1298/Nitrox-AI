@@ -11,15 +11,17 @@ using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
-internal sealed class MapRoomCameraControlProcessor(SimulationOwnershipData simulationOwnershipData, EntityRegistry entityRegistry) : IAuthPacketProcessor<MapRoomCameraControl>, IAuthPacketProcessor, IPacketProcessor, IPacketProcessor<AuthProcessorContext, MapRoomCameraControl>
+internal sealed class MapRoomCameraControlProcessor(SimulationOwnershipData simulationOwnershipData, EntityRegistry entityRegistry, ILogger<MapRoomCameraControlProcessor> logger) : IAuthPacketProcessor<MapRoomCameraControl>, IAuthPacketProcessor, IPacketProcessor, IPacketProcessor<AuthProcessorContext, MapRoomCameraControl>
 {
 	private readonly SimulationOwnershipData simulationOwnershipData = simulationOwnershipData;
 	private readonly EntityRegistry entityRegistry = entityRegistry;
+	private readonly ILogger<MapRoomCameraControlProcessor> logger = logger;
 
 	public async Task Process(AuthProcessorContext context, MapRoomCameraControl packet)
 	{
 		if (packet.IsServerResponse || !IsValidAssociation(packet))
 		{
+			logger.ZLogWarning($"Rejected camera control association from session {context.Sender.SessionId}: camera {packet.CameraId}, room {packet.MapRoomId}, slot {packet.CameraIndex}, controlling {packet.IsControlling}");
 			await context.ReplyAsync(CreateResponse(packet, false, context.Sender.SessionId));
 			return;
 		}
@@ -31,10 +33,12 @@ internal sealed class MapRoomCameraControlProcessor(SimulationOwnershipData simu
 			MapRoomCameraControl response = CreateResponse(packet, granted, controller);
 			if (granted)
 			{
+				logger.ZLogInformation($"Granted camera control to session {context.Sender.SessionId}: camera {packet.CameraId}, room {packet.MapRoomId}, slot {packet.CameraIndex}");
 				await context.SendToAllAsync(response);
 			}
 			else
 			{
+				logger.ZLogWarning($"Rejected locked camera control from session {context.Sender.SessionId}: camera {packet.CameraId}, controller {controller}");
 				await context.ReplyAsync(response);
 			}
 			return;
