@@ -14,14 +14,22 @@ public class MapRoomCameraRecord
     [DataMember(Order = 2)]
     public int CameraNumber { get; set; }
 
+    [DataMember(Order = 3)]
+    public bool LightOn { get; set; }
+
+    [DataMember(Order = 4)]
+    public long LightRevision { get; set; }
+
     [IgnoreConstructor]
     protected MapRoomCameraRecord()
     {
     }
 
-    public MapRoomCameraRecord(NitroxId cameraId, int cameraNumber)
+    public MapRoomCameraRecord(NitroxId cameraId, int cameraNumber, bool lightOn = false, long lightRevision = 0)
     {
         CameraId = cameraId;
         CameraNumber = cameraNumber;
+        LightOn = lightOn;
+        LightRevision = lightRevision;
     }
 }

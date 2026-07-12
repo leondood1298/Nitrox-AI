@@ -3,19 +3,23 @@ using System.Collections.Generic;
 using Nitrox.Model.Packets.Core;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.GameLogic;
+using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
+using System.Linq;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
-internal sealed class MapRoomCameraLightProcessor(SimulationOwnershipData simulationOwnershipData, ILogger<MapRoomCameraLightProcessor> logger) : IAuthPacketProcessor<MapRoomCameraLight>, IAuthPacketProcessor, IPacketProcessor, IPacketProcessor<AuthProcessorContext, MapRoomCameraLight>
+internal sealed class MapRoomCameraLightProcessor(SimulationOwnershipData simulationOwnershipData, EntityRegistry entityRegistry, ILogger<MapRoomCameraLightProcessor> logger) : IAuthPacketProcessor<MapRoomCameraLight>, IAuthPacketProcessor, IPacketProcessor, IPacketProcessor<AuthProcessorContext, MapRoomCameraLight>
 {
 	private readonly SimulationOwnershipData simulationOwnershipData = simulationOwnershipData;
 	private readonly ILogger<MapRoomCameraLightProcessor> logger = logger;
-	private readonly Dictionary<Nitrox.Model.DataStructures.NitroxId, (bool On, long Revision)> states = new();
+	private readonly EntityRegistry entityRegistry = entityRegistry;
 
 	public async Task Process(AuthProcessorContext context, MapRoomCameraLight packet)
 	{
-		if (packet.IsServerResponse || simulationOwnershipData.GetPlayerForLock(packet.CameraId) != context.Sender)
+		List<MapRoomCameraRecord> records = entityRegistry.GetEntities<MapRoomEntity>().Select(room => room.GetCameraRecord(packet.CameraId)).Where(record => record != null).ToList()!;
+		if (packet.IsServerResponse || simulationOwnershipData.GetPlayerForLock(packet.CameraId) != context.Sender || records.Count != 1)
 		{
 			logger.ZLogWarning($"Rejected camera light update from session {context.Sender.SessionId}: camera {packet.CameraId}, on {packet.On}");
 			await context.ReplyAsync(new MapRoomCameraLight(packet.CameraId, packet.On, 0, true, false));
@@ -23,16 +27,18 @@ internal sealed class MapRoomCameraLightProcessor(SimulationOwnershipData simula
 		}
 
 		long revision;
-		lock (states)
+		MapRoomCameraRecord record = records[0];
+		lock (record)
 		{
-			if (states.TryGetValue(packet.CameraId, out var state) && state.On == packet.On)
+			if (record.LightOn == packet.On)
 			{
-				revision = state.Revision;
+				revision = record.LightRevision;
 			}
 			else
 			{
-				revision = states.TryGetValue(packet.CameraId, out state) ? state.Revision + 1 : 1;
-				states[packet.CameraId] = (packet.On, revision);
+				revision = record.LightRevision + 1;
+				record.LightOn = packet.On;
+				record.LightRevision = revision;
 			}
 		}
 		logger.ZLogInformation($"Accepted camera light update: camera {packet.CameraId}, on {packet.On}, revision {revision}, session {context.Sender.SessionId}");
