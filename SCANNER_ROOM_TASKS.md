@@ -41,10 +41,10 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Hand camera simulation ownership to Stalkers during grab/chew/drop (#35)
 - [x] Synchronize camera repair/damage and clean death state/locks (#36)
 - [x] Filter remotely controlled cameras from Scanner Room screen selection (#37)
+- [x] Normalize legacy/duplicate camera saves and test deterministic IDs (#38)
 
 ## Remaining
 
-- [ ] Default/crafted camera migration and duplicate-save recovery tests
 - [ ] Base split/merge, partial construction, rebuild, and room identity audit
 - [ ] Result invalidation from all server entity-destruction/pickup paths
 - [ ] Result snapshot/delta visibility scoping (avoid unrelated-client broadcast)
@@ -55,7 +55,7 @@ Update this file after each completed work slice. Keep entries short; link the P
 
 ## Next
 
-- [ ] Default/crafted camera migration and duplicate-save recovery tests
+- [ ] Base split/merge, partial construction, rebuild, and room identity audit
 
 ## Rules
 
