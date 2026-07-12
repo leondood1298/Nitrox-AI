@@ -51,6 +51,7 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Final automated build/test and protocol/save/limitations report (#45)
 - [x] Persist shared lifepod and radio repairs across account joins (#46)
 - [x] Repair Scanner Room UI startup patch and restored camera registration (#47)
+- [x] Bootstrap legacy docked cameras and prefer physical restored instances (#48)
 
 ## Remaining
 
@@ -64,5 +65,6 @@ Update this file after each completed work slice. Keep entries short; link the P
 
 - Push only to `leondood1298/Nitrox-AI`; upstream push stays disabled.
 - One focused draft PR at a time; merge before starting the next branch.
+- Compile local test builds to Desktop folders using `1.16.1`, `1.16.2`, etc.; do not update GitHub Releases.
 - Preserve unrelated custom fixes.
 - Build and run the full test suite before every PR.

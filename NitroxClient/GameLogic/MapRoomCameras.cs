@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Logger;
 using Nitrox.Model.Subnautica.Packets;
@@ -352,7 +353,9 @@ public class MapRoomCameras
 		}
 		List<MapRoomCameraDocking> dockingPoints = GetDockingPoints(mapRoom);
 		int num = 0;
-		int registered = 0;
+		int reconciled = 0;
+		int broadcast = 0;
+		MapRoomCameras cameraManager = NitroxServiceLocator.LocateService<MapRoomCameras>();
 		foreach (MapRoomCameraDocking item in dockingPoints)
 		{
 			MapRoomCamera camera = item.camera;
@@ -363,10 +366,15 @@ public class MapRoomCameras
 			}
 			if ((bool)camera && RegisterRestoredDockedCamera(camera))
 			{
-				registered++;
+				reconciled++;
+			}
+			if ((bool)camera && cameraManager.simulationOwnership.HasAnyLockType(nitroxId))
+			{
+				cameraManager.BroadcastDock(item, camera);
+				broadcast++;
 			}
 		}
-		Log.Info(string.Format("[{0}] EnsureCameraIds map room {1}: found {2} dock(s), assigned {3} camera id(s), registered {4} restored camera(s)", "MapRoomCameras", nitroxId, dockingPoints.Count, num, registered));
+		Log.Info(string.Format("[{0}] EnsureCameraIds map room {1}: found {2} dock(s), assigned {3} camera id(s), reconciled {4} camera reference(s), broadcast {5} restored dock(s)", "MapRoomCameras", nitroxId, dockingPoints.Count, num, reconciled, broadcast));
 		NormalizeCameraList();
 	}
 
@@ -399,11 +407,12 @@ public class MapRoomCameras
 
 	private static bool RegisterRestoredDockedCamera(MapRoomCamera camera)
 	{
-		if (!camera || MapRoomCamera.cameras.Contains(camera))
+		if (!camera)
 		{
 			return false;
 		}
 
+		bool changed = false;
 		if (camera.TryGetNitroxId(out NitroxId cameraId))
 		{
 			for (int i = MapRoomCamera.cameras.Count - 1; i >= 0; i--)
@@ -412,12 +421,17 @@ public class MapRoomCameras
 				if ((bool)existing && existing != camera && existing.TryGetNitroxId(out NitroxId existingId) && existingId == cameraId)
 				{
 					MapRoomCamera.cameras.RemoveAt(i);
+					changed = true;
 				}
 			}
 		}
 
-		MapRoomCamera.cameras.Add(camera);
-		return true;
+		if (!MapRoomCamera.cameras.Contains(camera))
+		{
+			MapRoomCamera.cameras.Add(camera);
+			changed = true;
+		}
+		return changed;
 	}
 
 	public static void NormalizeCameraList()

@@ -15,4 +15,16 @@ public sealed class MapRoomCameraDockValidationTest
     {
         Assert.AreEqual(expected, MapRoomCameraDockProcessor.IsKnownCamera(validWorldCamera, registeredCamera));
     }
+
+    [DataTestMethod]
+    [DataRow(true, true, true, 0, true)]
+    [DataRow(true, true, true, 1, true)]
+    [DataRow(false, true, true, 0, false)]
+    [DataRow(true, false, true, 0, false)]
+    [DataRow(true, true, false, 0, false)]
+    [DataRow(true, true, true, 2, false)]
+    public void BootstrapRequiresOwnedEmptyRestoredSlot(bool isDocked, bool senderOwnsRoom, bool slotAvailable, int registeredCameraCount, bool expected)
+    {
+        Assert.AreEqual(expected, MapRoomCameraDockProcessor.CanBootstrapRestoredCamera(isDocked, senderOwnsRoom, slotAvailable, registeredCameraCount));
+    }
 }
