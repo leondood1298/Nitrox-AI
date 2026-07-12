@@ -152,7 +152,7 @@ public class MapRoomCameras
 
 	public void BroadcastComponentStateIfChanged(MapRoomCamera camera)
 	{
-		if (!camera || !camera.TryGetNitroxId(out NitroxId id) || !locallyControlled.Contains(id) && !CanSimulateDockedCamera(camera)) return;
+		if (!camera || !camera.TryGetNitroxId(out NitroxId id) || (!locallyControlled.Contains(id) && !simulationOwnership.HasAnyLockType(id) && !CanSimulateDockedCamera(camera))) return;
 		float energy = camera.energyMixin.charge;
 		float health = camera.liveMixin.health;
 		if (!lastComponents.TryGetValue(id, out var state) || Math.Abs(state.Energy - energy) >= 0.05f || Math.Abs(state.Health - health) >= 0.05f)
