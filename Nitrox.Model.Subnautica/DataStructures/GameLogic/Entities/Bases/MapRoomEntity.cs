@@ -66,6 +66,24 @@ public class MapRoomEntity : GlobalRootEntity
         DockingRevision++;
     }
 
+    public bool TryClearDockedCamera(int dockingIndex, NitroxId cameraId)
+    {
+        if (GetDockedCamera(dockingIndex) != cameraId)
+        {
+            return false;
+        }
+        if (dockingIndex == 0)
+        {
+            LeftDockCameraId = null;
+        }
+        else
+        {
+            RightDockCameraId = null;
+        }
+        DockingRevision++;
+        return true;
+    }
+
     public bool IsCameraDocked(NitroxId cameraId) => LeftDockCameraId == cameraId || RightDockCameraId == cameraId;
 
     public override string ToString()

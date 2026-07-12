@@ -154,6 +154,18 @@ public class MapRoomCameras
 		}
 	}
 
+	public void BroadcastUndock(MapRoomCameraDocking dockingPoint, MapRoomCamera camera)
+	{
+		if (!PacketSuppressor<MapRoomCameraDock>.IsSuppressed && (bool)dockingPoint && (bool)camera && camera.TryGetNitroxId(out NitroxId cameraId))
+		{
+			MapRoomFunctionality mapRoom = GetMapRoomForDock(dockingPoint);
+			if ((bool)mapRoom && mapRoom.TryGetNitroxId(out NitroxId mapRoomId))
+			{
+				packetSender.Send(new MapRoomCameraDock(cameraId, mapRoomId, GetDockingIndex(mapRoom, dockingPoint), isDocked: false));
+			}
+		}
+	}
+
 	public void ProcessDock(MapRoomCameraDock packet)
 	{
 		if (!packet.IsServerResponse || !packet.Granted || (dockingRevisions.TryGetValue(packet.MapRoomId, out long revision) && packet.Revision < revision))
@@ -161,9 +173,12 @@ public class MapRoomCameras
 			return;
 		}
 		dockingRevisions[packet.MapRoomId] = packet.Revision;
-		pendingControl.Remove(packet.CameraId);
-		locallyControlled.Remove(packet.CameraId);
-		MovementBroadcaster.UnregisterWatched(packet.CameraId);
+		if (packet.IsDocked)
+		{
+			pendingControl.Remove(packet.CameraId);
+			locallyControlled.Remove(packet.CameraId);
+			MovementBroadcaster.UnregisterWatched(packet.CameraId);
+		}
 		if (!NitroxEntity.TryGetObjectFrom(packet.CameraId, out GameObject gameObject) || !gameObject || !gameObject.TryGetComponent<MapRoomCamera>(out var component) || !NitroxEntity.TryGetObjectFrom(packet.MapRoomId, out GameObject gameObject2) || !gameObject2 || !gameObject2.TryGetComponent<MapRoomFunctionality>(out var component2))
 		{
 			return;
@@ -173,13 +188,20 @@ public class MapRoomCameras
 		{
 			return;
 		}
-		if (gameObject.TryGetComponent<MapRoomCameraMovementReplicator>(out var component3))
+		if (packet.IsDocked && gameObject.TryGetComponent<MapRoomCameraMovementReplicator>(out var component3))
 		{
 			UnityEngine.Object.Destroy(component3);
 		}
 		using (PacketSuppressor<MapRoomCameraDock>.Suppress())
 		{
-			dockingPoints[packet.DockingIndex].DockCamera(component);
+			if (packet.IsDocked)
+			{
+				dockingPoints[packet.DockingIndex].DockCamera(component);
+			}
+			else if (dockingPoints[packet.DockingIndex].camera == component)
+			{
+				dockingPoints[packet.DockingIndex].UndockCamera();
+			}
 		}
 	}
 
