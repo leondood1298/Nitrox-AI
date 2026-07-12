@@ -1,4 +1,5 @@
 using System.Threading.Tasks;
+using System.Linq;
 using Nitrox.Model.Packets.Core;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
@@ -37,9 +38,9 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
 				else
 				{
 					Nitrox.Model.DataStructures.NitroxId? occupyingCamera = mapRoom.GetDockedCamera(packet.DockingIndex);
-					bool hasOtherRegistration = HasOtherRegistration(mapRoom, packet.CameraId);
-					granted = !hasOtherRegistration && (occupyingCamera == null || occupyingCamera == packet.CameraId) && !mapRoom.IsCameraDocked(packet.CameraId);
-					if (!hasOtherRegistration && occupyingCamera == packet.CameraId)
+					bool localSlotAvailable = (occupyingCamera == null || occupyingCamera == packet.CameraId) && (!mapRoom.IsCameraDocked(packet.CameraId) || occupyingCamera == packet.CameraId);
+					granted = localSlotAvailable && TryTransferRegistration(mapRoom, packet.CameraId);
+					if (granted && occupyingCamera == packet.CameraId)
 					{
 						granted = true;
 					}
@@ -70,8 +71,10 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
 		}
 	}
 
-	private bool HasOtherRegistration(MapRoomEntity targetRoom, Nitrox.Model.DataStructures.NitroxId cameraId)
+	private bool TryTransferRegistration(MapRoomEntity targetRoom, Nitrox.Model.DataStructures.NitroxId cameraId)
 	{
+		MapRoomEntity? sourceRoom = null;
+		MapRoomCameraRecord? sourceRecord = null;
 		foreach (MapRoomEntity room in entityRegistry.GetEntities<MapRoomEntity>())
 		{
 			if (room == targetRoom)
@@ -80,13 +83,36 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
 			}
 			lock (room)
 			{
-				if (room.GetCameraRecord(cameraId) != null || room.IsCameraDocked(cameraId))
+				MapRoomCameraRecord? record = room.GetCameraRecord(cameraId);
+				if (room.IsCameraDocked(cameraId) || (record != null && sourceRecord != null))
 				{
-					return true;
+					return false;
+				}
+				if (record != null)
+				{
+					sourceRoom = room;
+					sourceRecord = record;
 				}
 			}
 		}
-		return false;
+		if (sourceRoom == null || sourceRecord == null)
+		{
+			return true;
+		}
+		lock (sourceRoom)
+		{
+			if (sourceRoom.IsCameraDocked(cameraId) || !sourceRoom.CameraRegistry.Remove(sourceRecord))
+			{
+				return false;
+			}
+		}
+		if (targetRoom.CameraRegistry.Exists(record => record.CameraNumber == sourceRecord.CameraNumber))
+		{
+			sourceRecord.CameraNumber = targetRoom.CameraRegistry.Count == 0 ? 1 : targetRoom.CameraRegistry.Max(record => record.CameraNumber) + 1;
+		}
+		targetRoom.CameraRegistry.Add(sourceRecord);
+		logger.ZLogInformation($"Transferred camera {cameraId} registration from Scanner Room {sourceRoom.Id} to {targetRoom.Id} with number {sourceRecord.CameraNumber}");
+		return true;
 	}
 }
 
