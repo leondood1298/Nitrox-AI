@@ -175,6 +175,11 @@ public class MapRoomCameras
 			return;
 		}
 		dockingRevisions[packet.MapRoomId] = packet.Revision;
+		if (packet.CameraNumber > 0 && NitroxEntity.TryGetObjectFrom(packet.CameraId, out GameObject numberedObject) && numberedObject.TryGetComponent(out MapRoomCamera numberedCamera))
+		{
+			numberedCamera.cameraNumber = packet.CameraNumber;
+			numberedCamera.UpdatePingLabel();
+		}
 		if (packet.IsDocked)
 		{
 			pendingControl.Remove(packet.CameraId);

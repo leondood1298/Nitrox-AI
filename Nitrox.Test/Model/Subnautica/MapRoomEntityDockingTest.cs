@@ -49,5 +49,18 @@ public sealed class MapRoomEntityDockingTest
         Assert.IsFalse(room.IsCameraDocked(new NitroxId()));
     }
 
+    [TestMethod]
+    public void CameraNumbersAreStableAndUnique()
+    {
+        MapRoomEntity room = CreateRoom();
+        NitroxId first = new();
+        NitroxId second = new();
+
+        Assert.AreEqual(1, room.GetOrAssignCameraNumber(first, 1));
+        Assert.AreEqual(2, room.GetOrAssignCameraNumber(second, 1));
+        Assert.AreEqual(1, room.GetOrAssignCameraNumber(first, 2));
+        Assert.AreEqual(2, room.CameraRegistry.Count);
+    }
+
     private static MapRoomEntity CreateRoom() => new(new NitroxId(), new NitroxId(), new NitroxInt3());
 }

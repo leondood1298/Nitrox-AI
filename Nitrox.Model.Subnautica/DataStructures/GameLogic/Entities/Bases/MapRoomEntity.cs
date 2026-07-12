@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.Serialization;
+using System.Linq;
 using BinaryPack.Attributes;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.Unity;
@@ -23,6 +24,9 @@ public class MapRoomEntity : GlobalRootEntity
     [DataMember(Order = 4)]
     public long DockingRevision { get; set; }
 
+    [DataMember(Order = 5)]
+    public List<MapRoomCameraRecord> CameraRegistry { get; set; } = [];
+
     [IgnoreConstructor]
     protected MapRoomEntity()
     {
@@ -42,13 +46,14 @@ public class MapRoomEntity : GlobalRootEntity
     /// Used for deserialization.
     /// <see cref="WorldEntity.SpawnedByServer"/> is set to true because this entity is meant to receive simulation locks
     /// </remarks>
-    public MapRoomEntity(NitroxInt3 cell, NitroxId? leftDockCameraId, NitroxId? rightDockCameraId, long dockingRevision, NitroxTransform transform, int level, string classId, bool spawnedByServer, NitroxId id, NitroxTechType techType, EntityMetadata metadata, NitroxId parentId, List<Entity> childEntities) :
+    public MapRoomEntity(NitroxInt3 cell, NitroxId? leftDockCameraId, NitroxId? rightDockCameraId, long dockingRevision, List<MapRoomCameraRecord> cameraRegistry, NitroxTransform transform, int level, string classId, bool spawnedByServer, NitroxId id, NitroxTechType techType, EntityMetadata metadata, NitroxId parentId, List<Entity> childEntities) :
         base(transform, level, classId, true, id, techType, metadata, parentId, childEntities)
     {
         Cell = cell;
         LeftDockCameraId = leftDockCameraId;
         RightDockCameraId = rightDockCameraId;
         DockingRevision = dockingRevision;
+        CameraRegistry = cameraRegistry ?? [];
     }
 
     public NitroxId? GetDockedCamera(int dockingIndex) => dockingIndex == 0 ? LeftDockCameraId : RightDockCameraId;
@@ -86,8 +91,22 @@ public class MapRoomEntity : GlobalRootEntity
 
     public bool IsCameraDocked(NitroxId cameraId) => LeftDockCameraId == cameraId || RightDockCameraId == cameraId;
 
+    public int GetOrAssignCameraNumber(NitroxId cameraId, int preferredNumber)
+    {
+        MapRoomCameraRecord? existing = CameraRegistry.Find(record => record.CameraId == cameraId);
+        if (existing != null)
+        {
+            return existing.CameraNumber;
+        }
+        int cameraNumber = preferredNumber > 0 && CameraRegistry.TrueForAll(record => record.CameraNumber != preferredNumber)
+            ? preferredNumber
+            : CameraRegistry.Count == 0 ? 1 : CameraRegistry.Max(record => record.CameraNumber) + 1;
+        CameraRegistry.Add(new MapRoomCameraRecord(cameraId, cameraNumber));
+        return cameraNumber;
+    }
+
     public override string ToString()
     {
-        return $"[MapRoomEntity Id: {Id}, Cell: {Cell}, LeftDockCameraId: {LeftDockCameraId}, RightDockCameraId: {RightDockCameraId}, DockingRevision: {DockingRevision}]";
+        return $"[MapRoomEntity Id: {Id}, Cell: {Cell}, LeftDockCameraId: {LeftDockCameraId}, RightDockCameraId: {RightDockCameraId}, DockingRevision: {DockingRevision}, RegisteredCameras: {CameraRegistry.Count}]";
     }
 }
