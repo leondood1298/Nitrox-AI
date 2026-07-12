@@ -22,6 +22,7 @@ public class MapRoomCameras
 	private readonly HashSet<NitroxId> locallyControlled = new HashSet<NitroxId>();
 	private readonly HashSet<NitroxId> pendingControl = new HashSet<NitroxId>();
 	private readonly Dictionary<NitroxId, long> dockingRevisions = new Dictionary<NitroxId, long>();
+	private readonly Dictionary<NitroxId, long> lightRevisions = new Dictionary<NitroxId, long>();
 
 	public MapRoomCameras(IPacketSender packetSender, IMultiplayerSession multiplayerSession)
 	{
@@ -136,8 +137,9 @@ public class MapRoomCameras
 
 	public void ProcessLight(MapRoomCameraLight packet)
 	{
-		if (NitroxEntity.TryGetObjectFrom(packet.CameraId, out GameObject gameObject) && (bool)gameObject)
+		if (packet.IsServerResponse && packet.Granted && (!lightRevisions.TryGetValue(packet.CameraId, out long revision) || packet.Revision >= revision) && NitroxEntity.TryGetObjectFrom(packet.CameraId, out GameObject gameObject) && (bool)gameObject)
 		{
+			lightRevisions[packet.CameraId] = packet.Revision;
 			SetLight(gameObject, packet.On);
 		}
 	}
