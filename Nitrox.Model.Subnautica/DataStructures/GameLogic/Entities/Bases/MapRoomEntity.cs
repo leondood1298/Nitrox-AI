@@ -105,6 +105,8 @@ public class MapRoomEntity : GlobalRootEntity
         return cameraNumber;
     }
 
+    public MapRoomCameraRecord? GetCameraRecord(NitroxId cameraId) => CameraRegistry.Find(record => record.CameraId == cameraId);
+
     public override string ToString()
     {
         return $"[MapRoomEntity Id: {Id}, Cell: {Cell}, LeftDockCameraId: {LeftDockCameraId}, RightDockCameraId: {RightDockCameraId}, DockingRevision: {DockingRevision}, RegisteredCameras: {CameraRegistry.Count}]";

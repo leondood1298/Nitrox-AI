@@ -438,6 +438,8 @@ internal sealed class WorldServiceTest
                                         {
                                             Assert.AreEqual(mapRoomEntity.CameraRegistry[i].CameraId, mapRoomEntityAfter.CameraRegistry[i].CameraId);
                                             Assert.AreEqual(mapRoomEntity.CameraRegistry[i].CameraNumber, mapRoomEntityAfter.CameraRegistry[i].CameraNumber);
+                                            Assert.AreEqual(mapRoomEntity.CameraRegistry[i].LightOn, mapRoomEntityAfter.CameraRegistry[i].LightOn);
+                                            Assert.AreEqual(mapRoomEntity.CameraRegistry[i].LightRevision, mapRoomEntityAfter.CameraRegistry[i].LightRevision);
                                         }
                                         break;
                                     case ModuleEntity moduleEntity when globalRootEntityAfter is ModuleEntity moduleEntityAfter:

@@ -175,10 +175,15 @@ public class MapRoomCameras
 			return;
 		}
 		dockingRevisions[packet.MapRoomId] = packet.Revision;
+		lightRevisions[packet.CameraId] = packet.LightRevision;
 		if (packet.CameraNumber > 0 && NitroxEntity.TryGetObjectFrom(packet.CameraId, out GameObject numberedObject) && numberedObject.TryGetComponent(out MapRoomCamera numberedCamera))
 		{
 			numberedCamera.cameraNumber = packet.CameraNumber;
 			numberedCamera.UpdatePingLabel();
+		}
+		if (NitroxEntity.TryGetObjectFrom(packet.CameraId, out GameObject lightObject))
+		{
+			SetLight(lightObject, packet.LightOn);
 		}
 		if (packet.IsDocked)
 		{
