@@ -38,10 +38,10 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Persist and owner-gate Scanner Room fabricator state (#32)
 - [x] Cover 0-4 mixed upgrade modules and deterministic derived effects (#33)
 - [x] Clear dock state on camera pickup and reject inventory-camera dock races (#34)
+- [x] Hand camera simulation ownership to Stalkers during grab/chew/drop (#35)
 
 ## Remaining
 
-- [ ] Stalker grab/chew/drop ownership handoff
 - [ ] Camera repair/death cleanup and lock release
 - [ ] Camera viewer vs controller behavior and screen selection audit
 - [ ] Default/crafted camera migration and duplicate-save recovery tests
@@ -55,7 +55,7 @@ Update this file after each completed work slice. Keep entries short; link the P
 
 ## Next
 
-- [ ] Stalker grab/chew/drop ownership handoff
+- [ ] Camera repair/death cleanup and lock release
 
 ## Rules
 
