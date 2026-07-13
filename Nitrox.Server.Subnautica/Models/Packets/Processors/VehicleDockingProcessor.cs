@@ -1,38 +1,31 @@
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
+using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
-sealed class VehicleDockingProcessor : IAuthPacketProcessor<VehicleDocking>
+internal sealed class VehicleDockingProcessor(EntityRegistry entityRegistry, VehicleAuthority vehicleAuthority,
+    VehicleDiagnostics diagnostics, ILogger<VehicleDockingProcessor> logger) : IAuthPacketProcessor<VehicleDocking>
 {
-    private readonly IPacketSender packetSender;
-    private readonly EntityRegistry entityRegistry;
-    private readonly ILogger<VehicleDockingProcessor> logger;
-
-    public VehicleDockingProcessor(IPacketSender packetSender, EntityRegistry entityRegistry, ILogger<VehicleDockingProcessor> logger)
-    {
-        this.packetSender = packetSender;
-        this.entityRegistry = entityRegistry;
-        this.logger = logger;
-    }
-
     public async Task Process(AuthProcessorContext context, VehicleDocking packet)
     {
-        if (!entityRegistry.TryGetEntityById(packet.VehicleId, out Entity vehicleEntity))
+        if (!vehicleAuthority.TryValidateDocking(context.Sender, packet.VehicleId, packet.DockId,
+                                                 out VehicleEntity vehicle, out Entity dock, out string rejectionReason))
         {
-            logger.ZLogError($"Unable to find vehicle to dock {packet.VehicleId}");
+            diagnostics.RecordAction(false);
+            logger.ZLogWarning($"[Vehicle] rejected docking {packet.VehicleId} -> {packet.DockId} from {context.Sender.Name} #{context.Sender.SessionId}: {rejectionReason}");
             return;
         }
 
-        if (!entityRegistry.TryGetEntityById(packet.DockId, out Entity dockEntity))
+        entityRegistry.ReparentEntity(vehicle, dock);
+        diagnostics.RecordAction(true);
+        if (diagnostics.TraceEnabled)
         {
-            logger.ZLogError($"Unable to find dock {packet.DockId} for docking vehicle {packet.VehicleId}");
-            return;
+            logger.ZLogInformation($"[Vehicle] accepted docking {packet.VehicleId} -> {packet.DockId} from {context.Sender.Name} #{context.Sender.SessionId}");
         }
 
-        entityRegistry.ReparentEntity(vehicleEntity, dockEntity);
-
-        await context.SendToOthersAsync(packet);
+        await context.SendToOthersAsync(new VehicleDocking(packet.VehicleId, packet.DockId, context.Sender.SessionId));
     }
 }

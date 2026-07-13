@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.GameLogic;
@@ -6,51 +7,73 @@ using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
-internal sealed class VehicleMovementsPacketProcessor(EntityRegistry entityRegistry, SimulationOwnershipData simulationOwnershipData, ILogger<VehicleMovementsPacketProcessor> logger)
-    : IAuthPacketProcessor<VehicleMovements>
+internal sealed class VehicleMovementsPacketProcessor(VehicleAuthority vehicleAuthority,
+    VehicleDiagnostics diagnostics, ILogger<VehicleMovementsPacketProcessor> logger) : IAuthPacketProcessor<VehicleMovements>
 {
     private static readonly NitroxVector3 CyclopsSteeringWheelRelativePosition = new(-0.05f, 0.97f, -23.54f);
 
-    private readonly EntityRegistry entityRegistry = entityRegistry;
-    private readonly SimulationOwnershipData simulationOwnershipData = simulationOwnershipData;
-    private readonly ILogger<VehicleMovementsPacketProcessor> logger = logger;
-
     public async Task Process(AuthProcessorContext context, VehicleMovements packet)
     {
-        for (int i = packet.Data.Count - 1; i >= 0; i--)
+        if (!VehicleAuthority.IsValidMovementCount(packet.Data.Count) || !double.IsFinite(packet.RealTime))
         {
-            MovementData movementData = packet.Data[i];
-            if (simulationOwnershipData.GetPlayerForLock(movementData.Id) != context.Sender)
+            diagnostics.RecordMovement(false);
+            logger.ZLogWarning($"[Vehicle] rejected malformed movement packet from {context.Sender.Name} #{context.Sender.SessionId}: count={packet.Data.Count}, time={packet.RealTime}");
+            return;
+        }
+
+        List<MovementData> acceptedMovements = new(packet.Data.Count);
+        foreach (MovementData movementData in packet.Data)
+        {
+            bool hasFiniteTransform = VehicleAuthority.IsFinite(movementData);
+            if (!hasFiniteTransform)
             {
-                logger.ZLogErrorOnce($"Player {context.Sender.Name} tried updating {movementData.Id}'s position but they don't have the lock on it");
-                // TODO: In the future, add "packet.Data.RemoveAt(i);" and "continue;" to prevent those abnormal situations
+                diagnostics.RecordMovement(false);
+                logger.ZLogWarningOnce($"[Vehicle] rejected movement for {movementData.Id} from {context.Sender.Name} #{context.Sender.SessionId}: non-finite transform");
+                continue;
             }
 
-            if (entityRegistry.TryGetEntityById(movementData.Id, out WorldEntity worldEntity))
+            if (!vehicleAuthority.TryGetOwnedWorldEntity(context.Sender, movementData.Id, false, out WorldEntity worldEntity, out string rejectionReason))
             {
-                worldEntity.Transform.Position = movementData.Position;
-                worldEntity.Transform.Rotation = movementData.Rotation;
+                diagnostics.RecordMovement(false);
+                logger.ZLogWarningOnce($"[Vehicle] rejected movement for {movementData.Id} from {context.Sender.Name} #{context.Sender.SessionId}: {rejectionReason}");
+                continue;
+            }
 
-                if (movementData is DrivenVehicleMovementData)
+            if (movementData is DrivenVehicleMovementData && context.Sender.PlayerContext?.DrivingVehicle != movementData.Id)
+            {
+                diagnostics.RecordMovement(false);
+                logger.ZLogWarningOnce($"[Vehicle] rejected driven movement for {movementData.Id} from {context.Sender.Name} #{context.Sender.SessionId}: sender is not the canonical pilot");
+                continue;
+            }
+
+            worldEntity.Transform.Position = movementData.Position;
+            worldEntity.Transform.Rotation = movementData.Rotation;
+
+            if (movementData is DrivenVehicleMovementData)
+            {
+                if (worldEntity.TechType.Name == "Cyclops")
                 {
-                    // Cyclops' driving wheel is at a known position so we need to adapt the position of the player accordingly
-                    if (worldEntity.TechType.Name.Equals("Cyclops"))
-                    {
-                        context.Sender.Entity.Transform.LocalPosition = CyclopsSteeringWheelRelativePosition;
-                        context.Sender.Position = context.Sender.Entity.Transform.Position;
-                    }
-                    else
-                    {
-                        context.Sender.Position = movementData.Position;
-                        context.Sender.Rotation = movementData.Rotation;
-                    }
+                    context.Sender.Entity.Transform.LocalPosition = CyclopsSteeringWheelRelativePosition;
+                    context.Sender.Position = context.Sender.Entity.Transform.Position;
                 }
+                else
+                {
+                    context.Sender.Position = movementData.Position;
+                    context.Sender.Rotation = movementData.Rotation;
+                }
+            }
+
+            diagnostics.RecordMovement(true);
+            acceptedMovements.Add(movementData);
+            if (diagnostics.TraceEnabled)
+            {
+                logger.ZLogInformation($"[Vehicle] accepted movement for {movementData.Id} from {context.Sender.Name} #{context.Sender.SessionId}");
             }
         }
 
-        if (packet.Data.Count > 0)
+        if (acceptedMovements.Count > 0)
         {
-            await context.SendToOthersAsync(packet);
+            await context.SendToOthersAsync(new VehicleMovements(acceptedMovements, packet.RealTime));
         }
     }
 }

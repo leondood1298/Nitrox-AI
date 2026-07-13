@@ -92,7 +92,7 @@ public class LiveMixinManager
         {
             if (difference < 0)
             {
-                liveMixin.TakeDamage(difference, position, damageType);
+                liveMixin.TakeDamage(-difference, position, damageType);
             }
             else
             {
