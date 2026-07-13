@@ -5,6 +5,7 @@ using HarmonyLib;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Helper;
 using NitroxClient.Extensions;
+using NitroxClient.Communication.Abstract;
 using NitroxClient.GameLogic;
 
 namespace NitroxPatcher.Patches.Dynamic;
@@ -24,7 +25,7 @@ public sealed class SolarPanel_Update_Patch : NitroxPatch, IDynamicPatch, INitro
 
 	public static void Postfix(SolarPanel __instance)
 	{
-		BasePowerBroadcaster.BroadcastIfOwner(__instance, __instance.powerSource, NitroxPatch.Resolve<SimulationOwnership>(), NitroxPatch.Resolve<Entities>());
+		BasePowerBroadcaster.BroadcastIfOwner(__instance, __instance.powerSource, NitroxPatch.Resolve<SimulationOwnership>(), NitroxPatch.Resolve<BasePowerState>(), NitroxPatch.Resolve<IPacketSender>());
 	}
 
 	[GeneratedCode("Nitrox.Analyzers", "1.0.13.0")]

@@ -1,17 +1,23 @@
 using Nitrox.Model.Logger;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
+using NitroxClient.Extensions;
+using NitroxClient.GameLogic;
 using NitroxClient.GameLogic.Spawning.Metadata.Processor.Abstract;
 using UnityEngine;
 
 namespace NitroxClient.GameLogic.Spawning.Metadata.Processor;
 
-public class PowerSourceMetadataProcessor : EntityMetadataProcessor<PowerSourceMetadata>
+public class PowerSourceMetadataProcessor(BasePowerState state) : EntityMetadataProcessor<PowerSourceMetadata>
 {
 	public override void ProcessMetadata(GameObject gameObject, PowerSourceMetadata metadata)
 	{
 		if (gameObject.TryGetComponent<PowerSource>(out var component))
 		{
-			component.SetPower(metadata.Power);
+			PowerSourceMetadata accepted = metadata;
+			if (!gameObject.TryGetNitroxId(out var sourceId) || state.TryApply(sourceId, metadata, out accepted))
+			{
+				component.SetPower(accepted.Power);
+			}
 		}
 		else
 		{

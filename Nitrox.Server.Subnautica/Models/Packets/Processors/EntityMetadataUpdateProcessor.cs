@@ -103,6 +103,12 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
             return true;
         }
 
+        if (metadata is PowerSourceMetadata)
+        {
+            logger.ZLogWarning($"[BasePower] Player {sendingPlayer.Name} tried updating source {entity.Id} through generic metadata");
+            return false;
+        }
+
         return metadata switch
         {
             PlayerMetadata playerMetadata => ProcessPlayerMetadata(sendingPlayer, entity, playerMetadata),

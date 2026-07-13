@@ -3,6 +3,7 @@ using System.CodeDom.Compiler;
 using System.Reflection;
 using HarmonyLib;
 using Nitrox.Model.Helper;
+using NitroxClient.Communication.Abstract;
 using NitroxClient.GameLogic;
 
 namespace NitroxPatcher.Patches.Dynamic;
@@ -13,7 +14,7 @@ public sealed class BaseBioReactor_Update_Patch : NitroxPatch, IDynamicPatch, IN
 
 	public static void Postfix(BaseBioReactor __instance)
 	{
-		BasePowerBroadcaster.BroadcastIfOwner(__instance, __instance._powerSource, NitroxPatch.Resolve<SimulationOwnership>(), NitroxPatch.Resolve<Entities>());
+		BasePowerBroadcaster.BroadcastIfOwner(__instance, __instance._powerSource, NitroxPatch.Resolve<SimulationOwnership>(), NitroxPatch.Resolve<BasePowerState>(), NitroxPatch.Resolve<IPacketSender>());
 	}
 
 	[GeneratedCode("Nitrox.Analyzers", "1.0.13.0")]
