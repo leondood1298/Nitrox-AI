@@ -104,6 +104,12 @@ namespace NitroxClient.GameLogic
             }
         }
 
+        public void EntityMetadataChangedImmediately(object o, NitroxId id)
+        {
+            throttledPacketSender.RemovePendingPackets(id);
+            EntityMetadataChanged(o, id);
+        }
+
         public void BroadcastMetadataUpdate(NitroxId id, EntityMetadata metadata)
         {
             packetSender.Send(new EntityMetadataUpdate(id, metadata));

@@ -2,6 +2,8 @@ using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.Packets;
+using NitroxClient.GameLogic.Spawning.Metadata.Processor;
+using NitroxPatcher.Patches.Dynamic;
 
 namespace NitroxClient.GameLogic;
 
@@ -28,7 +30,7 @@ public sealed class MapRoomScanResultsTest
     [TestMethod]
     public void DeltaAddsUpdatesAndRemovesByStableId()
     {
-        List<ResourceTrackerDatabase.ResourceInfo> local = [Info("resource", 1f)];
+        List<ResourceTrackerDatabase.ResourceInfo> local = [Info("resource", 1f), Info("resource", 1f)];
         Nitrox.Model.DataStructures.NitroxId roomId = new();
 
         MapRoomScanResults.ApplyDeltaToList(local, new MapRoomScanResultChanged(roomId, 1, "resource", quartz, new NitroxVector3(4f, 0f, 0f)));
@@ -37,6 +39,63 @@ public sealed class MapRoomScanResultsTest
 
         Assert.AreEqual(1, local.Count);
         Assert.AreEqual("new", local[0].uniqueId);
+    }
+
+    [TestMethod]
+    public void LocalPickupRemovesMatchingStableIdOnly()
+    {
+        List<ResourceTrackerDatabase.ResourceInfo> local = [Info("collected", 1f), Info("collected", 1f), Info("remaining", 2f)];
+
+        Assert.IsTrue(MapRoomScanResults.RemoveFromList(local, "collected"));
+        Assert.IsFalse(MapRoomScanResults.RemoveFromList(local, "missing"));
+
+        Assert.AreEqual(1, local.Count);
+        Assert.AreEqual("remaining", local[0].uniqueId);
+    }
+
+    [TestMethod]
+    public void LocalPickupEvictsMatchingHudCacheNodeOnly()
+    {
+        HashSet<ResourceTrackerDatabase.ResourceInfo> local = [Info("collected", 1f), Info("remaining", 2f)];
+
+        Assert.IsTrue(MapRoomScanResults.RemoveFromSet(local, "collected"));
+        Assert.IsFalse(MapRoomScanResults.RemoveFromSet(local, "missing"));
+
+        Assert.AreEqual(1, local.Count);
+        Assert.AreEqual("remaining", local.Single().uniqueId);
+    }
+
+    [TestMethod]
+    public void LocalPickupFallsBackToMatchingTypeAndPositionWhenStableIdChanged()
+    {
+        List<ResourceTrackerDatabase.ResourceInfo> local =
+        [
+            Info("legacy-id", 1f),
+            Info("nearby-resource", 1.2f),
+            Info("same-id-elsewhere", 3f)
+        ];
+
+        Assert.IsTrue(MapRoomScanResults.RemoveFromList(local, "same-id-elsewhere", TechType.Quartz, new UnityEngine.Vector3(1f, 0f, 0f)));
+
+        Assert.AreEqual(1, local.Count);
+        Assert.AreEqual("nearby-resource", local[0].uniqueId);
+    }
+
+    [DataTestMethod]
+    [DataRow(false, false, true)]
+    [DataRow(false, true, true)]
+    [DataRow(true, true, true)]
+    [DataRow(true, false, false)]
+    public void InitialMetadataAppliesStoppedStateEvenWhenTargetAlreadyMatches(bool metadataInitialized, bool targetChanged, bool expected)
+    {
+        Assert.AreEqual(expected, MapRoomMetadataProcessor.ShouldApplyScanningState(metadataInitialized, targetChanged));
+    }
+
+    [TestMethod]
+    public void ScanCancellationPublishesImmediately()
+    {
+        Assert.IsTrue(MapRoomFunctionality_StartScanning_Patch.ShouldPublishImmediately(TechType.None));
+        Assert.IsFalse(MapRoomFunctionality_StartScanning_Patch.ShouldPublishImmediately(TechType.ShaleChunk));
     }
 
     [DataTestMethod]

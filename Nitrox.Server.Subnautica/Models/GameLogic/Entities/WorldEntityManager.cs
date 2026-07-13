@@ -77,6 +77,11 @@ internal sealed class WorldEntityManager
         HashSet<NitroxId> dockedCameraIds = [];
         foreach (MapRoomEntity mapRoom in entityRegistry.GetEntities<MapRoomEntity>())
         {
+			int restored = MapRoomCameraPersistence.RestoreOrphanedRegistrations(mapRoom, id => entityRegistry.TryGetEntityById(id, out Entity _));
+			if (restored > 0)
+			{
+				logger.ZLogWarning($"Recovered {restored} orphaned camera registration(s) into empty dock slots for Scanner Room {mapRoom.Id}");
+			}
             lock (mapRoom)
             {
                 if (mapRoom.LeftDockCameraId != null)

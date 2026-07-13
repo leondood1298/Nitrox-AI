@@ -44,8 +44,14 @@ internal sealed class MapRoomCameraControlProcessor(SimulationOwnershipData simu
 			return;
 		}
 
-		if (simulationOwnershipData.RevokeIfOwner(packet.CameraId, context.Sender))
+		Player? currentOwner = simulationOwnershipData.GetPlayerForLock(packet.CameraId);
+		if (CanAcknowledgeRelease(currentOwner != null, currentOwner == context.Sender))
 		{
+			if (currentOwner != null)
+			{
+				simulationOwnershipData.RevokeIfOwner(packet.CameraId, context.Sender);
+			}
+			logger.ZLogInformation($"Released camera control for session {context.Sender.SessionId}: camera {packet.CameraId}");
 			await context.SendToAllAsync(CreateResponse(packet, true, context.Sender.SessionId));
 		}
 		else
@@ -53,6 +59,8 @@ internal sealed class MapRoomCameraControlProcessor(SimulationOwnershipData simu
 			await context.ReplyAsync(CreateResponse(packet, false, simulationOwnershipData.GetPlayerForLock(packet.CameraId)?.SessionId ?? context.Sender.SessionId));
 		}
 	}
+
+	internal static bool CanAcknowledgeRelease(bool hasOwner, bool senderOwnsLock) => !hasOwner || senderOwnsLock;
 
 	private bool IsValidAssociation(MapRoomCameraControl packet)
 	{

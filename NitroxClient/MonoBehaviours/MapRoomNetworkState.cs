@@ -5,6 +5,8 @@ namespace NitroxClient.MonoBehaviours;
 
 public sealed class MapRoomNetworkState : MonoBehaviour
 {
+    public bool MetadataInitialized { get; set; }
+
     public long Generation { get; set; }
 
     public long Revision { get; set; }

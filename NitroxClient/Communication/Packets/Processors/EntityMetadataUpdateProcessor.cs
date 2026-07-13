@@ -11,7 +11,8 @@ using UnityEngine;
 
 namespace NitroxClient.Communication.Packets.Processors;
 
-internal sealed class EntityMetadataUpdateProcessor(Entities entities, EntityMetadataManager entityMetadataManager, MapRoomScanResultBroadcaster scanResultBroadcaster, SimulationOwnership simulationOwnership) : IClientPacketProcessor<EntityMetadataUpdate>
+internal sealed class EntityMetadataUpdateProcessor(Entities entities, EntityMetadataManager entityMetadataManager, MapRoomScanResultBroadcaster scanResultBroadcaster,
+    MapRoomScanResultSubscriber scanResultSubscriber, SimulationOwnership simulationOwnership) : IClientPacketProcessor<EntityMetadataUpdate>
 {
     private readonly Entities entities = entities;
     private readonly EntityMetadataManager entityMetadataManager = entityMetadataManager;
@@ -38,14 +39,24 @@ internal sealed class EntityMetadataUpdateProcessor(Entities entities, EntityMet
         metadataProcessor.Value.ProcessMetadata(gameObject, update.NewValue);
         if (update.NewValue is Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata.MapRoomMetadata metadata && metadata.Generation > previousGeneration && gameObject.TryGetComponent(out MapRoomFunctionality mapRoom))
         {
+            bool hasOwnership = simulationOwnership.HasAnyLockType(update.Id);
             if (MapRoomScanResults.ShouldRepublishProgress(previousGeneration, metadata.Generation, previousTarget == metadata.TypeToScan.ToUnity(),
-                    previousProgress, metadata.NumNodesScanned, simulationOwnership.HasAnyLockType(update.Id)))
+                    previousProgress, metadata.NumNodesScanned, hasOwnership))
             {
                 mapRoom.numNodesScanned = previousProgress;
                 MapRoomScanResults.RefreshResultConsumers(mapRoom);
                 entities.EntityMetadataChangedThrottled(mapRoom, update.Id);
             }
-            scanResultBroadcaster.BroadcastSnapshot(mapRoom);
+            if (hasOwnership)
+            {
+                scanResultBroadcaster.BroadcastSnapshot(mapRoom);
+            }
+            else
+            {
+                // The owner's snapshot can traverse the server before this generation's metadata reaches us.
+                // Reassert the subscription after accepting the generation to retrieve the canonical snapshot again.
+                scanResultSubscriber.Set(mapRoom, true);
+            }
         }
         return Task.CompletedTask;
     }

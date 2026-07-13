@@ -4,6 +4,8 @@ using System.Collections.Generic;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Logger;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
+using Nitrox.Model.Subnautica.Extensions;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication;
 using NitroxClient.Communication.Abstract;
@@ -68,9 +70,11 @@ public class MapRoomCameras
 		{
 			pendingControl.Remove(nitroxId2);
 			locallyControlled.Remove(nitroxId2);
-			MovementBroadcaster.UnregisterWatched(nitroxId2);
 			lastBroadcastLightState.Remove(nitroxId2);
+			// Release the camera-specific lock before generic movement ownership is relinquished.
+			// Otherwise the server can see an already-unlocked camera and fail to notify remote clients.
 			packetSender.Send(new MapRoomCameraControl(nitroxId2, Optional.Empty, -1, isControlling: false, lightOn: false));
+			MovementBroadcaster.UnregisterWatched(nitroxId2);
 		}
 	}
 
@@ -299,7 +303,7 @@ public class MapRoomCameras
 			MapRoomFunctionality mapRoom = GetMapRoomForDock(dockingPoint);
 			if ((bool)mapRoom && mapRoom.TryGetNitroxId(out NitroxId mapRoomId))
 			{
-				packetSender.Send(new MapRoomCameraDock(cameraId, mapRoomId, GetDockingIndex(mapRoom, dockingPoint), isDocked: false));
+				packetSender.Send(new MapRoomCameraDock(cameraId, mapRoomId, GetDockingIndex(mapRoom, dockingPoint), isDocked: false, cameraTransform: camera.transform.ToWorldDto()));
 			}
 		}
 	}
@@ -437,7 +441,9 @@ public class MapRoomCameras
 		return mapRoom.transform.InverseTransformPoint(dockingPoint.transform.position);
 	}
 
-	public static void EnsureCameraIds(MapRoomFunctionality mapRoom)
+	public static void EnsureCameraIds(MapRoomFunctionality mapRoom) => EnsureCameraIds(mapRoom, null);
+
+	private static void EnsureCameraIds(MapRoomFunctionality mapRoom, IReadOnlyList<NitroxId?> authoritativeDockIds, IReadOnlyList<MapRoomCameraRecord> cameraRecords = null)
 	{
 		if (!mapRoom || !mapRoom.TryGetNitroxId(out NitroxId nitroxId))
 		{
@@ -447,11 +453,28 @@ public class MapRoomCameras
 		int num = 0;
 		int reconciled = 0;
 		int broadcast = 0;
+		int removed = 0;
 		MapRoomCameras cameraManager = NitroxServiceLocator.LocateService<MapRoomCameras>();
-		foreach (MapRoomCameraDocking item in dockingPoints)
+		for (int index = 0; index < dockingPoints.Count; index++)
 		{
+			MapRoomCameraDocking item = dockingPoints[index];
 			MapRoomCamera camera = item.camera;
-			if ((bool)camera && !camera.TryGetNitroxId(out NitroxId _))
+			NitroxId? authoritativeCameraId = authoritativeDockIds != null && index < authoritativeDockIds.Count ? authoritativeDockIds[index] : null;
+			if (authoritativeDockIds != null && !ShouldRestoreDefaultCamera(authoritativeCameraId))
+			{
+				if (camera)
+				{
+					RemoveUnexpectedRestoredCamera(item, camera);
+					removed++;
+				}
+				continue;
+			}
+			if ((bool)camera && authoritativeCameraId != null && (!camera.TryGetNitroxId(out NitroxId existingId) || existingId != authoritativeCameraId))
+			{
+				NitroxEntity.SetNewId(camera.gameObject, authoritativeCameraId);
+				num++;
+			}
+			else if ((bool)camera && !camera.TryGetNitroxId(out NitroxId _))
 			{
 				NitroxEntity.SetNewId(camera.gameObject, GetDeterministicCameraId(nitroxId, GetLocalDockPosition(mapRoom, item)));
 				num++;
@@ -466,7 +489,11 @@ public class MapRoomCameras
 				broadcast++;
 			}
 		}
-		Log.Info(string.Format("[{0}] EnsureCameraIds map room {1}: found {2} dock(s), assigned {3} camera id(s), reconciled {4} camera reference(s), broadcast {5} restored dock(s)", "MapRoomCameras", nitroxId, dockingPoints.Count, num, reconciled, broadcast));
+		if (cameraRecords != null)
+		{
+			cameraManager.ApplyRestoredCameraRecords(cameraRecords);
+		}
+		Log.Info(string.Format("[{0}] EnsureCameraIds map room {1}: found {2} dock(s), assigned {3} camera id(s), reconciled {4} camera reference(s), broadcast {5} restored dock(s), removed {6} authoritative empty-slot camera(s)", "MapRoomCameras", nitroxId, dockingPoints.Count, num, reconciled, broadcast, removed));
 		NormalizeCameraList();
 	}
 
@@ -475,6 +502,40 @@ public class MapRoomCameras
 		float timeoutAt = Time.time + 15f;
 		yield return new WaitUntil(() => !mapRoom || Time.time >= timeoutAt || MapRoomReadyForIds(mapRoom));
 		EnsureCameraIds(mapRoom);
+	}
+
+	public static IEnumerator EnsureCameraIdsDeferred(MapRoomFunctionality mapRoom, NitroxId? leftDockCameraId, NitroxId? rightDockCameraId, IReadOnlyList<MapRoomCameraRecord> cameraRecords)
+	{
+		float timeoutAt = Time.time + 15f;
+		yield return new WaitUntil(() => !mapRoom || Time.time >= timeoutAt || MapRoomReadyForIds(mapRoom));
+		EnsureCameraIds(mapRoom, new[] { leftDockCameraId, rightDockCameraId }, cameraRecords);
+	}
+
+	private void ApplyRestoredCameraRecords(IReadOnlyList<MapRoomCameraRecord> cameraRecords)
+	{
+		foreach (MapRoomCameraRecord record in cameraRecords)
+		{
+			if (!NitroxEntity.TryGetObjectFrom(record.CameraId, out GameObject cameraObject) || !cameraObject.TryGetComponent(out MapRoomCamera camera))
+			{
+				continue;
+			}
+			camera.cameraNumber = record.CameraNumber;
+			camera.UpdatePingLabel();
+			SetLight(cameraObject, record.LightOn);
+			ProcessComponentState(new MapRoomCameraComponentState(record.CameraId, record.Energy, record.Health, record.ComponentRevision, true, true));
+		}
+	}
+
+	internal static bool ShouldRestoreDefaultCamera(NitroxId? authoritativeCameraId) => authoritativeCameraId != null;
+
+	private static void RemoveUnexpectedRestoredCamera(MapRoomCameraDocking dockingPoint, MapRoomCamera camera)
+	{
+		while (MapRoomCamera.cameras.Remove(camera))
+		{
+		}
+		dockingPoint.camera = null;
+		dockingPoint.cameraDocked = false;
+		UnityEngine.Object.Destroy(camera.gameObject);
 	}
 
 	public static void EnsureCameraId(MapRoomCameraDocking dockingPoint, MapRoomCamera camera)

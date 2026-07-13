@@ -11,6 +11,32 @@ namespace NitroxClient.GameLogic;
 
 public static class MapRoomScanResults
 {
+    private const float PICKUP_POSITION_TOLERANCE_SQUARED = 0.01f;
+
+    public static void RemoveLocalResource(NitroxId resourceId)
+    {
+        RemoveLocalResource(resourceId, TechType.None, null);
+    }
+
+    public static void RemoveLocalResource(NitroxId resourceId, TechType techType, Vector3 pickupPosition)
+    {
+        RemoveLocalResource(resourceId, techType, (Vector3?)pickupPosition);
+    }
+
+    private static void RemoveLocalResource(NitroxId resourceId, TechType techType, Vector3? pickupPosition)
+    {
+        string id = resourceId.ToString();
+        foreach (MapRoomFunctionality mapRoom in MapRoomFunctionality.mapRooms)
+        {
+            if (mapRoom && RemoveFromList(mapRoom.resourceNodes, id, techType, pickupPosition))
+            {
+                mapRoom.numNodesScanned = System.Math.Min(mapRoom.numNodesScanned, mapRoom.resourceNodes.Count);
+                RefreshResultConsumers(mapRoom);
+            }
+        }
+        RemoveHudNode(id, techType, pickupPosition);
+    }
+
     public static void Cleanup(MapRoomFunctionality mapRoom)
     {
         mapRoom.resourceNodes.Clear();
@@ -85,15 +111,12 @@ public static class MapRoomScanResults
 
     internal static void ApplyDeltaToList(List<ResourceTrackerDatabase.ResourceInfo> target, MapRoomScanResultChanged packet)
     {
-        int index = target.FindIndex(info => info.uniqueId == packet.ResourceId);
         if (packet.Removed)
         {
-            if (index >= 0)
-            {
-                target.RemoveAt(index);
-            }
+            RemoveFromList(target, packet.ResourceId);
             return;
         }
+        int index = target.FindIndex(info => info.uniqueId == packet.ResourceId);
         ResourceTrackerDatabase.ResourceInfo updated = ToResourceInfo(packet.ResourceId, packet.TechType, packet.Position.ToUnity());
         if (index >= 0)
         {
@@ -104,6 +127,24 @@ public static class MapRoomScanResults
             target.Add(updated);
         }
     }
+
+    internal static bool RemoveFromList(List<ResourceTrackerDatabase.ResourceInfo> target, string resourceId)
+    {
+        return RemoveFromList(target, resourceId, TechType.None, null);
+    }
+
+    internal static bool RemoveFromSet(HashSet<ResourceTrackerDatabase.ResourceInfo> target, string resourceId) =>
+        RemoveFromSet(target, resourceId, TechType.None, null);
+
+    internal static bool RemoveFromList(List<ResourceTrackerDatabase.ResourceInfo> target, string resourceId, TechType techType, Vector3? pickupPosition) =>
+        target.RemoveAll(info => MatchesPickup(info, resourceId, techType, pickupPosition)) > 0;
+
+    internal static bool RemoveFromSet(HashSet<ResourceTrackerDatabase.ResourceInfo> target, string resourceId, TechType techType, Vector3? pickupPosition) =>
+        target.RemoveWhere(info => MatchesPickup(info, resourceId, techType, pickupPosition)) > 0;
+
+    internal static bool MatchesPickup(ResourceTrackerDatabase.ResourceInfo info, string resourceId, TechType techType, Vector3? pickupPosition) =>
+        info.uniqueId == resourceId || pickupPosition.HasValue && techType != TechType.None && info.techType == techType &&
+        (info.position - pickupPosition.Value).sqrMagnitude <= PICKUP_POSITION_TOLERANCE_SQUARED;
 
     internal static void RefreshResultConsumers(MapRoomFunctionality mapRoom)
     {
@@ -116,6 +157,18 @@ public static class MapRoomScanResults
         {
             resourceTracker.gatherNextTick = true;
         }
+    }
+
+    private static void RemoveHudNode(string resourceId, TechType techType, Vector3? pickupPosition)
+    {
+        uGUI_ResourceTracker resourceTracker = Object.FindObjectOfType<uGUI_ResourceTracker>();
+        if (!resourceTracker)
+        {
+            return;
+        }
+        RemoveFromSet(resourceTracker.nodes, resourceId, techType, pickupPosition);
+        resourceTracker.gatherNextTick = true;
+        resourceTracker.UpdateBlips();
     }
 
     internal static bool ShouldRepublishProgress(long previousGeneration, long acceptedGeneration, bool targetAlreadySelected,

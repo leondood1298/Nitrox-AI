@@ -61,6 +61,24 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Validate two-client camera movement after rapid redocking (#49)
 - [x] Republish early scan progress and refresh non-owner hologram blips (#50)
 - [x] Suppress loose-world duplicates for cameras currently recorded as docked (#50)
+- [x] Validate restored cameras across save reload and two clients (#50)
+- [x] Resynchronize non-owner red blips after scan-target changes (#51)
+- [x] Validate shared Scanner Room results and HUD chips on two clients (#51)
+- [x] Remove collected resources from the collector's local result list (#51)
+- [x] Evict collected resources from the collector's rendered HUD cache after pickup (#51)
+- [x] Apply an authoritative stopped scan state and refresh UI on client join (#51)
+- [x] Publish scan cancellation immediately and discard queued progress metadata (#51)
+- [x] Remove prefab dock cameras from authoritatively empty restored slots (#51)
+- [x] Validate scan cancellation and camera reload without duplicates (#51)
+- [x] Remove every duplicate stable-ID result on pickup and server removal (#51)
+- [x] Fall back to resource type/position when the collector's local scan-result ID differs (#51)
+- [x] Broadcast idempotent camera releases after movement-ownership races (#51)
+- [x] Persist bootstrapped prefab cameras as world entities on first undock (#51)
+- [x] Recover registered cameras that were orphaned by older undock saves (#51)
+- [x] Validate current-save orphan recovery and first-undock persistence registration (#51)
+- [x] Validate two-client camera handoff/release restores control availability (#51)
+- [x] Apply authoritative number, battery, health, and light state to loose cameras on reload (#51)
+- [x] Clear the collector's local Scanner Room result when a breakable target is destroyed (#51)
 
 ## Remaining
 
@@ -69,14 +87,15 @@ Update this file after each completed work slice. Keep entries short; link the P
 
 ## Next
 
-- [ ] Distinguish stale preview image from an actual camera label/selection mismatch
+- [ ] Undock camera 1, restart, and verify it persists loose instead of vanishing or duplicating (#51)
+- [ ] Verify shale HUD markers disappear for collector and observer after local break cleanup (#51)
 - [ ] Execute in-game acceptance matrix (`SCANNER_ROOM_ACCEPTANCE.md`; requires 2–3 game clients)
 
 ## Rules
 
 - Push only to `leondood1298/Nitrox-AI`; upstream push stays disabled.
 - One focused draft PR at a time; merge before starting the next branch.
-- Compile local test builds to Desktop folders using `1.16.1`, `1.16.2`, etc.; do not update GitHub Releases.
+- Publish each two-client test build as the next `1.16.x` GitHub prerelease.
 - Keep updating the current Scanner Room repair PR until the user merges it.
 - Preserve unrelated custom fixes.
 - Build and run the full test suite before every PR.

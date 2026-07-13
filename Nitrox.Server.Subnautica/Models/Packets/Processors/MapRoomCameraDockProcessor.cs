@@ -5,15 +5,18 @@ using Nitrox.Model.Packets.Core;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
-internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, SimulationOwnershipData simulationOwnershipData, ILogger<MapRoomCameraDockProcessor> logger) : IAuthPacketProcessor<MapRoomCameraDock>, IAuthPacketProcessor, IPacketProcessor, IPacketProcessor<AuthProcessorContext, MapRoomCameraDock>
+internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, WorldEntityManager worldEntityManager, SimulationOwnershipData simulationOwnershipData, ILogger<MapRoomCameraDockProcessor> logger) : IAuthPacketProcessor<MapRoomCameraDock>, IAuthPacketProcessor, IPacketProcessor, IPacketProcessor<AuthProcessorContext, MapRoomCameraDock>
 {
+	private const string MAP_ROOM_CAMERA_CLASS_ID = "733fd479-0760-4bc2-a03e-281cbf02bfa4";
 	private readonly EntityRegistry entityRegistry = entityRegistry;
+	private readonly WorldEntityManager worldEntityManager = worldEntityManager;
 	private readonly SimulationOwnershipData simulationOwnershipData = simulationOwnershipData;
 	private readonly ILogger<MapRoomCameraDockProcessor> logger = logger;
 	private readonly object dockingLock = new();
@@ -27,7 +30,8 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
 			return;
 		}
 
-		bool validWorldCamera = entityRegistry.TryGetEntityById(packet.CameraId, out WorldEntity camera) && camera.TechType.Equals(new Nitrox.Model.Subnautica.DataStructures.GameLogic.NitroxTechType("MapRoomCamera"));
+		bool entityExists = entityRegistry.TryGetEntityById(packet.CameraId, out Entity existingEntity);
+		bool validWorldCamera = existingEntity is WorldEntity camera && camera.TechType.Equals(new NitroxTechType("MapRoomCamera"));
 		bool registeredCamera;
 		bool canBootstrapRestoredCamera;
 		bool senderOwnsRoom = simulationOwnershipData.GetPlayerForLock(mapRoom.Id) == context.Sender;
@@ -78,6 +82,14 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
 
 		if (response.Granted)
 		{
+			if (ShouldPersistLooseCamera(packet.IsDocked, entityExists, packet.CameraTransform != null))
+			{
+				GlobalRootEntity looseCamera = new(packet.CameraTransform!, GlobalRootEntity.GLOBAL_ROOT_LEVEL, MAP_ROOM_CAMERA_CLASS_ID, true,
+					packet.CameraId, new NitroxTechType("MapRoomCamera"), null, null, []);
+				entityRegistry.AddOrUpdate(looseCamera);
+				worldEntityManager.TrackEntityInTheWorld(looseCamera);
+				logger.ZLogInformation($"Persisted restored camera {packet.CameraId} as a loose world entity after its first undock");
+			}
 			bool preserveControlLock = false;
 			if (packet.IsDocked && simulationOwnershipData.TryGetLock(packet.CameraId, out SimulationOwnershipData.PlayerLock playerLock))
 			{
@@ -102,6 +114,8 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
 		isDocked && senderOwnsRoom && slotAvailable && registeredCameraCount is >= 0 and < 2;
 	internal static bool ShouldPreserveControlLock(bool senderOwnsLock, SimulationLockType lockType) =>
 		senderOwnsLock && lockType == SimulationLockType.EXCLUSIVE;
+	internal static bool ShouldPersistLooseCamera(bool isDocked, bool entityExists, bool hasTransform) =>
+		!isDocked && !entityExists && hasTransform;
 
 	private bool TryTransferRegistration(MapRoomEntity targetRoom, Nitrox.Model.DataStructures.NitroxId cameraId)
 	{

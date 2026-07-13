@@ -3,6 +3,7 @@ using NitroxClient.Communication.Abstract;
 using NitroxClient.MonoBehaviours;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.Packets;
+using NitroxClient.GameLogic;
 
 namespace NitroxPatcher.Patches.Dynamic;
 
@@ -17,6 +18,10 @@ public sealed partial class BreakableResource_BreakIntoResources_Patch : NitroxP
             Log.Warn($"[{nameof(BreakableResource_BreakIntoResources_Patch)}] Could not find {nameof(NitroxEntity)} for breakable entity {__instance.gameObject.GetFullHierarchyPath()}.");
             return;
         }
+
+        // The server does not echo EntityDestroyed to its sender. Remove the outcrop's local
+        // Scanner Room result now so the collector cannot retain a stale HUD marker.
+        MapRoomScanResults.RemoveLocalResource(destroyedId, CraftData.GetTechType(__instance.gameObject), __instance.transform.position);
 
         // Case by case handling
 
