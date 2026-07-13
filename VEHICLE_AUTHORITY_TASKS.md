@@ -23,6 +23,17 @@
 - [x] Add authority tests: 398 passed, 8 platform skips
 - [ ] Two-client vehicle acceptance test
 
+## Test build 1.16.24
+
+- [x] Build and package Windows x64
+- [x] Publish GitHub pre-release
+- [ ] Scanner Room camera movement regression
+- [ ] Cyclops pilot, movement, stop, and player visibility
+- [ ] Seamoth and Prawn pilot and movement
+- [ ] Moonpool and Cyclops docking/undocking
+- [ ] Pilot handoff and owner disconnect/rejoin
+- [ ] Capture `vehicle` before/after any failure
+
 ## Next
 
 - [ ] Revisioned server-canonical Cyclops controls
