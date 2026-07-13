@@ -14,6 +14,7 @@
 
 ## Current branch: `agent/vehicle-authority`
 
+- [x] Draft PR #53 opened
 - [x] Reject movement without simulation ownership
 - [x] Validate piloting, docking, and paired undocking transitions
 - [x] Replace packet session ids with the authenticated sender
