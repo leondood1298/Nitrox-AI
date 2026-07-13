@@ -161,11 +161,16 @@ public class ModuleEntitySpawner : EntitySpawner<ModuleEntity>
         largeWorldEntity.Start();
     }
 
-    public static ModuleEntity From(Constructable constructable)
+    public static ModuleEntity From(Constructable constructable, EntityMetadataManager entityMetadataManager)
     {
         ModuleEntity module = ModuleEntity.MakeEmpty();
         module.Level = (int)LargeWorldEntity.CellLevel.Global;
         FillObject(module, constructable);
+		Optional<EntityMetadata> metadata = entityMetadataManager.Extract(constructable.gameObject);
+		if (metadata.HasValue)
+		{
+			module.Metadata = metadata.Value;
+		}
         return module;
     }
 }

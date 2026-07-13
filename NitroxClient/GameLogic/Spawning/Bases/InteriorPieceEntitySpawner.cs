@@ -123,6 +123,7 @@ public class InteriorPieceEntitySpawner : EntitySpawner<InteriorPieceEntity>
         interiorPiece.Level = (int)LargeWorldEntity.CellLevel.Global;
 
         GameObject gameObject = (module as Component).gameObject;
+		interiorPiece.TechType = CraftData.GetTechType(gameObject).ToDto();
         if (gameObject && gameObject.TryGetComponent(out PrefabIdentifier identifier))
         {
             interiorPiece.ClassId = identifier.ClassId;
@@ -171,6 +172,11 @@ public class InteriorPieceEntitySpawner : EntitySpawner<InteriorPieceEntity>
         }
 
         interiorPiece.BaseFace = module.moduleFace.ToDto();
+		Optional<EntityMetadata> metadata = entityMetadataManager.Extract(gameObject);
+		if (metadata.HasValue)
+		{
+			interiorPiece.Metadata = metadata.Value;
+		}
 
         return interiorPiece;
     }

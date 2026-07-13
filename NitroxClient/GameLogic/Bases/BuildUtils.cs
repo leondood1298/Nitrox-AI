@@ -256,7 +256,7 @@ public static class BuildUtils
                     entities.Add(GhostEntitySpawner.From(constructableBase));
                     continue;
                 }
-                entities.Add(ModuleEntitySpawner.From(constructable));
+                entities.Add(ModuleEntitySpawner.From(constructable, entityMetadataManager));
             }
         }
         return entities;
@@ -298,7 +298,7 @@ public static class BuildUtils
                     AddChild(GhostEntitySpawner.From(constructableBase));
                     continue;
                 }
-                AddChild(ModuleEntitySpawner.From(constructable));
+                AddChild(ModuleEntitySpawner.From(constructable, entityMetadataManager));
             }
         }
 

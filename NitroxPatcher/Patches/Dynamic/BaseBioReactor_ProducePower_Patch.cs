@@ -14,12 +14,13 @@ namespace NitroxPatcher.Patches.Dynamic;
 
 public sealed class BaseBioReactor_ProducePower_Patch : NitroxPatch, IDynamicPatch, INitroxPatch
 {
-	private delegate void PrefixDelegate(BaseBioReactor instance, out List<NitroxId> state);
+	private delegate bool PrefixDelegate(BaseBioReactor instance, out List<NitroxId> state);
 	private static readonly MethodInfo TARGET_METHOD = Reflect.Method((BaseBioReactor t) => t.ProducePower(0f));
 
-	public static void Prefix(BaseBioReactor __instance, out List<NitroxId> __state)
+	public static bool Prefix(BaseBioReactor __instance, out List<NitroxId> __state)
 	{
 		__state = CollectItemIds(__instance);
+		return !__instance.TryGetNitroxId(out NitroxId id) || NitroxPatch.Resolve<SimulationOwnership>().HasAnyLockType(id);
 	}
 
 	public static void Postfix(BaseBioReactor __instance, List<NitroxId> __state)

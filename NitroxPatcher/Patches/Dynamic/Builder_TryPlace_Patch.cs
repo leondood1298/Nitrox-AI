@@ -3,6 +3,7 @@ using System.Reflection;
 using HarmonyLib;
 using NitroxClient.Communication.Abstract;
 using NitroxClient.GameLogic.Spawning.Bases;
+using NitroxClient.GameLogic.Spawning.Metadata;
 using NitroxClient.MonoBehaviours;
 using NitroxClient.MonoBehaviours.Cyclops;
 using Nitrox.Model.DataStructures;
@@ -91,7 +92,7 @@ public sealed partial class Builder_TryPlace_Patch : NitroxPatch, IDynamicPatch
         {
             ModuleEntitySpawner.MoveToGlobalRoot(ghostObject);
             
-            ModuleEntity module = ModuleEntitySpawner.From(constructable);
+            ModuleEntity module = ModuleEntitySpawner.From(constructable, Resolve<EntityMetadataManager>());
             module.Id = ghostId;
             module.ParentId = parentId;
             Resolve<IPacketSender>().Send(new PlaceModule(module));
