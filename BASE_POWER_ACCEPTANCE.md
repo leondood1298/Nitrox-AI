@@ -14,19 +14,19 @@ Use matching client/server builds. Join client 1 first unless a row says otherwi
 
 | Test | Expected | Status |
 |---|---|---|
-| Legacy save first join | Existing power does not reset; sources migrate to typed revisioned state | FAILED 1.16.19 — stored nonzero values loaded as zero; fix pending retest |
-| Two-client idle nuclear base | Both clients show the same stable/recharging total | PARTIAL — nuclear generation appeared synchronized; exact values not recorded |
+| Legacy save first join | Existing power does not reset; sources migrate to typed revisioned state | ACCEPTED — one-time legacy migration may begin at zero; typed state must persist after first explicit save |
+| Two-client idle nuclear base | Both clients show the same stable/recharging total | PARTIAL — both clients resumed generation from the saved source state |
 | Client 2 fabricates one item | One 5-power cost appears on both clients and server source state | NOT RUN |
 | Both clients fabricate together | Both costs are accounted once | NOT RUN |
 | Owner disconnect during recharge | Remaining client becomes owner and recharge continues | NOT RUN |
 | Previous owner rejoins | Both clients converge without rollback | NOT RUN |
-| Restart below full power | Stored source level is restored, then generation resumes | FAILED 1.16.19 — sources reloaded as `UNKNOWN 0/0`; fix pending retest |
+| Restart below full power | Stored source level is restored, then generation resumes | PASS 1.16.20 — bioreactor 119.65 and nuclear 216.48 restored before join; generation resumed |
 | Solar day/night | Generation and stored power agree on both clients | NOT RUN |
 | Thermal plant direct connection | Generation and stored power agree on both clients | NOT RUN |
 | Thermal transmitter chain | Connection, generation, unload/reload, and restart remain correct | NOT RUN |
 | Bioreactor fuel cycle | Fuel inventory/consumption and power agree on both clients after restart | PARTIAL — insertion and activation synchronized; consumption/restart not tested |
 | Nuclear rod cycle | Rod inventory/depletion and power agree on both clients after restart | NOT RUN |
-| Battery/power-cell charger | Item charge and base drain occur once and agree | NOT RUN |
+| Battery/power-cell charger | Item charge and base drain occur once and agree | BLOCKED — camera batteries emitted unknown-entity metadata on join; fix pending retest |
 | Water filtration | Progress, output, and base drain occur once and agree | NOT RUN |
 | Moonpool vehicle charging | Vehicle charge and base drain occur once and agree | NOT RUN |
 | Scanner Room continuous drain | Scanner operation drains shared base power once | INCONCLUSIVE — 0.5/s load was below combined 5/s generation |

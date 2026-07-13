@@ -15,6 +15,7 @@
 - [x] Authority, capacity, handoff, replay, and client revision tests
 - [x] Backward-compatible loading of legacy one-field power metadata
 - [x] Suppress premature battery metadata broadcasts during entity spawning
+- [x] Suppress redundant metadata from temporary Scanner Room camera battery ids
 
 ## Test next
 

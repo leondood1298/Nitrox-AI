@@ -11,6 +11,14 @@ public sealed partial class Battery_charge_set_Patch : NitroxPatch, IDynamicPatc
 
     public static void Prefix(Battery __instance, float value)
     {
+        // Scanner Room camera batteries are local implementation details. Their energy
+        // is synchronized and persisted by MapRoomCameras using the camera entity id;
+        // their temporary InstalledBatteryEntity ids do not exist on the server.
+        if (__instance.GetComponentInParent<MapRoomCamera>())
+        {
+            return;
+        }
+
         // Broadcast update only once per integer change
         if (Math.Abs(Math.Floor(__instance.charge) - Math.Floor(value)) > 0.0 &&
             __instance.TryGetIdOrWarn(out NitroxId id))
