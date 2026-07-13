@@ -75,6 +75,10 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Broadcast idempotent camera releases after movement-ownership races (#51)
 - [x] Persist bootstrapped prefab cameras as world entities on first undock (#51)
 - [x] Recover registered cameras that were orphaned by older undock saves (#51)
+- [x] Validate current-save orphan recovery and first-undock persistence registration (#51)
+- [x] Validate two-client camera handoff/release restores control availability (#51)
+- [x] Apply authoritative number, battery, health, and light state to loose cameras on reload (#51)
+- [x] Clear the collector's local Scanner Room result when a breakable target is destroyed (#51)
 
 ## Remaining
 
@@ -83,10 +87,8 @@ Update this file after each completed work slice. Keep entries short; link the P
 
 ## Next
 
-- [ ] Verify the current save recovers camera 1 into its dock while leaving the existing loose camera intact (#51)
 - [ ] Undock camera 1, restart, and verify it persists loose instead of vanishing or duplicating (#51)
-- [ ] Verify collected-resource HUD markers disappear for collector and observer after ID fallback (#51)
-- [ ] Verify camera control returns to client 1 after a client 1 -> client 2 handoff/release (#51)
+- [ ] Verify shale HUD markers disappear for collector and observer after local break cleanup (#51)
 - [ ] Execute in-game acceptance matrix (`SCANNER_ROOM_ACCEPTANCE.md`; requires 2–3 game clients)
 
 ## Rules

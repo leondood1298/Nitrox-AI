@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Logger;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.Extensions;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication;
@@ -442,7 +443,7 @@ public class MapRoomCameras
 
 	public static void EnsureCameraIds(MapRoomFunctionality mapRoom) => EnsureCameraIds(mapRoom, null);
 
-	private static void EnsureCameraIds(MapRoomFunctionality mapRoom, IReadOnlyList<NitroxId?> authoritativeDockIds)
+	private static void EnsureCameraIds(MapRoomFunctionality mapRoom, IReadOnlyList<NitroxId?> authoritativeDockIds, IReadOnlyList<MapRoomCameraRecord> cameraRecords = null)
 	{
 		if (!mapRoom || !mapRoom.TryGetNitroxId(out NitroxId nitroxId))
 		{
@@ -488,6 +489,10 @@ public class MapRoomCameras
 				broadcast++;
 			}
 		}
+		if (cameraRecords != null)
+		{
+			cameraManager.ApplyRestoredCameraRecords(cameraRecords);
+		}
 		Log.Info(string.Format("[{0}] EnsureCameraIds map room {1}: found {2} dock(s), assigned {3} camera id(s), reconciled {4} camera reference(s), broadcast {5} restored dock(s), removed {6} authoritative empty-slot camera(s)", "MapRoomCameras", nitroxId, dockingPoints.Count, num, reconciled, broadcast, removed));
 		NormalizeCameraList();
 	}
@@ -499,11 +504,26 @@ public class MapRoomCameras
 		EnsureCameraIds(mapRoom);
 	}
 
-	public static IEnumerator EnsureCameraIdsDeferred(MapRoomFunctionality mapRoom, NitroxId? leftDockCameraId, NitroxId? rightDockCameraId)
+	public static IEnumerator EnsureCameraIdsDeferred(MapRoomFunctionality mapRoom, NitroxId? leftDockCameraId, NitroxId? rightDockCameraId, IReadOnlyList<MapRoomCameraRecord> cameraRecords)
 	{
 		float timeoutAt = Time.time + 15f;
 		yield return new WaitUntil(() => !mapRoom || Time.time >= timeoutAt || MapRoomReadyForIds(mapRoom));
-		EnsureCameraIds(mapRoom, new[] { leftDockCameraId, rightDockCameraId });
+		EnsureCameraIds(mapRoom, new[] { leftDockCameraId, rightDockCameraId }, cameraRecords);
+	}
+
+	private void ApplyRestoredCameraRecords(IReadOnlyList<MapRoomCameraRecord> cameraRecords)
+	{
+		foreach (MapRoomCameraRecord record in cameraRecords)
+		{
+			if (!NitroxEntity.TryGetObjectFrom(record.CameraId, out GameObject cameraObject) || !cameraObject.TryGetComponent(out MapRoomCamera camera))
+			{
+				continue;
+			}
+			camera.cameraNumber = record.CameraNumber;
+			camera.UpdatePingLabel();
+			SetLight(cameraObject, record.LightOn);
+			ProcessComponentState(new MapRoomCameraComponentState(record.CameraId, record.Energy, record.Health, record.ComponentRevision, true, true));
+		}
 	}
 
 	internal static bool ShouldRestoreDefaultCamera(NitroxId? authoritativeCameraId) => authoritativeCameraId != null;
