@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Logger;
+using Nitrox.Model.Subnautica.Extensions;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication;
 using NitroxClient.Communication.Abstract;
@@ -301,7 +302,7 @@ public class MapRoomCameras
 			MapRoomFunctionality mapRoom = GetMapRoomForDock(dockingPoint);
 			if ((bool)mapRoom && mapRoom.TryGetNitroxId(out NitroxId mapRoomId))
 			{
-				packetSender.Send(new MapRoomCameraDock(cameraId, mapRoomId, GetDockingIndex(mapRoom, dockingPoint), isDocked: false));
+				packetSender.Send(new MapRoomCameraDock(cameraId, mapRoomId, GetDockingIndex(mapRoom, dockingPoint), isDocked: false, cameraTransform: camera.transform.ToWorldDto()));
 			}
 		}
 	}

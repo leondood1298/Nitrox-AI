@@ -1,5 +1,6 @@
 using System;
 using Nitrox.Model.DataStructures;
+using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Packets;
 
 namespace Nitrox.Model.Subnautica.Packets;
@@ -22,8 +23,9 @@ public class MapRoomCameraDock : Packet
 	public float Energy { get; }
 	public float Health { get; }
 	public long ComponentRevision { get; }
+	public NitroxTransform? CameraTransform { get; }
 
-	public MapRoomCameraDock(NitroxId cameraId, NitroxId mapRoomId, int dockingIndex, long revision = 0, bool isServerResponse = false, bool granted = false, bool isDocked = true, int cameraNumber = 0, bool lightOn = false, long lightRevision = 0, float energy = 100f, float health = 100f, long componentRevision = 0)
+	public MapRoomCameraDock(NitroxId cameraId, NitroxId mapRoomId, int dockingIndex, long revision = 0, bool isServerResponse = false, bool granted = false, bool isDocked = true, int cameraNumber = 0, bool lightOn = false, long lightRevision = 0, float energy = 100f, float health = 100f, long componentRevision = 0, NitroxTransform? cameraTransform = null)
 	{
 		CameraId = cameraId;
 		MapRoomId = mapRoomId;
@@ -38,6 +40,7 @@ public class MapRoomCameraDock : Packet
 		Energy = energy;
 		Health = health;
 		ComponentRevision = componentRevision;
+		CameraTransform = cameraTransform;
 	}
 
 	public override string ToString()

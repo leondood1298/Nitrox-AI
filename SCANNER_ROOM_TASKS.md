@@ -73,6 +73,8 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Remove every duplicate stable-ID result on pickup and server removal (#51)
 - [x] Fall back to resource type/position when the collector's local scan-result ID differs (#51)
 - [x] Broadcast idempotent camera releases after movement-ownership races (#51)
+- [x] Persist bootstrapped prefab cameras as world entities on first undock (#51)
+- [x] Recover registered cameras that were orphaned by older undock saves (#51)
 
 ## Remaining
 
@@ -81,6 +83,8 @@ Update this file after each completed work slice. Keep entries short; link the P
 
 ## Next
 
+- [ ] Verify the current save recovers camera 1 into its dock while leaving the existing loose camera intact (#51)
+- [ ] Undock camera 1, restart, and verify it persists loose instead of vanishing or duplicating (#51)
 - [ ] Verify collected-resource HUD markers disappear for collector and observer after ID fallback (#51)
 - [ ] Verify camera control returns to client 1 after a client 1 -> client 2 handoff/release (#51)
 - [ ] Execute in-game acceptance matrix (`SCANNER_ROOM_ACCEPTANCE.md`; requires 2–3 game clients)

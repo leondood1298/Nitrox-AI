@@ -37,4 +37,14 @@ public sealed class MapRoomCameraDockValidationTest
     {
         Assert.AreEqual(expected, MapRoomCameraDockProcessor.ShouldPreserveControlLock(senderOwnsLock, lockType));
     }
+
+    [DataTestMethod]
+    [DataRow(false, false, true, true)]
+    [DataRow(true, false, true, false)]
+    [DataRow(false, true, true, false)]
+    [DataRow(false, false, false, false)]
+    public void PersistsOnlyPreviouslyUntrackedUndockedCameras(bool isDocked, bool entityExists, bool hasTransform, bool expected)
+    {
+        Assert.AreEqual(expected, MapRoomCameraDockProcessor.ShouldPersistLooseCamera(isDocked, entityExists, hasTransform));
+    }
 }
