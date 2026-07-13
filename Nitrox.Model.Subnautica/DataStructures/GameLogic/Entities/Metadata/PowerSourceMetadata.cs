@@ -22,12 +22,9 @@ public class PowerSourceMetadata : EntityMetadata
 	{
 	}
 
-	public PowerSourceMetadata(float power)
-		: this(power, 0f, BasePowerSourceType.UNKNOWN, 0)
-	{
-	}
-
-	public PowerSourceMetadata(float power, float maxPower, BasePowerSourceType sourceType, long revision = 0)
+	// Keep a single public constructor so Newtonsoft.Json can reliably select it.
+	// The optional values preserve compatibility with saves that only contain Power.
+	public PowerSourceMetadata(float power, float maxPower = 0f, BasePowerSourceType sourceType = BasePowerSourceType.UNKNOWN, long revision = 0)
 	{
 		Power = power;
 		MaxPower = maxPower;

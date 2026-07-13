@@ -13,6 +13,8 @@
 - [x] `basepower` server snapshot command
 - [x] `basepower true|false` live trace toggle
 - [x] Authority, capacity, handoff, replay, and client revision tests
+- [x] Backward-compatible loading of legacy one-field power metadata
+- [x] Suppress premature battery metadata broadcasts during entity spawning
 
 ## Test next
 

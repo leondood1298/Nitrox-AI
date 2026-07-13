@@ -7,19 +7,20 @@ Use matching client/server builds. Join client 1 first unless a row says otherwi
 - Server console: `basepower` — canonical sources, power/capacity, revision, client sequence, owner, parent base, counters.
 - Server console: `basepower true` — log every accepted update.
 - Server console: `basepower false` — stop live trace.
+- Before a restart test, run `save` in the server console and wait for `World state saved`; closing the server does not force an immediate save.
 - Capture `basepower` before and after each failure. Save the server log and both client logs.
 
 ## Matrix
 
 | Test | Expected | Status |
 |---|---|---|
-| Legacy save first join | Existing power does not reset; sources migrate to typed revisioned state | PARTIAL — joined at zero; prior stored level unknown |
+| Legacy save first join | Existing power does not reset; sources migrate to typed revisioned state | FAILED 1.16.19 — stored nonzero values loaded as zero; fix pending retest |
 | Two-client idle nuclear base | Both clients show the same stable/recharging total | PARTIAL — nuclear generation appeared synchronized; exact values not recorded |
 | Client 2 fabricates one item | One 5-power cost appears on both clients and server source state | NOT RUN |
 | Both clients fabricate together | Both costs are accounted once | NOT RUN |
 | Owner disconnect during recharge | Remaining client becomes owner and recharge continues | NOT RUN |
 | Previous owner rejoins | Both clients converge without rollback | NOT RUN |
-| Restart below full power | Stored source level is restored, then generation resumes | NOT RUN |
+| Restart below full power | Stored source level is restored, then generation resumes | FAILED 1.16.19 — sources reloaded as `UNKNOWN 0/0`; fix pending retest |
 | Solar day/night | Generation and stored power agree on both clients | NOT RUN |
 | Thermal plant direct connection | Generation and stored power agree on both clients | NOT RUN |
 | Thermal transmitter chain | Connection, generation, unload/reload, and restart remain correct | NOT RUN |

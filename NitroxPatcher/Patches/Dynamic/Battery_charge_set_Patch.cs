@@ -15,7 +15,14 @@ public sealed partial class Battery_charge_set_Patch : NitroxPatch, IDynamicPatc
         if (Math.Abs(Math.Floor(__instance.charge) - Math.Floor(value)) > 0.0 &&
             __instance.TryGetIdOrWarn(out NitroxId id))
         {
-            Resolve<Entities>().EntityMetadataChanged(__instance, id);
+            Entities entities = Resolve<Entities>();
+            // Battery setters run while join-time entities are still being constructed.
+            // Those objects may already have a Nitrox id locally but are not ready for
+            // client-originated metadata updates yet.
+            if (!entities.SpawningEntities && entities.IsKnownEntity(id))
+            {
+                entities.EntityMetadataChanged(__instance, id);
+            }
         }
     }
 }
