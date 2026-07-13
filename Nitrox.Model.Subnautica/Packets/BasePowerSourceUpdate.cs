@@ -17,9 +17,10 @@ public sealed class BasePowerSourceUpdate : Packet
     public bool IsServerResponse { get; }
     public bool Granted { get; }
     public string RejectionReason { get; }
+    public float FuelConsumed { get; }
 
     public BasePowerSourceUpdate(NitroxId sourceId, BasePowerSourceType sourceType, float power, long clientSequence = 0, float maxPower = 0f,
-        long revision = 0, bool isServerResponse = false, bool granted = false, string rejectionReason = "")
+        long revision = 0, bool isServerResponse = false, bool granted = false, string rejectionReason = "", float fuelConsumed = 0f)
     {
         SourceId = sourceId;
         SourceType = sourceType;
@@ -30,5 +31,6 @@ public sealed class BasePowerSourceUpdate : Packet
         IsServerResponse = isServerResponse;
         Granted = granted;
         RejectionReason = rejectionReason;
+        FuelConsumed = fuelConsumed;
     }
 }

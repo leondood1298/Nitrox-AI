@@ -10,11 +10,11 @@ public sealed class BasePowerState
     private readonly Dictionary<NitroxId, PowerSourceMetadata> canonicalBySource = [];
     private readonly Dictionary<NitroxId, long> nextSequenceBySource = [];
 
-    public BasePowerSourceUpdate CreateUpdate(NitroxId sourceId, BasePowerSourceType sourceType, float power)
+    public BasePowerSourceUpdate CreateUpdate(NitroxId sourceId, BasePowerSourceType sourceType, float power, float fuelConsumed = 0f)
     {
         long sequence = nextSequenceBySource.TryGetValue(sourceId, out long current) && current < long.MaxValue ? current + 1 : 1;
         nextSequenceBySource[sourceId] = sequence;
-        return new BasePowerSourceUpdate(sourceId, sourceType, power, sequence);
+        return new BasePowerSourceUpdate(sourceId, sourceType, power, sequence, fuelConsumed: fuelConsumed);
     }
 
     public bool TryApply(NitroxId sourceId, PowerSourceMetadata requested, out PowerSourceMetadata accepted)

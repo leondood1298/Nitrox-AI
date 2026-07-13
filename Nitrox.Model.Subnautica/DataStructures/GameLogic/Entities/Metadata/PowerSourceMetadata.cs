@@ -16,6 +16,8 @@ public class PowerSourceMetadata : EntityMetadata
 	public BasePowerSourceType SourceType { get; }
 	[DataMember(Order = 4)]
 	public long Revision { get; }
+	[DataMember(Order = 5)]
+	public float FuelConsumed { get; }
 
 	[IgnoreConstructor]
 	protected PowerSourceMetadata()
@@ -24,17 +26,18 @@ public class PowerSourceMetadata : EntityMetadata
 
 	// Keep a single public constructor so Newtonsoft.Json can reliably select it.
 	// The optional values preserve compatibility with saves that only contain Power.
-	public PowerSourceMetadata(float power, float maxPower = 0f, BasePowerSourceType sourceType = BasePowerSourceType.UNKNOWN, long revision = 0)
+	public PowerSourceMetadata(float power, float maxPower = 0f, BasePowerSourceType sourceType = BasePowerSourceType.UNKNOWN, long revision = 0, float fuelConsumed = 0f)
 	{
 		Power = power;
 		MaxPower = maxPower;
 		SourceType = sourceType;
 		Revision = revision;
+		FuelConsumed = fuelConsumed;
 	}
 
 	public override string ToString()
 	{
-		return $"[PowerSourceMetadata Type: {SourceType}, Power: {Power}/{MaxPower}, Revision: {Revision}]";
+		return $"[PowerSourceMetadata Type: {SourceType}, Power: {Power}/{MaxPower}, FuelConsumed: {FuelConsumed}, Revision: {Revision}]";
 	}
 }
 
@@ -49,6 +52,9 @@ public enum BasePowerSourceType
 
 public static class BasePowerSourceTypes
 {
+	public const float BIOREACTOR_MAX_FUEL_PROGRESS = 840f;
+	public const float NUCLEAR_MAX_FUEL_PROGRESS = 20000f;
+
 	public static bool TryGetMaxPower(BasePowerSourceType sourceType, out float maxPower)
 	{
 		maxPower = sourceType switch
@@ -60,6 +66,17 @@ public static class BasePowerSourceTypes
 			_ => 0f
 		};
 		return maxPower > 0f;
+	}
+
+	public static bool TryGetMaxFuelProgress(BasePowerSourceType sourceType, out float maxFuelProgress)
+	{
+		maxFuelProgress = sourceType switch
+		{
+			BasePowerSourceType.BIOREACTOR => BIOREACTOR_MAX_FUEL_PROGRESS,
+			BasePowerSourceType.NUCLEAR => NUCLEAR_MAX_FUEL_PROGRESS,
+			_ => 0f
+		};
+		return maxFuelProgress > 0f;
 	}
 }
 

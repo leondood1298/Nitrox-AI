@@ -16,6 +16,9 @@
 - [x] Backward-compatible loading of legacy one-field power metadata
 - [x] Suppress premature battery metadata broadcasts during entity spawning
 - [x] Suppress redundant metadata from temporary Scanner Room camera battery ids
+- [x] Persist and synchronize partial bioreactor and nuclear fuel consumption
+- [x] Show remaining reactor fuel energy and full-output runtime on hover
+- [x] Include reactor fuel progress in `basepower` diagnostics
 
 ## Test next
 

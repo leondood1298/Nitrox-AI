@@ -86,6 +86,36 @@ public sealed class BasePowerSourceAuthorityTest
         Assert.AreEqual(75f, accepted.Power);
     }
 
+	[DataTestMethod]
+	[DataRow(BasePowerSourceType.BIOREACTOR, 420f)]
+	[DataRow(BasePowerSourceType.NUCLEAR, 12345f)]
+	public void AcceptsAndPersistsReactorFuelProgress(BasePowerSourceType sourceType, float fuelConsumed)
+	{
+		BasePowerSourceAuthority authority = new();
+		InteriorPieceEntity source = CreateInterior();
+
+		Assert.IsTrue(authority.TryApply(source, firstOwner, Request(source.Id, sourceType, 100f, 1, fuelConsumed), out PowerSourceMetadata accepted, out _));
+
+		Assert.AreEqual(fuelConsumed, accepted.FuelConsumed);
+		Assert.AreEqual(fuelConsumed, ((PowerSourceMetadata)source.Metadata).FuelConsumed);
+	}
+
+	[DataTestMethod]
+	[DataRow(BasePowerSourceType.SOLAR, 1f)]
+	[DataRow(BasePowerSourceType.BIOREACTOR, 841f)]
+	[DataRow(BasePowerSourceType.NUCLEAR, 20001f)]
+	[DataRow(BasePowerSourceType.NUCLEAR, -1f)]
+	[DataRow(BasePowerSourceType.NUCLEAR, float.NaN)]
+	public void RejectsInvalidFuelProgress(BasePowerSourceType sourceType, float fuelConsumed)
+	{
+		BasePowerSourceAuthority authority = new();
+		Entity source = CreateCompatibleEntity(sourceType);
+
+		Assert.IsFalse(authority.TryApply(source, firstOwner, Request(source.Id, sourceType, 10f, 1, fuelConsumed), out _, out string reason));
+
+		StringAssert.Contains(reason, "fuel progress");
+	}
+
     [TestMethod]
     public void RejectsIncompatibleEntityKindsAndSourceTypeChanges()
     {
@@ -125,7 +155,7 @@ public sealed class BasePowerSourceAuthorityTest
         Assert.IsFalse(authority.TryApply(source, firstOwner, Request(source.Id, BasePowerSourceType.SOLAR, 20f, 0), out _, out _));
     }
 
-    private static BasePowerSourceUpdate Request(NitroxId id, BasePowerSourceType sourceType, float power, long sequence) => new(id, sourceType, power, sequence);
+    private static BasePowerSourceUpdate Request(NitroxId id, BasePowerSourceType sourceType, float power, long sequence, float fuelConsumed = 0f) => new(id, sourceType, power, sequence, fuelConsumed: fuelConsumed);
 
     private static Entity CreateCompatibleEntity(BasePowerSourceType sourceType) => sourceType is BasePowerSourceType.SOLAR or BasePowerSourceType.THERMAL ? CreateModule() : CreateInterior();
 

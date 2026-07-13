@@ -34,7 +34,8 @@ internal sealed class BasePowerCommand(EntityRegistry entityRegistry, Simulation
             totalCapacity += metadata.MaxPower;
             bool hasOwner = simulationOwnershipData.TryGetLock(source.Id, out SimulationOwnershipData.PlayerLock owner);
             string ownerText = hasOwner ? $"{owner.Player.Name} #{owner.Player.SessionId}" : "<none>";
-            output.AppendLine($"- {metadata.SourceType}: {metadata.Power:F2}/{metadata.MaxPower:F2}, rev={metadata.Revision}, seq={authority.GetLastClientSequence(source.Id)}, owner={ownerText}, id={source.Id}, parent={source.ParentId?.ToString() ?? "<none>"}");
+            string fuelText = metadata.SourceType is BasePowerSourceType.BIOREACTOR or BasePowerSourceType.NUCLEAR ? $", fuel-progress={metadata.FuelConsumed:F2}" : "";
+            output.AppendLine($"- {metadata.SourceType}: {metadata.Power:F2}/{metadata.MaxPower:F2}{fuelText}, rev={metadata.Revision}, seq={authority.GetLastClientSequence(source.Id)}, owner={ownerText}, id={source.Id}, parent={source.ParentId?.ToString() ?? "<none>"}");
         }
         output.Append($"Total source storage: {totalPower:F2}/{totalCapacity:F2}");
         await context.ReplyAsync(output.ToString());

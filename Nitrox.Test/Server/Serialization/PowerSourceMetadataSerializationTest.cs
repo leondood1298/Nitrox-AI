@@ -12,7 +12,7 @@ public sealed class PowerSourceMetadataSerializationTest
     [TestMethod]
     public void JsonRoundTripPreservesCanonicalState()
     {
-        PowerSourceMetadata expected = new(42.5f, 75f, BasePowerSourceType.SOLAR, 17);
+        PowerSourceMetadata expected = new(216.5f, 2500f, BasePowerSourceType.NUCLEAR, 17, 1234.5f);
 
         using MemoryStream output = new();
         serializer.Serialize(output, expected);
@@ -23,6 +23,7 @@ public sealed class PowerSourceMetadataSerializationTest
         Assert.AreEqual(expected.MaxPower, actual.MaxPower);
         Assert.AreEqual(expected.SourceType, actual.SourceType);
         Assert.AreEqual(expected.Revision, actual.Revision);
+        Assert.AreEqual(expected.FuelConsumed, actual.FuelConsumed);
     }
 
     [TestMethod]
@@ -36,5 +37,6 @@ public sealed class PowerSourceMetadataSerializationTest
         Assert.AreEqual(0f, actual.MaxPower);
         Assert.AreEqual(BasePowerSourceType.UNKNOWN, actual.SourceType);
         Assert.AreEqual(0, actual.Revision);
+        Assert.AreEqual(0f, actual.FuelConsumed);
     }
 }

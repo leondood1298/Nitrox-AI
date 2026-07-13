@@ -31,7 +31,7 @@ internal sealed class BasePowerSourceUpdateProcessor(EntityRegistry entityRegist
         diagnostics.RecordAccepted();
         if (diagnostics.TraceEnabled)
         {
-            logger.ZLogInformation($"[BasePower] accepted {accepted.SourceType} source {packet.SourceId}: {accepted.Power:F2}/{accepted.MaxPower:F2}, revision {accepted.Revision}, client sequence {packet.ClientSequence}, owner {context.Sender.Name} #{context.Sender.SessionId}");
+            logger.ZLogInformation($"[BasePower] accepted {accepted.SourceType} source {packet.SourceId}: {accepted.Power:F2}/{accepted.MaxPower:F2}, fuel progress {accepted.FuelConsumed:F2}, revision {accepted.Revision}, client sequence {packet.ClientSequence}, owner {context.Sender.Name} #{context.Sender.SessionId}");
         }
         await context.SendToAllAsync(Response(packet, accepted, true, ""));
     }
@@ -44,7 +44,7 @@ internal sealed class BasePowerSourceUpdateProcessor(EntityRegistry entityRegist
     }
 
     private static BasePowerSourceUpdate Response(BasePowerSourceUpdate request, PowerSourceMetadata canonical, bool granted, string reason) =>
-        new(request.SourceId, canonical.SourceType, canonical.Power, request.ClientSequence, canonical.MaxPower, canonical.Revision, true, granted, reason);
+        new(request.SourceId, canonical.SourceType, canonical.Power, request.ClientSequence, canonical.MaxPower, canonical.Revision, true, granted, reason, canonical.FuelConsumed);
 
     private static PowerSourceMetadata CanonicalOrFallback(Entity entity, BasePowerSourceUpdate packet)
     {
@@ -54,6 +54,6 @@ internal sealed class BasePowerSourceUpdateProcessor(EntityRegistry entityRegist
         }
         BasePowerSourceTypes.TryGetMaxPower(packet.SourceType, out float maxPower);
         float power = float.IsFinite(packet.Power) ? Math.Clamp(packet.Power, 0f, maxPower) : 0f;
-        return new PowerSourceMetadata(power, maxPower, packet.SourceType, 0);
+        return new PowerSourceMetadata(power, maxPower, packet.SourceType, 0, packet.FuelConsumed);
     }
 }

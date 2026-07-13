@@ -17,6 +17,7 @@ public class PowerSourceMetadataProcessor(BasePowerState state) : EntityMetadata
 			if (!gameObject.TryGetNitroxId(out var sourceId) || state.TryApply(sourceId, metadata, out accepted))
 			{
 				component.SetPower(accepted.Power);
+				BasePowerSources.SetFuelConsumed(component, accepted.SourceType, accepted.FuelConsumed);
 			}
 		}
 		else

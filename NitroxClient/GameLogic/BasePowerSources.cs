@@ -25,4 +25,31 @@ public static class BasePowerSources
         }
         return BasePowerSourceType.UNKNOWN;
     }
+
+	public static float GetFuelConsumed(Component component)
+	{
+		if (component is BaseBioReactor bioReactor || (bool)(bioReactor = component.GetComponentInParent<BaseBioReactor>()))
+		{
+			return bioReactor._toConsume;
+		}
+		if (component is BaseNuclearReactor nuclearReactor || (bool)(nuclearReactor = component.GetComponentInParent<BaseNuclearReactor>()))
+		{
+			return nuclearReactor._toConsume;
+		}
+		return 0f;
+	}
+
+	public static void SetFuelConsumed(Component component, BasePowerSourceType sourceType, float fuelConsumed)
+	{
+		BasePowerSourceTypes.TryGetMaxFuelProgress(sourceType, out float maximum);
+		float accepted = Mathf.Clamp(fuelConsumed, 0f, maximum);
+		if (sourceType == BasePowerSourceType.BIOREACTOR && (component is BaseBioReactor bioReactor || (bool)(bioReactor = component.GetComponentInParent<BaseBioReactor>())))
+		{
+			bioReactor._toConsume = accepted;
+		}
+		else if (sourceType == BasePowerSourceType.NUCLEAR && (component is BaseNuclearReactor nuclearReactor || (bool)(nuclearReactor = component.GetComponentInParent<BaseNuclearReactor>())))
+		{
+			nuclearReactor._toConsume = accepted;
+		}
+	}
 }

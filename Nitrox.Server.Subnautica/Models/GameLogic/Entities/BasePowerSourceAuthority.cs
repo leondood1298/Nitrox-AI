@@ -26,8 +26,10 @@ internal sealed class BasePowerSourceAuthority
 
             BasePowerSourceTypes.TryGetMaxPower(requested.SourceType, out float maxPower);
             float power = Math.Clamp(requested.Power, 0f, maxPower);
+			BasePowerSourceTypes.TryGetMaxFuelProgress(requested.SourceType, out float maxFuelProgress);
+			float fuelConsumed = Math.Clamp(requested.FuelConsumed, 0f, maxFuelProgress);
             long revision = entity.Metadata is PowerSourceMetadata current ? current.Revision + 1 : 1;
-            accepted = new PowerSourceMetadata(power, maxPower, requested.SourceType, revision);
+            accepted = new PowerSourceMetadata(power, maxPower, requested.SourceType, revision, fuelConsumed);
             entity.Metadata = accepted;
             lastOwnerSequenceBySource[entity.Id] = new OwnerSequence(senderSessionId, requested.ClientSequence);
             return true;
@@ -68,6 +70,11 @@ internal sealed class BasePowerSourceAuthority
         {
             return $"power {requested.Power} is outside 0-{maxPower}";
         }
+		BasePowerSourceTypes.TryGetMaxFuelProgress(requested.SourceType, out float maxFuelProgress);
+		if (float.IsNaN(requested.FuelConsumed) || float.IsInfinity(requested.FuelConsumed) || requested.FuelConsumed < -POWER_TOLERANCE || requested.FuelConsumed > maxFuelProgress + POWER_TOLERANCE)
+		{
+			return $"fuel progress {requested.FuelConsumed} is outside 0-{maxFuelProgress}";
+		}
         if (requested.ClientSequence <= 0)
         {
             return "client sequence must be positive";
@@ -115,7 +122,7 @@ internal sealed class BasePowerSourceAuthority
         }
         BasePowerSourceTypes.TryGetMaxPower(requested.SourceType, out float maxPower);
         float power = float.IsFinite(requested.Power) ? Math.Clamp(requested.Power, 0f, maxPower) : 0f;
-        return new PowerSourceMetadata(power, maxPower, requested.SourceType, 0);
+        return new PowerSourceMetadata(power, maxPower, requested.SourceType, 0, requested.FuelConsumed);
     }
 
     private readonly record struct OwnerSequence(SessionId SessionId, long Sequence);

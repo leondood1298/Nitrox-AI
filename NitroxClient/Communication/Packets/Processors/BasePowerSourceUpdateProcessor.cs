@@ -14,7 +14,7 @@ internal sealed class BasePowerSourceUpdateProcessor(BasePowerState state) : ICl
         {
             return Task.CompletedTask;
         }
-        PowerSourceMetadata requested = new(packet.Power, packet.MaxPower, packet.SourceType, packet.Revision);
+        PowerSourceMetadata requested = new(packet.Power, packet.MaxPower, packet.SourceType, packet.Revision, packet.FuelConsumed);
         if (!state.TryApply(packet.SourceId, requested, out PowerSourceMetadata accepted))
         {
             return Task.CompletedTask;
@@ -26,6 +26,7 @@ internal sealed class BasePowerSourceUpdateProcessor(BasePowerState state) : ICl
         if (NitroxEntity.TryGetComponentFrom(packet.SourceId, out PowerSource powerSource))
         {
             powerSource.SetPower(accepted.Power);
+            BasePowerSources.SetFuelConsumed(powerSource, accepted.SourceType, accepted.FuelConsumed);
         }
         return Task.CompletedTask;
     }

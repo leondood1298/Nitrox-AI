@@ -14,6 +14,7 @@ public static class BasePowerBroadcaster
 	private const float POWER_CHANGE_EPSILON = 0.001f;
 	private static readonly Dictionary<NitroxId, float> lastBroadcastTimeBySource = [];
 	private static readonly Dictionary<NitroxId, float> lastBroadcastPowerBySource = [];
+	private static readonly Dictionary<NitroxId, float> lastBroadcastFuelConsumedBySource = [];
 
 	public static void BroadcastIfOwner(Component owner, PowerSource powerSource, SimulationOwnership simulationOwnership, BasePowerState state, IPacketSender packetSender)
 	{
@@ -28,7 +29,10 @@ public static class BasePowerBroadcaster
 		{
 			return;
 		}
-		bool unchanged = lastBroadcastPowerBySource.TryGetValue(nitroxId, out float previousPower) && Mathf.Abs(previousPower - powerSource.power) < POWER_CHANGE_EPSILON;
+		float fuelConsumed = BasePowerSources.GetFuelConsumed(owner);
+		bool powerUnchanged = lastBroadcastPowerBySource.TryGetValue(nitroxId, out float previousPower) && Mathf.Abs(previousPower - powerSource.power) < POWER_CHANGE_EPSILON;
+		bool fuelUnchanged = lastBroadcastFuelConsumedBySource.TryGetValue(nitroxId, out float previousFuelConsumed) && Mathf.Abs(previousFuelConsumed - fuelConsumed) < POWER_CHANGE_EPSILON;
+		bool unchanged = powerUnchanged && fuelUnchanged;
 		if (unchanged && elapsed < UNCHANGED_HEARTBEAT_SECONDS)
 		{
 			return;
@@ -40,7 +44,8 @@ public static class BasePowerBroadcaster
 		}
 		lastBroadcastTimeBySource[nitroxId] = now;
 		lastBroadcastPowerBySource[nitroxId] = powerSource.power;
-		packetSender.Send(state.CreateUpdate(nitroxId, sourceType, powerSource.power));
+		lastBroadcastFuelConsumedBySource[nitroxId] = fuelConsumed;
+		packetSender.Send(state.CreateUpdate(nitroxId, sourceType, powerSource.power, fuelConsumed));
 	}
 }
 

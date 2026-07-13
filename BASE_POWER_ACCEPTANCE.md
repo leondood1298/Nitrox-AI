@@ -4,7 +4,7 @@ Use matching client/server builds. Join client 1 first unless a row says otherwi
 
 ## Diagnostics
 
-- Server console: `basepower` — canonical sources, power/capacity, revision, client sequence, owner, parent base, counters.
+- Server console: `basepower` — canonical sources, power/capacity, reactor fuel progress, revision, client sequence, owner, parent base, counters.
 - Server console: `basepower true` — log every accepted update.
 - Server console: `basepower false` — stop live trace.
 - Before a restart test, run `save` in the server console and wait for `World state saved`; closing the server does not force an immediate save.
@@ -26,7 +26,7 @@ Use matching client/server builds. Join client 1 first unless a row says otherwi
 | Thermal transmitter chain | Connection, generation, unload/reload, and restart remain correct | NOT RUN |
 | Bioreactor fuel cycle | Fuel inventory/consumption and power agree on both clients after restart | PARTIAL — insertion and activation synchronized; consumption/restart not tested |
 | Nuclear rod cycle | Rod inventory/depletion and power agree on both clients after restart | NOT RUN |
-| Battery/power-cell charger | Item charge and base drain occur once and agree | BLOCKED — camera batteries emitted unknown-entity metadata on join; fix pending retest |
+| Battery/power-cell charger | Item charge and base drain occur once and agree | NOT RUN — temporary camera battery metadata errors are confirmed fixed |
 | Water filtration | Progress, output, and base drain occur once and agree | NOT RUN |
 | Moonpool vehicle charging | Vehicle charge and base drain occur once and agree | NOT RUN |
 | Scanner Room continuous drain | Scanner operation drains shared base power once | INCONCLUSIVE — 0.5/s load was below combined 5/s generation |
@@ -34,6 +34,15 @@ Use matching client/server builds. Join client 1 first unless a row says otherwi
 | Split/merge powered base | Sources reconnect to the correct relay without duplication | NOT RUN |
 | Two nearby independent bases | Power never crosses between unrelated bases | NOT RUN |
 | Late join after long session | New client receives current source and aggregate state | NOT RUN |
+
+## Reactor fuel UI and persistence
+
+1. With both clients present, look at each reactor. Both clients should see the same fuel item count, remaining energy, and estimated runtime.
+2. Keep a reactor generating for at least two minutes. Remaining energy and runtime should decrease on both clients within about one second of each other.
+3. Disconnect the current source owner while fuel is partly consumed. The remaining client should continue from approximately the same value without restoring fuel life.
+4. Run `save`, capture `basepower`, restart, and run `basepower` before joining. `fuel-progress` should match the saved value.
+5. Rejoin both clients. The hover estimate should resume from the saved value; it must not reset to a completely full current fuel item.
+6. Let one bioreactor item or nuclear rod deplete. The inventory transition, remaining-energy display, and both clients should agree.
 
 ## Failure report
 
