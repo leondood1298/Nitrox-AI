@@ -68,9 +68,11 @@ public class MapRoomCameras
 		{
 			pendingControl.Remove(nitroxId2);
 			locallyControlled.Remove(nitroxId2);
-			MovementBroadcaster.UnregisterWatched(nitroxId2);
 			lastBroadcastLightState.Remove(nitroxId2);
+			// Release the camera-specific lock before generic movement ownership is relinquished.
+			// Otherwise the server can see an already-unlocked camera and fail to notify remote clients.
 			packetSender.Send(new MapRoomCameraControl(nitroxId2, Optional.Empty, -1, isControlling: false, lightOn: false));
+			MovementBroadcaster.UnregisterWatched(nitroxId2);
 		}
 	}
 

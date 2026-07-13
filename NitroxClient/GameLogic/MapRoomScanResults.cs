@@ -11,18 +11,30 @@ namespace NitroxClient.GameLogic;
 
 public static class MapRoomScanResults
 {
+    private const float PICKUP_POSITION_TOLERANCE_SQUARED = 0.01f;
+
     public static void RemoveLocalResource(NitroxId resourceId)
+    {
+        RemoveLocalResource(resourceId, TechType.None, null);
+    }
+
+    public static void RemoveLocalResource(NitroxId resourceId, TechType techType, Vector3 pickupPosition)
+    {
+        RemoveLocalResource(resourceId, techType, (Vector3?)pickupPosition);
+    }
+
+    private static void RemoveLocalResource(NitroxId resourceId, TechType techType, Vector3? pickupPosition)
     {
         string id = resourceId.ToString();
         foreach (MapRoomFunctionality mapRoom in MapRoomFunctionality.mapRooms)
         {
-            if (mapRoom && RemoveFromList(mapRoom.resourceNodes, id))
+            if (mapRoom && RemoveFromList(mapRoom.resourceNodes, id, techType, pickupPosition))
             {
                 mapRoom.numNodesScanned = System.Math.Min(mapRoom.numNodesScanned, mapRoom.resourceNodes.Count);
                 RefreshResultConsumers(mapRoom);
             }
         }
-        RemoveHudNode(id);
+        RemoveHudNode(id, techType, pickupPosition);
     }
 
     public static void Cleanup(MapRoomFunctionality mapRoom)
@@ -118,11 +130,21 @@ public static class MapRoomScanResults
 
     internal static bool RemoveFromList(List<ResourceTrackerDatabase.ResourceInfo> target, string resourceId)
     {
-        return target.RemoveAll(info => info.uniqueId == resourceId) > 0;
+        return RemoveFromList(target, resourceId, TechType.None, null);
     }
 
     internal static bool RemoveFromSet(HashSet<ResourceTrackerDatabase.ResourceInfo> target, string resourceId) =>
-        target.RemoveWhere(info => info.uniqueId == resourceId) > 0;
+        RemoveFromSet(target, resourceId, TechType.None, null);
+
+    internal static bool RemoveFromList(List<ResourceTrackerDatabase.ResourceInfo> target, string resourceId, TechType techType, Vector3? pickupPosition) =>
+        target.RemoveAll(info => MatchesPickup(info, resourceId, techType, pickupPosition)) > 0;
+
+    internal static bool RemoveFromSet(HashSet<ResourceTrackerDatabase.ResourceInfo> target, string resourceId, TechType techType, Vector3? pickupPosition) =>
+        target.RemoveWhere(info => MatchesPickup(info, resourceId, techType, pickupPosition)) > 0;
+
+    internal static bool MatchesPickup(ResourceTrackerDatabase.ResourceInfo info, string resourceId, TechType techType, Vector3? pickupPosition) =>
+        info.uniqueId == resourceId || pickupPosition.HasValue && techType != TechType.None && info.techType == techType &&
+        (info.position - pickupPosition.Value).sqrMagnitude <= PICKUP_POSITION_TOLERANCE_SQUARED;
 
     internal static void RefreshResultConsumers(MapRoomFunctionality mapRoom)
     {
@@ -137,14 +159,14 @@ public static class MapRoomScanResults
         }
     }
 
-    private static void RemoveHudNode(string resourceId)
+    private static void RemoveHudNode(string resourceId, TechType techType, Vector3? pickupPosition)
     {
         uGUI_ResourceTracker resourceTracker = Object.FindObjectOfType<uGUI_ResourceTracker>();
         if (!resourceTracker)
         {
             return;
         }
-        RemoveFromSet(resourceTracker.nodes, resourceId);
+        RemoveFromSet(resourceTracker.nodes, resourceId, techType, pickupPosition);
         resourceTracker.gatherNextTick = true;
         resourceTracker.UpdateBlips();
     }

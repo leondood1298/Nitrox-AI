@@ -54,6 +54,7 @@ public class Items
     public void PickedUp(GameObject gameObject, TechType techType, NitroxId containerId)
     {
         PickingUpObject = gameObject;
+        Vector3 pickupPosition = gameObject.transform.position;
 
         // Try catch to avoid blocking PickingUpObject with a non-null value outside the current context
         try
@@ -69,7 +70,7 @@ public class Items
 
             if (packetSender.Send(pickupItem))
             {
-                MapRoomScanResults.RemoveLocalResource(inventoryItemEntity.Id);
+                MapRoomScanResults.RemoveLocalResource(inventoryItemEntity.Id, techType, pickupPosition);
                 Log.Debug($"Picked up item {inventoryItemEntity}");
             }
         }

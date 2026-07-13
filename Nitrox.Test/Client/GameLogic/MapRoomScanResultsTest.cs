@@ -65,6 +65,22 @@ public sealed class MapRoomScanResultsTest
         Assert.AreEqual("remaining", local.Single().uniqueId);
     }
 
+    [TestMethod]
+    public void LocalPickupFallsBackToMatchingTypeAndPositionWhenStableIdChanged()
+    {
+        List<ResourceTrackerDatabase.ResourceInfo> local =
+        [
+            Info("legacy-id", 1f),
+            Info("nearby-resource", 1.2f),
+            Info("same-id-elsewhere", 3f)
+        ];
+
+        Assert.IsTrue(MapRoomScanResults.RemoveFromList(local, "same-id-elsewhere", TechType.Quartz, new UnityEngine.Vector3(1f, 0f, 0f)));
+
+        Assert.AreEqual(1, local.Count);
+        Assert.AreEqual("nearby-resource", local[0].uniqueId);
+    }
+
     [DataTestMethod]
     [DataRow(false, false, true)]
     [DataRow(false, true, true)]

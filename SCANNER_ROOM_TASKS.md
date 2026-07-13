@@ -71,6 +71,8 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Remove prefab dock cameras from authoritatively empty restored slots (#51)
 - [x] Validate scan cancellation and camera reload without duplicates (#51)
 - [x] Remove every duplicate stable-ID result on pickup and server removal (#51)
+- [x] Fall back to resource type/position when the collector's local scan-result ID differs (#51)
+- [x] Broadcast idempotent camera releases after movement-ownership races (#51)
 
 ## Remaining
 
@@ -79,7 +81,8 @@ Update this file after each completed work slice. Keep entries short; link the P
 
 ## Next
 
-- [ ] Verify collected-resource HUD markers disappear for collector and observer (#51)
+- [ ] Verify collected-resource HUD markers disappear for collector and observer after ID fallback (#51)
+- [ ] Verify camera control returns to client 1 after a client 1 -> client 2 handoff/release (#51)
 - [ ] Execute in-game acceptance matrix (`SCANNER_ROOM_ACCEPTANCE.md`; requires 2–3 game clients)
 
 ## Rules
