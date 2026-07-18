@@ -5,7 +5,9 @@ using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
-internal sealed class RemoveCreatureCorpseProcessor(IPacketSender packetSender, PlayerManager playerManager, EntitySimulation entitySimulation, WorldEntityManager worldEntityManager) : IAuthPacketProcessor<RemoveCreatureCorpse>
+internal sealed class RemoveCreatureCorpseProcessor(IPacketSender packetSender, PlayerManager playerManager,
+    EntitySimulation entitySimulation, WorldEntityManager worldEntityManager,
+    MapRoomCameraControlReleaseFactory cameraControlReleaseFactory) : IAuthPacketProcessor<RemoveCreatureCorpse>
 {
     private readonly IPacketSender packetSender = packetSender;
     private readonly PlayerManager playerManager = playerManager;
@@ -14,7 +16,11 @@ internal sealed class RemoveCreatureCorpseProcessor(IPacketSender packetSender, 
 
     public async Task Process(AuthProcessorContext context, RemoveCreatureCorpse packet)
     {
-        entitySimulation.EntityDestroyed(packet.CreatureId);
+        if (cameraControlReleaseFactory.IsScannerCamera(packet.CreatureId))
+        {
+            return;
+        }
+        await entitySimulation.EntityDestroyedAsync(packet.CreatureId);
 
         if (worldEntityManager.TryDestroyEntity(packet.CreatureId, out Entity entity))
         {

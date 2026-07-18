@@ -8,7 +8,7 @@ using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
-internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager, EntityRegistry entityRegistry, SimulationOwnershipData simulationOwnershipData, ILogger<EntityMetadataUpdateProcessor> logger) : IAuthPacketProcessor<EntityMetadataUpdate>
+internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager, EntityRegistry entityRegistry, SimulationOwnershipData simulationOwnershipData, ScannerRoomDiagnostics scannerRoomDiagnostics, ILogger<EntityMetadataUpdateProcessor> logger) : IAuthPacketProcessor<EntityMetadataUpdate>
 {
     private readonly PlayerManager playerManager = playerManager;
     private readonly EntityRegistry entityRegistry = entityRegistry;
@@ -22,18 +22,35 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
             return;
         }
 
+        MapRoomMetadata? previousMapRoomMetadata = entity is MapRoomEntity ? entity.Metadata as MapRoomMetadata : null;
+        CrafterMetadata? previousCrafterMetadata = entity is MapRoomEntity existingMapRoom ? existingMapRoom.FabricatorMetadata : null;
         EntityMetadata acceptedMetadata = packet.NewValue;
         if (TryProcessMetadata(context.Sender, entity, ref acceptedMetadata))
         {
             if (entity is MapRoomEntity mapRoom && acceptedMetadata is CrafterMetadata crafterMetadata)
             {
-                mapRoom.FabricatorMetadata = crafterMetadata;
+                lock (mapRoom)
+                {
+                    mapRoom.FabricatorMetadata = crafterMetadata;
+                }
             }
             else if (acceptedMetadata is not MapRoomMetadata)
             {
                 entity.Metadata = acceptedMetadata;
             }
             EntityMetadataUpdate acceptedUpdate = new(packet.Id, acceptedMetadata);
+            if (entity is MapRoomEntity diagnosticRoom && acceptedMetadata is MapRoomMetadata acceptedMapRoomMetadata &&
+                (previousMapRoomMetadata == null || !Equals(previousMapRoomMetadata.TypeToScan, acceptedMapRoomMetadata.TypeToScan) || previousMapRoomMetadata.Generation != acceptedMapRoomMetadata.Generation))
+            {
+                scannerRoomDiagnostics.RecordAccepted("scan_target", diagnosticRoom, sessionId: context.Sender.SessionId,
+                    reason: acceptedMapRoomMetadata.TypeToScan?.Name ?? "none");
+            }
+            else if (entity is MapRoomEntity craftingRoom && acceptedMetadata is CrafterMetadata acceptedCrafterMetadata &&
+                     (previousCrafterMetadata == null || !Equals(previousCrafterMetadata.TechType, acceptedCrafterMetadata.TechType) || previousCrafterMetadata.StartTime != acceptedCrafterMetadata.StartTime))
+            {
+                scannerRoomDiagnostics.RecordAccepted("fabricator", craftingRoom, sessionId: context.Sender.SessionId,
+                    reason: acceptedCrafterMetadata.TechType?.Name ?? "none");
+            }
             await SendUpdateToVisiblePlayersAsync(context, acceptedUpdate, entity, acceptedMetadata is MapRoomMetadata);
         }
     }

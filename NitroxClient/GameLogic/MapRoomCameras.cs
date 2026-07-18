@@ -22,6 +22,8 @@ public class MapRoomCameras
 	private readonly IMultiplayerSession multiplayerSession;
 	private readonly LiveMixinManager liveMixinManager;
 	private readonly SimulationOwnership simulationOwnership;
+	private readonly ScannerRoomClientDiagnostics diagnostics;
+	private readonly StalkerCameraLockPurposeTracker stalkerCameraLockPurposeTracker;
 
 	private readonly Dictionary<NitroxId, bool> lastBroadcastLightState = new Dictionary<NitroxId, bool>();
 
@@ -35,12 +37,16 @@ public class MapRoomCameras
 	private readonly Dictionary<NitroxId, float> pendingCameraEnergy = new();
 	private readonly HashSet<NitroxId> initializingCameraBatteries = new();
 
-	public MapRoomCameras(IPacketSender packetSender, IMultiplayerSession multiplayerSession, LiveMixinManager liveMixinManager, SimulationOwnership simulationOwnership)
+	public MapRoomCameras(IPacketSender packetSender, IMultiplayerSession multiplayerSession, LiveMixinManager liveMixinManager,
+		SimulationOwnership simulationOwnership, ScannerRoomClientDiagnostics diagnostics,
+		StalkerCameraLockPurposeTracker stalkerCameraLockPurposeTracker)
 	{
 		this.packetSender = packetSender;
 		this.multiplayerSession = multiplayerSession;
 		this.liveMixinManager = liveMixinManager;
 		this.simulationOwnership = simulationOwnership;
+		this.diagnostics = diagnostics;
+		this.stalkerCameraLockPurposeTracker = stalkerCameraLockPurposeTracker;
 	}
 
 	public void BroadcastControl(MapRoomCamera camera, bool isControlling)
@@ -87,6 +93,14 @@ public class MapRoomCameras
 		bool isLocalController = packet.ControllerSessionId == multiplayerSession.Reservation.SessionId;
 		if (!packet.Granted)
 		{
+			if (packet.IsControlling &&
+				stalkerCameraLockPurposeTracker.CompleteCameraControlRequest(packet.CameraId, false,
+					simulationOwnership.HasExclusiveLock(packet.CameraId)))
+			{
+				simulationOwnership.RequestSimulationLock(packet.CameraId, SimulationLockType.TRANSIENT);
+			}
+			diagnostics.Record("control_apply", "reject", packet.CameraId, packet.MapRoomId.HasValue ? packet.MapRoomId.Value : null,
+				slot: packet.CameraIndex, reason: isLocalController ? "denied" : "locked_remote");
 			if (!isLocalController)
 			{
 				remotelyControlled.Add(packet.CameraId);
@@ -105,9 +119,20 @@ public class MapRoomCameras
 		MapRoomCameraMovementReplicator component;
 		if (packet.IsControlling)
 		{
+			if (isLocalController)
+			{
+				stalkerCameraLockPurposeTracker.CompleteCameraControlRequest(packet.CameraId, true,
+					simulationOwnership.HasExclusiveLock(packet.CameraId));
+			}
+			else
+			{
+				stalkerCameraLockPurposeTracker.Forget(packet.CameraId);
+			}
 			GameObject gameObject = ResolveCameraObject(packet.CameraId, packet.MapRoomId, packet.CameraIndex);
 			if (!gameObject)
 			{
+				diagnostics.Record("control_apply", "diverge", packet.CameraId, packet.MapRoomId.HasValue ? packet.MapRoomId.Value : null,
+					slot: packet.CameraIndex, reason: "missing_object");
 				Log.Warn(string.Format("[{0}] Couldn't find a camera drone to replicate for {1}", "MapRoomCameras", packet));
 				return;
 			}
@@ -126,6 +151,8 @@ public class MapRoomCameras
 					}
 				}
 				MovementBroadcaster.RegisterWatched(gameObject, packet.CameraId);
+				diagnostics.Record("control_apply", "ok", packet.CameraId, packet.MapRoomId.HasValue ? packet.MapRoomId.Value : null,
+					slot: packet.CameraIndex, reason: "local");
 				return;
 			}
 			if (!gameObject.GetComponent<MapRoomCameraMovementReplicator>())
@@ -133,6 +160,8 @@ public class MapRoomCameras
 				gameObject.AddComponent<MapRoomCameraMovementReplicator>();
 			}
 			remotelyControlled.Add(packet.CameraId);
+			diagnostics.Record("control_apply", "ok", packet.CameraId, packet.MapRoomId.HasValue ? packet.MapRoomId.Value : null,
+				slot: packet.CameraIndex, reason: "remote");
 		}
 		else if (NitroxEntity.TryGetObjectFrom(packet.CameraId, out gameObject2) && gameObject2.TryGetComponent<MapRoomCameraMovementReplicator>(out component))
 		{
@@ -146,7 +175,13 @@ public class MapRoomCameras
 		{
 			pendingControl.Remove(packet.CameraId);
 			locallyControlled.Remove(packet.CameraId);
+			stalkerCameraLockPurposeTracker.Forget(packet.CameraId);
 			MovementBroadcaster.UnregisterWatched(packet.CameraId);
+		}
+		if (!packet.IsControlling)
+		{
+			diagnostics.Record("control_release_apply", "ok", packet.CameraId, packet.MapRoomId.HasValue ? packet.MapRoomId.Value : null,
+				slot: packet.CameraIndex, reason: isLocalController ? "local" : "remote");
 		}
 	}
 
@@ -156,11 +191,37 @@ public class MapRoomCameras
 		{
 			return true;
 		}
-		return CanSelectForControl(pendingControl.Contains(cameraId), locallyControlled.Contains(cameraId), remotelyControlled.Contains(cameraId), camera.IsControlled());
+		return CanSelectForControl(cameraId, camera.IsControlled());
 	}
+
+	internal bool CanSelectForControl(NitroxId cameraId, bool activelyControlled) =>
+		CanSelectForControl(pendingControl.Contains(cameraId), locallyControlled.Contains(cameraId), remotelyControlled.Contains(cameraId), activelyControlled);
 
 	public static bool CanSelectForControl(bool pending, bool locallyControlled, bool remotelyControlled, bool activelyControlled) =>
 		locallyControlled || (!remotelyControlled && (!pending || activelyControlled));
+
+	public bool HasPendingControl(NitroxId cameraId) => pendingControl.Contains(cameraId);
+
+	public bool HasLocalControl(NitroxId cameraId) => locallyControlled.Contains(cameraId);
+
+	internal void ClearControlState(NitroxId cameraId)
+	{
+		bool hadControlState = pendingControl.Remove(cameraId);
+		hadControlState |= locallyControlled.Remove(cameraId);
+		hadControlState |= remotelyControlled.Remove(cameraId);
+		lastBroadcastLightState.Remove(cameraId);
+		stalkerCameraLockPurposeTracker.Forget(cameraId);
+		MovementBroadcaster.UnregisterWatched(cameraId);
+		if (NitroxEntity.TryGetObjectFrom(cameraId, out GameObject gameObject) &&
+			gameObject.TryGetComponent<MapRoomCameraMovementReplicator>(out MapRoomCameraMovementReplicator replicator))
+		{
+			UnityEngine.Object.Destroy(replicator);
+		}
+		if (hadControlState)
+		{
+			diagnostics.Record("ownership_clear", "ok", cameraId, reason: "canonical_drop");
+		}
+	}
 
 	public void BroadcastLightIfChanged(MapRoomCamera camera)
 	{
@@ -181,6 +242,7 @@ public class MapRoomCameras
 		{
 			lightRevisions[packet.CameraId] = packet.Revision;
 			SetLight(gameObject, packet.On);
+			diagnostics.Record("light_apply", "ok", packet.CameraId, revision: packet.Revision, reason: packet.On ? "on" : "off");
 		}
 	}
 
@@ -206,8 +268,10 @@ public class MapRoomCameras
 	{
 		if (!packet.IsServerResponse || !packet.Granted || componentRevisions.TryGetValue(packet.CameraId, out long revision) && packet.Revision < revision) return;
 		componentRevisions[packet.CameraId] = packet.Revision;
+		bool objectFound = false;
 		if (NitroxEntity.TryGetObjectFrom(packet.CameraId, out GameObject gameObject) && gameObject.TryGetComponent(out MapRoomCamera camera))
 		{
+			objectFound = true;
 			if (camera.energyMixin.battery != null)
 			{
 				camera.energyMixin.battery.charge = packet.Energy;
@@ -222,6 +286,7 @@ public class MapRoomCameras
 			}
 			liveMixinManager.SyncRemoteHealth(camera.liveMixin, packet.Health);
 		}
+		diagnostics.RecordComponentApplied(packet.CameraId, packet.Energy, packet.Health, packet.Revision, objectFound);
 	}
 
 	public void UpdateEnergyRecharge(MapRoomCamera camera)
@@ -310,11 +375,25 @@ public class MapRoomCameras
 
 	public void ProcessDock(MapRoomCameraDock packet)
 	{
-		if (!packet.IsServerResponse || !packet.Granted || (dockingRevisions.TryGetValue(packet.MapRoomId, out long revision) && packet.Revision < revision))
+		if (!packet.IsServerResponse)
 		{
 			return;
 		}
+		if (!packet.Granted)
+		{
+			diagnostics.Record(packet.IsDocked ? "dock_apply" : "undock_apply", "reject", packet.CameraId, packet.MapRoomId,
+				packet.Revision, packet.DockingIndex, "server_reject");
+			return;
+		}
+		if (dockingRevisions.TryGetValue(packet.MapRoomId, out long revision) && packet.Revision < revision)
+		{
+			diagnostics.Record(packet.IsDocked ? "dock_apply" : "undock_apply", "stale", packet.CameraId, packet.MapRoomId,
+				packet.Revision, packet.DockingIndex, "older_revision");
+			return;
+		}
 		dockingRevisions[packet.MapRoomId] = packet.Revision;
+		diagnostics.Record(packet.IsDocked ? "dock_apply" : "undock_apply", "ok", packet.CameraId, packet.MapRoomId,
+			packet.Revision, packet.DockingIndex);
 		lightRevisions[packet.CameraId] = packet.LightRevision;
 		if (packet.CameraNumber > 0 && NitroxEntity.TryGetObjectFrom(packet.CameraId, out GameObject numberedObject) && numberedObject.TryGetComponent(out MapRoomCamera numberedCamera))
 		{
@@ -336,6 +415,8 @@ public class MapRoomCameras
 		}
 		if (!NitroxEntity.TryGetObjectFrom(packet.CameraId, out GameObject gameObject) || !gameObject || !gameObject.TryGetComponent<MapRoomCamera>(out var component) || !NitroxEntity.TryGetObjectFrom(packet.MapRoomId, out GameObject gameObject2) || !gameObject2 || !gameObject2.TryGetComponent<MapRoomFunctionality>(out var component2))
 		{
+			diagnostics.Record(packet.IsDocked ? "dock_object" : "undock_object", "diverge", packet.CameraId, packet.MapRoomId,
+				packet.Revision, packet.DockingIndex, "missing_object");
 			return;
 		}
 		List<MapRoomCameraDocking> dockingPoints = GetDockingPoints(component2);

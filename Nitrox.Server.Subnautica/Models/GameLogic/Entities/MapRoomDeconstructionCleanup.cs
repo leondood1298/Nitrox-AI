@@ -1,11 +1,14 @@
 using System.Linq;
+using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 
-internal sealed class MapRoomDeconstructionCleanup(SimulationOwnershipData simulationOwnershipData, MapRoomScanResultSubscriptions subscriptions, PlayerManager playerManager)
+internal sealed class MapRoomDeconstructionCleanup(EntityRegistry entityRegistry, SimulationOwnershipData simulationOwnershipData,
+    MapRoomCameraControlReleaseFactory cameraControlReleaseFactory, MapRoomScanResultSubscriptions subscriptions,
+    MapRoomCameraControlLifecycle controlLifecycle, PlayerManager playerManager, ScannerRoomDiagnostics diagnostics)
 {
     public async Task CleanupAsync(MapRoomEntity mapRoom, AuthProcessorContext context)
     {
@@ -23,10 +26,44 @@ internal sealed class MapRoomDeconstructionCleanup(SimulationOwnershipData simul
 
         simulationOwnershipData.RevokeOwnerOfId(mapRoom.Id);
         await context.SendToAllAsync(new DropSimulationOwnership(mapRoom.Id));
-        foreach (MapRoomCameraRecord camera in mapRoom.CameraRegistry)
+        MapRoomCameraRecord[] cameras;
+        lock (mapRoom)
         {
-            simulationOwnershipData.RevokeOwnerOfId(camera.CameraId);
+            cameras = mapRoom.CameraRegistry.ToArray();
+        }
+        foreach (MapRoomCameraRecord camera in cameras)
+        {
+            using IDisposable lifecycleGate = await controlLifecycle.EnterAsync(camera.CameraId);
+            if (IsRegisteredWithAnotherLiveRoom(mapRoom, camera.CameraId))
+            {
+                continue;
+            }
+            if (simulationOwnershipData.RevokeOwnerOfId(camera.CameraId, out SimulationOwnershipData.PlayerLock revokedLock) &&
+                cameraControlReleaseFactory.TryCreate(camera.CameraId, revokedLock, "deconstruct", out MapRoomCameraControl release))
+            {
+                await context.SendToAllAsync(release);
+            }
             await context.SendToAllAsync(new DropSimulationOwnership(camera.CameraId));
         }
+        diagnostics.RecordAccepted("deconstruct", mapRoom, sessionId: context.Sender.SessionId, reason: "locks_reconciled");
+    }
+
+    private bool IsRegisteredWithAnotherLiveRoom(MapRoomEntity deconstructingRoom, NitroxId cameraId)
+    {
+        foreach (MapRoomEntity room in entityRegistry.GetEntities<MapRoomEntity>())
+        {
+            if (ReferenceEquals(room, deconstructingRoom) || room.Id == deconstructingRoom.Id)
+            {
+                continue;
+            }
+            lock (room)
+            {
+                if (room.GetCameraRecord(cameraId) != null)
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 }

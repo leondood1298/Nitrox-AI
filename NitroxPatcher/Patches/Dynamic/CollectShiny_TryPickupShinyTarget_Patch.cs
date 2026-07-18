@@ -22,6 +22,16 @@ public sealed class CollectShiny_TryPickupShinyTarget_Patch : NitroxPatch, IDyna
             return true;
         }
 
+        MapRoomCameras mapRoomCameras = Resolve<MapRoomCameras>();
+        if (mapRoomCameras.HasPendingControl(cameraId))
+        {
+            return false;
+        }
+        if (mapRoomCameras.HasLocalControl(cameraId))
+        {
+            return true;
+        }
+
         SimulationOwnership ownership = Resolve<SimulationOwnership>();
         if (ownership.HasExclusiveLock(cameraId))
         {
@@ -29,6 +39,7 @@ public sealed class CollectShiny_TryPickupShinyTarget_Patch : NitroxPatch, IDyna
             return true;
         }
 
+        Resolve<StalkerCameraLockPurposeTracker>().Forget(cameraId);
         StalkerCameraGrab context = new(__instance, camera.gameObject);
         ownership.RequestSimulationLock(new LockRequest<StalkerCameraGrab>(cameraId, SimulationLockType.EXCLUSIVE, OnLockResponse, context));
         return false;
@@ -36,25 +47,58 @@ public sealed class CollectShiny_TryPickupShinyTarget_Patch : NitroxPatch, IDyna
 
     private static void OnLockResponse(NitroxId cameraId, bool acquired, StalkerCameraGrab context)
     {
-        if (!acquired || !context.CollectShiny || !context.Camera || context.CollectShiny.shinyTarget != context.Camera)
+        StalkerCameraLockPurposeTracker purposeTracker = Resolve<StalkerCameraLockPurposeTracker>();
+        if (!acquired)
         {
-            if (context.CollectShiny && context.CollectShiny.shinyTarget == context.Camera)
-            {
-                context.CollectShiny.shinyTarget = null;
-                context.CollectShiny.targetPickedUp = false;
-            }
+            purposeTracker.Forget(cameraId);
+            InvalidateContext(context);
+            return;
+        }
+
+        MapRoomCameras mapRoomCameras = Resolve<MapRoomCameras>();
+        purposeTracker.RecordAcquisition(cameraId, mapRoomCameras.HasLocalControl(cameraId));
+        if (!context.CollectShiny || !context.Camera || context.CollectShiny.shinyTarget != context.Camera)
+        {
+            ReleaseStalkerAcquisition(cameraId, purposeTracker, mapRoomCameras);
+            InvalidateContext(context);
             return;
         }
 
         EntityPositionBroadcaster.WatchEntity(cameraId);
+        bool pickupApplied = false;
         try
         {
             applyingGrantedPickup = true;
             context.CollectShiny.TryPickupShinyTarget();
+            pickupApplied = true;
         }
         finally
         {
             applyingGrantedPickup = false;
+            if (!pickupApplied)
+            {
+                ReleaseStalkerAcquisition(cameraId, purposeTracker, mapRoomCameras);
+            }
+        }
+    }
+
+    private static void ReleaseStalkerAcquisition(NitroxId cameraId,
+        StalkerCameraLockPurposeTracker purposeTracker, MapRoomCameras mapRoomCameras)
+    {
+        SimulationOwnership ownership = Resolve<SimulationOwnership>();
+        if (purposeTracker.TryConsumeForDowngrade(cameraId, ownership.HasExclusiveLock(cameraId),
+                mapRoomCameras.HasPendingControl(cameraId) || mapRoomCameras.HasLocalControl(cameraId)))
+        {
+            ownership.RequestSimulationLock(cameraId, SimulationLockType.TRANSIENT);
+        }
+    }
+
+    private static void InvalidateContext(StalkerCameraGrab context)
+    {
+        if (context.CollectShiny && context.CollectShiny.shinyTarget == context.Camera)
+        {
+            context.CollectShiny.shinyTarget = null;
+            context.CollectShiny.targetPickedUp = false;
         }
     }
 

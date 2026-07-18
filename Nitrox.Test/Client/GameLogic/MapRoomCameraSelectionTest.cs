@@ -1,5 +1,13 @@
+using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Nitrox.Model.Core;
+using Nitrox.Model.DataStructures;
+using Nitrox.Model.Subnautica.Packets;
+using NitroxClient.Communication.Abstract;
+using NitroxClient.Communication.Packets.Processors;
+using NitroxClient.Communication.Packets.Processors.Core;
 using NitroxClient.GameLogic;
+using NSubstitute;
 
 namespace Nitrox.Test.Client.GameLogic;
 
@@ -28,5 +36,75 @@ public sealed class MapRoomCameraSelectionTest
     public void DockChargeIsBoundedPerSecond(float current, float capacity, float deltaTime, float expected)
     {
         Assert.AreEqual(expected, MapRoomCameras.CalculateDockCharge(current, capacity, deltaTime), 0.0001f);
+    }
+
+    [TestMethod]
+    public async Task OwnershipDropClearsRemoteControlBookkeeping()
+    {
+        SessionId localSessionId = 1;
+        SessionId remoteSessionId = 2;
+        NitroxId cameraId = new();
+        IMultiplayerSession multiplayerSession = Substitute.For<IMultiplayerSession>();
+        multiplayerSession.Reservation.Returns(new MultiplayerSessionReservation(localSessionId));
+        SimulationOwnership simulationOwnership = new(multiplayerSession, multiplayerSession);
+        StalkerCameraLockPurposeTracker purposeTracker = new();
+        MapRoomCameras cameras = new(multiplayerSession, multiplayerSession, null!, simulationOwnership,
+            new ScannerRoomClientDiagnostics(), purposeTracker);
+        DropSimulationOwnershipProcessor processor = new(simulationOwnership, cameras);
+
+        cameras.ProcessControl(new MapRoomCameraControl(cameraId, Optional.Empty, -1, true, false, true, false, remoteSessionId));
+        purposeTracker.RecordAcquisition(cameraId, cameraControlAlreadyGranted: false);
+        Assert.IsFalse(cameras.CanSelectForControl(cameraId, false));
+
+        await processor.Process(new ClientProcessorContext(multiplayerSession), new DropSimulationOwnership(cameraId));
+
+        Assert.IsTrue(cameras.CanSelectForControl(cameraId, false));
+        Assert.IsFalse(purposeTracker.TryConsumeForDowngrade(cameraId, true, false));
+    }
+
+    [TestMethod]
+    public async Task GenericOwnershipReassignmentDoesNotEraseCameraControlBookkeeping()
+    {
+        SessionId localSessionId = 1;
+        SessionId remoteSessionId = 2;
+        NitroxId cameraId = new();
+        IMultiplayerSession multiplayerSession = Substitute.For<IMultiplayerSession>();
+        multiplayerSession.Reservation.Returns(new MultiplayerSessionReservation(localSessionId));
+        SimulationOwnership simulationOwnership = new(multiplayerSession, multiplayerSession);
+        MapRoomCameras cameras = new(multiplayerSession, multiplayerSession, null!, simulationOwnership,
+            new ScannerRoomClientDiagnostics(), new StalkerCameraLockPurposeTracker());
+        SimulationOwnershipChangeProcessor processor = new(simulationOwnership);
+
+        cameras.ProcessControl(new MapRoomCameraControl(cameraId, Optional.Empty, -1, true, false, true, false, remoteSessionId));
+        Assert.IsFalse(cameras.CanSelectForControl(cameraId, false));
+
+        await processor.Process(new ClientProcessorContext(multiplayerSession),
+                                new SimulationOwnershipChange(cameraId, localSessionId, SimulationLockType.TRANSIENT));
+
+        Assert.IsFalse(cameras.CanSelectForControl(cameraId, false), "Only the canonical MapRoomCameraControl release may clear remote control state.");
+    }
+
+    [TestMethod]
+    public void DeniedCameraControlCompletesDeferredStalkerReleaseWhenControllerIsRemote()
+    {
+        SessionId localSessionId = 1;
+        SessionId remoteSessionId = 2;
+        NitroxId cameraId = new();
+        IMultiplayerSession multiplayerSession = Substitute.For<IMultiplayerSession>();
+        multiplayerSession.Reservation.Returns(new MultiplayerSessionReservation(localSessionId));
+        SimulationOwnership simulationOwnership = new(multiplayerSession, multiplayerSession);
+        simulationOwnership.SimulateEntity(cameraId, SimulationLockType.EXCLUSIVE);
+        StalkerCameraLockPurposeTracker purposeTracker = new();
+        purposeTracker.RecordAcquisition(cameraId, cameraControlAlreadyGranted: false);
+        Assert.IsFalse(purposeTracker.TryConsumeForDowngrade(cameraId, true, cameraControlProtected: true));
+        MapRoomCameras cameras = new(multiplayerSession, multiplayerSession, null!, simulationOwnership,
+            new ScannerRoomClientDiagnostics(), purposeTracker);
+
+        cameras.ProcessControl(new MapRoomCameraControl(cameraId, Optional.Empty, -1, true, false,
+            true, false, remoteSessionId));
+
+        multiplayerSession.Received(1).Send(Arg.Is<SimulationOwnershipRequest>(request =>
+            request.Id == cameraId && request.LockType == SimulationLockType.TRANSIENT));
+        Assert.IsFalse(purposeTracker.CompleteCameraControlRequest(cameraId, false, true));
     }
 }

@@ -8,7 +8,10 @@ using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
-internal sealed class EntityDestroyedPacketProcessor(PlayerManager playerManager, EntitySimulation entitySimulation, WorldEntityManager worldEntityManager, EntityRegistry entityRegistry) : IAuthPacketProcessor<EntityDestroyed>
+internal sealed class EntityDestroyedPacketProcessor(PlayerManager playerManager, EntitySimulation entitySimulation,
+    WorldEntityManager worldEntityManager, EntityRegistry entityRegistry,
+    MapRoomCameraControlReleaseFactory cameraControlReleaseFactory, MapRoomCameraControlLifecycle controlLifecycle,
+    ScannerRoomDiagnostics diagnostics) : IAuthPacketProcessor<EntityDestroyed>
 {
     private readonly PlayerManager playerManager = playerManager;
     private readonly EntitySimulation entitySimulation = entitySimulation;
@@ -17,7 +20,10 @@ internal sealed class EntityDestroyedPacketProcessor(PlayerManager playerManager
 
     public async Task Process(AuthProcessorContext context, EntityDestroyed packet)
     {
-        entitySimulation.EntityDestroyed(packet.Id);
+        using IDisposable? lifecycleGate = cameraControlReleaseFactory.IsScannerCamera(packet.Id)
+            ? await controlLifecycle.EnterAsync(packet.Id)
+            : null;
+        await entitySimulation.EntityDestroyedWithLifecycleGateAsync(packet.Id);
 
         foreach (MapRoomEntity mapRoom in entityRegistry.GetEntities<MapRoomEntity>())
         {
@@ -33,6 +39,7 @@ internal sealed class EntityDestroyedPacketProcessor(PlayerManager playerManager
             }
             if (undock != null)
             {
+                diagnostics.RecordAccepted("destroy", mapRoom, packet.Id, context.Sender.SessionId, undock.DockingIndex, "registry_removed");
                 await context.SendToAllAsync(undock);
             }
         }

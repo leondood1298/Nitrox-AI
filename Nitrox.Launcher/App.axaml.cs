@@ -82,8 +82,12 @@ internal class App : Application
 
         // Handle command line arguments.
         ConsoleApp.ConsoleAppBuilder cliParser = ConsoleApp.Create();
-        cliParser.Add("", (bool crashReport, X11RenderingMode? rendering = null, bool allowInstances = false) =>
+        cliParser.Add("", (bool crashReport, X11RenderingMode? rendering = null, bool allowInstances = false,
+            string? dataPath = null) =>
         {
+            // NitroxDirectory consumes --data-path from the raw command line. Declaring it here
+            // prevents the launcher-only parser from reporting a false "not recognized" error.
+            _ = dataPath;
             isCrashReport = crashReport;
             preferredRenderingMode = rendering;
             App.allowInstances = allowInstances;

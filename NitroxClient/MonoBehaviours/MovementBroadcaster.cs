@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using NitroxClient.Communication.Abstract;
 using NitroxClient.GameLogic;
@@ -13,6 +14,7 @@ public class MovementBroadcaster : MonoBehaviour
 {
     public const int BROADCAST_FREQUENCY = 30;
     public const float BROADCAST_PERIOD = 1f / BROADCAST_FREQUENCY;
+    internal const int MAX_MOVEMENTS_PER_PACKET = 64;
 
     public static MovementBroadcaster Instance;
 
@@ -64,9 +66,23 @@ public class MovementBroadcaster : MonoBehaviour
             }
         }
 
-        if (data.Count > 0)
+        if (data.Count == 0)
         {
-            this.Resolve<IPacketSender>().Send(new VehicleMovements(data, time));
+            return;
+        }
+        IPacketSender packetSender = this.Resolve<IPacketSender>();
+        foreach (VehicleMovements packet in CreateMovementPackets(data, time))
+        {
+            packetSender.Send(packet);
+        }
+    }
+
+    internal static IEnumerable<VehicleMovements> CreateMovementPackets(List<MovementData> data, double time)
+    {
+        for (int offset = 0; offset < data.Count; offset += MAX_MOVEMENTS_PER_PACKET)
+        {
+            int count = Math.Min(MAX_MOVEMENTS_PER_PACKET, data.Count - offset);
+            yield return new VehicleMovements(data.GetRange(offset, count), time);
         }
     }
 

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 
@@ -17,6 +18,8 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic
                 LockType = lockType;
             }
         }
+
+        public readonly record struct RevokedLock(NitroxId EntityId, PlayerLock Lock);
 
         Dictionary<NitroxId, PlayerLock> playerLocksById = new Dictionary<NitroxId, PlayerLock>();
 
@@ -54,46 +57,80 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic
 
         public bool RevokeIfOwner(NitroxId id, Player player)
         {
+            return RevokeIfOwner(id, player, out _);
+        }
+
+        public bool RevokeIfOwner(NitroxId id, Player player, out PlayerLock revokedLock)
+        {
             lock (playerLocksById)
             {
                 if (playerLocksById.TryGetValue(id, out PlayerLock playerLock) && playerLock.Player == player)
                 {
                     playerLocksById.Remove(id);
+                    revokedLock = playerLock;
                     return true;
                 }
 
+                revokedLock = default;
                 return false;
             }
         }
 
         public List<NitroxId> RevokeAllForOwner(SessionId sessionId)
         {
+            return RevokeAllLocksForOwner(sessionId).Select(revoked => revoked.EntityId).ToList();
+        }
+
+        public List<RevokedLock> GetLocksForOwner(SessionId sessionId)
+        {
             lock (playerLocksById)
             {
-                List<NitroxId> revokedIds = [];
+                return playerLocksById
+                       .Where(entry => entry.Value.Player.SessionId == sessionId)
+                       .Select(entry => new RevokedLock(entry.Key, entry.Value))
+                       .ToList();
+            }
+        }
+
+        public List<RevokedLock> RevokeAllLocksForOwner(SessionId sessionId)
+        {
+            lock (playerLocksById)
+            {
+                List<RevokedLock> revokedLocks = [];
 
                 foreach (KeyValuePair<NitroxId, PlayerLock> idWithPlayerLock in playerLocksById)
                 {
                     if (idWithPlayerLock.Value.Player.SessionId == sessionId)
                     {
-                        revokedIds.Add(idWithPlayerLock.Key);
+                        revokedLocks.Add(new RevokedLock(idWithPlayerLock.Key, idWithPlayerLock.Value));
                     }
                 }
 
-                foreach (NitroxId id in revokedIds)
+                foreach (RevokedLock revokedLock in revokedLocks)
                 {
-                    playerLocksById.Remove(id);
+                    playerLocksById.Remove(revokedLock.EntityId);
                 }
 
-                return revokedIds;
+                return revokedLocks;
             }
         }
 
         public bool RevokeOwnerOfId(NitroxId id)
         {
+            return RevokeOwnerOfId(id, out _);
+        }
+
+        public bool RevokeOwnerOfId(NitroxId id, out PlayerLock revokedLock)
+        {
             lock (playerLocksById)
             {
-                return playerLocksById.Remove(id);
+                if (playerLocksById.Remove(id, out PlayerLock playerLock))
+                {
+                    revokedLock = playerLock;
+                    return true;
+                }
+                revokedLock = default;
+                return false;
             }
         }
 
@@ -114,6 +151,23 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic
             lock (playerLocksById)
             {
                 return playerLocksById.TryGetValue(id, out playerLock);
+            }
+        }
+
+        /// <summary>
+        ///     Runs an authority-sensitive transition while ownership cannot be revoked or
+        ///     reassigned. The callback must remain short; it may synchronously enqueue a packet
+        ///     but must not block waiting for external work.
+        /// </summary>
+        public TResult ExecuteForOwner<TResult>(Player player, IEnumerable<NitroxId> ids,
+            Func<HashSet<NitroxId>, TResult> action)
+        {
+            lock (playerLocksById)
+            {
+                HashSet<NitroxId> ownedIds = ids
+                    .Where(id => playerLocksById.TryGetValue(id, out PlayerLock playerLock) && playerLock.Player == player)
+                    .ToHashSet();
+                return action(ownedIds);
             }
         }
     }

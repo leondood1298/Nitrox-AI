@@ -10,7 +10,9 @@ using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
-internal sealed class PickupItemPacketProcessor(EntityRegistry entityRegistry, WorldEntityManager worldEntityManager, SimulationOwnershipData simulationOwnershipData)
+internal sealed class PickupItemPacketProcessor(EntityRegistry entityRegistry, WorldEntityManager worldEntityManager,
+    SimulationOwnershipData simulationOwnershipData, MapRoomCameraControlReleaseFactory cameraControlReleaseFactory,
+    MapRoomCameraControlLifecycle controlLifecycle, ScannerRoomDiagnostics diagnostics)
     : IAuthPacketProcessor<PickupItem>
 {
     private readonly EntityRegistry entityRegistry = entityRegistry;
@@ -20,8 +22,15 @@ internal sealed class PickupItemPacketProcessor(EntityRegistry entityRegistry, W
     public async Task Process(AuthProcessorContext context, PickupItem packet)
     {
         NitroxId id = packet.Item.Id;
-        if (simulationOwnershipData.RevokeOwnerOfId(id))
+        using IDisposable? lifecycleGate = cameraControlReleaseFactory.IsScannerCamera(id)
+            ? await controlLifecycle.EnterAsync(id)
+            : null;
+        if (simulationOwnershipData.RevokeOwnerOfId(id, out SimulationOwnershipData.PlayerLock revokedLock))
         {
+            if (cameraControlReleaseFactory.TryCreate(id, revokedLock, "pickup", out MapRoomCameraControl release))
+            {
+                await context.SendToAllAsync(release);
+            }
             SimulationOwnershipChange simulationOwnershipChange = new(id, SessionId.SERVER_ID, SimulationLockType.TRANSIENT);
             await context.SendToAllAsync(simulationOwnershipChange);
         }
@@ -45,6 +54,7 @@ internal sealed class PickupItemPacketProcessor(EntityRegistry entityRegistry, W
             }
             if (undock != null)
             {
+                diagnostics.RecordAccepted("pickup", mapRoom, id, context.Sender.SessionId, undock.DockingIndex, "undocked");
                 await context.SendToAllAsync(undock);
             }
         }

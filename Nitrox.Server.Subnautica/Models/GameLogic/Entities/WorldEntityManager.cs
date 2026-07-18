@@ -27,6 +27,7 @@ internal sealed class WorldEntityManager
     private readonly IPacketSender packetSender;
     private readonly EntityRegistry entityRegistry;
     private readonly MapRoomScanResultSubscriptions mapRoomScanResultSubscriptions;
+    private readonly ScannerRoomDiagnostics scannerRoomDiagnostics;
 
     /// <summary>
     ///     Global root entities that are always visible.
@@ -45,13 +46,14 @@ internal sealed class WorldEntityManager
     /// </summary>
     internal Dictionary<AbsoluteEntityCell, Dictionary<NitroxId, WorldEntity>> worldEntitiesByCell = [];
 
-    public WorldEntityManager(IPacketSender packetSender, EntityRegistry entityRegistry, BatchEntitySpawner batchEntitySpawner, PlayerManager playerManager, MapRoomScanResultSubscriptions mapRoomScanResultSubscriptions, ILogger<WorldEntityManager> logger)
+    public WorldEntityManager(IPacketSender packetSender, EntityRegistry entityRegistry, BatchEntitySpawner batchEntitySpawner, PlayerManager playerManager, MapRoomScanResultSubscriptions mapRoomScanResultSubscriptions, ScannerRoomDiagnostics scannerRoomDiagnostics, ILogger<WorldEntityManager> logger)
     {
         this.packetSender = packetSender;
         this.entityRegistry = entityRegistry;
         this.batchEntitySpawner = batchEntitySpawner;
         this.playerManager = playerManager;
         this.mapRoomScanResultSubscriptions = mapRoomScanResultSubscriptions;
+        this.scannerRoomDiagnostics = scannerRoomDiagnostics;
         this.logger = logger;
     }
 
@@ -80,7 +82,7 @@ internal sealed class WorldEntityManager
 			int restored = MapRoomCameraPersistence.RestoreOrphanedRegistrations(mapRoom, id => entityRegistry.TryGetEntityById(id, out Entity _));
 			if (restored > 0)
 			{
-				logger.ZLogWarning($"Recovered {restored} orphaned camera registration(s) into empty dock slots for Scanner Room {mapRoom.Id}");
+				scannerRoomDiagnostics.RecordInvariantFailure("orphan_recovery", mapRoom, reason: $"restored_{restored}");
 			}
             lock (mapRoom)
             {

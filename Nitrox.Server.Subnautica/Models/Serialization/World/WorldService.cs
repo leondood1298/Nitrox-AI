@@ -8,6 +8,7 @@ using Nitrox.Model.Serialization;
 using Nitrox.Model.Server;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities.Spawning;
@@ -32,6 +33,7 @@ internal class WorldService : IHostedService
     private readonly TaskCompletionSource<bool> hasFinishedLoadingTcs = new();
     private readonly SubnauticaServerProtoBufSerializer protoBufSerializer;
     private readonly SaveService saveService;
+    private readonly ScannerRoomDiagnostics scannerRoomDiagnostics;
     private readonly IOptions<ServerStartOptions> startOptions;
     private readonly StoryManager storyManager;
     private readonly StoryScheduler storyScheduler;
@@ -56,6 +58,7 @@ internal class WorldService : IHostedService
         PdaManager pdaManager,
         EscapePodManager escapePodManager,
         SaveService saveService,
+        ScannerRoomDiagnostics scannerRoomDiagnostics,
         IOptions<ServerStartOptions> startOptions,
         ILogger<WorldService> logger)
     {
@@ -73,6 +76,7 @@ internal class WorldService : IHostedService
         this.pdaManager = pdaManager;
         this.escapePodManager = escapePodManager;
         this.saveService = saveService;
+        this.scannerRoomDiagnostics = scannerRoomDiagnostics;
         this.startOptions = startOptions;
         this.logger = logger;
 
@@ -91,6 +95,10 @@ internal class WorldService : IHostedService
             return false;
         }
 
+        Dictionary<NitroxId, (MapRoomEntity Room, ScannerRoomStateSnapshot Snapshot)> scannerRoomsBeforeSave =
+            entityRegistry.GetEntities<MapRoomEntity>().ToDictionary(
+                room => room.Id,
+                room => (room, ScannerRoomStateFingerprint.Create(room)));
         PersistedWorldData persistedWorld = new()
         {
             WorldData = new()
@@ -102,7 +110,40 @@ internal class WorldService : IHostedService
             GlobalRootData = GlobalRootData.From(worldEntityManager.GetPersistentGlobalRootEntities()),
             EntityData = EntityData.From(entityRegistry.GetAllEntities(true))
         };
-        return Save(persistedWorld, saveDir);
+        bool saved = Save(persistedWorld, saveDir);
+        if (saved)
+        {
+            Dictionary<NitroxId, MapRoomEntity> currentRooms = entityRegistry.GetEntities<MapRoomEntity>()
+                                                                             .ToDictionary(room => room.Id);
+            foreach ((NitroxId roomId, (MapRoomEntity savedRoom, ScannerRoomStateSnapshot before)) in scannerRoomsBeforeSave)
+            {
+                if (!currentRooms.Remove(roomId, out MapRoomEntity? currentRoom))
+                {
+                    scannerRoomDiagnostics.RecordInvariantFailure("save_drift", savedRoom, reason: "room_removed_during_save");
+                    continue;
+                }
+                lock (currentRoom)
+                {
+                    ScannerRoomStateSnapshot after = ScannerRoomStateFingerprint.Create(currentRoom);
+                    if (before.Fingerprint == after.Fingerprint)
+                    {
+                        // This is deliberately labelled live: the save serializers receive shallow
+                        // entity references. Exact persistence is proven by the post-restart load fp.
+                        scannerRoomDiagnostics.RecordCheckpoint("save_live", currentRoom, "post_save_stable");
+                    }
+                    else
+                    {
+                        scannerRoomDiagnostics.RecordInvariantFailure("save_drift", currentRoom,
+                            reason: $"pre_{before.Fingerprint}_post_{after.Fingerprint}");
+                    }
+                }
+            }
+            foreach (MapRoomEntity addedRoom in currentRooms.Values)
+            {
+                scannerRoomDiagnostics.RecordInvariantFailure("save_drift", addedRoom, reason: "room_added_during_save");
+            }
+        }
+        return saved;
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -379,6 +420,10 @@ internal class WorldService : IHostedService
             return false;
         }
         await LoadPersistedWorldIntoServicesAsync(persistedData);
+        foreach (MapRoomEntity room in entityRegistry.GetEntities<MapRoomEntity>())
+        {
+            scannerRoomDiagnostics.RecordCheckpoint("load", room);
+        }
         return true;
     }
 
