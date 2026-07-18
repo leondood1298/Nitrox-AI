@@ -93,7 +93,7 @@ function Get-ScannerRelevantDirtyPaths {
 function Get-ScannerPathSetFingerprint {
     param(
         [Parameter(Mandatory = $true)][string]$Root,
-        [Parameter(Mandatory = $true)][string[]]$RelativePaths
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$RelativePaths
     )
 
     $records = foreach ($relative in $RelativePaths | Sort-Object) {
