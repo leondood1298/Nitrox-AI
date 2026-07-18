@@ -12,6 +12,7 @@ using NitroxClient.MonoBehaviours;
 using NitroxClient.MonoBehaviours.Gui.Modals;
 using Nitrox.Model.Networking;
 using Nitrox.Model.Packets;
+using NitroxClient.Communication.Exceptions;
 
 namespace NitroxClient.Communication.NetworkingLayer.LiteNetLib;
 
@@ -24,6 +25,7 @@ public class LiteNetLibClient : IClient
     private readonly INetworkDebugger networkDebugger;
     private readonly PacketReceiver packetReceiver;
     private readonly FieldInfo manualModeFieldInfo = typeof(NetManager).GetField("_manualMode", BindingFlags.Instance | BindingFlags.NonPublic);
+    private MultiplayerProtocolMismatchException connectionFailure;
 
     public bool IsConnected { get; private set; }
     public int PingInterval
@@ -63,17 +65,22 @@ public class LiteNetLibClient : IClient
     public async Task StartAsync(string ipAddress, int serverPort)
     {
         Log.Info("Initializing LiteNetLibClient...");
+        connectionFailure = null;
+        connectedEvent.Reset();
 
         // ConfigureAwait(false) is needed because Unity uses a custom "UnitySynchronizationContext". Which makes async/await work like Unity coroutines.
         // Because this Task.Run is async-over-sync this would otherwise blocks the main thread as it wants to, without ConfigureAwait(false), continue on the same thread (i.e. main thread).
         await Task.Run(() =>
         {
             client.Start();
-            client.Connect(ipAddress, serverPort, "nitrox");
+            client.Connect(ipAddress, serverPort, NitroxNetworkProtocol.ConnectionKey);
         }).ConfigureAwait(false);
 
         connectedEvent.WaitOne(2000);
-        connectedEvent.Reset();
+        if (connectionFailure != null)
+        {
+            throw connectionFailure;
+        }
     }
 
     public void Send(Packet packet)
@@ -125,6 +132,7 @@ public class LiteNetLibClient : IClient
 
     private void Disconnected(NetPeer peer, DisconnectInfo disconnectInfo)
     {
+        bool wasConnected = IsConnected;
         // Check must happen before IsConnected is set to false, so that it doesn't send an exception when we aren't even ingame
         if (Multiplayer.Active)
         {
@@ -132,6 +140,16 @@ public class LiteNetLibClient : IClient
         }
 
         IsConnected = false;
+        if (!wasConnected)
+        {
+            if (disconnectInfo.Reason == DisconnectReason.ConnectionRejected &&
+                disconnectInfo.AdditionalData.TryGetString(out string serverConnectionKey) &&
+                !NitroxNetworkProtocol.IsCompatible(serverConnectionKey))
+            {
+                connectionFailure = new MultiplayerProtocolMismatchException(serverConnectionKey);
+            }
+            connectedEvent.Set();
+        }
         Log.Info("Disconnected from server");
     }
 

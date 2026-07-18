@@ -193,14 +193,20 @@ internal sealed class LiteNetLibServer : IHostedService, IPacketSender, IKickPla
 
     private void OnConnectionRequest(ConnectionRequest request)
     {
-        if (request.Data.GetString() != "nitrox")
+        string connectionKey = request.Data.GetString();
+        if (!NitroxNetworkProtocol.IsCompatible(connectionKey))
         {
-            request.Reject();
+            logger.ZLogWarningOnce($"Rejected an incompatible multiplayer protocol; expected {NitroxNetworkProtocol.ConnectionKey}");
+            NetDataWriter rejectionData = new();
+            rejectionData.Put(NitroxNetworkProtocol.ConnectionKey);
+            request.Reject(rejectionData);
             return;
         }
         if (server.ConnectedPeersCount >= options.Value.MaxConnections)
         {
-            request.Reject();
+            NetDataWriter rejectionData = new();
+            rejectionData.Put(NitroxNetworkProtocol.ConnectionKey);
+            request.Reject(rejectionData);
             return;
         }
 
