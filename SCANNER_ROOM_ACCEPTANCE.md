@@ -4,10 +4,19 @@ Status values: `PASS`, `FAIL`, `BLOCKED`, `NOT RUN`. Record failures as `test ID
 
 ## Setup
 
-- Build/commit: `________________`
-- Server/save: `________________`
-- Clients: A `________` B `________` C/late join `________`
+- Build/commit: `5ef30680ae57c9e8fa1a368eeb8f233cc03e9bed` (`win-x64` Release)
+- Server/save: process-level protocol probe only; Scanner Room matrix save `NOT CREATED`
+- Clients: A `NOT LAUNCHED` B `NOT LAUNCHED` C/late join `NOT LAUNCHED`
 - Start each scenario from synchronized inventories; record room IDs and camera IDs from logs.
+
+## Evidence and blockers (2026-07-18)
+
+- Artifact manifest: `test_results/artifact-5ef30680ae57/artifact-manifest.csv`; SHA-256 `DF9DDB9530E75CCCC3B6F1A326A9409AEFFB8F0E177A984ABB3F887D25786D36`.
+- Automated prerequisite evidence: baseline `386 passed / 8 skipped / 0 failed`; final `402 passed / 8 skipped / 0 failed`. This does not count as a D/N matrix pass.
+- Exact Release process probe: `test_results/handshake-probe-release/20260718-102100-5ef30680ae57`; legacy `nitrox` rejected, `nitrox-ai/1` accepted, one rejection log, one session, server stopped, UDP 11153 released.
+- D1-D6 and N1-N2 remain `NOT RUN`: the managed computer-use runtime failed to initialize twice with `windows sandbox failed: helper_unknown_error` before any launcher/game UI action.
+- N1 additionally lacks a validated latency/jitter impairment harness. Do not claim N1 from an unvalidated proxy or unit test.
+- PR 53 remains unmerged and reserved for the later vehicle-authority phase.
 
 ## Matrix
 
@@ -34,8 +43,8 @@ Status values: `PASS`, `FAIL`, `BLOCKED`, `NOT RUN`. Record failures as `test ID
 
 ## Sign-off
 
-- Failures fixed/retested: `________________`
-- Server log: `________________`
-- Client logs: `________________`
-- Save before/after: `________________`
-- Result: `NOT RUN`
+- Failures fixed/retested: pre-deserialization protocol mismatch rejection and delayed/retry lifecycle; focused `16/16`, full `402 passed / 8 skipped / 0 failed`
+- Server log: Release protocol probe path above; Scanner Room matrix log `NOT RUN`
+- Client logs: `NOT RUN`
+- Save before/after: `NOT RUN`
+- Result: `NOT RUN` (real-client UI control unavailable; no D/N result inferred from automation)
