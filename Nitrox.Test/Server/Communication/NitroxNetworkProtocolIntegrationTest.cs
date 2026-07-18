@@ -81,6 +81,7 @@ public sealed class NitroxNetworkProtocolIntegrationTest
         };
         listener.ConnectionRequestEvent += request =>
         {
+            Thread.Sleep(2_500);
             LiteNetLib.Utils.NetDataWriter rejectionData = new();
             rejectionData.Put("nitrox-ai/2");
             request.Reject(rejectionData);
