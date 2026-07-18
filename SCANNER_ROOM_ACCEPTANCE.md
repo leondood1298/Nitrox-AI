@@ -15,6 +15,7 @@ Status values: `PASS`, `FAIL`, `BLOCKED`, `NOT RUN`. Record failures as `test ID
 - Automated prerequisite evidence: baseline `386 passed / 8 skipped / 0 failed`; final `402 passed / 8 skipped / 0 failed`. This does not count as a D/N matrix pass.
 - Exact Release process probe: `test_results/handshake-probe-release/20260718-102100-5ef30680ae57`; legacy `nitrox` rejected, `nitrox-ai/1` accepted, one rejection log, one session, server stopped, UDP 11153 released.
 - D1-D6 and N1-N2 remain `NOT RUN`: the managed computer-use runtime failed to initialize twice with `windows sandbox failed: helper_unknown_error` before any launcher/game UI action.
+- Post-restart retry with Computer Use `26.715.31925` also failed twice (with a kernel reset between attempts) before guidance load or any UI/system mutation; evidence: `test_results/matrix-blockers/20260718-computer-use-retry/blocker.txt`.
 - N1 additionally lacks a validated latency/jitter impairment harness. Do not claim N1 from an unvalidated proxy or unit test.
 - PR 53 remains unmerged and reserved for the later vehicle-authority phase.
 
