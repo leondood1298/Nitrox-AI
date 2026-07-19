@@ -55,6 +55,13 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
             : Record(ScannerRoomDiagnosticOutcome.InvariantFailure, $"{eventName}_invalid", room, reason: invariantFailure);
     }
 
+    public ScannerRoomDiagnosticEntry RecordCapturedCheckpoint(string eventName, MapRoomEntity room,
+        ScannerRoomStateSnapshot snapshot, string? invariantFailure, string? reason = null) =>
+        invariantFailure == null
+            ? Record(ScannerRoomDiagnosticOutcome.Checkpoint, eventName, room, reason: reason, capturedSnapshot: snapshot)
+            : Record(ScannerRoomDiagnosticOutcome.InvariantFailure, $"{eventName}_invalid", room,
+                reason: invariantFailure, capturedSnapshot: snapshot);
+
     public IReadOnlyList<ScannerRoomDiagnosticEntry> GetHistory()
     {
         lock (sync)
@@ -72,12 +79,18 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
     }
 
     private ScannerRoomDiagnosticEntry Record(ScannerRoomDiagnosticOutcome outcome, string eventName, MapRoomEntity? room,
-        NitroxId? cameraId = null, SessionId? sessionId = null, int? slot = null, string? reason = null)
+        NitroxId? cameraId = null, SessionId? sessionId = null, int? slot = null, string? reason = null,
+        ScannerRoomStateSnapshot? capturedSnapshot = null)
     {
-        ScannerRoomStateSnapshot? snapshot = null;
+        ScannerRoomStateSnapshot? snapshot = capturedSnapshot;
         long? dockingRevision = null;
         int? cameraCount = null;
-        if (room != null)
+        if (snapshot is { } captured)
+        {
+            dockingRevision = captured.DockingRevision;
+            cameraCount = captured.CameraCount;
+        }
+        else if (room != null)
         {
             lock (room)
             {

@@ -49,7 +49,8 @@ internal sealed class PickupItemPacketProcessor(EntityRegistry entityRegistry, W
                     MapRoomCameraRecord? record = mapRoom.GetCameraRecord(id);
                     undock = new MapRoomCameraDock(id, mapRoom.Id, dockingIndex, mapRoom.DockingRevision, true, true, false,
                         record?.CameraNumber ?? 0, record?.LightOn ?? false, record?.LightRevision ?? 0,
-                        record?.Energy ?? 100f, record?.Health ?? 100f, record?.ComponentRevision ?? 0);
+                        record?.Energy ?? MapRoomCameraRecord.MAX_ENERGY,
+                        record?.Health ?? MapRoomCameraRecord.MAX_HEALTH, record?.ComponentRevision ?? 0);
                 }
             }
             if (undock != null)

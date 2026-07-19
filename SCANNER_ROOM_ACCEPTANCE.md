@@ -6,13 +6,13 @@ Status values: `PASS`, `FAIL`, `BLOCKED`, `NOT RUN`. Record failures as `test ID
 
 - Build/commit: see the final package `BUILD_INFO.json`; one immutable Windows x64 Release build is used by the server and every client.
 - Game version: Subnautica build 83031.
-- Server/save: automated boot, save-load, and protocol probes passed; the Scanner Room real-game matrix save is `NOT CREATED`.
-- Clients: A `NOT LAUNCHED`, B `NOT LAUNCHED`, C/late join `NOT LAUNCHED` for the matrix.
+- Server/save: automated boot, save-load, and protocol probes passed. An exploratory run used the pre-existing `gottem` save; the dedicated Scanner Room matrix save is `NOT CREATED`.
+- Clients: host `leon` and LAN client `leonlaptop` joined the exploratory run. A/B/C remain `NOT LAUNCHED` under the formal matrix procedure.
 
-## Automated qualification (2026-07-18)
+## Automated qualification (2026-07-19 follow-up)
 
-- Full Release suite: `494 passed / 8 skipped / 0 failed` (`502 total`). The eight skips are the four pre-existing Windows filesystem/root-permission tests repeated across target frameworks.
-- Focused Scanner Room, camera lifecycle, movement-authority, batching, and Stalker suite: `188 passed / 0 failed`.
+- Full Release suite: `521 passed / 8 skipped / 0 failed` (`529 total`). The eight skips are four pre-existing platform-specific filesystem/root-permission tests in each of the Unix and macOS fixtures, skipped on Windows.
+- Focused Scanner Room and camera selection: `131 passed / 0 failed`; the deterministic save/dock lock-inversion regression also passed ten consecutive runs.
 - Persistence qualification passed real JSON and ProtoBuf round-trips plus late-join/orphan recovery. The broader persistence/scenario selection passed `20/20`.
 - Authority-transition atomicity passed `22/22`; its three deterministic transfer-race tests passed five consecutive runs (`15/15`).
 - The deterministic network-impairment proxy passed all six self-tests: command validation, repeatable scheduling, jitter bounds, reorder/expiry, bounded queue, and localhost bidirectional echo.
@@ -21,6 +21,7 @@ Status values: `PASS`, `FAIL`, `BLOCKED`, `NOT RUN`. Record failures as `test ID
 - Save-load probe: a clean JSON world was saved, loaded on restart, reached `World finished loading`, listened on UDP, and released the port after termination.
 - Automated redirected-input `save`/`stop` is not counted as a pass. The console did not consume redirected commands, consistent with the unrelated upstream console limitation tracked as issue #2616. Interactive server-console commands remain part of the manual run.
 - Compact `[SRD1]` diagnostics use process epochs, per-source sequence numbers, transition-only events, bounded histories, sampled repetitive warnings, unsampled invariant failures, and short state fingerprints. Evidence collection produces bounded summaries plus authoritative zipped logs/saves.
+- The `gottem` evidence exposed and now covers two narrow defects: vanilla Scanner Room cameras use `400` maximum health rather than `100`, and existing room state could change while the shallow `GlobalRootData` graph was being serialized. Camera bounds/defaults/diagnostic bands now use the correct scale, and registered Scanner Room fields are locked through `GlobalRootData` serialization with deadlock-safe contention handling.
 
 These checks exhaust the deterministic, serialization, process, packaging, and impairment-harness work available without launching two real game clients. They do not count as a real-game matrix pass.
 
@@ -28,6 +29,16 @@ These checks exhaust the deterministic, serialization, process, packaging, and i
 
 - The narrow PR 53 vehicle-movement authority slice was incorporated: finite input validation, owner/pilot enforcement, bounded batches, and mutation plus enqueue under the ownership lock. PR 53 itself remains unmerged; unrelated portions were not imported.
 - The four pre-existing Unity/Google Drive stat-only metadata paths are intentionally outside this tranche and remain untouched.
+
+## Exploratory two-client smoke (2026-07-18)
+
+- Server/save: `gottem`, using its pre-existing Scanner Room. The launcher identified source commit `9f484b9068d55e56f9e3e181042e0b84ec2a535a`; this was not an isolated-package matrix run.
+- Two clients exercised Scanner Room cameras, control, lights, dock/undock, scan target/results, HUD behavior, and upgrades without a visible gameplay mismatch.
+- No formal test markers, prescribed action sequence, before/after save pair, restart assertion, impairment profile, or third-client step was recorded. Therefore no R/S/P/F/D/N row is promoted from `NOT RUN`.
+- Server diagnostics nevertheless recorded `invalid_camera_component`/`component invalid_value` for a healthy camera reporting health `400`, plus two state changes during autosave. The remaining `stale_or_invalid` scan-type and `non_owner` light rejects were expected defensive behavior.
+- Evidence bundles:
+  - server/save: `20260719-033214363Z-owner-main-server-scanner-room-9f484b9068d5-qf70d8cfd-20260718T223259Z-win-x64.zip`, SHA-256 `2B619A4B5B463F509CFFFCC918AB8DD6F1A61101C40C18E3DDEB93213871F55F`;
+  - host client: `20260719-033253061Z-owner-main-client-scanner-room-9f484b9068d5-qf70d8cfd-20260718T223259Z-win-x64.zip`, SHA-256 `DEF2C1030039D469BCBD40A6FAF0AF1D941BB46881432E3DCFBF315CE345B4DF`.
 
 ## Real-game matrix
 
@@ -55,8 +66,9 @@ These checks exhaust the deterministic, serialization, process, packaging, and i
 ## Sign-off
 
 - Automated qualification: `PASS`
-- Server/client real-game logs: `NOT RUN`
-- Save before/after real-game matrix: `NOT RUN`
+- Exploratory two-client smoke: `FAIL` on diagnostic invariants; no visible gameplay mismatch; focused fix retest pending
+- Formal server/client matrix evidence: `NOT RUN`
+- Save before/after formal real-game matrix: `NOT RUN`
 - Real-game result: `NOT RUN`
 
 Use the package instructions, stop at the first mismatch, and collect the compact evidence bundle before another restart or retry.

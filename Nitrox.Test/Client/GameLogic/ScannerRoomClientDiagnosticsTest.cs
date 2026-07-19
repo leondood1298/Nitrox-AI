@@ -1,4 +1,5 @@
 using Nitrox.Model.DataStructures;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using NitroxClient.GameLogic;
 
 namespace Nitrox.Test.Client.GameLogic;
@@ -47,14 +48,40 @@ public sealed class ScannerRoomClientDiagnosticsTest
         ScannerRoomClientDiagnostics diagnostics = new();
         NitroxId cameraId = new();
 
-        diagnostics.RecordComponentApplied(cameraId, 100f, 100f, 1, true);
-        diagnostics.RecordComponentApplied(cameraId, 99f, 98f, 2, true);
-        diagnostics.RecordComponentApplied(cameraId, 75f, 98f, 3, true);
-        diagnostics.RecordComponentApplied(cameraId, 74f, 74f, 4, true);
+        diagnostics.RecordComponentApplied(cameraId, 100f, MapRoomCameraRecord.MAX_HEALTH, 1, true);
+        diagnostics.RecordComponentApplied(cameraId, 99f, 399f, 2, true);
+        diagnostics.RecordComponentApplied(cameraId, 75f, 399f, 3, true);
+        diagnostics.RecordComponentApplied(cameraId, 74f, 300f, 4, true);
 
         Assert.AreEqual(3, diagnostics.GetHistory().Count);
         Assert.IsTrue(diagnostics.GetHistory()[0].EndsWith("reason=e100_h100"));
         Assert.IsTrue(diagnostics.GetHistory()[1].EndsWith("reason=e75_h100"));
         Assert.IsTrue(diagnostics.GetHistory()[2].EndsWith("reason=e75_h75"));
+    }
+
+    [DataTestMethod]
+    [DataRow(100f, 100)]
+    [DataRow(75.01f, 100)]
+    [DataRow(75f, 75)]
+    [DataRow(50f, 50)]
+    [DataRow(25f, 25)]
+    [DataRow(10f, 10)]
+    [DataRow(0f, 0)]
+    public void EnergyBandsRetainCanonicalThresholds(float value, int expected)
+    {
+        Assert.AreEqual(expected, ScannerRoomClientDiagnostics.EnergyBand(value));
+    }
+
+    [DataTestMethod]
+    [DataRow(400f, 100)]
+    [DataRow(300.01f, 100)]
+    [DataRow(300f, 75)]
+    [DataRow(200f, 50)]
+    [DataRow(100f, 25)]
+    [DataRow(40f, 10)]
+    [DataRow(0f, 0)]
+    public void HealthBandsAreNormalizedToCameraMaximum(float value, int expected)
+    {
+        Assert.AreEqual(expected, ScannerRoomClientDiagnostics.HealthBand(value));
     }
 }

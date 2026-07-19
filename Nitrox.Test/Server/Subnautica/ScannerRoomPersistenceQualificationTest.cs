@@ -36,13 +36,36 @@ public sealed class ScannerRoomPersistenceQualificationTest
             nameof(SubnauticaServerProtoBufSerializer));
     }
 
+    [TestMethod]
+    public void FingerprintValidationEnforcesCameraHealthContract()
+    {
+        MapRoomEntity room = CreateRoom();
+        MapRoomCameraRecord camera = room.GetCameraRecord(CameraAId)!;
+
+        camera.Health = MapRoomCameraRecord.MAX_HEALTH;
+        Assert.IsNull(ScannerRoomStateFingerprint.Validate(room));
+
+        camera.Health = MapRoomCameraRecord.MAX_HEALTH + 0.01f;
+        Assert.AreEqual("invalid_camera_component", ScannerRoomStateFingerprint.Validate(room));
+
+        camera.Health = -0.01f;
+        Assert.AreEqual("invalid_camera_component", ScannerRoomStateFingerprint.Validate(room));
+
+        camera.Health = float.NaN;
+        Assert.AreEqual("invalid_camera_component", ScannerRoomStateFingerprint.Validate(room));
+    }
+
     private static void QualifyPersistenceAndInitialSync(IServerSerializer serializer, string serializerName)
     {
         MapRoomEntity originalRoom = CreateRoom();
+        Assert.IsNull(ScannerRoomStateFingerprint.Validate(originalRoom),
+            $"{serializerName}: full camera health must be valid before persistence.");
         ScannerRoomStateSnapshot originalSnapshot = ScannerRoomStateFingerprint.Create(originalRoom);
 
         GlobalRootData restoredData = RoundTrip(serializer, CreatePersistedWorld(originalRoom), serializerName);
         MapRoomEntity restoredRoom = GetPersistedRoom(restoredData);
+        Assert.IsNull(ScannerRoomStateFingerprint.Validate(restoredRoom),
+            $"{serializerName}: full camera health must remain valid after persistence.");
 
         AssertCanonicalFields(originalRoom, restoredRoom, $"{serializerName} round trip");
         AssertEquivalentFingerprint(originalSnapshot, ScannerRoomStateFingerprint.Create(restoredRoom),
@@ -144,7 +167,7 @@ public sealed class ScannerRoomPersistenceQualificationTest
         null,
         9,
         [
-            new MapRoomCameraRecord(CameraAId, 1, true, 11, 90f, 80f, 12),
+            new MapRoomCameraRecord(CameraAId, 1, true, 11, 90f, MapRoomCameraRecord.MAX_HEALTH, 12),
             new MapRoomCameraRecord(CameraBId, 2, false, 4, 44.5f, 55.25f, 6),
             new MapRoomCameraRecord(CameraCId, 7, true, 8, 22f, 33f, 9)
         ],

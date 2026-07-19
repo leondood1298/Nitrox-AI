@@ -79,14 +79,20 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Validate two-client camera handoff/release restores control availability (#51)
 - [x] Apply authoritative number, battery, health, and light state to loose cameras on reload (#51)
 - [x] Clear the collector's local Scanner Room result when a breakable target is destroyed (#51)
+- [x] Preserve and diagnose the `gottem` exploratory two-client evidence
+- [x] Correct the Scanner Room camera health contract to the vanilla 400-point scale
+- [x] Capture registered Scanner Room state consistently during `GlobalRootData` autosave serialization
+- [x] Qualify the follow-up with focused race/persistence coverage and the full Release suite
 
 ## Remaining
 
+- [ ] Retest the affected camera-health and autosave paths in `gottem` with the replacement package
 - [ ] Distinguish stale preview image from an actual camera label/selection mismatch
 - [ ] Execute in-game acceptance matrix (`SCANNER_ROOM_ACCEPTANCE.md`; requires 2–3 game clients)
 
 ## Next
 
+- [ ] Load `gottem`, exercise a full-health camera, change scan/dock state across autosave, restart once, and collect evidence
 - [ ] Undock camera 1, restart, and verify it persists loose instead of vanishing or duplicating (#51)
 - [ ] Verify shale HUD markers disappear for collector and observer after local break cleanup (#51)
 - [ ] Execute in-game acceptance matrix (`SCANNER_ROOM_ACCEPTANCE.md`; requires 2–3 game clients)

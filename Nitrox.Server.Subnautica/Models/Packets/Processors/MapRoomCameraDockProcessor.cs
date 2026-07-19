@@ -127,7 +127,7 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
 					? existingRecord?.CameraNumber ?? (stateChanged ? mapRoom.GetOrAssignCameraNumber(packet.CameraId, packet.DockingIndex + 1) : 0)
 					: 0;
 				MapRoomCameraRecord? record = granted ? mapRoom.GetCameraRecord(packet.CameraId) : null;
-				response = new MapRoomCameraDock(packet.CameraId, packet.MapRoomId, packet.DockingIndex, mapRoom.DockingRevision, true, granted, packet.IsDocked, cameraNumber, record?.LightOn ?? false, record?.LightRevision ?? 0, record?.Energy ?? 100f, record?.Health ?? 100f, record?.ComponentRevision ?? 0);
+				response = new MapRoomCameraDock(packet.CameraId, packet.MapRoomId, packet.DockingIndex, mapRoom.DockingRevision, true, granted, packet.IsDocked, cameraNumber, record?.LightOn ?? false, record?.LightRevision ?? 0, record?.Energy ?? MapRoomCameraRecord.MAX_ENERGY, record?.Health ?? MapRoomCameraRecord.MAX_HEALTH, record?.ComponentRevision ?? 0);
 				diagnosticReason = granted ? alreadyCanonical ? "idempotent" : response.Revision == 0 ? "bootstrap" : "changed" : diagnosticReason;
 				if (granted)
 				{

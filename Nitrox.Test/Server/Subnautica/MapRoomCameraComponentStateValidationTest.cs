@@ -16,11 +16,11 @@ public sealed class MapRoomCameraComponentStateValidationTest
 {
     [DataTestMethod]
     [DataRow(0f, 0f, true)]
-    [DataRow(100f, 100f, true)]
-    [DataRow(-0.01f, 100f, false)]
-    [DataRow(100.01f, 100f, false)]
+    [DataRow(100f, 400f, true)]
+    [DataRow(-0.01f, 400f, false)]
+    [DataRow(100.01f, 400f, false)]
     [DataRow(100f, -0.01f, false)]
-    [DataRow(100f, 100.01f, false)]
+    [DataRow(100f, 400.01f, false)]
     public void RequiresCanonicalComponentRange(float energy, float health, bool expected)
     {
         Assert.AreEqual(expected, MapRoomCameraComponentStateProcessor.IsValidComponentState(energy, health));
@@ -29,9 +29,9 @@ public sealed class MapRoomCameraComponentStateValidationTest
     [TestMethod]
     public void RejectsNonFiniteValues()
     {
-        Assert.IsFalse(MapRoomCameraComponentStateProcessor.IsValidComponentState(float.NaN, 100f));
-        Assert.IsFalse(MapRoomCameraComponentStateProcessor.IsValidComponentState(float.PositiveInfinity, 100f));
-        Assert.IsFalse(MapRoomCameraComponentStateProcessor.IsValidComponentState(float.NegativeInfinity, 100f));
+        Assert.IsFalse(MapRoomCameraComponentStateProcessor.IsValidComponentState(float.NaN, 400f));
+        Assert.IsFalse(MapRoomCameraComponentStateProcessor.IsValidComponentState(float.PositiveInfinity, 400f));
+        Assert.IsFalse(MapRoomCameraComponentStateProcessor.IsValidComponentState(float.NegativeInfinity, 400f));
         Assert.IsFalse(MapRoomCameraComponentStateProcessor.IsValidComponentState(100f, float.NaN));
         Assert.IsFalse(MapRoomCameraComponentStateProcessor.IsValidComponentState(100f, float.PositiveInfinity));
         Assert.IsFalse(MapRoomCameraComponentStateProcessor.IsValidComponentState(100f, float.NegativeInfinity));
@@ -45,9 +45,35 @@ public sealed class MapRoomCameraComponentStateValidationTest
     [DataRow(25f, 25)]
     [DataRow(10f, 10)]
     [DataRow(0f, 0)]
-    public void ComponentBandsOnlyLogMeaningfulThresholdCrossings(float value, int expected)
+    public void EnergyBandsOnlyLogMeaningfulThresholdCrossings(float value, int expected)
     {
-        Assert.AreEqual(expected, MapRoomCameraComponentStateProcessor.GetComponentBand(value));
+        Assert.AreEqual(expected, MapRoomCameraComponentStateProcessor.GetEnergyBand(value));
+    }
+
+    [DataTestMethod]
+    [DataRow(400f, 100)]
+    [DataRow(300.01f, 100)]
+    [DataRow(300f, 75)]
+    [DataRow(200f, 50)]
+    [DataRow(100f, 25)]
+    [DataRow(40f, 10)]
+    [DataRow(0f, 0)]
+    public void HealthBandsAreNormalizedToCameraMaximum(float value, int expected)
+    {
+        Assert.AreEqual(expected, MapRoomCameraComponentStateProcessor.GetHealthBand(value));
+    }
+
+    [TestMethod]
+    public void NewCameraStateDefaultsToFullCanonicalValues()
+    {
+        NitroxId cameraId = new();
+        MapRoomCameraRecord record = new(cameraId, 1);
+        MapRoomCameraDock dockPacket = new(cameraId, new NitroxId(), 0);
+
+        Assert.AreEqual(MapRoomCameraRecord.MAX_ENERGY, record.Energy);
+        Assert.AreEqual(MapRoomCameraRecord.MAX_HEALTH, record.Health);
+        Assert.AreEqual(MapRoomCameraRecord.MAX_ENERGY, dockPacket.Energy);
+        Assert.AreEqual(MapRoomCameraRecord.MAX_HEALTH, dockPacket.Health);
     }
 
     [TestMethod]
@@ -203,12 +229,12 @@ public sealed class MapRoomCameraComponentStateValidationTest
 
         await processor.Process(
             new AuthProcessorContext(scenario.PlayerA, sender),
-            new MapRoomCameraComponentState(ScannerRoomScenarioFixture.CameraAId, 100.01f, 50f));
+            new MapRoomCameraComponentState(ScannerRoomScenarioFixture.CameraAId, 100f, 400.01f));
 
         Assert.IsFalse(sender.Single<MapRoomCameraComponentState>().Granted);
         MapRoomCameraRecord record = scenario.Room.GetCameraRecord(ScannerRoomScenarioFixture.CameraAId)!;
-        Assert.AreEqual(100f, record.Energy);
-        Assert.AreEqual(100f, record.Health);
+        Assert.AreEqual(MapRoomCameraRecord.MAX_ENERGY, record.Energy);
+        Assert.AreEqual(MapRoomCameraRecord.MAX_HEALTH, record.Health);
         Assert.AreEqual(0, record.ComponentRevision);
     }
 

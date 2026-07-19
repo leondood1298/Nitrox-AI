@@ -75,13 +75,13 @@ internal sealed class MapRoomCameraComponentStateProcessor(SimulationOwnershipDa
             await context.ReplyAsync(new MapRoomCameraComponentState(packet.CameraId, packet.Energy, packet.Health, 0, true, false));
             return;
         }
-        if (changed && GetComponentBand(previousEnergy) != GetComponentBand(acceptedEnergy))
+        if (changed && GetEnergyBand(previousEnergy) != GetEnergyBand(acceptedEnergy))
         {
-            diagnostics.RecordAccepted("component_energy", room, packet.CameraId, context.Sender.SessionId, reason: $"band_{GetComponentBand(acceptedEnergy)}");
+            diagnostics.RecordAccepted("component_energy", room, packet.CameraId, context.Sender.SessionId, reason: $"band_{GetEnergyBand(acceptedEnergy)}");
         }
-        if (changed && GetComponentBand(previousHealth) != GetComponentBand(acceptedHealth))
+        if (changed && GetHealthBand(previousHealth) != GetHealthBand(acceptedHealth))
         {
-            string reason = previousHealth > 0f && acceptedHealth <= 0f ? "death" : previousHealth <= 0f && acceptedHealth > 0f ? "repair" : $"band_{GetComponentBand(acceptedHealth)}";
+            string reason = previousHealth > 0f && acceptedHealth <= 0f ? "death" : previousHealth <= 0f && acceptedHealth > 0f ? "repair" : $"band_{GetHealthBand(acceptedHealth)}";
             diagnostics.RecordAccepted("component_health", room, packet.CameraId, context.Sender.SessionId, reason: reason);
         }
         await sendTask;
@@ -109,15 +109,20 @@ internal sealed class MapRoomCameraComponentStateProcessor(SimulationOwnershipDa
     }
 
     internal static bool IsValidComponentState(float energy, float health) =>
-        float.IsFinite(energy) && energy is >= 0f and <= 100f && float.IsFinite(health) && health is >= 0f and <= 100f;
+        float.IsFinite(energy) && energy is >= 0f and <= MapRoomCameraRecord.MAX_ENERGY &&
+        float.IsFinite(health) && health is >= 0f and <= MapRoomCameraRecord.MAX_HEALTH;
 
-    internal static int GetComponentBand(float value) => value switch
+    internal static int GetEnergyBand(float energy) => GetComponentBand(energy, MapRoomCameraRecord.MAX_ENERGY);
+
+    internal static int GetHealthBand(float health) => GetComponentBand(health, MapRoomCameraRecord.MAX_HEALTH);
+
+    private static int GetComponentBand(float value, float maximum) => value switch
     {
         <= 0f => 0,
-        <= 10f => 10,
-        <= 25f => 25,
-        <= 50f => 50,
-        <= 75f => 75,
+        _ when value <= maximum * 0.1f => 10,
+        _ when value <= maximum * 0.25f => 25,
+        _ when value <= maximum * 0.5f => 50,
+        _ when value <= maximum * 0.75f => 75,
         _ => 100
     };
 }

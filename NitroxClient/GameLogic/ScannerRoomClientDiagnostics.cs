@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Text;
 using System.Threading;
 using Nitrox.Model.DataStructures;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 
 namespace NitroxClient.GameLogic;
 
@@ -51,8 +52,8 @@ public sealed class ScannerRoomClientDiagnostics
 
     internal void RecordComponentApplied(NitroxId cameraId, float energy, float health, long revision, bool objectFound)
     {
-        int energyBand = ComponentBand(energy);
-        int healthBand = ComponentBand(health);
+        int energyBand = EnergyBand(energy);
+        int healthBand = HealthBand(health);
         bool shouldRecord;
         lock (sync)
         {
@@ -75,13 +76,17 @@ public sealed class ScannerRoomClientDiagnostics
         }
     }
 
-    internal static int ComponentBand(float value) => value switch
+    internal static int EnergyBand(float energy) => ComponentBand(energy, MapRoomCameraRecord.MAX_ENERGY);
+
+    internal static int HealthBand(float health) => ComponentBand(health, MapRoomCameraRecord.MAX_HEALTH);
+
+    private static int ComponentBand(float value, float maximum) => value switch
     {
         <= 0f => 0,
-        <= 10f => 10,
-        <= 25f => 25,
-        <= 50f => 50,
-        <= 75f => 75,
+        _ when value <= maximum * 0.1f => 10,
+        _ when value <= maximum * 0.25f => 25,
+        _ when value <= maximum * 0.5f => 50,
+        _ when value <= maximum * 0.75f => 75,
         _ => 100
     };
 

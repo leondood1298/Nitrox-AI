@@ -65,8 +65,8 @@ internal static class ScannerRoomStateFingerprint
             {
                 lock (record)
                 {
-                    if (!float.IsFinite(record.Energy) || record.Energy is < 0f or > 100f ||
-                        !float.IsFinite(record.Health) || record.Health is < 0f or > 100f ||
+                    if (!float.IsFinite(record.Energy) || record.Energy is < 0f or > MapRoomCameraRecord.MAX_ENERGY ||
+                        !float.IsFinite(record.Health) || record.Health is < 0f or > MapRoomCameraRecord.MAX_HEALTH ||
                         record.LightRevision < 0 || record.ComponentRevision < 0)
                     {
                         return "invalid_camera_component";
