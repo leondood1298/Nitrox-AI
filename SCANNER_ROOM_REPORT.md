@@ -29,7 +29,7 @@ Final automated baseline: `0c94cbfb90a8fe249d40f7088c6d94ae8b3cf1f7` after merge
 ## Protocol and save impact
 
 - Added protocol packets: `MapRoomCameraComponentState`, `MapRoomCameraPreview`, `MapRoomScanResultChanged`, `MapRoomScanResultSnapshot`, `MapRoomScanResultSubscription`, and `MapRoomScanTypesSnapshot`; existing camera control/dock/light packets gained authoritative state fields during the imported/custom evolution.
-- `MapRoomScanResultSnapshot` now carries the owner query origin/range; `MapRoomScanTypesSnapshot` also carries the client's detectable TechType set. These incompatible schemas plus the preview packet advance the connection key to protocol epoch `2` (`nitrox-ai/2`).
+- `MapRoomScanResultSnapshot` now carries the owner query origin/range; `MapRoomScanTypesSnapshot` also carries the client's detectable TechType set; and `MapRoomScanResultChanged` now carries the range-exit flag plus query origin/range. These incompatible schemas plus the preview packet advance the connection key to protocol epoch `2` (`nitrox-ai/2`).
 - All clients and server must run this same fork build; older protocol peers are not compatible with these messages.
 - `MapRoomEntity` now persists dock IDs/revision, camera records, scan generation/revision/results, available scan types/revision, and fabricator metadata.
 - `MapRoomMetadata` persists scan generation/revision in addition to target/progress. Camera records persist number, light, energy, health, and component revisions.
