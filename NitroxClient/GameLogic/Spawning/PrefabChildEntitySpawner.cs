@@ -2,6 +2,7 @@ using System.Collections;
 using System.Linq;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
+using NitroxClient.GameLogic;
 using NitroxClient.GameLogic.Spawning.Abstract;
 using NitroxClient.MonoBehaviours;
 using UnityEngine;
@@ -20,6 +21,11 @@ public class PrefabChildEntitySpawner : SyncEntitySpawner<PrefabChildEntity>
     protected override bool SpawnSync(PrefabChildEntity entity, TaskResult<Optional<GameObject>> result)
     {
         GameObject parent = NitroxEntity.RequireObjectFrom(entity.ParentId);
+        if (MapRoomCameraBatteryChildPolicy.IsRedundant(parent.GetComponent<MapRoomCamera>(), entity.Metadata))
+        {
+            result.Set(Optional.Empty);
+            return true;
+        }
         PrefabIdentifier? prefab = parent.GetAllComponentsInChildren<PrefabIdentifier>()
                                         .Where(prefab => prefab.classId == entity.ClassId)
                                         .ElementAtOrDefault(entity.ComponentIndex);

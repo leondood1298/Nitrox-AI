@@ -78,6 +78,7 @@ $outputPath = [System.IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Path $outputPath -Force | Out-Null
 
 $scannerByKey = @{}
+$basePowerByKey = @{}
 $scannerSnapshots = [System.Collections.Generic.List[object]]::new()
 $snapshotTexts = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
 $testRows = [System.Collections.Generic.List[object]]::new()
@@ -86,6 +87,7 @@ $problemRows = [System.Collections.Generic.List[object]]::new()
 $validationIssues = [System.Collections.Generic.List[string]]::new()
 $legacyEpochState = @{}
 $duplicateScannerRows = 0
+$duplicateBasePowerRows = 0
 $legacyScannerRows = 0
 $legacyEpochResets = 0
 $ordinal = 0L
@@ -181,6 +183,59 @@ foreach ($file in $logFiles) {
             }
         }
 
+        $basePowerIndex = $line.IndexOf('[BPD1]', [System.StringComparison]::Ordinal)
+        if ($basePowerIndex -ge 0) {
+            $basePowerText = (Protect-ScannerEvidenceText -Text $line.Substring($basePowerIndex)).Trim()
+            $fields = Get-CompactFields -Text $basePowerText
+            if (-not $fields.ContainsKey('n') -or -not $fields.ContainsKey('side') -or -not $fields.ContainsKey('ep')) {
+                $validationIssues.Add("unparsed-bpd1 source=$relative line=$lineNumber")
+            }
+            else {
+                $sequence = 0L
+                if (-not [long]::TryParse([string]$fields.n, [ref]$sequence)) {
+                    $validationIssues.Add("invalid-bpd1-sequence source=$relative line=$lineNumber value=$($fields.n)")
+                }
+                else {
+                    $side = [string]$fields.side
+                    $epoch = ([string]$fields.ep).ToLowerInvariant()
+                    if ($epoch -notmatch '^[0-9a-f]{8}$') {
+                        $validationIssues.Add("invalid-bpd1-epoch source=$relative line=$lineNumber value=$($fields.ep)")
+                    }
+                    if ($side -ne 'C') {
+                        $validationIssues.Add("invalid-bpd1-side source=$relative line=$lineNumber value=$side")
+                    }
+
+                    $key = "$relative|$side|$epoch|$sequence"
+                    $row = [pscustomobject]@{
+                        Ordinal = $ordinal
+                        Source = $relative
+                        Line = $lineNumber
+                        Sequence = $sequence
+                        Side = $side
+                        Epoch = $epoch
+                        Event = if ($fields.ContainsKey('ev')) { [string]$fields.ev } else { '-' }
+                        Outcome = if ($fields.ContainsKey('out')) { [string]$fields.out } else { '-' }
+                        Base = if ($fields.ContainsKey('base')) { [string]$fields.base } else { '-' }
+                        PowerSource = if ($fields.ContainsKey('source')) { [string]$fields.source } else { '-' }
+                        Power = if ($fields.ContainsKey('power')) { [string]$fields.power } else { '-' }
+                        Initial = if ($fields.ContainsKey('initial')) { [string]$fields.initial } else { '-' }
+                        Wait = if ($fields.ContainsKey('wait')) { [string]$fields.wait } else { '-' }
+                        Reason = if ($fields.ContainsKey('reason')) { [string]$fields.reason } else { '-' }
+                        Text = $basePowerText
+                    }
+                    if ($basePowerByKey.ContainsKey($key)) {
+                        $duplicateBasePowerRows++
+                        if (-not $basePowerByKey[$key].Text.Equals($basePowerText, [System.StringComparison]::Ordinal)) {
+                            $validationIssues.Add("bpd1-sequence-conflict key=$key first=$($basePowerByKey[$key].Source):$($basePowerByKey[$key].Line) duplicate=$relative`:$lineNumber")
+                        }
+                    }
+                    else {
+                        $basePowerByKey[$key] = $row
+                    }
+                }
+            }
+        }
+
         $testIndex = $line.IndexOf('TEST|', [System.StringComparison]::Ordinal)
         if ($testIndex -ge 0) {
             $testRows.Add([pscustomobject]@{ Ordinal = $ordinal; Source = $relative; Line = $lineNumber; Text = (Protect-ScannerEvidenceText -Text $line.Substring($testIndex)).Trim() })
@@ -205,6 +260,17 @@ foreach ($file in $logFiles) {
 }
 
 $scannerRows = @($scannerByKey.Values | Sort-Object Ordinal)
+$basePowerRows = @($basePowerByKey.Values | Sort-Object Ordinal)
+$basePowerEpochGroups = @($basePowerRows | Group-Object { "$($_.Source)|$($_.Side)|$($_.Epoch)" })
+$basePowerAudioSuppressRows = @($basePowerRows | Where-Object { $_.Event -in @('audio_down', 'audio_up') -and $_.Outcome -eq 'suppress' })
+$basePowerAudioPassRows = @($basePowerRows | Where-Object { $_.Event -in @('audio_down', 'audio_up') -and $_.Outcome -eq 'pass' })
+$basePowerSourceOkRows = @($basePowerRows | Where-Object { $_.Event -eq 'source_apply' -and $_.Outcome -eq 'ok' })
+$basePowerSourceMissingRows = @($basePowerRows | Where-Object { $_.Event -eq 'source_apply' -and $_.Outcome -eq 'missing' })
+$basePowerTraceTruncationRows = @($basePowerRows | Where-Object { $_.Event -in @('audio_trace_limit', 'source_trace_limit') -and $_.Outcome -eq 'truncated' })
+$basePowerIssueRows = @($basePowerRows | Where-Object {
+    ($_.Event -eq 'source_apply' -and $_.Outcome -eq 'missing') -or
+    ($_.Event -in @('audio_trace_limit', 'source_trace_limit') -and $_.Outcome -eq 'truncated')
+})
 $serverSampledSequenceGaps = [System.Collections.Generic.List[object]]::new()
 $clientSequenceGaps = [System.Collections.Generic.List[object]]::new()
 foreach ($sideGroup in $scannerRows | Group-Object { "$($_.Source)|$($_.Side)|$($_.Epoch)" }) {
@@ -275,6 +341,13 @@ function Format-ScannerSummaryRow {
     return Get-ShortSummaryText -Text $text -MaximumLength 220
 }
 
+function Format-BasePowerSummaryRow {
+    param([Parameter(Mandatory = $true)]$Row)
+
+    $text = "side=$($Row.Side) ep=$($Row.Epoch) n=$($Row.Sequence) ev=$($Row.Event) out=$($Row.Outcome) base=$($Row.Base) sourceId=$($Row.PowerSource) power=$($Row.Power) initial=$($Row.Initial) wait=$($Row.Wait) reason=$($Row.Reason) file=$($Row.Source):$($Row.Line)"
+    return Get-ShortSummaryText -Text $text -MaximumLength 300
+}
+
 $scannerEpochGroups = @($scannerRows | Group-Object { "$($_.Source)|$($_.Side)|$($_.Epoch)" })
 $scannerEpochCount = $scannerEpochGroups.Count
 Add-SummaryLine 'Scanner Room diagnostic summary v3'
@@ -288,6 +361,14 @@ Add-SummaryLine "LegacyEpochResetsDetected=$legacyEpochResets"
 Add-SummaryLine "ServerSampledSequenceGaps=$($serverSampledSequenceGaps.Count)"
 Add-SummaryLine "ClientSequenceGaps=$($clientSequenceGaps.Count)"
 Add-SummaryLine "ScannerSnapshotsUnique=$($scannerSnapshots.Count)"
+Add-SummaryLine "BasePowerEventsUnique=$($basePowerRows.Count)"
+Add-SummaryLine "BasePowerEpochs=$($basePowerEpochGroups.Count)"
+Add-SummaryLine "BasePowerRowsDeduplicated=$duplicateBasePowerRows"
+Add-SummaryLine "BasePowerAudioSuppress=$($basePowerAudioSuppressRows.Count)"
+Add-SummaryLine "BasePowerAudioPass=$($basePowerAudioPassRows.Count)"
+Add-SummaryLine "BasePowerSourceOk=$($basePowerSourceOkRows.Count)"
+Add-SummaryLine "BasePowerSourceMissing=$($basePowerSourceMissingRows.Count)"
+Add-SummaryLine "BasePowerTraceTruncations=$($basePowerTraceTruncationRows.Count)"
 Add-SummaryLine "TestMarkers=$($testRows.Count)"
 Add-SummaryLine "NetworkImpairmentLines=$($nipRows.Count)"
 Add-SummaryLine "WarningsOrErrors=$($problemRows.Count)"
@@ -309,6 +390,13 @@ foreach ($row in $scannerFailures | Select-Object -Last 2) { Add-SummaryLine (' 
 Add-SummaryLine ''
 Add-SummaryLine 'Scanner event tail (newest 3):'
 foreach ($row in $scannerRows | Select-Object -Last 3) { Add-SummaryLine ('  ' + (Format-ScannerSummaryRow -Row $row)) }
+Add-SummaryLine ''
+Add-SummaryLine 'Base-power client diagnostics (newest 1 per category):'
+foreach ($row in $basePowerAudioSuppressRows | Select-Object -Last 1) { Add-SummaryLine ('  audio-suppress ' + (Format-BasePowerSummaryRow -Row $row)) }
+foreach ($row in $basePowerAudioPassRows | Select-Object -Last 1) { Add-SummaryLine ('  audio-pass ' + (Format-BasePowerSummaryRow -Row $row)) }
+foreach ($row in $basePowerSourceOkRows | Select-Object -Last 1) { Add-SummaryLine ('  source-ok ' + (Format-BasePowerSummaryRow -Row $row)) }
+foreach ($row in $basePowerSourceMissingRows | Select-Object -Last 1) { Add-SummaryLine ('  source-missing ' + (Format-BasePowerSummaryRow -Row $row)) }
+foreach ($row in $basePowerTraceTruncationRows | Select-Object -Last 1) { Add-SummaryLine ('  trace-truncation ' + (Format-BasePowerSummaryRow -Row $row)) }
 Add-SummaryLine ''
 Add-SummaryLine 'TEST markers (newest 2):'
 foreach ($row in $testRows | Select-Object -Last 2) { Add-SummaryLine ("  $($row.Source):$($row.Line) " + (Get-ShortSummaryText -Text $row.Text -MaximumLength 200)) }
@@ -338,8 +426,9 @@ if ((Get-Item -LiteralPath $summaryPath).Length -gt $MaxSummaryBytes) {
 }
 
 $traceLines = [System.Collections.Generic.List[string]]::new()
-$traceLines.Add("TRACE v3 scanner=$($scannerRows.Count) epochs=$scannerEpochCount snapshots=$($scannerSnapshots.Count) test=$($testRows.Count) nip=$($nipRows.Count)")
+$traceLines.Add("TRACE v3 scanner=$($scannerRows.Count) epochs=$scannerEpochCount bpd=$($basePowerRows.Count) bpdEpochs=$($basePowerEpochGroups.Count) snapshots=$($scannerSnapshots.Count) test=$($testRows.Count) nip=$($nipRows.Count)")
 $traceScannerKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+$traceBasePowerKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 function Add-ScannerTraceRow {
     param(
         [Parameter(Mandatory = $true)]$Row,
@@ -352,23 +441,60 @@ function Add-ScannerTraceRow {
     }
 }
 
+function Add-BasePowerTraceRow {
+    param(
+        [Parameter(Mandatory = $true)]$Row,
+        [Parameter(Mandatory = $true)][string]$Kind
+    )
+
+    $key = "$($Row.Source)|$($Row.Side)|$($Row.Epoch)|$($Row.Sequence)"
+    if ($script:traceBasePowerKeys.Add($key)) {
+        $script:traceLines.Add("$Kind|$($Row.Source):$($Row.Line)|$(Get-ShortSummaryText -Text $Row.Text -MaximumLength 300)")
+    }
+}
+
 # Put a small, bounded sample of every high-value category first. The
 # remaining Scanner tail is newest-first so a byte cap never preserves old
 # rows at the expense of the event nearest the failure.
 foreach ($row in $scannerFailures | Select-Object -Last 4) { Add-ScannerTraceRow -Row $row -Kind 'FAILURE' }
 foreach ($row in $scannerRows | Select-Object -Last 8) { Add-ScannerTraceRow -Row $row -Kind 'SCANNER' }
+foreach ($row in $basePowerAudioSuppressRows | Select-Object -Last 1) { Add-BasePowerTraceRow -Row $row -Kind 'BASEPOWER-AUDIO-SUPPRESS' }
+foreach ($row in $basePowerAudioPassRows | Select-Object -Last 1) { Add-BasePowerTraceRow -Row $row -Kind 'BASEPOWER-AUDIO-PASS' }
+foreach ($row in $basePowerSourceOkRows | Select-Object -Last 1) { Add-BasePowerTraceRow -Row $row -Kind 'BASEPOWER-SOURCE-OK' }
+foreach ($row in $basePowerSourceMissingRows | Select-Object -Last 1) { Add-BasePowerTraceRow -Row $row -Kind 'BASEPOWER-SOURCE-MISSING' }
+foreach ($row in $basePowerTraceTruncationRows | Select-Object -Last 1) { Add-BasePowerTraceRow -Row $row -Kind 'BASEPOWER-TRACE-TRUNCATION' }
 foreach ($row in $testRows | Select-Object -Last 4) { $traceLines.Add("MARK|$($row.Source):$($row.Line)|$(Get-ShortSummaryText -Text $row.Text -MaximumLength 300)") }
 $traceNipRows = @($nipRows | Where-Object { $_.Text -match '\bev=start\b' } | Select-Object -First 1)
 $traceNipRows += @($nipRows | Select-Object -Last 4)
 foreach ($row in $traceNipRows | Sort-Object Ordinal -Unique) { $traceLines.Add("NETWORK|$($row.Source):$($row.Line)|$(Get-ShortSummaryText -Text $row.Text -MaximumLength 300)") }
 foreach ($row in $scannerSnapshots | Select-Object -Last 4) { $traceLines.Add("SNAPSHOT|$($row.Source):$($row.Line)|$(Get-ShortSummaryText -Text $row.Text -MaximumLength 300)") }
 foreach ($row in $scannerRows | Sort-Object Ordinal -Descending | Select-Object -First 512) { Add-ScannerTraceRow -Row $row -Kind 'SCANNER-NEWEST-FIRST' }
+foreach ($row in $basePowerRows | Sort-Object Ordinal -Descending | Select-Object -First 64) { Add-BasePowerTraceRow -Row $row -Kind 'BASEPOWER-NEWEST-FIRST' }
 Write-BoundedTextLines -Path (Join-Path $outputPath 'scanner-trace.log') -Lines $traceLines.ToArray() -MaximumBytes $MaxTraceBytes -Encoding $encoding
 
 $jsonEventCounts = [ordered]@{}
 foreach ($key in @($eventCounts.Keys | Sort-Object | Select-Object -First 40)) { $jsonEventCounts[$key] = $eventCounts[$key] }
 $jsonOutcomeCounts = [ordered]@{}
 foreach ($key in @($outcomeCounts.Keys | Sort-Object | Select-Object -First 20)) { $jsonOutcomeCounts[$key] = $outcomeCounts[$key] }
+function ConvertTo-BasePowerJsonRow {
+    param([Parameter(Mandatory = $true)]$Row)
+
+    return [ordered]@{
+        Source = $Row.Source
+        Line = $Row.Line
+        Side = $Row.Side
+        Epoch = $Row.Epoch
+        Sequence = $Row.Sequence
+        Event = $Row.Event
+        Outcome = $Row.Outcome
+        Base = $Row.Base
+        PowerSource = $Row.PowerSource
+        Power = $Row.Power
+        Initial = $Row.Initial
+        Wait = $Row.Wait
+        Reason = $Row.Reason
+    }
+}
 $json = [ordered]@{
     Schema = 'scanner-summary-v3'
     GeneratedUtc = [DateTime]::UtcNow.ToString('o')
@@ -382,6 +508,14 @@ $json = [ordered]@{
     ClientSequenceGapCount = $clientSequenceGaps.Count
     ScannerFailureCount = $scannerFailures.Count
     ScannerSnapshotCount = $scannerSnapshots.Count
+    BasePowerEventCount = $basePowerRows.Count
+    BasePowerProcessEpochCount = $basePowerEpochGroups.Count
+    BasePowerRowsDeduplicated = $duplicateBasePowerRows
+    BasePowerAudioSuppressCount = $basePowerAudioSuppressRows.Count
+    BasePowerAudioPassCount = $basePowerAudioPassRows.Count
+    BasePowerSourceOkCount = $basePowerSourceOkRows.Count
+    BasePowerSourceMissingCount = $basePowerSourceMissingRows.Count
+    BasePowerTraceTruncationCount = $basePowerTraceTruncationRows.Count
     TestMarkerCount = $testRows.Count
     NetworkImpairmentLineCount = $nipRows.Count
     WarningOrErrorCount = $problemRows.Count
@@ -394,6 +528,8 @@ $json = [ordered]@{
     ValidationIssues = @($validationIssues | Select-Object -First 20)
     Checkpoints = @($checkpointRows | Select-Object -Last 20 | ForEach-Object { [ordered]@{ Source = $_.Source; Line = $_.Line; Side = $_.Side; Epoch = $_.Epoch; Sequence = $_.Sequence; Room = $_.Room; Fingerprint = $_.Fingerprint; Reason = $_.Reason } })
     ScannerFailures = @($scannerFailures | Select-Object -Last 5 | ForEach-Object { [ordered]@{ Source = $_.Source; Line = $_.Line; Side = $_.Side; Epoch = $_.Epoch; Sequence = $_.Sequence; Event = $_.Event; Outcome = $_.Outcome; Room = $_.Room; Fingerprint = $_.Fingerprint; Reason = $_.Reason } })
+    BasePowerEvents = @($basePowerRows | Select-Object -Last 20 | ForEach-Object { ConvertTo-BasePowerJsonRow -Row $_ })
+    LatestBasePowerIssue = @($basePowerIssueRows | Select-Object -Last 1 | ForEach-Object { ConvertTo-BasePowerJsonRow -Row $_ })
     TestMarkers = @($testRows | Select-Object -Last 5 | ForEach-Object { [ordered]@{ Source = $_.Source; Line = $_.Line; Text = (Get-ShortSummaryText -Text $_.Text -MaximumLength 400) } })
     NetworkImpairment = @($nipRows | Select-Object -Last 5 | ForEach-Object { [ordered]@{ Source = $_.Source; Line = $_.Line; Text = (Get-ShortSummaryText -Text $_.Text -MaximumLength 400) } })
     ProblemSignatures = @($problemGroups | Select-Object -First 20 | ForEach-Object { [ordered]@{ Count = $_.Count; Signature = $_.Name } })
@@ -407,6 +543,7 @@ if ($encoding.GetByteCount($jsonText + [Environment]::NewLine) -gt $MaxSummaryBy
     $json['ClientSequenceGaps'] = @($json['ClientSequenceGaps'] | Select-Object -Last 2)
     $json['Checkpoints'] = @($json['Checkpoints'] | Select-Object -Last 5)
     $json['ScannerFailures'] = @($json['ScannerFailures'] | Select-Object -Last 1)
+    $json['BasePowerEvents'] = @($json['BasePowerEvents'] | Select-Object -Last 5)
     $json['TestMarkers'] = @($json['TestMarkers'] | Select-Object -Last 1)
     $json['NetworkImpairment'] = @($json['NetworkImpairment'] | Select-Object -Last 1)
     $json['ProblemSignatures'] = @($json['ProblemSignatures'] | Select-Object -First 5)
@@ -424,6 +561,7 @@ if ($encoding.GetByteCount($jsonText + [Environment]::NewLine) -gt $MaxSummaryBy
     $json['ServerSampledSequenceGaps'] = @($json['ServerSampledSequenceGaps'] | Select-Object -Last 1)
     $json['ClientSequenceGaps'] = @($json['ClientSequenceGaps'] | Select-Object -Last 1)
     $json['Checkpoints'] = @($json['Checkpoints'] | Select-Object -Last 2)
+    $json['BasePowerEvents'] = @($json['BasePowerEvents'] | Select-Object -Last 1)
     $json['ProblemSignatures'] = @($json['ProblemSignatures'] | Select-Object -First 2)
     $json['DetailTruncated'] = $true
     $jsonText = $json | ConvertTo-Json -Depth 6 -Compress
@@ -443,12 +581,21 @@ if ($encoding.GetByteCount($jsonText + [Environment]::NewLine) -gt $MaxSummaryBy
         ClientSequenceGapCount = $clientSequenceGaps.Count
         ScannerFailureCount = $scannerFailures.Count
         ScannerSnapshotCount = $scannerSnapshots.Count
+        BasePowerEventCount = $basePowerRows.Count
+        BasePowerProcessEpochCount = $basePowerEpochGroups.Count
+        BasePowerRowsDeduplicated = $duplicateBasePowerRows
+        BasePowerAudioSuppressCount = $basePowerAudioSuppressRows.Count
+        BasePowerAudioPassCount = $basePowerAudioPassRows.Count
+        BasePowerSourceOkCount = $basePowerSourceOkRows.Count
+        BasePowerSourceMissingCount = $basePowerSourceMissingRows.Count
+        BasePowerTraceTruncationCount = $basePowerTraceTruncationRows.Count
         TestMarkerCount = $testRows.Count
         NetworkImpairmentLineCount = $nipRows.Count
         WarningOrErrorCount = $problemRows.Count
         ValidationIssueCount = $validationIssues.Count
         LatestEpoch = @($json['ScannerEpochs'] | Select-Object -Last 1)
         LatestFailure = @($json['ScannerFailures'] | Select-Object -Last 1)
+        LatestBasePowerIssue = @($json['LatestBasePowerIssue'] | Select-Object -Last 1)
         LatestTestMarker = @($json['TestMarkers'] | Select-Object -Last 1)
         LatestNetworkImpairment = @($json['NetworkImpairment'] | Select-Object -Last 1)
         FirstValidationIssue = @($validationIssues | Select-Object -First 1)

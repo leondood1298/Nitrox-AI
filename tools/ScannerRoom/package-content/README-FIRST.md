@@ -28,8 +28,9 @@ Then:
 
 1. Read `TEST_STATUS.md`. Final packaging requires the exact field `AUTOMATED_QUALIFICATION: PASS`; `MANUAL_MATRIX: NOT_RUN` is expected because the real-game rows remain for you.
 2. Follow `instructions\TWO-MACHINE-SETUP.md` on both machines.
-3. Follow `instructions\SCANNER-ROOM-MATRIX.md`; do not infer a real-game pass from automated tests.
-4. Capture evidence after every failure and once after a completely successful run.
+3. Run the short `instructions\GOTTEM-TARGETED-RETEST.md` first. This is the only requested check for this follow-up package.
+4. Keep `instructions\SCANNER-ROOM-MATRIX.md` for later phase acceptance; do not infer a real-game pass from automated or targeted exploratory tests.
+5. Capture evidence after every failure and once after a completely successful run.
 
 All runtime data stays under `%LOCALAPPDATA%`, outside Google Drive. The bundled .NET runtime means the second machine does not need .NET installed.
 

@@ -222,6 +222,10 @@ public class Items
 
                 if (metadata.HasValue)
                 {
+                    if (MapRoomCameraBatteryChildPolicy.IsRedundant(gameObject.GetComponent<MapRoomCamera>(), metadata.Value))
+                    {
+                        continue;
+                    }
                     TechTag techTag = prefab.gameObject.GetComponent<TechTag>();
                     TechType techType = techTag ? techTag.type : TechType.None;
 

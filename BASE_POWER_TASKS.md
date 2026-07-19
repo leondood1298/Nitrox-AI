@@ -19,9 +19,13 @@
 - [x] Persist and synchronize partial bioreactor and nuclear fuel consumption
 - [x] Show remaining reactor fuel energy and full-output runtime on hover
 - [x] Include reactor fuel progress in `basepower` diagnostics
+- [x] Suppress only initial-reconciliation base-power voice callbacks while preserving relay state and later live announcements
+- [x] Add bounded `[BPD1]` client evidence for source reconciliation and base-power audio transitions
+- [x] Exclude redundant Map Room camera battery prefab-child records while retaining the authoritative camera energy record
 
 ## Test next
 
+- [ ] `gottem` first join, late join, and rejoin without false outage/restoration audio; deliberate live cut/restore remains audible
 - [ ] Nuclear baseline, remote fabrication, owner disconnect, rejoin, restart
 - [ ] Simultaneous two-client consumption
 - [ ] Solar day/night generation

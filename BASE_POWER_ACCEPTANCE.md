@@ -10,6 +10,15 @@ Use matching client/server builds. Join client 1 first unless a row says otherwi
 - Before a restart test, run `save` in the server console and wait for `World state saved`; closing the server does not force an immediate save.
 - Capture `basepower` before and after each failure. Save the server log and both client logs.
 
+## Targeted load-audio reconciliation smoke
+
+Status: **NOT RUN on the follow-up build.** This short check does not replace or promote any matrix row below.
+
+1. Start the existing `gottem` world with its healthy powered base and run `basepower`.
+2. Join the first client, late-join the second client, then disconnect and rejoin the second client once. Loading must not play a false "base out of power" immediately followed by "power restored" announcement.
+3. Deliberately remove or disable all generation long enough for the base to lose power, then restore generation. The real live outage and restoration must each remain audible.
+4. Preserve both client logs. `[BPD1]` rows should show loading callbacks as `out=suppress`, the deliberate live transitions as `out=pass`, source reconciliation as `ev=source_apply`, and any bounded-log cap as `out=truncated`.
+
 ## Matrix
 
 | Test | Expected | Status |

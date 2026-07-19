@@ -355,7 +355,9 @@ try {
         EmbeddedAssemblyProductVersions = $embeddedVersions
         NetworkImpairmentProxySelfTestRequired = $true
         ScannerDiagnosticsSchema = 'SRD1 with per-process ep=<8hex> and monotonic n=<sequence>'
+        BasePowerDiagnosticsSchema = 'BPD1 with per-process ep=<8hex>, monotonic n=<sequence>, and independent bounded source/audio budgets'
         EvidenceSummarySchema = 'scanner-summary-v3'
+        TargetedRetest = 'instructions/GOTTEM-TARGETED-RETEST.md; formal Scanner Room and base-power matrices remain NOT_RUN'
         LauncherDataPathArgument = 'Supported by the launcher command parser; the start script passes a quoted package-specific data path.'
     }
     $buildInfo | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath (Join-Path $packageStaging 'BUILD_INFO.json') -Encoding UTF8
