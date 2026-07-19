@@ -83,7 +83,7 @@ public sealed class NitroxNetworkProtocolIntegrationTest
         {
             Thread.Sleep(2_500);
             LiteNetLib.Utils.NetDataWriter rejectionData = new();
-            rejectionData.Put("nitrox-ai/2");
+            rejectionData.Put("nitrox-ai/3");
             request.Reject(rejectionData);
         };
         server.Start(port);
@@ -93,7 +93,7 @@ public sealed class NitroxNetworkProtocolIntegrationTest
         {
             Func<Task> connect = async () => await ConnectProductionClientAsync(client, port);
             MultiplayerProtocolMismatchException exception = (await connect.Should().ThrowAsync<MultiplayerProtocolMismatchException>()).Which;
-            exception.ServerConnectionKey.Should().Be("nitrox-ai/2");
+            exception.ServerConnectionKey.Should().Be("nitrox-ai/3");
             exception.ClientConnectionKey.Should().Be(NitroxNetworkProtocol.ConnectionKey);
         }
         finally

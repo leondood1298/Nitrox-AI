@@ -15,6 +15,8 @@ public sealed class MapRoomNetworkState : MonoBehaviour
 
     public long ResultRevision { get; set; }
 
+    public bool ResultStateInitialized { get; set; }
+
     public long AvailableScanTypesRevision { get; set; }
 
     public bool AvailableScanTypesInitialized { get; set; }

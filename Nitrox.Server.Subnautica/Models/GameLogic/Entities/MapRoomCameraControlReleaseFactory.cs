@@ -14,7 +14,8 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 ///     exclusive Scanner Room camera simulation lock. Generic simulation ownership packets
 ///     cannot safely stand in for this transition because they do not identify control state.
 /// </summary>
-internal sealed class MapRoomCameraControlReleaseFactory(EntityRegistry entityRegistry, ScannerRoomDiagnostics diagnostics)
+internal sealed class MapRoomCameraControlReleaseFactory(EntityRegistry entityRegistry, ScannerRoomDiagnostics diagnostics,
+    MapRoomCameraControlLifecycle controlLifecycle)
 {
     private static readonly NitroxTechType mapRoomCameraTechType = new("MapRoomCamera");
 
@@ -22,6 +23,9 @@ internal sealed class MapRoomCameraControlReleaseFactory(EntityRegistry entityRe
         out MapRoomCameraControl release)
     {
         release = null!;
+        // Clear any acquisition state even if an earlier bug or future lifecycle path changed the lock type
+        // before cleanup observed it. Only exclusive revocations produce a control-release packet.
+        controlLifecycle.EndPreviewAcquisition(cameraId, revokedLock.Player.SessionId);
         if (revokedLock.LockType != SimulationLockType.EXCLUSIVE)
         {
             return false;

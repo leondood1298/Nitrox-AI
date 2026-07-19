@@ -25,32 +25,56 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic
 
         public bool TryToAcquire(NitroxId id, Player player, SimulationLockType requestedLock)
         {
+            return TryToAcquire(id, player, requestedLock, preserveExistingExclusive: false, out _);
+        }
+
+        /// <summary>
+        ///     Acquires ordinary background simulation ownership without weakening an exclusive lock already
+        ///     held by the same player. Cell visibility and global-root assignment are refresh operations, not
+        ///     an explicit request to stop interactive control.
+        /// </summary>
+        public bool TryToAcquirePreservingExistingExclusive(NitroxId id, Player player,
+            SimulationLockType requestedLock, out PlayerLock acquiredLock)
+        {
+            return TryToAcquire(id, player, requestedLock, preserveExistingExclusive: true, out acquiredLock);
+        }
+
+        private bool TryToAcquire(NitroxId id, Player player, SimulationLockType requestedLock,
+            bool preserveExistingExclusive, out PlayerLock acquiredLock)
+        {
             lock (playerLocksById)
             {
                 // If no one is simulating then acquire a lock for this player
                 if (!playerLocksById.TryGetValue(id, out PlayerLock playerLock))
                 {
-                    playerLocksById[id] = new PlayerLock(player, requestedLock);
+                    acquiredLock = new PlayerLock(player, requestedLock);
+                    playerLocksById[id] = acquiredLock;
                     return true;
                 }
 
                 // If this player owns the lock then they are already simulating
                 if (playerLock.Player == player)
                 {
-                    // update the lock type in case they are attempting to downgrade
-                    playerLocksById[id] = new PlayerLock(player, requestedLock);
+                    acquiredLock = preserveExistingExclusive &&
+                                   playerLock.LockType == SimulationLockType.EXCLUSIVE &&
+                                   requestedLock == SimulationLockType.TRANSIENT
+                        ? playerLock
+                        : new PlayerLock(player, requestedLock);
+                    playerLocksById[id] = acquiredLock;
                     return true;
                 }
 
                 // If the current lock owner has a transient lock then only override if we are requesting exclusive access
                 if (playerLock.LockType == SimulationLockType.TRANSIENT && requestedLock == SimulationLockType.EXCLUSIVE)
                 {
-                    playerLocksById[id] = new PlayerLock(player, requestedLock);
+                    acquiredLock = new PlayerLock(player, requestedLock);
+                    playerLocksById[id] = acquiredLock;
                     return true;
                 }
 
                 // We must be requesting a transient lock and the owner already has a lock (either transient or exclusive).
                 // there is no way to break it so we will return false.
+                acquiredLock = playerLock;
                 return false;
             }
         }

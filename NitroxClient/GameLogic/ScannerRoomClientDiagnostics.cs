@@ -32,7 +32,7 @@ public sealed class ScannerRoomClientDiagnostics
         {
             long sequence = ++nextSequence;
             line = FormattableString.Invariant(
-                $"[SRD1] n={sequence} ep={epoch} side=C ev={Token(eventName)} out={Token(outcome)} room={ShortId(roomId)} cam={ShortId(cameraId)} slot={Format(slot)} rev={Format(revision)} reason={Token(reason)}");
+                $"[SRD1] n={sequence} ep={epoch} side=C ev={Token(eventName)} out={Token(outcome)} room={ShortId(roomId)} cam={ShortId(cameraId, distinguishSiblingCamera: true)} slot={Format(slot)} rev={Format(revision)} reason={Token(reason)}");
             if (history.Count == HistoryCapacity)
             {
                 history.Dequeue();
@@ -90,10 +90,15 @@ public sealed class ScannerRoomClientDiagnostics
         _ => 100
     };
 
-    private static string ShortId(NitroxId? id)
+    private static string ShortId(NitroxId? id, bool distinguishSiblingCamera = false)
     {
         string value = id?.ToString() ?? "-";
-        return value.Length > 8 ? value[..8] : value;
+        // Scanner Room sibling camera IDs intentionally share their first GUID
+        // group. Keep the log token compact while retaining the distinguishing
+        // portion of the fourth group.
+        return distinguishSiblingCamera && value.Length >= 23 && value[8] == '-' && value[13] == '-' && value[18] == '-'
+            ? $"{value[..8]}.{value.Substring(19, 4)}"
+            : value.Length > 8 ? value[..8] : value;
     }
 
     private static string Token(string? value)

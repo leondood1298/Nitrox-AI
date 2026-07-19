@@ -20,7 +20,7 @@ public sealed class ScannerRoomClientDiagnosticsTest
         }
 
         StringAssert.Matches(diagnostics.Epoch, new System.Text.RegularExpressions.Regex("^[0-9a-f]{8}$"));
-        Assert.AreEqual($"[SRD1] n=1 ep={diagnostics.Epoch} side=C ev=dock_apply out=ok room=- cam=11111111 slot=1 rev=4 reason=state_applied", first);
+        Assert.AreEqual($"[SRD1] n=1 ep={diagnostics.Epoch} side=C ev=dock_apply out=ok room=- cam=11111111.1111 slot=1 rev=4 reason=state_applied", first);
         Assert.AreEqual(ScannerRoomClientDiagnostics.HistoryCapacity, diagnostics.GetHistory().Count);
         Assert.IsTrue(diagnostics.GetHistory()[0].Contains(" n=24 "));
         Assert.IsFalse(diagnostics.GetHistory().Any(line => line.Contains('\r') || line.Contains('\n')));

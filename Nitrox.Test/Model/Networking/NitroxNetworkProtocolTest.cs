@@ -12,7 +12,8 @@ public sealed class NitroxNetworkProtocolTest
     [DataTestMethod]
     [DataRow("nitrox")]
     [DataRow("nitrox-ai/0")]
-    [DataRow("nitrox-ai/2")]
+    [DataRow("nitrox-ai/1")]
+    [DataRow("nitrox-ai/3")]
     [DataRow("")]
     [DataRow(null)]
     public void OtherConnectionKeysAreIncompatible(string? connectionKey)

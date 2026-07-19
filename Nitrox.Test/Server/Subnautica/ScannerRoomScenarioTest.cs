@@ -245,7 +245,8 @@ public sealed class ScannerRoomScenarioTest
         Assert.AreEqual(ScannerRoomDiagnosticOutcome.Rejected, trace[2].Outcome);
         Assert.AreEqual("locked", trace[2].Reason);
         Assert.AreEqual(ScannerRoomScenarioFixture.RoomId.ToString()[..8], trace[2].RoomId);
-        Assert.AreEqual(ScannerRoomScenarioFixture.CameraAId.ToString()[..8], trace[2].CameraId);
+        string cameraId = ScannerRoomScenarioFixture.CameraAId.ToString();
+        Assert.AreEqual($"{cameraId[..8]}.{cameraId.Substring(19, 4)}", trace[2].CameraId);
         Assert.AreEqual(new ScannerRoomDiagnosticCounters(4, 3, 1, 0, 0), scenario.Diagnostics.GetCounters());
     }
 

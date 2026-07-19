@@ -20,7 +20,8 @@ public sealed class MapRoomScanTypes(IPacketSender packetSender, SimulationOwner
         {
             return;
         }
-        packetSender.Send(new MapRoomScanTypesSnapshot(roomId, scanner.availableTechTypes.Select(type => type.ToDto()).ToList()));
+        packetSender.Send(CreateSnapshotPacket(roomId, scanner.availableTechTypes, ResourceTrackerDatabase.GetDetectableTechTypes(),
+            mapRoom.wireFrameWorld.position, mapRoom.GetScanRange()));
     }
 
     public bool ShouldRunVanilla(uGUI_MapRoomScanner scanner)
@@ -81,4 +82,9 @@ public sealed class MapRoomScanTypes(IPacketSender packetSender, SimulationOwner
         scanner.currentPage = Mathf.Clamp(scanner.currentPage, 0, lastPage);
         scanner.RebuildResourceList();
     }
+
+    internal static MapRoomScanTypesSnapshot CreateSnapshotPacket(NitroxId roomId, IEnumerable<TechType> availableTechTypes,
+        IEnumerable<TechType> detectableTechTypes, Vector3 scanOrigin, float scanRange) =>
+        new(roomId, availableTechTypes.Select(type => type.ToDto()).ToList(), detectableTechTypes.Select(type => type.ToDto()).ToList(),
+            scanOrigin.ToDto(), scanRange);
 }

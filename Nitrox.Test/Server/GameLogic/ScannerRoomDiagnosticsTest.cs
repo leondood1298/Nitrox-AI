@@ -30,7 +30,7 @@ public sealed class ScannerRoomDiagnosticsTest
         ScannerRoomDiagnosticEntry rejected = diagnostics.RecordRejected("Control\nRequest", room, cameraId, (SessionId)(ushort)3, reason: "not owner\r\nretry");
 
         diagnostics.Epoch.Should().MatchRegex("^[0-9a-f]{8}$");
-        accepted.Format().Should().StartWith($"[SRD1] n=1 ep={diagnostics.Epoch} side=S ev=dock out=ok sid=2 room=11111111 cam=33333333 slot=1 dRev=7 cams=2 fp=");
+        accepted.Format().Should().StartWith($"[SRD1] n=1 ep={diagnostics.Epoch} side=S ev=dock out=ok sid=2 room=11111111 cam=33333333.3333 slot=1 dRev=7 cams=2 fp=");
         accepted.Format().Should().EndWith(" reason=owner_transfer");
         rejected.Format().Should().Contain($"n=2 ep={diagnostics.Epoch} side=S ev=control_request out=reject sid=3");
         rejected.Format().Should().EndWith(" reason=not_owner_retry");
@@ -77,6 +77,18 @@ public sealed class ScannerRoomDiagnosticsTest
         counters.Rejected.Should().Be(300);
         counters.SuppressedWarnings.Should().BeGreaterThan(280);
         logger.Entries.Should().HaveCountLessThan(20);
+    }
+
+    [TestMethod]
+    public void CompactIdsDistinguishSiblingScannerCameras()
+    {
+        ScannerRoomDiagnostics diagnostics = new(NullLogger<ScannerRoomDiagnostics>.Instance);
+
+        string first = diagnostics.RecordAccepted("camera", cameraId: new NitroxId("99e1d312-b017-474e-8c30-ffc66573465f")).Format();
+        string second = diagnostics.RecordAccepted("camera", cameraId: new NitroxId("99e1d312-b017-474e-72cf-00396573465f")).Format();
+
+        first.Should().Contain("cam=99e1d312.8c30");
+        second.Should().Contain("cam=99e1d312.72cf");
     }
 
     [TestMethod]

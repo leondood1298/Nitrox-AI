@@ -6,6 +6,7 @@ using Nitrox.Model.DataStructures;
 using Nitrox.Model.Logger;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.Extensions;
+using Nitrox.Model.Subnautica.Helper;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication;
 using NitroxClient.Communication.Abstract;
@@ -36,6 +37,11 @@ public class MapRoomCameras
 	private readonly Dictionary<NitroxId, long> componentRevisions = new();
 	private readonly Dictionary<NitroxId, float> pendingCameraEnergy = new();
 	private readonly HashSet<NitroxId> initializingCameraBatteries = new();
+	private long latestPreviewRevision;
+	private MapRoomCameraPreview pendingPreview;
+	private bool pendingPreviewPixelsApplied;
+	private long lastPreviewApplyDiagnosticRevision;
+	private string lastPreviewApplyDiagnosticOutcome;
 
 	public MapRoomCameras(IPacketSender packetSender, IMultiplayerSession multiplayerSession, LiveMixinManager liveMixinManager,
 		SimulationOwnership simulationOwnership, ScannerRoomClientDiagnostics diagnostics,
@@ -81,6 +87,38 @@ public class MapRoomCameras
 			// Otherwise the server can see an already-unlocked camera and fail to notify remote clients.
 			packetSender.Send(new MapRoomCameraControl(nitroxId2, Optional.Empty, -1, isControlling: false, lightOn: false));
 			MovementBroadcaster.UnregisterWatched(nitroxId2);
+		}
+	}
+
+	public void BroadcastPreview(MapRoomCamera camera)
+	{
+		if (!camera || !camera.TryGetNitroxId(out NitroxId cameraId) || !camera.mapRoomRenderTexture)
+		{
+			return;
+		}
+
+		try
+		{
+			byte[] jpegBytes = CapturePreviewJpeg(camera.mapRoomRenderTexture);
+			if (MapRoomCameraPreviewImage.TryValidate(jpegBytes, out int width, out int height))
+			{
+				packetSender.Send(new MapRoomCameraPreview(cameraId, camera.GetCameraNumber(), jpegBytes));
+				diagnostics.Record("preview_publish", "ok", cameraId, slot: camera.GetCameraNumber(),
+					reason: $"bytes_{jpegBytes.Length}_{width}x{height}");
+			}
+			else
+			{
+				diagnostics.Record("preview_publish", "reject", cameraId, slot: camera.GetCameraNumber(),
+					reason: $"invalid_jpeg_bytes_{jpegBytes?.Length ?? 0}");
+				Log.Warn($"[MapRoomCameras] Dropped invalid or oversized local camera preview for {cameraId}");
+			}
+		}
+		catch (Exception ex)
+		{
+			// Preview publication is cosmetic and must never strand the player in camera control mode.
+			diagnostics.Record("preview_publish", "reject", cameraId, slot: camera.GetCameraNumber(),
+				reason: "capture_exception");
+			Log.Error(ex, $"[MapRoomCameras] Failed to capture camera preview for {cameraId}");
 		}
 	}
 
@@ -183,6 +221,88 @@ public class MapRoomCameras
 			diagnostics.Record("control_release_apply", "ok", packet.CameraId, packet.MapRoomId.HasValue ? packet.MapRoomId.Value : null,
 				slot: packet.CameraIndex, reason: isLocalController ? "local" : "remote");
 		}
+	}
+
+	public void ProcessPreview(MapRoomCameraPreview packet)
+	{
+		if (!packet.IsServerResponse || !packet.Granted)
+		{
+			diagnostics.Record("preview_receive", "reject", packet.CameraId, revision: packet.Revision,
+				slot: packet.CameraNumber, reason: packet.IsServerResponse ? "denied" : "not_server");
+			return;
+		}
+		if (!MapRoomCameraPreviewImage.TryValidate(packet.JpegBytes, out int width, out int height))
+		{
+			diagnostics.Record("preview_receive", "reject", packet.CameraId, revision: packet.Revision,
+				slot: packet.CameraNumber, reason: $"invalid_jpeg_bytes_{packet.JpegBytes?.Length ?? 0}");
+			return;
+		}
+		if (!TryAdvancePreviewRevision(ref latestPreviewRevision, packet.Revision))
+		{
+			diagnostics.Record("preview_receive", "stale", packet.CameraId, revision: packet.Revision,
+				slot: packet.CameraNumber, reason: $"latest_{latestPreviewRevision}");
+			return;
+		}
+
+		diagnostics.Record("preview_receive", "ok", packet.CameraId, revision: packet.Revision,
+			slot: packet.CameraNumber, reason: $"bytes_{packet.JpegBytes.Length}_{width}x{height}");
+		pendingPreview = packet;
+		pendingPreviewPixelsApplied = false;
+		TryApplyPendingPreview();
+	}
+
+	public void TryApplyPendingPreview()
+	{
+		if (pendingPreview == null)
+		{
+			return;
+		}
+
+		MapRoomCamera camera = FindCamera(pendingPreview.CameraId);
+		RenderTexture renderTexture = FindSharedPreviewTexture(camera);
+		bool attemptedDecode = !pendingPreviewPixelsApplied && renderTexture;
+		if (!pendingPreviewPixelsApplied && renderTexture)
+		{
+			pendingPreviewPixelsApplied = TryApplyPreviewPixels(renderTexture, pendingPreview.JpegBytes);
+		}
+		if (attemptedDecode && !pendingPreviewPixelsApplied)
+		{
+			RecordPreviewApply(pendingPreview, "reject", "decode_failed");
+			pendingPreview = null;
+			return;
+		}
+		ApplyGlobalPreviewSelection(camera, pendingPreview.CameraNumber);
+		string outcome = !renderTexture || !pendingPreviewPixelsApplied || !camera ? "pending" : "ok";
+		string reason = !renderTexture ? "missing_texture" : camera ? "global" : "camera_missing";
+		RecordPreviewApply(pendingPreview, outcome, reason);
+		if (pendingPreviewPixelsApplied && camera)
+		{
+			pendingPreview = null;
+			pendingPreviewPixelsApplied = false;
+		}
+	}
+
+	private void RecordPreviewApply(MapRoomCameraPreview packet, string outcome, string reason)
+	{
+		if (lastPreviewApplyDiagnosticRevision == packet.Revision && lastPreviewApplyDiagnosticOutcome == outcome + reason)
+		{
+			return;
+		}
+		lastPreviewApplyDiagnosticRevision = packet.Revision;
+		lastPreviewApplyDiagnosticOutcome = outcome + reason;
+		MapRoomCameraPreviewImage.TryValidate(packet.JpegBytes, out int width, out int height);
+		diagnostics.Record("preview_apply", outcome, packet.CameraId, revision: packet.Revision,
+			slot: packet.CameraNumber, reason: $"{reason}_bytes_{packet.JpegBytes.Length}_{width}x{height}");
+	}
+
+	internal static bool TryAdvancePreviewRevision(ref long currentRevision, long incomingRevision)
+	{
+		if (incomingRevision <= 0 || incomingRevision <= currentRevision)
+		{
+			return false;
+		}
+		currentRevision = incomingRevision;
+		return true;
 	}
 
 	public bool CanSelectForControl(MapRoomCamera camera)
@@ -576,6 +696,7 @@ public class MapRoomCameras
 		}
 		Log.Info(string.Format("[{0}] EnsureCameraIds map room {1}: found {2} dock(s), assigned {3} camera id(s), reconciled {4} camera reference(s), broadcast {5} restored dock(s), removed {6} authoritative empty-slot camera(s)", "MapRoomCameras", nitroxId, dockingPoints.Count, num, reconciled, broadcast, removed));
 		NormalizeCameraList();
+		cameraManager.TryApplyPendingPreview();
 	}
 
 	public static IEnumerator EnsureCameraIdsDeferred(MapRoomFunctionality mapRoom)
@@ -778,6 +899,128 @@ public class MapRoomCameras
 			}
 		}
 		return dockingPoint.GetComponentInParent<MapRoomFunctionality>();
+	}
+
+	private static byte[] CapturePreviewJpeg(RenderTexture source)
+	{
+		const int size = MapRoomCameraPreviewImage.MAX_DIMENSION;
+		RenderTexture temporary = RenderTexture.GetTemporary(size, size, 0, RenderTextureFormat.ARGB32,
+			RenderTextureReadWrite.Default);
+		RenderTexture previous = RenderTexture.active;
+		Texture2D readback = null;
+		try
+		{
+			Graphics.Blit(source, temporary);
+			RenderTexture.active = temporary;
+			readback = new Texture2D(size, size, TextureFormat.RGB24, mipChain: false);
+			readback.ReadPixels(new Rect(0f, 0f, size, size), 0, 0, recalculateMipMaps: false);
+			readback.Apply(updateMipmaps: false, makeNoLongerReadable: false);
+			return ImageConversion.EncodeToJPG(readback, 55);
+		}
+		finally
+		{
+			RenderTexture.active = previous;
+			if (readback)
+			{
+				UnityEngine.Object.Destroy(readback);
+			}
+			RenderTexture.ReleaseTemporary(temporary);
+		}
+	}
+
+	private static MapRoomCamera FindCamera(NitroxId cameraId)
+	{
+		if (NitroxEntity.TryGetObjectFrom(cameraId, out GameObject gameObject) && gameObject &&
+			gameObject.TryGetComponent(out MapRoomCamera camera))
+		{
+			return camera;
+		}
+		foreach (MapRoomCamera candidate in MapRoomCamera.cameras)
+		{
+			if (candidate && candidate.TryGetNitroxId(out NitroxId candidateId) && candidateId == cameraId)
+			{
+				return candidate;
+			}
+		}
+		return null;
+	}
+
+	private static RenderTexture FindSharedPreviewTexture(MapRoomCamera camera)
+	{
+		if (camera && camera.mapRoomRenderTexture)
+		{
+			return camera.mapRoomRenderTexture;
+		}
+		foreach (MapRoomCamera candidate in MapRoomCamera.cameras)
+		{
+			if (candidate && candidate.mapRoomRenderTexture)
+			{
+				return candidate.mapRoomRenderTexture;
+			}
+		}
+		foreach (MapRoomFunctionality mapRoom in Resources.FindObjectsOfTypeAll<MapRoomFunctionality>())
+		{
+			if (mapRoom && mapRoom.gameObject.scene.IsValid() && mapRoom.mapRoomRenderTexture)
+			{
+				return mapRoom.mapRoomRenderTexture;
+			}
+		}
+		return null;
+	}
+
+	private static bool TryApplyPreviewPixels(RenderTexture target, byte[] jpegBytes)
+	{
+		Texture2D decoded = null;
+		try
+		{
+			decoded = new Texture2D(2, 2, TextureFormat.RGB24, mipChain: false);
+			if (!ImageConversion.LoadImage(decoded, jpegBytes, markNonReadable: true) ||
+				decoded.width > MapRoomCameraPreviewImage.MAX_DIMENSION ||
+				decoded.height > MapRoomCameraPreviewImage.MAX_DIMENSION)
+			{
+				return false;
+			}
+			Graphics.Blit(decoded, target);
+			return true;
+		}
+		catch (Exception ex)
+		{
+			Log.Error(ex, "[MapRoomCameras] Failed to apply remote camera preview");
+			return false;
+		}
+		finally
+		{
+			if (decoded)
+			{
+				UnityEngine.Object.Destroy(decoded);
+			}
+		}
+	}
+
+	private static void ApplyGlobalPreviewSelection(MapRoomCamera camera, int cameraNumber)
+	{
+		foreach (MapRoomScreen screen in Resources.FindObjectsOfTypeAll<MapRoomScreen>())
+		{
+			if (!screen || !screen.gameObject.scene.IsValid())
+			{
+				continue;
+			}
+			if (camera)
+			{
+				screen.OnMapRoomCameraChanged(camera);
+			}
+			else
+			{
+				if (screen.cameraText && Language.main != null)
+				{
+					screen.cameraText.text = Language.main.GetFormat("MapRoomCameraInfoScreen", cameraNumber);
+				}
+				if (screen.cameraPreview)
+				{
+					screen.cameraPreview.SetActive(true);
+				}
+			}
+		}
 	}
 
 	private static int CompareWorldPosition(Vector3 a, Vector3 b)

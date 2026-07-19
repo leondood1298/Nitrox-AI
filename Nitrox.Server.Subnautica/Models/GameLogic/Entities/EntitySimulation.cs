@@ -41,10 +41,10 @@ internal sealed class EntitySimulation : ISessionCleaner
 
     public IEnumerable<SimulatedEntity> GetSimulationChangesForCell(Player player, AbsoluteEntityCell cell)
     {
-        foreach (WorldEntity entity in GetPlayerSimulatedEntities(player, cell))
+        foreach ((WorldEntity entity, SimulationLockType lockType) in GetPlayerSimulatedEntities(player, cell))
         {
             bool doesEntityMove = ShouldSimulateEntityMovement(entity);
-            yield return new SimulatedEntity(entity.Id, player.SessionId, doesEntityMove, DEFAULT_ENTITY_SIMULATION_LOCKTYPE);
+            yield return new SimulatedEntity(entity.Id, player.SessionId, doesEntityMove, lockType);
         }
     }
 
@@ -94,7 +94,8 @@ internal sealed class EntitySimulation : ISessionCleaner
         return entity.ChildEntities.OfType<WorldEntity>().Where(ShouldSimulateEntity);
     }
 
-    private IEnumerable<WorldEntity> GetPlayerSimulatedEntities(Player simulatingPlayer, AbsoluteEntityCell cell)
+    private IEnumerable<(WorldEntity Entity, SimulationLockType LockType)> GetPlayerSimulatedEntities(
+        Player simulatingPlayer, AbsoluteEntityCell cell)
     {
         foreach (WorldEntity entity in worldEntityManager.GetEntities(cell))
         {
@@ -106,17 +107,19 @@ internal sealed class EntitySimulation : ISessionCleaner
             {
                 continue;
             }
-            if (!simulationOwnershipData.TryToAcquire(entity.Id, simulatingPlayer, DEFAULT_ENTITY_SIMULATION_LOCKTYPE))
+            if (!simulationOwnershipData.TryToAcquirePreservingExistingExclusive(entity.Id, simulatingPlayer,
+                    DEFAULT_ENTITY_SIMULATION_LOCKTYPE, out SimulationOwnershipData.PlayerLock entityLock))
             {
                 continue;
             }
 
-            yield return entity;
+            yield return (entity, entityLock.LockType);
             foreach (WorldEntity child in GetSimulatableChildren(entity))
             {
-                if (simulationOwnershipData.TryToAcquire(child.Id, simulatingPlayer, DEFAULT_ENTITY_SIMULATION_LOCKTYPE))
+                if (simulationOwnershipData.TryToAcquirePreservingExistingExclusive(child.Id, simulatingPlayer,
+                        DEFAULT_ENTITY_SIMULATION_LOCKTYPE, out SimulationOwnershipData.PlayerLock childLock))
                 {
-                    yield return child;
+                    yield return (child, childLock.LockType);
                 }
             }
         }
@@ -133,10 +136,11 @@ internal sealed class EntitySimulation : ISessionCleaner
 
     public bool TryAssignEntityToPlayer(Entity entity, Player player, bool shouldEntityMove, [NotNullWhen(true)] out SimulatedEntity? simulatedEntity)
     {
-        if (simulationOwnershipData.TryToAcquire(entity.Id, player, DEFAULT_ENTITY_SIMULATION_LOCKTYPE))
+        if (simulationOwnershipData.TryToAcquirePreservingExistingExclusive(entity.Id, player,
+                DEFAULT_ENTITY_SIMULATION_LOCKTYPE, out SimulationOwnershipData.PlayerLock acquiredLock))
         {
             bool doesEntityMove = shouldEntityMove && entity is WorldEntity worldEntity && ShouldSimulateEntityMovement(worldEntity);
-            simulatedEntity = new(entity.Id, player.SessionId, doesEntityMove, DEFAULT_ENTITY_SIMULATION_LOCKTYPE);
+            simulatedEntity = new(entity.Id, player.SessionId, doesEntityMove, acquiredLock.LockType);
             return true;
         }
 
@@ -149,7 +153,8 @@ internal sealed class EntitySimulation : ISessionCleaner
         List<SimulatedEntity> simulatedEntities = new();
         foreach (GlobalRootEntity entity in worldEntityManager.GetInitialSyncGlobalRootEntities())
         {
-            simulationOwnershipData.TryToAcquire(entity.Id, player, SimulationLockType.TRANSIENT);
+            simulationOwnershipData.TryToAcquirePreservingExistingExclusive(entity.Id, player,
+                SimulationLockType.TRANSIENT, out _);
             if (!simulationOwnershipData.TryGetLock(entity.Id, out SimulationOwnershipData.PlayerLock playerLock))
             {
                 continue;
@@ -167,12 +172,14 @@ internal sealed class EntitySimulation : ISessionCleaner
 
         foreach (Player player in players)
         {
-            if (player.CanSee(entity) && simulationOwnershipData.TryToAcquire(id, player, DEFAULT_ENTITY_SIMULATION_LOCKTYPE))
+            if (player.CanSee(entity) &&
+                simulationOwnershipData.TryToAcquirePreservingExistingExclusive(id, player,
+                    DEFAULT_ENTITY_SIMULATION_LOCKTYPE, out SimulationOwnershipData.PlayerLock acquiredLock))
             {
                 bool doesEntityMove = entity is WorldEntity worldEntity && ShouldSimulateEntityMovement(worldEntity);
 
                 logger.ZLogTrace($"Player {player.Name} has taken over simulating {id}");
-                simulatedEntity = new(id, player.SessionId, doesEntityMove, DEFAULT_ENTITY_SIMULATION_LOCKTYPE);
+                simulatedEntity = new(id, player.SessionId, doesEntityMove, acquiredLock.LockType);
                 return true;
             }
         }

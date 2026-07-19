@@ -27,6 +27,7 @@ public class MapRoomMetadataProcessor : EntityMetadataProcessor<MapRoomMetadata>
 			return;
 		}
 		bool applyScanningState = ShouldApplyScanningState(state.MetadataInitialized, flag);
+		bool generationAdvanced = metadata.Generation > state.Generation;
 		using (PacketSuppressor<EntityMetadataUpdate>.Suppress())
 		{
 			if (applyScanningState)
@@ -36,6 +37,10 @@ public class MapRoomMetadataProcessor : EntityMetadataProcessor<MapRoomMetadata>
 			component.numNodesScanned = metadata.NumNodesScanned;
 		}
 		state.MetadataInitialized = true;
+		if (generationAdvanced)
+		{
+			state.ResultStateInitialized = false;
+		}
 		state.Generation = metadata.Generation;
 		state.Revision = metadata.Revision;
 		MapRoomScanResults.RefreshResultConsumers(component);

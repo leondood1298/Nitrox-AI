@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
+using Nitrox.Model.DataStructures.Unity;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.GameLogic;
@@ -15,22 +17,28 @@ internal sealed class MapRoomScanResultSnapshotProcessor(EntityRegistry entityRe
         if (!entityRegistry.TryGetEntityById(packet.MapRoomId, out MapRoomEntity room))
         {
             diagnostics.RecordRejected("scan_snapshot", sessionId: context.Sender.SessionId, reason: "unknown_room");
-            await context.ReplyAsync(new MapRoomScanResultSnapshot(packet.MapRoomId, packet.Generation, [], 0, true, false));
+            await context.ReplyAsync(new MapRoomScanResultSnapshot(packet.MapRoomId, packet.Generation, [], packet.ScanOrigin, packet.ScanRange, 0, true, false));
             return;
         }
         if (simulationOwnershipData.GetPlayerForLock(packet.MapRoomId) != context.Sender)
         {
             diagnostics.RecordRejected("scan_snapshot", room, sessionId: context.Sender.SessionId, reason: "non_owner");
-            await context.ReplyAsync(new MapRoomScanResultSnapshot(packet.MapRoomId, packet.Generation, [], 0, true, false));
+            await context.ReplyAsync(new MapRoomScanResultSnapshot(packet.MapRoomId, packet.Generation, [], packet.ScanOrigin, packet.ScanRange, 0, true, false));
             return;
         }
-        if (!MapRoomScanResultAuthority.TryApplySnapshot(room, packet, out List<MapRoomScanResultRecord> results, out long revision))
+        if (!MapRoomWorldResourceIndex.TryResolveScanAnchor(entityRegistry, room, out NitroxVector3 scanAnchor))
+        {
+            diagnostics.RecordRejected("scan_snapshot", room, sessionId: context.Sender.SessionId, reason: "invalid_anchor");
+            await context.ReplyAsync(new MapRoomScanResultSnapshot(packet.MapRoomId, packet.Generation, [], packet.ScanOrigin, packet.ScanRange, 0, true, false));
+            return;
+        }
+        if (!MapRoomScanResultAuthority.TryApplySnapshot(room, packet, entityRegistry.GetEntities<WorldEntity>(), scanAnchor, out List<MapRoomScanResultRecord> results, out long revision))
         {
             diagnostics.RecordRejected("scan_snapshot", room, sessionId: context.Sender.SessionId, reason: "stale_or_invalid");
-            await context.ReplyAsync(new MapRoomScanResultSnapshot(packet.MapRoomId, packet.Generation, [], 0, true, false));
+            await context.ReplyAsync(new MapRoomScanResultSnapshot(packet.MapRoomId, packet.Generation, [], packet.ScanOrigin, packet.ScanRange, 0, true, false));
             return;
         }
-        MapRoomScanResultSnapshot response = new(packet.MapRoomId, packet.Generation, results, revision, true, true);
+        MapRoomScanResultSnapshot response = new(packet.MapRoomId, packet.Generation, results, packet.ScanOrigin, packet.ScanRange, revision, true, true);
         diagnostics.RecordAccepted("scan_snapshot", room, sessionId: context.Sender.SessionId, reason: $"results_{results.Count}");
         await context.ReplyAsync(response);
         foreach (Player player in playerManager.GetConnectedPlayersExcept(context.Sender).Where(player => subscriptions.Contains(room.Id, player.SessionId)))

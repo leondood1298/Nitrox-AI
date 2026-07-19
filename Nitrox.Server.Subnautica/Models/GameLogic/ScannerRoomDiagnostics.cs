@@ -112,7 +112,7 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
                 outcome,
                 sessionId,
                 ShortId(room?.Id),
-                ShortId(cameraId),
+                ShortId(cameraId, distinguishSiblingCamera: true),
                 slot,
                 snapshot?.DockingRevision ?? dockingRevision,
                 snapshot?.CameraCount ?? cameraCount,
@@ -220,10 +220,15 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
         return token.ToString().Trim('_') is { Length: > 0 } result ? result : "-";
     }
 
-    private static string ShortId(NitroxId? id)
+    private static string ShortId(NitroxId? id, bool distinguishSiblingCamera = false)
     {
         string value = id?.ToString() ?? "-";
-        return value.Length > 8 ? value[..8] : value;
+        // Stable camera IDs created for one Scanner Room share their first GUID
+        // group. Include the first half of the fourth group so two sibling
+        // cameras remain distinguishable in compact evidence.
+        return distinguishSiblingCamera && value.Length >= 23 && value[8] == '-' && value[13] == '-' && value[18] == '-'
+            ? $"{value[..8]}.{value.Substring(19, 4)}"
+            : value.Length > 8 ? value[..8] : value;
     }
 }
 

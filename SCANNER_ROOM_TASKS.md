@@ -83,16 +83,27 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Correct the Scanner Room camera health contract to the vanilla 400-point scale
 - [x] Capture registered Scanner Room state consistently during `GlobalRootData` autosave serialization
 - [x] Qualify the follow-up with focused race/persistence coverage and the full Release suite
+- [x] Confirm the camera-health and autosave fixes in the replacement `gottem` two-client smoke
+- [x] Audit the replacement logs/save and correlate empty Limestone/Shale scans with the server world registry
+- [x] Supplement vanilla scan discovery with exact, in-range server entities while preserving client override mappings
+- [x] Synchronize the vanilla session-global camera preview image and selection with a bounded ephemeral packet
+- [x] Distinguish sibling Scanner Room cameras in compact diagnostics and add preview/scan evidence events
+- [x] Correct live server results after erroneous client unload/range-exit removals
+- [x] Suppress initialized non-owner vanilla result mutations and deduplicate live/synthetic stable IDs
+- [x] Broadcast accepted preview revisions to all clients so simultaneous camera exits converge
+- [x] Preserve active exclusive camera control during background simulation acquisition
+- [x] Qualify the scan/preview follow-up with 275 combined regressions, 79 scan-focused regressions, and the full 587-pass Release suite
 
 ## Remaining
 
-- [ ] Retest the affected camera-health and autosave paths in `gottem` with the replacement package
-- [ ] Distinguish stale preview image from an actual camera label/selection mismatch
+- [ ] Retest Limestone/Shale discovery and the physical preview image/label on two clients with the next immutable package
+- [ ] Restart once after a Scanner Room autosave to close the remaining exploratory persistence coverage gap
 - [ ] Execute in-game acceptance matrix (`SCANNER_ROOM_ACCEPTANCE.md`; requires 2–3 game clients)
 
 ## Next
 
-- [ ] Load `gottem`, exercise a full-health camera, change scan/dock state across autosave, restart once, and collect evidence
+- [ ] Load `gottem`, scan Limestone and Shale, then have each client exit one camera while the other watches the physical preview screen
+- [ ] Save and restart once after that targeted retest, then collect the bounded evidence bundle
 - [ ] Undock camera 1, restart, and verify it persists loose instead of vanishing or duplicating (#51)
 - [ ] Verify shale HUD markers disappear for collector and observer after local break cleanup (#51)
 - [ ] Execute in-game acceptance matrix (`SCANNER_ROOM_ACCEPTANCE.md`; requires 2–3 game clients)

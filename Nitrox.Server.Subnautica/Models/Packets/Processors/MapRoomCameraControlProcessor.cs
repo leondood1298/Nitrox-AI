@@ -45,6 +45,7 @@ internal sealed class MapRoomCameraControlProcessor(SimulationOwnershipData simu
 			MapRoomCameraControl response = CreateResponse(packet, granted, controller);
 			if (granted)
 			{
+				controlLifecycle.BeginPreviewAcquisition(packet.CameraId, context.Sender.SessionId);
 				diagnostics.RecordAccepted("control_acquire", GetRoom(packet.MapRoomId), packet.CameraId, context.Sender.SessionId, packet.CameraIndex);
 				await context.SendToAllAsync(response);
 			}
@@ -59,6 +60,7 @@ internal sealed class MapRoomCameraControlProcessor(SimulationOwnershipData simu
 		Player? currentOwner = simulationOwnershipData.GetPlayerForLock(packet.CameraId);
 		if (CanAcknowledgeRelease(currentOwner != null, currentOwner == context.Sender))
 		{
+			controlLifecycle.EndPreviewAcquisition(packet.CameraId, context.Sender.SessionId);
 			if (currentOwner != null)
 			{
 				simulationOwnershipData.RevokeIfOwner(packet.CameraId, context.Sender);

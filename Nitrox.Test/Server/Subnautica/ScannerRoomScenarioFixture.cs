@@ -40,6 +40,7 @@ internal sealed class ScannerRoomScenarioFixture
     internal MapRoomCameraControlReleaseFactory ControlReleaseFactory { get; }
     internal MapRoomLifecycle RoomLifecycle { get; } = new();
     internal MapRoomCameraControlLifecycle ControlLifecycle { get; } = new();
+    internal EntitySimulation EntitySimulation { get; }
     internal MapRoomEntity Room { get; }
     internal ServerPlayer PlayerA { get; } = CreatePlayer(1, "A");
     internal ServerPlayer PlayerB { get; } = CreatePlayer(2, "B");
@@ -59,7 +60,7 @@ internal sealed class ScannerRoomScenarioFixture
         // loose camera. All fixture cameras are registered, so unrelated world services stay absent.
         RecordingPacketSender worldPacketSender = new();
         Diagnostics = new ScannerRoomDiagnostics(NullLogger<ScannerRoomDiagnostics>.Instance);
-        ControlReleaseFactory = new MapRoomCameraControlReleaseFactory(EntityRegistry, Diagnostics);
+        ControlReleaseFactory = new MapRoomCameraControlReleaseFactory(EntityRegistry, Diagnostics, ControlLifecycle);
         WorldEntityManager worldEntityManager = new(worldPacketSender, EntityRegistry, null!, null!, null!, Diagnostics, NullLogger<WorldEntityManager>.Instance);
         dockProcessor = new(EntityRegistry, worldEntityManager, Ownership, ControlReleaseFactory, RoomLifecycle,
             ControlLifecycle, Diagnostics, NullLogger<MapRoomCameraDockProcessor>.Instance);
@@ -67,9 +68,9 @@ internal sealed class ScannerRoomScenarioFixture
         PlayerManager playerManager = new(null!, null!, NullLogger<PlayerManager>.Instance);
         deconstructionCleanup = new(EntityRegistry, Ownership, ControlReleaseFactory,
             new MapRoomScanResultSubscriptions(), ControlLifecycle, playerManager, Diagnostics);
-        EntitySimulation entitySimulation = new(worldPacketSender, EntityRegistry, worldEntityManager, Ownership,
+        EntitySimulation = new(worldPacketSender, EntityRegistry, worldEntityManager, Ownership,
             playerManager, ControlReleaseFactory, ControlLifecycle, NullLogger<EntitySimulation>.Instance);
-        ownershipRequestProcessor = new(Ownership, entitySimulation, ControlReleaseFactory, ControlLifecycle, Diagnostics);
+        ownershipRequestProcessor = new(Ownership, EntitySimulation, ControlReleaseFactory, ControlLifecycle, Diagnostics);
     }
 
     internal async Task<MapRoomCameraDock> DockAsync(ServerPlayer player, NitroxId cameraId, int slot, bool isDocked,
@@ -97,6 +98,14 @@ internal sealed class ScannerRoomScenarioFixture
     {
         RecordingPacketSender requestPacketSender = new();
         await controlProcessor.Process(new AuthProcessorContext(player, requestPacketSender), new MapRoomCameraControl(cameraId, RoomId, slot, isControlling, false));
+        return requestPacketSender.Single<MapRoomCameraControl>();
+    }
+
+    internal async Task<MapRoomCameraControl> ControlLooseAsync(ServerPlayer player, NitroxId cameraId, bool isControlling)
+    {
+        RecordingPacketSender requestPacketSender = new();
+        await controlProcessor.Process(new AuthProcessorContext(player, requestPacketSender),
+            new MapRoomCameraControl(cameraId, Optional.Empty, -1, isControlling, false));
         return requestPacketSender.Single<MapRoomCameraControl>();
     }
 

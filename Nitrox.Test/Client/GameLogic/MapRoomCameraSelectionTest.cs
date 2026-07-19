@@ -39,6 +39,20 @@ public sealed class MapRoomCameraSelectionTest
     }
 
     [TestMethod]
+    public void PreviewRevisionAcceptsOnlyStrictlyNewPositiveValues()
+    {
+        long revision = 0;
+
+        Assert.IsFalse(MapRoomCameras.TryAdvancePreviewRevision(ref revision, 0));
+        Assert.IsTrue(MapRoomCameras.TryAdvancePreviewRevision(ref revision, 2));
+        Assert.AreEqual(2L, revision);
+        Assert.IsFalse(MapRoomCameras.TryAdvancePreviewRevision(ref revision, 1));
+        Assert.IsFalse(MapRoomCameras.TryAdvancePreviewRevision(ref revision, 2));
+        Assert.IsTrue(MapRoomCameras.TryAdvancePreviewRevision(ref revision, 3));
+        Assert.AreEqual(3L, revision);
+    }
+
+    [TestMethod]
     public async Task OwnershipDropClearsRemoteControlBookkeeping()
     {
         SessionId localSessionId = 1;

@@ -27,6 +27,10 @@ internal sealed class SimulationOwnershipRequestProcessor(SimulationOwnershipDat
             return;
         }
         bool aquiredLock = simulationOwnershipData.TryToAcquire(ownershipRequest.Id, context.Sender, ownershipRequest.LockType);
+        if (aquiredLock && hasScannerLifecycle && ownershipRequest.LockType != SimulationLockType.EXCLUSIVE)
+        {
+            cameraControlLifecycle.EndPreviewAcquisition(ownershipRequest.Id, context.Sender.SessionId);
+        }
 
         if (aquiredLock)
         {
