@@ -93,17 +93,25 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Broadcast accepted preview revisions to all clients so simultaneous camera exits converge
 - [x] Preserve active exclusive camera control during background simulation acquisition
 - [x] Qualify the scan/preview follow-up with 275 combined regressions, 79 scan-focused regressions, and the full 587-pass Release suite
+- [x] Confirm hybrid discovery and shared preview in the e59 `gottem` smoke (Limestone 101, Uraninite 66, Wreck 1; preview revisions 1-3)
+- [x] Audit the intermittent observer-body drift and the restored loose camera that could not be selected
+- [x] Keep the physical player anchored at the Scanner Room console with zero-velocity broadcasts during camera control and bounded `[SRD1] player_body_pin` diagnostics
+- [x] Preserve loose-camera record/light/component state across restore ordering with a durable cache, initial-load barrier, and camera-instance battery initialization
+- [x] Qualify the body-anchor/restore follow-up: focused Release/Debug `40/40`, broader relevant `352/352`, full Release `650 passed / 8 skipped / 0 failed`, build `0` errors
 
 ## Remaining
 
-- [ ] Retest Limestone/Shale discovery and the physical preview image/label on two clients with the next immutable package
-- [ ] Restart once after a Scanner Room autosave to close the remaining exploratory persistence coverage gap
+- [ ] Build and verify the next immutable Drive package from the clean pushed commit
+- [ ] Run the short two-client `gottem` reload/control smoke: retain both loose cameras, switch A-B-A, keep the observer-visible body at the console, and exit normally
+- [ ] Preserve the server and both client logs from that smoke; do not promote a formal matrix row from it
+- [ ] Restart once after a Scanner Room autosave when broader exploratory persistence work resumes
 - [ ] Execute in-game acceptance matrix (`SCANNER_ROOM_ACCEPTANCE.md`; requires 2–3 game clients)
 
 ## Next
 
-- [ ] Load `gottem`, scan Limestone and Shale, then have each client exit one camera while the other watches the physical preview screen
-- [ ] Save and restart once after that targeted retest, then collect the bounded evidence bundle
+- [ ] Reload `gottem` with both cameras loose and confirm both retain charge/health and remain selectable
+- [ ] Have client 1 drive camera A while client 2 verifies the player body remains at the console; switch A-B-A, exit, and confirm ordinary player movement resumes
+- [ ] Collect the server log and both client logs; no full matrix, PowerShell scripts, or deliberate base-power test is required for this smoke
 - [ ] Undock camera 1, restart, and verify it persists loose instead of vanishing or duplicating (#51)
 - [ ] Verify shale HUD markers disappear for collector and observer after local break cleanup (#51)
 - [ ] Execute in-game acceptance matrix (`SCANNER_ROOM_ACCEPTANCE.md`; requires 2–3 game clients)
@@ -112,7 +120,7 @@ Update this file after each completed work slice. Keep entries short; link the P
 
 - Push only to `leondood1298/Nitrox-AI`; upstream push stays disabled.
 - One focused draft PR at a time; merge before starting the next branch.
-- Publish each two-client test build as the next `1.16.x` GitHub prerelease.
+- Publish interim two-client test artifacts as immutable Drive packages. Reserve GitHub releases/prereleases for an intentional release milestone.
 - Keep updating the current Scanner Room repair PR until the user merges it.
 - Preserve unrelated custom fixes.
 - Build and run the full test suite before every PR.

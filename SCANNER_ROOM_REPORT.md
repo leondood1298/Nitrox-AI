@@ -1,6 +1,6 @@
 # Scanner Room Repair Report
 
-Current follow-up: the 2026-07-19 `gottem` evidence from source commit `8bb2e98f4074940d6e72c62d78e4331a49280664` confirmed the earlier health/save fixes and exposed two presentation/discovery gaps. This branch now adds hybrid server-backed scan discovery, ephemeral multiplayer camera-preview synchronization, collision-resistant compact camera diagnostics, and a narrow cleanup for redundant legacy camera-battery child records. The owner's next exploratory retest reported the Scanner Room behavior working; the formal real-game matrix remains open.
+Current follow-up: the 2026-07-19 `gottem` smoke with package `scanner-room-e59b0237f9db-q021dbc84-20260719T185635Z-win-x64` confirmed the hybrid scan and shared-preview repairs: Limestone returned `101`, Uraninite returned `66`, Wreck returned `1`, and preview revisions `1` through `3` were accepted. The same exploratory run exposed two narrower camera-state defects: an observer intermittently saw the controller's player body drift from the Scanner Room console until control ended, and one restored loose camera was unavailable for switching after its saved component state was overwritten by late prefab defaults. The current branch pins the physical player body during scanner-camera control and makes loose-camera restore ordering durable. Automated qualification passes; the replacement immutable package and short live retest remain pending, and the formal real-game matrix remains open.
 
 Final automated baseline: `0c94cbfb90a8fe249d40f7088c6d94ae8b3cf1f7` after merged PRs #1–#44. Scanner Room work after the imported baseline changes 104 files (+3,536/−75).
 
@@ -18,6 +18,8 @@ Final automated baseline: `0c94cbfb90a8fe249d40f7088c6d94ae8b3cf1f7` after merge
 - Background simulation acquisition preserves an active exclusive camera-control lock instead of silently downgrading it; release and destructive cleanup revoke preview eligibility.
 - Compact camera diagnostics include a distinguishing GUID segment, and preview publish/receive/apply/server decisions record only bounded metadata rather than image payloads.
 - Loose Map Room cameras no longer serialize a duplicate generic battery child because energy is already authoritative in `MapRoomCameraRecord`; existing saves quietly ignore only that exact stale camera-battery combination.
+- During scanner-camera control, the controlling client continues publishing the physical player's console position with zero velocity instead of suppressing all player movement packets. The drone camera still moves independently. Bounded `[SRD1] player_body_pin` enter, switch, identify, and exit rows make the observer-facing anchor auditable.
+- Loose-camera record, light, energy, and health state now survive room-before-camera and camera-before-room restoration. A durable per-camera cache and initial-load restore barrier prevent prefab defaults from publishing before canonical component state is applied; battery initialization is tied to the current camera instance/generation so a stale coroutine cannot release suppression for a replacement object.
 - An adjacent base-power presentation guard suppresses false outage/restoration voice callbacks only while newly loaded relays reconcile. It does not alter Scanner Room drain, relay state, source authority, or persistence.
 
 ## Authority decisions
@@ -41,6 +43,8 @@ Final automated baseline: `0c94cbfb90a8fe249d40f7088c6d94ae8b3cf1f7` after merge
 
 ## Verification
 
+The following results qualify the preceding e59 scan/preview package, not the new player-body/loose-camera restore changes:
+
 - Final command: `dotnet build Nitrox.slnx -c Release --nologo -m:1 -v:q`
 - Final command: `dotnet test Nitrox.Test/Nitrox.Test.csproj -c Release --no-build --nologo -m:1`
 - Result for this follow-up: build succeeded with 0 errors and 42 existing analyzer warning emissions across the `net10.0`/`net472` targets; `610 passed, 8 skipped, 0 failed` (`618 total`).
@@ -48,15 +52,19 @@ Final automated baseline: `0c94cbfb90a8fe249d40f7088c6d94ae8b3cf1f7` after merge
 - The Windows PowerShell 5.1 evidence-summary self-test passed mixed `[SRD1]`/`[BPD1]` parsing, independent counts, deduplication/epoch boundaries, validation isolation, and bounded-output stress.
 - The combined Scanner Room/Map Room/simulation-ownership/protocol selection passed `275/275`; the scan-focused authority, packet, and client-result selection passed `79/79`; preview-focused coverage passed `24/24`; the broader camera/ownership regression selection passed `122/122`.
 - Automated coverage includes authority/stale replay, serialization/save models, result lifecycle, exact server supplements, override preservation, range/anchor validation, client unload/range-exit correction, initialized non-owner suppression, stable-ID deduplication, preview JPEG bounds and capture timing, all-client preview revision ordering, preview ownership/lifecycle, background-lock preservation, upgrades, topology, camera numbering/docking/control/components/migration, redundant legacy camera-battery filtering, cleanup, popup suppression, initial-load audio boundaries, and craft-power deduplication.
+- Current player-body/restore focused Release and Debug selections each passed `40/40`; the broader Scanner Room/Map Room/simulation-ownership/movement/base-power selection passed `352/352`.
+- The current full Release suite passed `650`, skipped the same `8` platform-dependent cases, and failed `0` (`658 total`). The Release solution build completed with `0` errors and `42` existing analyzer warning emissions across `net10.0` and `net472`.
+- Packet-processor DI resolution passed `1/1`, `git diff --check` was clean, the Windows PowerShell 5.1 evidence-summary self-test passed, and independent review found no remaining P0–P2 issue. Immutable-package verification is still pending the clean pushed commit.
 
 ## Remaining limitation
 
-- The 2–3 client in-game matrix in `SCANNER_ROOM_ACCEPTANCE.md` is `NOT RUN`; this environment cannot launch multiple licensed Subnautica clients. Until those rows pass, the repair is automated-test complete but not multiplayer acceptance signed off.
-- The owner's latest exploratory retest reported camera preview convergence and scanning working, but it did not complete or promote the formal matrix. The follow-up package needs only the short `gottem` regression/audio smoke before broader acceptance work resumes.
+- The 2–3 client in-game matrix in `SCANNER_ROOM_ACCEPTANCE.md` is `NOT RUN`; this environment cannot launch multiple licensed Subnautica clients. Both the preceding scan/preview repair and the current player-body/loose-camera restore changes are automated-test complete, but neither is multiplayer acceptance signed off.
+- The e59 exploratory retest confirmed camera preview convergence and scanning, but found one intermittent observer-body drift and one loose camera that could not be selected after load. It did not complete or promote the formal matrix. The replacement package needs only the short two-client body-anchor/loose-camera reload smoke before broader acceptance work resumes.
+- The owner passively heard no false base-power audio in the latest run, but did not deliberately test base power and the available log contains no `[BPD1]` audio-decision row. This is a non-observation only, not a base-power smoke pass.
 - Server supplements currently cover entities present in `EntityRegistry`. Lazy/unparsed world batches become eligible only after registration. Server scans are linear over the current registry; replace this with a spatial/TechType index only if profiling justifies it.
 - Exact server matching cannot infer every vanilla `ResourceTracker.overrideTechType`. Preserving the owner-discovered union is intentional for Lead, fragments, eggs, databoxes, and similar mappings.
 - The current build emits 42 existing analyzer warnings across target frameworks and retains 8 platform-dependent skipped tests; no new warning class was introduced.
 
 ## Final acceptance
 
-Run `SCANNER_ROOM_ACCEPTANCE.md`, attach server/client logs and before/after saves, replace each `NOT RUN`, and set its sign-off result. Any failure should be fixed in a focused follow-up PR and the affected row rerun.
+First run the short package retest in `tools/ScannerRoom/package-content/instructions/GOTTEM-TARGETED-RETEST.md` and preserve the server plus both client logs. Leave every formal ledger row unchanged. When broader acceptance resumes, run `SCANNER_ROOM_ACCEPTANCE.md`, attach server/client logs and before/after saves, replace each `NOT RUN`, and set its sign-off result.

@@ -6,10 +6,10 @@ Status values: `PASS`, `FAIL`, `BLOCKED`, `NOT RUN`. Record failures as `test ID
 
 - Build/commit: see the final package `BUILD_INFO.json`; one immutable Windows x64 Release build is used by the server and every client.
 - Game version: Subnautica build 83031.
-- Server/save: automated boot, save-load, and protocol probes passed. Two exploratory runs used the pre-existing `gottem` save; the dedicated Scanner Room matrix save is `NOT CREATED`.
+- Server/save: automated boot, save-load, and protocol probes passed. Exploratory runs used the pre-existing `gottem` save; the dedicated Scanner Room matrix save is `NOT CREATED`.
 - Clients: host `leon` and LAN client `leonlaptop` joined the exploratory run. A/B/C remain `NOT LAUNCHED` under the formal matrix procedure.
 
-## Automated qualification (2026-07-19 follow-up)
+## Automated qualification (prior scan/preview follow-up)
 
 - Full Release suite: `587 passed / 8 skipped / 0 failed` (`595 total`). The eight skips are four pre-existing platform-specific filesystem/root-permission tests in each of the Unix and macOS fixtures, skipped on Windows.
 - Focused Scanner Room, Map Room, simulation-ownership, and protocol selection: `275 passed / 0 failed`.
@@ -26,6 +26,15 @@ Status values: `PASS`, `FAIL`, `BLOCKED`, `NOT RUN`. Record failures as `test ID
 - The `gottem` evidence exposed and now covers two narrow defects: vanilla Scanner Room cameras use `400` maximum health rather than `100`, and existing room state could change while the shallow `GlobalRootData` graph was being serialized. Camera bounds/defaults/diagnostic bands now use the correct scale, and registered Scanner Room fields are locked through `GlobalRootData` serialization with deadlock-safe contention handling.
 
 These checks exhaust the deterministic, serialization, process, packaging, and impairment-harness work available without launching two real game clients. They do not count as a real-game matrix pass.
+
+### Current player-body/loose-camera follow-up
+
+- Release and Debug focused policy/cache selections: `40 passed / 0 failed` each.
+- Broader Scanner Room, Map Room, simulation-ownership, movement, base-power, and power-source selection: `352 passed / 0 failed`.
+- Full Release suite: `650 passed / 8 skipped / 0 failed` (`658 total`). The eight skips are the same pre-existing platform/filesystem cases.
+- Release solution build: `0` errors and `42` existing analyzer warning emissions across `net10.0` and `net472`.
+- Packet-processor DI resolution: `1 passed / 0 failed`. Windows PowerShell 5.1 evidence-summary self-test: `PASS`. `git diff --check`: clean. Independent review found no remaining P0–P2 issue.
+- Automated qualification is `PASS`. Immutable-package verification is pending the clean pushed commit; neither result promotes a real-game matrix row.
 
 ## Scope and source state
 
@@ -54,6 +63,18 @@ These checks exhaust the deterministic, serialization, process, packaging, and i
 - Known discovery boundary: only entities already present in the server `EntityRegistry` can supplement a scan. Persisted `gottem` entities are registered; an unparsed lazy world batch remains unavailable until it is registered.
 - The formal action sequence, restart assertion, impairment profile, third-client step, and formal save pair were not run. No R/S/P/F/D/N row is promoted from `NOT RUN`.
 
+## Exploratory e59 targeted smoke (2026-07-19)
+
+- Server/save: `gottem`, package `scanner-room-e59b0237f9db-q021dbc84-20260719T185635Z-win-x64`, source commit `e59b0237f9dbf9b50ac42b6930890676998c0cb4`, Subnautica build `83031`. Package ZIP SHA-256: `31EEC927AF1B34F2D8B43A415C28F6A6E594225C87486C85E50E379E3E129E28`.
+- Hybrid discovery and shared preview behaved correctly: accepted scans returned Limestone `101`, Uraninite `66`, and Wreck `1`; accepted preview revisions advanced from `1` through `3`.
+- One intermittent observer defect occurred: while client 1 controlled a camera, client 2 saw client 1's player in an incorrect location instead of remaining at the Scanner Room console. Exiting camera control restored the observed player position, and the issue was not reproduced again in that run.
+- Client 1 could not switch to the other camera after both cameras had been left loose across world load. Only camera `.72cf` was requested/controlled in this session. An earlier same-day session successfully switched `.8c30` to `.72cf` and back, so the camera-control handoff path itself is proven; the new failure was restored-camera availability.
+- Save/log correlation identifies the restore race: `.8c30` had saved energy `99.64972`, health `100`, and component revision `38`, then its late-spawned prefab initialized at energy `0` and health `400`; that default component publication was accepted as revision `39`, leaving vanilla `CanBeControlled` to skip the empty camera.
+- The available evidence includes the server and host-client logs but not the laptop client log. No formal action sequence, third-client step, impairment row, or formal save pair was recorded, so every R/S/P/F/D/N row remains `NOT RUN`.
+- Base-power audio was not heard during this run, but no deliberate base-power test was performed and no `[BPD1]` audio-decision row was present. This is passive non-observation only and does not promote the base-power smoke or matrix.
+- The current repair continues physical-player publications from the console at zero velocity while scanner-camera control is active, with bounded `[SRD1] player_body_pin` enter/switch/identify/exit evidence. Drone movement remains independent.
+- Canonical loose-camera state now survives room/camera spawn ordering through a durable cache and initial-load restore barrier. Component application, battery initialization, and broadcast suppression are tied to the current camera instance/generation so a late prefab default cannot supersede saved state.
+
 ## Real-game matrix
 
 | ID | Clients | Action | Expected | Status |
@@ -69,7 +90,7 @@ These checks exhaust the deterministic, serialization, process, packaging, and i
 | F1 | 2-3 | Each client crafts every room recipe; remote pickup; reconnect mid-craft; concurrent use | One output, correct ownership/state, no loss/duplication | NOT RUN |
 | F2 | 2 | Repeat ordinary base and lifepod crafts from both clients | Existing five-power accounting remains once per logical craft | NOT RUN |
 | D1 | 2-3 | Fresh room, relog, restart, late join | Exactly two default drones unless deliberately changed; stable IDs/numbers | NOT RUN |
-| D2 | 2 | Each client controls/exits each drone while the other watches the physical preview; race same/different drones | Exclusive same-drone control; separate drones work; clean handoff; last captured image and camera label converge | NOT RUN |
+| D2 | 2 | Each client controls/exits each drone while the other watches the physical preview and controller's player body; race same/different drones | Exclusive same-drone control; separate drones work; body stays at console; clean handoff/exit; last image and camera label converge | NOT RUN |
 | D3 | 2 | Drive/collide/weak-signal fade; lights; drain/recharge; damage/repair/death | Control persists through vanilla signal fade; state converges; death cleans locks/registry | NOT RUN |
 | D4 | 2-3 | Dock/undock both slots rapidly; two cameras race one slot; pickup/drop/redock crafted cameras | Atomic slots, stable identity, no duplicates or stuck ownership | NOT RUN |
 | D5 | 2 | Stalker grab/chew/release while idle and controlled | Ownership transfers and returns; no frozen/duplicated camera | NOT RUN |
@@ -79,9 +100,11 @@ These checks exhaust the deterministic, serialization, process, packaging, and i
 
 ## Sign-off
 
-- Automated qualification: `PASS`
+- Automated qualification: earlier scan/preview repair `PASS`; current player-body/loose-camera restore follow-up `PASS`
+- Replacement immutable package: `PENDING`
 - 2026-07-18 exploratory smoke: prior diagnostic invariant failures are fixed and did not recur in the replacement run
 - 2026-07-19 replacement smoke: `FAIL` on scan discovery and camera preview presentation in the superseded package; both fixes now pass automated qualification and await the targeted two-client retest
+- 2026-07-19 e59 targeted smoke: scan discovery and preview behaved correctly; one intermittent observer-body drift and one loose-camera restore/selectability failure await the replacement-package retest
 - Formal server/client matrix evidence: `NOT RUN`
 - Save before/after formal real-game matrix: `NOT RUN`
 - Real-game result: `NOT RUN`

@@ -106,3 +106,38 @@ The host-client log exposed one new Scanner-adjacent orange error when undocked 
 The same retest intermittently played "base out of power" followed quickly by "power restored" during client loading even though base power synchronized correctly. Build-83031 inspection confirmed those two relay callbacks are presentation-only. The follow-up suppresses them only for relays created during initial reconciliation and a two-second scaled-time settle window, adds bounded `[BPD1]` evidence, and preserves real later outage/restoration audio. This is documented in `BASE_POWER_AUDIO_REPORT.md`; its targeted live smoke remains `NOT RUN` on the new build.
 
 The paired `MoonpoolManager.RestoreMoonpools` and `BuildEntitySpawner.SpawnAsync` null-reference signatures remain unrelated and out of scope for this follow-up.
+
+## e59 scan/preview and camera follow-up
+
+### Evidence identity and result
+
+- Package: `scanner-room-e59b0237f9db-q021dbc84-20260719T185635Z-win-x64`
+- Source commit: `e59b0237f9dbf9b50ac42b6930890676998c0cb4`
+- Package ZIP SHA-256: `31EEC927AF1B34F2D8B43A415C28F6A6E594225C87486C85E50E379E3E129E28`
+- Server/save: `gottem`; Subnautica build `83031`; server and host-client logs were available, but the laptop client log was not present on the host machine.
+- Hybrid scanning worked in the exploratory run: accepted results were Limestone `101`, Uraninite `66`, and Wreck `1`. Shared camera-preview publications advanced through accepted revisions `1`, `2`, and `3`.
+
+The scan/preview defects described earlier in this audit therefore did not recur. Two narrower camera-state defects were observed instead. While client 1 controlled a camera, client 2 intermittently saw client 1's player at an incorrect position rather than fixed at the Scanner Room console. Exiting control restored the observed location; the drift was not reproduced again. Client 1 also could not switch to the other loose camera after world load.
+
+### Correlation and root cause
+
+Only camera `.72cf` received control requests in the e59 session. An earlier session successfully switched `.8c30` to `.72cf` and back, which demonstrates that exclusive-control handoff and camera cycling work when both cameras are controllable.
+
+The unavailable camera `.8c30` had saved energy `99.64972`, health `100`, and component revision `38`. It spawned late without its room record applied, initialized from prefab defaults at energy `0` and health `400`, and published that state after queued ownership was applied. The server accepted the default component state as revision `39`. Vanilla correctly omitted the zero-energy camera from selectable controls, so no switch request for `.8c30` was generated. This is a restore-ordering overwrite, not a control-handoff rejection.
+
+The intermittent observer drift has a separate mechanism. Vanilla scanner-camera control locks the physical player at the console and moves only the camera root, but the multiplayer movement broadcaster previously suppressed player packets while the main camera was disabled/piloting. An observer could therefore continue extrapolating the last velocity until camera exit resumed publications and corrected the body.
+
+### Repair
+
+- During scanner-camera control, the controlling client now publishes the physical player's console transform with zero velocity. Drone movement remains on the camera path. Bounded `[SRD1] player_body_pin` enter, switch, identify, and exit rows expose each anchor lifecycle without logging camera imagery.
+- Canonical camera record, light, component, and camera-number state is retained in a durable per-camera cache even when the loose object does not yet exist. State is re-armed for later respawns.
+- Map Room camera entities loaded during initial synchronization receive a restore barrier even when their room record has not arrived yet. Prefab light/component defaults cannot publish through that barrier; canonical component application releases it.
+- Battery initialization is tied to the current camera object and generation so a stale coroutine cannot clear suppression for a replacement instance. Applied canonical values seed local broadcast history and avoid an immediate echo.
+
+Final automated qualification passes: focused Release and Debug selections each passed `40/40`, the broader relevant selection passed `352/352`, and the full Release suite passed `650` with `8` pre-existing platform skips and `0` failures (`658 total`). The Release solution build completed with `0` errors and `42` existing analyzer warning emissions; packet-processor DI resolution, the Windows PowerShell 5.1 evidence-summary self-test, and `git diff --check` also passed. Independent review found no remaining P0–P2 issue. The replacement immutable package remains `PENDING` until the clean commit is pushed and packaged.
+
+### Base-power and acceptance boundary
+
+The owner reported that the false outage/restoration audio seemed resolved in the e59 run. No deliberate generation cut/restore or other base-power test was performed, and the available client log contains no `[BPD1]` audio-decision row. Record this only as a passive non-observation; the targeted audio smoke and every base-power matrix row remain unchanged.
+
+This remains an exploratory two-client smoke. The formal Scanner Room matrix, third-client work, impairment rows, prescribed restart assertions, and formal before/after save pair remain `NOT RUN`. The next package requires only a short reload/control retest with both loose cameras: retain charge/health/selectability, switch A-B-A, keep the observer-visible player body at the console, exit normally, and preserve the server plus both client logs. No full matrix, PowerShell evidence script, or deliberate base-power test is required for that retest.

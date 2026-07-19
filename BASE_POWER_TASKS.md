@@ -22,10 +22,11 @@
 - [x] Suppress only initial-reconciliation base-power voice callbacks while preserving relay state and later live announcements
 - [x] Add bounded `[BPD1]` client evidence for source reconciliation and base-power audio transitions
 - [x] Exclude redundant Map Room camera battery prefab-child records while retaining the authoritative camera energy record
+- [x] Record the latest e59 run as a passive false-audio non-observation only; no deliberate base-power test or `[BPD1]` audio-decision evidence was produced
 
-## Test next
+## Test next (when base-power work resumes)
 
-- [ ] `gottem` first join, late join, and rejoin without false outage/restoration audio; deliberate live cut/restore remains audible
+- [ ] No base-power test in the next short Scanner Room camera retest; base-power work is deferred at the owner's request
 - [ ] Nuclear baseline, remote fabrication, owner disconnect, rejoin, restart
 - [ ] Simultaneous two-client consumption
 - [ ] Solar day/night generation
@@ -39,5 +40,6 @@
 
 ## Later
 
+- [ ] When base-power testing resumes, run the dedicated `gottem` first-join/late-join/rejoin smoke and a deliberate live cut/restore control with both client logs
 - [ ] Fix failures found by multiplayer acceptance
 - [ ] Final full build/tests, PR, and test release

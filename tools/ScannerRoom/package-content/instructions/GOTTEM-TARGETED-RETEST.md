@@ -1,23 +1,25 @@
-# `gottem` targeted follow-up retest
+# `gottem` camera follow-up retest
 
-This is a short two-client smoke for the fixes prompted by the latest live session. It does not replace the full Scanner Room or base-power acceptance matrices.
+This is a short two-client smoke for the player-body anchor and loose-camera restore fixes. It does not replace the Scanner Room or base-power acceptance matrices.
 
 ## Setup
 
-- Use this exact package for the server and both clients, Subnautica build `83031`, and the existing server named `gottem`.
-- Preserve the current world. No fresh Scanner Room, proxy, three-client setup, or full test battery is required.
-- Keep the server console and both client logs. Run `scannerroom` and `basepower` once before the checks and once afterward.
+- Use this exact package for the `gottem` server and both clients on Subnautica build `83031`.
+- Before reload, leave both Scanner Room cameras loose and note each camera's charge/health.
+- Preserve the server log and both client logs. No fresh room, third client, full matrix, or PowerShell evidence script is required.
 
-## Checks
+## Required checks
 
-1. **Scanner regression:** Have each client control and release one camera. After exit, the same last camera image and selected-camera label should appear on both physical preview screens. Run one Limestone or Shale scan and confirm the known nearby outcrops appear; a brief Gel Sack scan is enough as a comparison.
-2. **Loose-camera restore:** Leave camera `72cf` undocked, rejoin one client, and confirm the camera retains its charge and works. The client log must not contain the legacy missing-prefab-child error for that camera battery.
-3. **Load audio:** Join client A, late-join client B, then rejoin B once. None of those load boundaries should play a false "base out of power" immediately followed by "power restored."
-4. **Live audio control:** Deliberately remove or disable all generation long enough for the base to lose power, then restore it. The genuine outage and restoration announcements must still play. Restore the base to its original healthy state afterward.
+1. Reload/rejoin and confirm both loose cameras retain their prior charge/health and both remain selectable.
+2. Client 1 controls camera A while client 2 watches client 1's physical player body. The body must remain at the Scanner Room console while the drone moves.
+3. Client 1 switches A-B-A. Both cameras must take control normally; no camera should disappear from selection because it loaded at zero energy.
+4. Client 1 exits camera control. Both clients must see ordinary player position/movement resume normally. Swap client roles only if convenient.
 
-## Evidence and pass boundary
+The earlier e59 run already confirmed hybrid scans and shared preview (Limestone `101`, Uraninite `66`, Wreck `1`; preview revisions `1-3`). One Limestone scan or preview glance is an optional sanity check, not another full test battery.
 
-- Preserve the server and both client logs. `[SRD1]` covers Scanner Room transitions; `[BPD1]` covers base-power source applies and audio decisions.
-- Expected `[BPD1]`: load callbacks use `out=suppress`; deliberate live callbacks use `out=pass`; `out=missing` or an unexpected trace gap needs review. `out=truncated` reports a bounded evidence cap and is not by itself a gameplay failure.
-- Stop on the first mismatch and use `FAILURE-CAPTURE.md`. If all four checks pass, collect one final evidence bundle.
-- Report this as the targeted follow-up smoke only. Leave every formal acceptance-ledger row unchanged.
+## Evidence and boundary
+
+- `[SRD1] player_body_pin` should show bounded enter, camera identify/switch, and exit transitions. Delayed restore may also emit bounded `restore_apply` rows with `pending`, `ok`, or `delayed_object` outcomes.
+- Treat a charged camera loading at zero energy, a battery-restore timeout/error, an unselectable loose camera, observer-body drift, or failure to resume normal movement as a mismatch. Stop and preserve the three logs.
+- Do not deliberately cut base power in this retest. If the false outage/restoration audio happens incidentally, note the client and time; otherwise record only a passive non-observation.
+- Leave every formal acceptance-ledger row unchanged.
