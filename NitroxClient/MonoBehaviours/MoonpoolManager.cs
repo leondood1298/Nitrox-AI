@@ -168,6 +168,12 @@ public class MoonpoolManager : MonoBehaviour
 
     public static IEnumerator RestoreMoonpools(IEnumerable<MoonpoolEntity> moonpoolEntities, Base @base)
     {
+        if (!@base)
+        {
+            Log.Warn("Skipping Moonpool restoration because its Base was destroyed.");
+            yield break;
+        }
+
         MoonpoolManager moonpoolManager = @base.gameObject.EnsureComponent<MoonpoolManager>();
         moonpoolManager.LoadMoonpools(moonpoolEntities);
         moonpoolManager.OnPostRebuildGeometry(@base);

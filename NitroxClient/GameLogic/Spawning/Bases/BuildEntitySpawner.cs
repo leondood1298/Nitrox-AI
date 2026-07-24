@@ -36,6 +36,21 @@ public class BuildEntitySpawner : EntitySpawner<BuildEntity>
             Log.Error("Trying to respawn an already spawned Base without a proper resync process.");
             yield break;
         }
+        if (!entity.TryIsStructurallyEmpty(out bool isStructurallyEmpty))
+        {
+            Log.Error($"Skipping Base {entity.Id} because its cell data is malformed.");
+            result.Set(Optional.Empty);
+            yield break;
+        }
+        if (isStructurallyEmpty)
+        {
+            string reason = entity.ChildEntities.Count == 0
+                ? "it has no children"
+                : $"its {entity.ChildEntities.Count} non-ghost child entities require server-side recovery";
+            Log.Warn($"Quarantining structurally empty Base {entity.Id} because {reason}.");
+            result.Set(Optional.Empty);
+            yield break;
+        }
 
 #if DEBUG
         Stopwatch stopwatch = Stopwatch.StartNew();
@@ -46,11 +61,23 @@ public class BuildEntitySpawner : EntitySpawner<BuildEntity>
             LargeWorld.main.streamer.cellManager.RegisterEntity(newBase);
         }
         Base @base = newBase.GetComponent<Base>();
-        yield return SetupBase(entity, @base, entities, result);
+        yield return SetupBase(entity, @base, entities);
+        if (!newBase || !newBase.TryGetComponent(out @base))
+        {
+            Log.Warn($"Base {entity.Id} was destroyed while it was being restored.");
+            result.Set(Optional.Empty);
+            yield break;
+        }
 #if DEBUG
         Log.Verbose($"Took {stopwatch.ElapsedMilliseconds}ms to create the Base");
 #endif
         yield return entities.SpawnBatchAsync(entity.ChildEntities.OfType<PlayerEntity>().ToList<Entity>());
+        if (!@base)
+        {
+            Log.Warn($"Base {entity.Id} was destroyed before its components could be restored.");
+            result.Set(Optional.Empty);
+            yield break;
+        }
         yield return MoonpoolManager.RestoreMoonpools(entity.ChildEntities.OfType<MoonpoolEntity>(), @base);
 
         TaskResult<Optional<GameObject>> childResult = new();
@@ -60,6 +87,12 @@ public class BuildEntitySpawner : EntitySpawner<BuildEntity>
             switch (childEntity)
             {
                 case MapRoomEntity mapRoomEntity:
+                    if (!@base)
+                    {
+                        Log.Warn($"Base {entity.Id} was destroyed before its Scanner Room could be restored.");
+                        result.Set(Optional.Empty);
+                        yield break;
+                    }
                     yield return InteriorPieceEntitySpawner.RestoreMapRoom(@base, mapRoomEntity, entities, entityMetadataManager);
                     break;
                 case BaseLeakEntity baseLeakEntity:
@@ -70,11 +103,23 @@ public class BuildEntitySpawner : EntitySpawner<BuildEntity>
         }
         if (atLeastOneLeak)
         {
+            if (!@base)
+            {
+                Log.Warn($"Base {entity.Id} was destroyed before its leak state could be restored.");
+                result.Set(Optional.Empty);
+                yield break;
+            }
             BaseHullStrength baseHullStrength = @base.GetComponent<BaseHullStrength>();
             ErrorMessage.AddMessage(Language.main.GetFormat("BaseHullStrDamageDetected", baseHullStrength.totalStrength));
         }
 
-        result.Set(@base.gameObject);
+        if (!newBase)
+        {
+            Log.Warn($"Base {entity.Id} was destroyed before spawning completed.");
+            result.Set(Optional.Empty);
+            yield break;
+        }
+        result.Set(newBase);
     }
 
     protected override bool SpawnsOwnChildren(BuildEntity entity) => true;
@@ -127,7 +172,7 @@ public class BuildEntitySpawner : EntitySpawner<BuildEntity>
         @base.anchor = new(baseData.Anchor.ToUnity());
     }
 
-    public static IEnumerator SetupBase(BuildEntity buildEntity, Base @base, Entities entities, TaskResult<Optional<GameObject>> result = null)
+    public static IEnumerator SetupBase(BuildEntity buildEntity, Base @base, Entities entities)
     {
         GameObject baseObject = @base.gameObject;
 
@@ -166,6 +211,5 @@ public class BuildEntitySpawner : EntitySpawner<BuildEntity>
         @base.OnProtoDeserialize(null);
         @base.deserializationFinished = false;
         @base.FinishDeserialization();
-        result?.Set(baseObject);
     }
 }

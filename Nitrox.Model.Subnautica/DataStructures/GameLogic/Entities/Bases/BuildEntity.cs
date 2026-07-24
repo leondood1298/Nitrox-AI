@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.Serialization;
 using BinaryPack.Attributes;
 using Nitrox.Model.DataStructures;
@@ -27,6 +28,22 @@ public class BuildEntity : GlobalRootEntity
     public static BuildEntity MakeEmpty()
     {
         return new BuildEntity();
+    }
+
+    /// <summary>
+    /// Reports whether vanilla will treat this base as empty after its construction ghosts are restored.
+    /// A malformed cell stream is reported by returning <c>false</c>.
+    /// </summary>
+    public bool TryIsStructurallyEmpty(out bool isStructurallyEmpty)
+    {
+        isStructurallyEmpty = false;
+        if (BaseData == null || !BaseData.TryHasOccupiedCell(out bool hasOccupiedCell))
+        {
+            return false;
+        }
+
+        isStructurallyEmpty = !hasOccupiedCell && !ChildEntities.Any(entity => entity is GhostEntity);
+        return true;
     }
 
     /// <remarks>

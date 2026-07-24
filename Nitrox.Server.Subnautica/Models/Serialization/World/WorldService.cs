@@ -369,6 +369,22 @@ internal class WorldService : IHostedService
             };
             EntityDataPostProcessing(persistedData.EntityData);
             GlobalRootDataPostProcessing(persistedData.GlobalRootData);
+            IReadOnlyList<BuildEntity> removedEmptyBuildEntities = RemoveChildlessStructurallyEmptyBuildEntities(persistedData.GlobalRootData);
+            foreach (BuildEntity buildEntity in removedEmptyBuildEntities)
+            {
+                logger.ZLogWarning($"Removed childless structurally empty base {buildEntity.Id} while loading the save.");
+            }
+            foreach (BuildEntity buildEntity in persistedData.GlobalRootData.Entities.OfType<BuildEntity>())
+            {
+                if (!buildEntity.TryIsStructurallyEmpty(out bool isStructurallyEmpty))
+                {
+                    logger.ZLogError($"Base {buildEntity.Id} has malformed cell data and was retained for manual recovery.");
+                }
+                else if (isStructurallyEmpty)
+                {
+                    logger.ZLogError($"Base {buildEntity.Id} is structurally empty but has {buildEntity.ChildEntities.Count} child entities, so the server retained and clients will quarantine it for manual recovery.");
+                }
+            }
 
             if (!persistedData.IsValid())
             {
@@ -494,6 +510,24 @@ internal class WorldService : IHostedService
                 }
             }
         }
+    }
+
+    internal static IReadOnlyList<BuildEntity> RemoveChildlessStructurallyEmptyBuildEntities(GlobalRootData globalRootData)
+    {
+        List<BuildEntity> removedBuildEntities = [];
+        foreach (BuildEntity buildEntity in globalRootData.Entities.OfType<BuildEntity>().ToList())
+        {
+            if (!buildEntity.TryIsStructurallyEmpty(out bool isStructurallyEmpty) ||
+                !isStructurallyEmpty ||
+                buildEntity.ChildEntities.Count != 0)
+            {
+                continue;
+            }
+
+            globalRootData.Entities.Remove(buildEntity);
+            removedBuildEntities.Add(buildEntity);
+        }
+        return removedBuildEntities;
     }
 
     // TODO: This method should be removed. Each service should load its own data instead of centralizing it here.
