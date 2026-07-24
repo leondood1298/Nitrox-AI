@@ -102,19 +102,19 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Complete and audit the targeted two-client smoke: restore/control/switch/preview/body anchoring/recharge, pickup-forced release, and redocking passed
 - [x] Record the self-clearing held-camera offset as a deferred low-severity client-local cosmetic issue
 - [x] Record the owner's intermediate-release waiver and authorization without promoting any formal matrix row or completing Phase 1
+- [x] Merge protected PR #54 to `master` and qualify exact merge commit `a4c9ed6f`: build 0 errors, full Release `661 passed / 8 skipped / 0 failed`
+- [x] Build and verify exact-master package `scanner-room-a4c9ed6f5347-qc14d7889-20260724T214807Z-win-x64`, SHA-256 `4BE44322257510A665F987A9BE55091888E257A6A184B9AB5A8E4F4FDC9E750C`
+- [x] Publish GitHub release `custom-build-1.16.25-final` as an intermediate milestone with Phase 1 and all formal rows still open
+- [x] Fast-forward and recreate `agent/nitrox-ai-development` at released `master` after GitHub's automatic branch deletion
 
 ## Remaining
 
-- [ ] Open a protected PR to `master`, merge, requalify the exact merge commit, build a fresh exact-`master` artifact, and publish `custom-build-1.16.25-final`
-- [ ] Fast-forward `agent/nitrox-ai-development` to released `master` and continue Phase 1 development there
 - [ ] Restart once after a Scanner Room save and execute the formal matrix before Phase 1 completion; these gates were waived only for this intermediate release
 - [ ] Undock camera 1, restart, and verify it persists loose instead of vanishing or duplicating (#51)
 - [ ] Verify Shale HUD markers disappear for collector and observer after local break cleanup (#51)
 
 ## Next
 
-- [ ] Complete the protected intermediate-release workflow without changing any formal `NOT RUN` row
-- [ ] Resume Phase 1 development on `agent/nitrox-ai-development` from the released `master` commit
 - [ ] Select the next bounded correctness goal while preserving the deferred restart/matrix work
 
 ## Rules

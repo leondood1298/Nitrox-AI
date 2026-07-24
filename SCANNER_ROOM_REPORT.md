@@ -1,6 +1,6 @@
 # Scanner Room Repair Report
 
-Current status (2026-07-24): exact branch commit `70ef86d3284eb197686d8721da83440fec3ab775` passed automated qualification and the targeted two-client `gottem` camera follow-ups. Loose-camera restoration, A-B-A control switching, observer body anchoring, cross-client preview convergence, recharge recovery, pickup-forced control revocation, and redocking behaved correctly. The picker saw one self-clearing client-local held-camera offset after pickup; it is accepted and deferred as a low-severity cosmetic issue. The owner authorized protected merge and the `custom-build-1.16.25-final` intermediate release while explicitly waiving the post-save restart and formal matrix for that release only. Phase 1 remains open and every formal row remains `NOT RUN`; development continues on `agent/nitrox-ai-development` after it is synchronized to released `master`.
+Current status (2026-07-24): [PR #54](https://github.com/leondood1298/Nitrox-AI/pull/54) merged the owner-authorized intermediate milestone to `master`, and [Nitrox AI Custom Build 1.16.25](https://github.com/leondood1298/Nitrox-AI/releases/tag/custom-build-1.16.25-final) was published from exact commit `a4c9ed6f5347de888d2c831ed42933b38297ddab`. Exact-master automated, package, fresh extraction/install, two-boot isolated server, port-release, and isolated launcher gates passed. The owner waived the live post-save recovery restart and formal matrix for this release only. Phase 1 remains open, every formal row remains `NOT RUN`, the held-camera offset remains accepted/deferred cosmetic debt, and development continues on `agent/nitrox-ai-development`.
 
 Final automated baseline: `0c94cbfb90a8fe249d40f7088c6d94ae8b3cf1f7` after merged PRs #1–#44. Scanner Room work after the imported baseline changes 104 files (+3,536/−75).
 
@@ -57,6 +57,8 @@ The following results qualify the preceding e59 scan/preview package, not the ne
 - Packet-processor DI resolution passed `1/1`, `git diff --check` was clean, the Windows PowerShell 5.1 evidence-summary self-test passed, and independent review found no remaining P0–P2 issue.
 - Exact `70ef86d3` qualification supersedes the preceding current-source totals: the full Release suite passed `661`, skipped `8`, and failed `0` (`669 total`); focused empty-base/base-serialization passed `14/14`, existing Scanner Room passed `57/57`, player-anchor/restore Release and Debug passed `40/40` each, and the broader relevant selection passed `352/352`.
 - Exact `70ef86d3` package verification passed: 585 manifested files plus the manifest, bundled runtime/proxy checks, ZIP checksum, fresh extraction, installed-copy verification, isolated launcher, and initial/restart server process probes.
+- Released `master` commit `a4c9ed6f` repeated the full qualification after the documentation-only merge: build `0` errors / 42 existing warnings; full Release suite `661 passed / 8 skipped / 0 failed`; PowerShell parser/evidence tests and merge diff checks passed.
+- Published package `scanner-room-a4c9ed6f5347-qc14d7889-20260724T214807Z-win-x64` passed 585 manifest entries, bundled runtime/proxy checks, ZIP checksum, fresh extraction/install, new-world and existing-world server boots, exact port ownership/release, zero server errors/NREs, and an eight-second isolated launcher check. ZIP SHA-256: `4BE44322257510A665F987A9BE55091888E257A6A184B9AB5A8E4F4FDC9E750C`.
 
 ## Remaining limitation
 
@@ -70,4 +72,4 @@ The following results qualify the preceding e59 scan/preview package, not the ne
 
 ## Final acceptance
 
-The owner authorized this intermediate release without declaring Phase 1 complete. The post-save restart, all formal matrix rows, formal save pair, and formal real-game result remain `NOT RUN`; the waiver must not promote or erase them. Resume those cases when Phase 1 acceptance work continues. Ongoing development remains on `agent/nitrox-ai-development` after synchronizing it to released `master`.
+The owner authorized and published this intermediate release without declaring Phase 1 complete. The post-save restart, all formal matrix rows, formal save pair, and formal real-game result remain `NOT RUN`; the waiver must not promote or erase them. Resume those cases when Phase 1 acceptance work continues. Ongoing development remains on `agent/nitrox-ai-development`, synchronized from released `master`.
