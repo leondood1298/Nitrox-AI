@@ -10,7 +10,9 @@ using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
-internal sealed class PickupItemPacketProcessor(EntityRegistry entityRegistry, WorldEntityManager worldEntityManager, SimulationOwnershipData simulationOwnershipData)
+internal sealed class PickupItemPacketProcessor(EntityRegistry entityRegistry, WorldEntityManager worldEntityManager,
+    SimulationOwnershipData simulationOwnershipData, MapRoomCameraControlReleaseFactory cameraControlReleaseFactory,
+    MapRoomCameraControlLifecycle controlLifecycle, ScannerRoomDiagnostics diagnostics)
     : IAuthPacketProcessor<PickupItem>
 {
     private readonly EntityRegistry entityRegistry = entityRegistry;
@@ -20,8 +22,15 @@ internal sealed class PickupItemPacketProcessor(EntityRegistry entityRegistry, W
     public async Task Process(AuthProcessorContext context, PickupItem packet)
     {
         NitroxId id = packet.Item.Id;
-        if (simulationOwnershipData.RevokeOwnerOfId(id))
+        using IDisposable? lifecycleGate = cameraControlReleaseFactory.IsScannerCamera(id)
+            ? await controlLifecycle.EnterAsync(id)
+            : null;
+        if (simulationOwnershipData.RevokeOwnerOfId(id, out SimulationOwnershipData.PlayerLock revokedLock))
         {
+            if (cameraControlReleaseFactory.TryCreate(id, revokedLock, "pickup", out MapRoomCameraControl release))
+            {
+                await context.SendToAllAsync(release);
+            }
             SimulationOwnershipChange simulationOwnershipChange = new(id, SessionId.SERVER_ID, SimulationLockType.TRANSIENT);
             await context.SendToAllAsync(simulationOwnershipChange);
         }
@@ -40,11 +49,13 @@ internal sealed class PickupItemPacketProcessor(EntityRegistry entityRegistry, W
                     MapRoomCameraRecord? record = mapRoom.GetCameraRecord(id);
                     undock = new MapRoomCameraDock(id, mapRoom.Id, dockingIndex, mapRoom.DockingRevision, true, true, false,
                         record?.CameraNumber ?? 0, record?.LightOn ?? false, record?.LightRevision ?? 0,
-                        record?.Energy ?? 100f, record?.Health ?? 100f, record?.ComponentRevision ?? 0);
+                        record?.Energy ?? MapRoomCameraRecord.MAX_ENERGY,
+                        record?.Health ?? MapRoomCameraRecord.MAX_HEALTH, record?.ComponentRevision ?? 0);
                 }
             }
             if (undock != null)
             {
+                diagnostics.RecordAccepted("pickup", mapRoom, id, context.Sender.SessionId, undock.DockingIndex, "undocked");
                 await context.SendToAllAsync(undock);
             }
         }

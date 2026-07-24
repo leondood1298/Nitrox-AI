@@ -10,6 +10,17 @@ Use matching client/server builds. Join client 1 first unless a row says otherwi
 - Before a restart test, run `save` in the server console and wait for `World state saved`; closing the server does not force an immediate save.
 - Capture `basepower` before and after each failure. Save the server log and both client logs.
 
+## Deferred targeted load-audio reconciliation smoke
+
+Status: **NOT RUN.** In the latest e59 `gottem` run, the owner passively heard no false outage/restoration pair and reported that the audio seemed resolved. However, no deliberate base-power action was performed and the available client log contains no `[BPD1]` audio-decision row. This is a passive non-observation only; it does not pass this smoke or promote any matrix row.
+
+The owner requested no base-power testing during the next Scanner Room camera retest. Keep the procedure below for a later dedicated base-power session; do not combine it with the current short camera smoke.
+
+1. Start the existing `gottem` world with its healthy powered base and run `basepower`.
+2. Join the first client, late-join the second client, then disconnect and rejoin the second client once. Loading must not play a false "base out of power" immediately followed by "power restored" announcement.
+3. Deliberately remove or disable all generation long enough for the base to lose power, then restore generation. The real live outage and restoration must each remain audible.
+4. Preserve both client logs. `[BPD1]` rows should show loading callbacks as `out=suppress`, the deliberate live transitions as `out=pass`, source reconciliation as `ev=source_apply`, and any bounded-log cap as `out=truncated`.
+
 ## Matrix
 
 | Test | Expected | Status |

@@ -1,4 +1,6 @@
 using System;
+using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Runtime.Serialization;
 using Nitrox.Model.DataStructures;
@@ -8,6 +10,10 @@ namespace Nitrox.Model.Subnautica.DataStructures.GameLogic.Bases;
 [DataContract]
 public class BaseData : IEquatable<BaseData>
 {
+    // Far above practical base sizes, while preventing untrusted save or packet data from
+    // driving the multi-array allocations in BuildEntitySpawner.ApplyBaseData without bound.
+    public const int MAX_CELL_COUNT = 1_000_000;
+
     [DataMember(Order = 1)]
     public NitroxInt3 BaseShape;
 
@@ -34,6 +40,62 @@ public class BaseData : IEquatable<BaseData>
 
     [DataMember(Order = 9)]
     public byte[] IsGlass;
+
+    /// <summary>
+    /// Validates the compressed cell stream and reports whether at least one base cell is occupied.
+    /// This reads the run-length stream without allocating an array based on save or packet data.
+    /// </summary>
+    public bool TryHasOccupiedCell(out bool hasOccupiedCell)
+    {
+        hasOccupiedCell = false;
+        if (PreCompressionSize is <= 0 or > MAX_CELL_COUNT || Cells == null || Cells.Length == 0)
+        {
+            return false;
+        }
+
+        try
+        {
+            using MemoryStream input = new(Cells);
+            using DeflateStream stream = new(input, CompressionMode.Decompress);
+            using BinaryReader reader = new(stream);
+
+            int decodedCells = 0;
+            bool readingZeroRun = true;
+            while (decodedCells < PreCompressionSize)
+            {
+                if (readingZeroRun)
+                {
+                    ushort zeroRunLength = reader.ReadUInt16();
+                    if (zeroRunLength > PreCompressionSize - decodedCells)
+                    {
+                        hasOccupiedCell = false;
+                        return false;
+                    }
+                    decodedCells += zeroRunLength;
+                }
+                else
+                {
+                    hasOccupiedCell |= reader.ReadByte() != 0;
+                    decodedCells++;
+                }
+
+                readingZeroRun = !readingZeroRun;
+            }
+
+            // A valid stream describes exactly PreCompressionSize cells.
+            if (stream.ReadByte() != -1)
+            {
+                hasOccupiedCell = false;
+                return false;
+            }
+            return true;
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException)
+        {
+            hasOccupiedCell = false;
+            return false;
+        }
+    }
 
     public bool Equals(BaseData other)
     {

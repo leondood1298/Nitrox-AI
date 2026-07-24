@@ -1,48 +1,98 @@
 using System.Threading.Tasks;
-using System.Collections.Generic;
 using Nitrox.Model.Packets.Core;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
-using System.Linq;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
-internal sealed class MapRoomCameraLightProcessor(SimulationOwnershipData simulationOwnershipData, EntityRegistry entityRegistry, ILogger<MapRoomCameraLightProcessor> logger) : IAuthPacketProcessor<MapRoomCameraLight>, IAuthPacketProcessor, IPacketProcessor, IPacketProcessor<AuthProcessorContext, MapRoomCameraLight>
+internal sealed class MapRoomCameraLightProcessor(SimulationOwnershipData simulationOwnershipData, EntityRegistry entityRegistry, ScannerRoomDiagnostics diagnostics) : IAuthPacketProcessor<MapRoomCameraLight>, IAuthPacketProcessor, IPacketProcessor, IPacketProcessor<AuthProcessorContext, MapRoomCameraLight>
 {
 	private readonly SimulationOwnershipData simulationOwnershipData = simulationOwnershipData;
-	private readonly ILogger<MapRoomCameraLightProcessor> logger = logger;
 	private readonly EntityRegistry entityRegistry = entityRegistry;
+	private readonly ScannerRoomDiagnostics diagnostics = diagnostics;
 
 	public async Task Process(AuthProcessorContext context, MapRoomCameraLight packet)
 	{
-		List<MapRoomCameraRecord> records = entityRegistry.GetEntities<MapRoomEntity>().Select(room => room.GetCameraRecord(packet.CameraId)).Where(record => record != null).ToList()!;
-		if (packet.IsServerResponse || simulationOwnershipData.GetPlayerForLock(packet.CameraId) != context.Sender || records.Count != 1)
+		MapRoomEntity? mapRoom = FindUniqueRoom(packet.CameraId);
+		if (packet.IsServerResponse || mapRoom == null)
 		{
-			logger.ZLogWarning($"Rejected camera light update from session {context.Sender.SessionId}: camera {packet.CameraId}, on {packet.On}");
+			diagnostics.RecordRejected("light", mapRoom, packet.CameraId, context.Sender.SessionId, reason:
+				packet.IsServerResponse ? "server_response" : "invalid_assoc");
 			await context.ReplyAsync(new MapRoomCameraLight(packet.CameraId, packet.On, 0, true, false));
 			return;
 		}
 
-		long revision;
-		MapRoomCameraRecord record = records[0];
-		lock (record)
+		long revision = 0;
+		bool changed = false;
+		bool accepted = false;
+		string rejectionReason = "association_changed";
+		Task sendTask = Task.CompletedTask;
+		lock (mapRoom)
 		{
-			if (record.LightOn == packet.On)
+			MapRoomCameraRecord? record = mapRoom.GetCameraRecord(packet.CameraId);
+			sendTask = simulationOwnershipData.ExecuteForOwner(context.Sender, [packet.CameraId], ownedIds =>
 			{
-				revision = record.LightRevision;
-			}
-			else
+				if (record == null || !ownedIds.Contains(packet.CameraId))
+				{
+					rejectionReason = record == null ? "association_changed" : "non_owner";
+					return Task.CompletedTask;
+				}
+
+				lock (record)
+				{
+					accepted = true;
+					changed = record.LightOn != packet.On;
+					revision = record.LightRevision;
+					if (changed)
+					{
+						revision++;
+						record.LightOn = packet.On;
+						record.LightRevision = revision;
+					}
+				}
+
+				// LiteNetLib enqueues synchronously. Queue the accepted state while ownership is
+				// locked so a release or reassignment packet cannot overtake this transition.
+				return context.SendToAllAsync(new MapRoomCameraLight(packet.CameraId, packet.On, revision, true, true));
+			});
+		}
+		if (!accepted)
+		{
+			diagnostics.RecordRejected("light", mapRoom, packet.CameraId, context.Sender.SessionId,
+				reason: rejectionReason);
+			await context.ReplyAsync(new MapRoomCameraLight(packet.CameraId, packet.On, 0, true, false));
+			return;
+		}
+		if (changed)
+		{
+			diagnostics.RecordAccepted("light", mapRoom, packet.CameraId, context.Sender.SessionId,
+				reason: packet.On ? "on" : "off");
+		}
+		await sendTask;
+	}
+
+	private MapRoomEntity? FindUniqueRoom(Nitrox.Model.DataStructures.NitroxId cameraId)
+	{
+		MapRoomEntity? found = null;
+		foreach (MapRoomEntity room in entityRegistry.GetEntities<MapRoomEntity>())
+		{
+			lock (room)
 			{
-				revision = record.LightRevision + 1;
-				record.LightOn = packet.On;
-				record.LightRevision = revision;
+				if (room.GetCameraRecord(cameraId) == null)
+				{
+					continue;
+				}
+				if (found != null)
+				{
+					return null;
+				}
+				found = room;
 			}
 		}
-		logger.ZLogInformation($"Accepted camera light update: camera {packet.CameraId}, on {packet.On}, revision {revision}, session {context.Sender.SessionId}");
-		await context.SendToAllAsync(new MapRoomCameraLight(packet.CameraId, packet.On, revision, true, true));
+		return found;
 	}
 }
 

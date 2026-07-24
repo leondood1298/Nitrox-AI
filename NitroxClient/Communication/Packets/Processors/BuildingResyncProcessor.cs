@@ -144,12 +144,33 @@ internal sealed class BuildingResyncProcessor(Entities entities, EntityMetadataM
     private IEnumerator OverwriteBase(Base @base, BuildEntity buildEntity)
     {
         Log.Info($"[Base RESYNC] Overwriting base with id {buildEntity.Id}");
+        if (!buildEntity.TryIsStructurallyEmpty(out bool isStructurallyEmpty))
+        {
+            Log.Error($"[Base RESYNC] Refusing malformed base data for {buildEntity.Id}");
+            yield break;
+        }
+        if (isStructurallyEmpty)
+        {
+            Log.Warn($"[Base RESYNC] Refusing structurally empty base data for {buildEntity.Id}");
+            yield break;
+        }
+
         ClearBaseChildren(@base);
         // Frame to let all children be deleted properly
         yield return Yielders.WaitForEndOfFrame;
 
         yield return BuildEntitySpawner.SetupBase(buildEntity, @base, entities);
+        if (!@base)
+        {
+            Log.Warn($"[Base RESYNC] Base {buildEntity.Id} was destroyed while it was being restored");
+            yield break;
+        }
         yield return MoonpoolManager.RestoreMoonpools(buildEntity.ChildEntities.OfType<MoonpoolEntity>(), @base);
+        if (!@base)
+        {
+            Log.Warn($"[Base RESYNC] Base {buildEntity.Id} was destroyed before player restoration");
+            yield break;
+        }
         yield return entities.SpawnBatchAsync(buildEntity.ChildEntities.OfType<PlayerEntity>().ToList<Entity>(), false, false);
 
         foreach (Entity childEntity in buildEntity.ChildEntities)
@@ -157,6 +178,11 @@ internal sealed class BuildingResyncProcessor(Entities entities, EntityMetadataM
             switch (childEntity)
             {
                 case MapRoomEntity mapRoomEntity:
+                    if (!@base)
+                    {
+                        Log.Warn($"[Base RESYNC] Base {buildEntity.Id} was destroyed before Scanner Room restoration");
+                        yield break;
+                    }
                     yield return InteriorPieceEntitySpawner.RestoreMapRoom(@base, mapRoomEntity, entities, entityMetadataManager);
                     break;
                 case BaseLeakEntity baseLeakEntity:

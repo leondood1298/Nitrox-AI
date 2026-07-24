@@ -1,4 +1,5 @@
 using System.Linq;
+using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
@@ -28,7 +29,7 @@ internal sealed class MapRoomScanResultSubscriptionProcessor(EntityRegistry enti
         {
             return new MapRoomScanResultSnapshot(room.Id, room.ScanResultGeneration,
                 room.ScanResults.Select(result => new MapRoomScanResultRecord(result.ResourceId, result.TechType, result.Position)).ToList(),
-                room.ScanResultRevision, true, true);
+                NitroxVector3.Zero, 0f, room.ScanResultRevision, true, true);
         }
     }
 }

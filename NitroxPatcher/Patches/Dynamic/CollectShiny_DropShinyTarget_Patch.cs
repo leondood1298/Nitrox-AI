@@ -15,9 +15,16 @@ public sealed class CollectShiny_DropShinyTarget_Patch : NitroxPatch, IDynamicPa
 
     public static void Prefix(GameObject target)
     {
-        if (target && target.TryGetComponent(out MapRoomCamera camera) && camera.TryGetNitroxId(out NitroxId cameraId) && Resolve<SimulationOwnership>().HasExclusiveLock(cameraId))
+        if (target && target.TryGetComponent(out MapRoomCamera camera) && camera.TryGetNitroxId(out NitroxId cameraId))
         {
-            Resolve<SimulationOwnership>().RequestSimulationLock(cameraId, SimulationLockType.TRANSIENT);
+            SimulationOwnership ownership = Resolve<SimulationOwnership>();
+            MapRoomCameras mapRoomCameras = Resolve<MapRoomCameras>();
+            if (Resolve<StalkerCameraLockPurposeTracker>().TryConsumeForDowngrade(cameraId,
+                    ownership.HasExclusiveLock(cameraId),
+                    mapRoomCameras.HasPendingControl(cameraId) || mapRoomCameras.HasLocalControl(cameraId)))
+            {
+                ownership.RequestSimulationLock(cameraId, SimulationLockType.TRANSIENT);
+            }
         }
     }
 

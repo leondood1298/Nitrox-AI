@@ -79,23 +79,49 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Validate two-client camera handoff/release restores control availability (#51)
 - [x] Apply authoritative number, battery, health, and light state to loose cameras on reload (#51)
 - [x] Clear the collector's local Scanner Room result when a breakable target is destroyed (#51)
+- [x] Preserve and diagnose the `gottem` exploratory two-client evidence
+- [x] Correct the Scanner Room camera health contract to the vanilla 400-point scale
+- [x] Capture registered Scanner Room state consistently during `GlobalRootData` autosave serialization
+- [x] Qualify the follow-up with focused race/persistence coverage and the full Release suite
+- [x] Confirm the camera-health and autosave fixes in the replacement `gottem` two-client smoke
+- [x] Audit the replacement logs/save and correlate empty Limestone/Shale scans with the server world registry
+- [x] Supplement vanilla scan discovery with exact, in-range server entities while preserving client override mappings
+- [x] Synchronize the vanilla session-global camera preview image and selection with a bounded ephemeral packet
+- [x] Distinguish sibling Scanner Room cameras in compact diagnostics and add preview/scan evidence events
+- [x] Correct live server results after erroneous client unload/range-exit removals
+- [x] Suppress initialized non-owner vanilla result mutations and deduplicate live/synthetic stable IDs
+- [x] Broadcast accepted preview revisions to all clients so simultaneous camera exits converge
+- [x] Preserve active exclusive camera control during background simulation acquisition
+- [x] Qualify the scan/preview follow-up with 275 combined regressions, 79 scan-focused regressions, and the full 587-pass Release suite
+- [x] Confirm hybrid discovery and shared preview in the e59 `gottem` smoke (Limestone 101, Uraninite 66, Wreck 1; preview revisions 1-3)
+- [x] Audit the intermittent observer-body drift and the restored loose camera that could not be selected
+- [x] Keep the physical player anchored at the Scanner Room console with zero-velocity broadcasts during camera control and bounded `[SRD1] player_body_pin` diagnostics
+- [x] Preserve loose-camera record/light/component state across restore ordering with a durable cache, initial-load barrier, and camera-instance battery initialization
+- [x] Qualify the body-anchor/restore follow-up: focused Release/Debug `40/40`, broader relevant `352/352`, full Release `650 passed / 8 skipped / 0 failed`, build `0` errors
+- [x] Build and verify exact `70ef86d3` immutable package `scanner-room-70ef86d3284e-q772a1be7-20260724T204353Z-win-x64`
+- [x] Complete and audit the targeted two-client smoke: restore/control/switch/preview/body anchoring/recharge, pickup-forced release, and redocking passed
+- [x] Record the self-clearing held-camera offset as a deferred low-severity client-local cosmetic issue
+- [x] Record the owner's intermediate-release waiver and authorization without promoting any formal matrix row or completing Phase 1
 
 ## Remaining
 
-- [ ] Distinguish stale preview image from an actual camera label/selection mismatch
-- [ ] Execute in-game acceptance matrix (`SCANNER_ROOM_ACCEPTANCE.md`; requires 2–3 game clients)
+- [ ] Open a protected PR to `master`, merge, requalify the exact merge commit, build a fresh exact-`master` artifact, and publish `custom-build-1.16.25-final`
+- [ ] Fast-forward `agent/nitrox-ai-development` to released `master` and continue Phase 1 development there
+- [ ] Restart once after a Scanner Room save and execute the formal matrix before Phase 1 completion; these gates were waived only for this intermediate release
+- [ ] Undock camera 1, restart, and verify it persists loose instead of vanishing or duplicating (#51)
+- [ ] Verify Shale HUD markers disappear for collector and observer after local break cleanup (#51)
 
 ## Next
 
-- [ ] Undock camera 1, restart, and verify it persists loose instead of vanishing or duplicating (#51)
-- [ ] Verify shale HUD markers disappear for collector and observer after local break cleanup (#51)
-- [ ] Execute in-game acceptance matrix (`SCANNER_ROOM_ACCEPTANCE.md`; requires 2–3 game clients)
+- [ ] Complete the protected intermediate-release workflow without changing any formal `NOT RUN` row
+- [ ] Resume Phase 1 development on `agent/nitrox-ai-development` from the released `master` commit
+- [ ] Select the next bounded correctness goal while preserving the deferred restart/matrix work
 
 ## Rules
 
 - Push only to `leondood1298/Nitrox-AI`; upstream push stays disabled.
-- One focused draft PR at a time; merge before starting the next branch.
-- Publish each two-client test build as the next `1.16.x` GitHub prerelease.
-- Keep updating the current Scanner Room repair PR until the user merges it.
+- One focused PR at a time; merge before starting the next branch.
+- Publish interim two-client test artifacts as immutable Drive packages. GitHub releases are reserved for phase completion or an explicitly owner-designated intermediate milestone whose open gates remain visible.
+- Use `agent/nitrox-ai-development` as the durable project branch; merge through protected PRs, then synchronize it to released `master` before continuing.
 - Preserve unrelated custom fixes.
 - Build and run the full test suite before every PR.

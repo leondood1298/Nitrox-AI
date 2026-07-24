@@ -2,6 +2,7 @@ using System;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Packets;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 
 namespace Nitrox.Model.Subnautica.Packets;
 
@@ -25,7 +26,7 @@ public class MapRoomCameraDock : Packet
 	public long ComponentRevision { get; }
 	public NitroxTransform? CameraTransform { get; }
 
-	public MapRoomCameraDock(NitroxId cameraId, NitroxId mapRoomId, int dockingIndex, long revision = 0, bool isServerResponse = false, bool granted = false, bool isDocked = true, int cameraNumber = 0, bool lightOn = false, long lightRevision = 0, float energy = 100f, float health = 100f, long componentRevision = 0, NitroxTransform? cameraTransform = null)
+	public MapRoomCameraDock(NitroxId cameraId, NitroxId mapRoomId, int dockingIndex, long revision = 0, bool isServerResponse = false, bool granted = false, bool isDocked = true, int cameraNumber = 0, bool lightOn = false, long lightRevision = 0, float energy = MapRoomCameraRecord.MAX_ENERGY, float health = MapRoomCameraRecord.MAX_HEALTH, long componentRevision = 0, NitroxTransform? cameraTransform = null)
 	{
 		CameraId = cameraId;
 		MapRoomId = mapRoomId;

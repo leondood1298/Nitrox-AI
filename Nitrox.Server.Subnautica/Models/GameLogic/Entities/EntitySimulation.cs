@@ -5,6 +5,7 @@ using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
+using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.AppEvents;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
 
@@ -15,28 +16,35 @@ internal sealed class EntitySimulation : ISessionCleaner
     private const SimulationLockType DEFAULT_ENTITY_SIMULATION_LOCKTYPE = SimulationLockType.TRANSIENT;
     private readonly EntityRegistry entityRegistry;
     private readonly ILogger<EntitySimulation> logger;
+    private readonly MapRoomCameraControlReleaseFactory cameraControlReleaseFactory;
+    private readonly MapRoomCameraControlLifecycle cameraControlLifecycle;
 
     private readonly IPacketSender packetSender;
     private readonly PlayerManager playerManager;
     private readonly SimulationOwnershipData simulationOwnershipData;
     private readonly WorldEntityManager worldEntityManager;
 
-    public EntitySimulation(IPacketSender packetSender, EntityRegistry entityRegistry, WorldEntityManager worldEntityManager, SimulationOwnershipData simulationOwnershipData, PlayerManager playerManager, ILogger<EntitySimulation> logger)
+    public EntitySimulation(IPacketSender packetSender, EntityRegistry entityRegistry, WorldEntityManager worldEntityManager,
+        SimulationOwnershipData simulationOwnershipData, PlayerManager playerManager,
+        MapRoomCameraControlReleaseFactory cameraControlReleaseFactory, MapRoomCameraControlLifecycle cameraControlLifecycle,
+        ILogger<EntitySimulation> logger)
     {
         this.packetSender = packetSender;
         this.entityRegistry = entityRegistry;
         this.worldEntityManager = worldEntityManager;
         this.simulationOwnershipData = simulationOwnershipData;
         this.playerManager = playerManager;
+        this.cameraControlReleaseFactory = cameraControlReleaseFactory;
+        this.cameraControlLifecycle = cameraControlLifecycle;
         this.logger = logger;
     }
 
     public IEnumerable<SimulatedEntity> GetSimulationChangesForCell(Player player, AbsoluteEntityCell cell)
     {
-        foreach (WorldEntity entity in GetPlayerSimulatedEntities(player, cell))
+        foreach ((WorldEntity entity, SimulationLockType lockType) in GetPlayerSimulatedEntities(player, cell))
         {
             bool doesEntityMove = ShouldSimulateEntityMovement(entity);
-            yield return new SimulatedEntity(entity.Id, player.SessionId, doesEntityMove, DEFAULT_ENTITY_SIMULATION_LOCKTYPE);
+            yield return new SimulatedEntity(entity.Id, player.SessionId, doesEntityMove, lockType);
         }
     }
 
@@ -65,6 +73,12 @@ internal sealed class EntitySimulation : ISessionCleaner
                 {
                     continue;
                 }
+                if (simulationOwnershipData.TryGetLock(entity.Id, out SimulationOwnershipData.PlayerLock currentLock) &&
+                    currentLock.Player == simulatingPlayer && currentLock.LockType == SimulationLockType.EXCLUSIVE &&
+                    cameraControlReleaseFactory.IsScannerCamera(entity.Id))
+                {
+                    continue;
+                }
                 if (!simulationOwnershipData.RevokeIfOwner(entity.Id, simulatingPlayer))
                 {
                     continue;
@@ -80,7 +94,8 @@ internal sealed class EntitySimulation : ISessionCleaner
         return entity.ChildEntities.OfType<WorldEntity>().Where(ShouldSimulateEntity);
     }
 
-    private IEnumerable<WorldEntity> GetPlayerSimulatedEntities(Player simulatingPlayer, AbsoluteEntityCell cell)
+    private IEnumerable<(WorldEntity Entity, SimulationLockType LockType)> GetPlayerSimulatedEntities(
+        Player simulatingPlayer, AbsoluteEntityCell cell)
     {
         foreach (WorldEntity entity in worldEntityManager.GetEntities(cell))
         {
@@ -92,17 +107,19 @@ internal sealed class EntitySimulation : ISessionCleaner
             {
                 continue;
             }
-            if (!simulationOwnershipData.TryToAcquire(entity.Id, simulatingPlayer, DEFAULT_ENTITY_SIMULATION_LOCKTYPE))
+            if (!simulationOwnershipData.TryToAcquirePreservingExistingExclusive(entity.Id, simulatingPlayer,
+                    DEFAULT_ENTITY_SIMULATION_LOCKTYPE, out SimulationOwnershipData.PlayerLock entityLock))
             {
                 continue;
             }
 
-            yield return entity;
+            yield return (entity, entityLock.LockType);
             foreach (WorldEntity child in GetSimulatableChildren(entity))
             {
-                if (simulationOwnershipData.TryToAcquire(child.Id, simulatingPlayer, DEFAULT_ENTITY_SIMULATION_LOCKTYPE))
+                if (simulationOwnershipData.TryToAcquirePreservingExistingExclusive(child.Id, simulatingPlayer,
+                        DEFAULT_ENTITY_SIMULATION_LOCKTYPE, out SimulationOwnershipData.PlayerLock childLock))
                 {
-                    yield return child;
+                    yield return (child, childLock.LockType);
                 }
             }
         }
@@ -119,10 +136,11 @@ internal sealed class EntitySimulation : ISessionCleaner
 
     public bool TryAssignEntityToPlayer(Entity entity, Player player, bool shouldEntityMove, [NotNullWhen(true)] out SimulatedEntity? simulatedEntity)
     {
-        if (simulationOwnershipData.TryToAcquire(entity.Id, player, DEFAULT_ENTITY_SIMULATION_LOCKTYPE))
+        if (simulationOwnershipData.TryToAcquirePreservingExistingExclusive(entity.Id, player,
+                DEFAULT_ENTITY_SIMULATION_LOCKTYPE, out SimulationOwnershipData.PlayerLock acquiredLock))
         {
             bool doesEntityMove = shouldEntityMove && entity is WorldEntity worldEntity && ShouldSimulateEntityMovement(worldEntity);
-            simulatedEntity = new(entity.Id, player.SessionId, doesEntityMove, DEFAULT_ENTITY_SIMULATION_LOCKTYPE);
+            simulatedEntity = new(entity.Id, player.SessionId, doesEntityMove, acquiredLock.LockType);
             return true;
         }
 
@@ -135,7 +153,8 @@ internal sealed class EntitySimulation : ISessionCleaner
         List<SimulatedEntity> simulatedEntities = new();
         foreach (GlobalRootEntity entity in worldEntityManager.GetInitialSyncGlobalRootEntities())
         {
-            simulationOwnershipData.TryToAcquire(entity.Id, player, SimulationLockType.TRANSIENT);
+            simulationOwnershipData.TryToAcquirePreservingExistingExclusive(entity.Id, player,
+                SimulationLockType.TRANSIENT, out _);
             if (!simulationOwnershipData.TryGetLock(entity.Id, out SimulationOwnershipData.PlayerLock playerLock))
             {
                 continue;
@@ -153,12 +172,14 @@ internal sealed class EntitySimulation : ISessionCleaner
 
         foreach (Player player in players)
         {
-            if (player.CanSee(entity) && simulationOwnershipData.TryToAcquire(id, player, DEFAULT_ENTITY_SIMULATION_LOCKTYPE))
+            if (player.CanSee(entity) &&
+                simulationOwnershipData.TryToAcquirePreservingExistingExclusive(id, player,
+                    DEFAULT_ENTITY_SIMULATION_LOCKTYPE, out SimulationOwnershipData.PlayerLock acquiredLock))
             {
                 bool doesEntityMove = entity is WorldEntity worldEntity && ShouldSimulateEntityMovement(worldEntity);
 
                 logger.ZLogTrace($"Player {player.Name} has taken over simulating {id}");
-                simulatedEntity = new(id, player.SessionId, doesEntityMove, DEFAULT_ENTITY_SIMULATION_LOCKTYPE);
+                simulatedEntity = new(id, player.SessionId, doesEntityMove, acquiredLock.LockType);
                 return true;
             }
         }
@@ -182,37 +203,60 @@ internal sealed class EntitySimulation : ISessionCleaner
         return entityRegistry.TryGetEntityById(entityId, out WorldEntity worldEntity) && ShouldSimulateEntityMovement(worldEntity);
     }
 
-    public void EntityDestroyed(NitroxId id)
+    public async Task EntityDestroyedAsync(NitroxId id)
     {
-        simulationOwnershipData.RevokeOwnerOfId(id);
+        using IDisposable? lifecycleGate = cameraControlReleaseFactory.IsScannerCamera(id)
+            ? await cameraControlLifecycle.EnterAsync(id)
+            : null;
+        await EntityDestroyedWithLifecycleGateAsync(id);
+    }
+
+    internal async Task EntityDestroyedWithLifecycleGateAsync(NitroxId id)
+    {
+        if (simulationOwnershipData.RevokeOwnerOfId(id, out SimulationOwnershipData.PlayerLock revokedLock) &&
+            cameraControlReleaseFactory.TryCreate(id, revokedLock, "destroy", out MapRoomCameraControl release))
+        {
+            await packetSender.SendPacketToAllAsync(release);
+        }
     }
 
     public async Task OnEventAsync(ISessionCleaner.Args args)
     {
-        List<SimulatedEntity> ownershipChanges = CalculateSimulationChangesFromPlayerDisconnect(args.Session.Id, out List<NitroxId> unregisteredRevokedIds);
-        if (ownershipChanges.Count > 0)
+        IReadOnlyList<IDisposable> lifecycleGates = await cameraControlLifecycle.EnterManyAsync(
+            cameraControlReleaseFactory.GetScannerCameraIds());
+        try
         {
-            SimulationOwnershipChange ownershipChange = new(ownershipChanges);
-            await packetSender.SendPacketToAllAsync(ownershipChange);
+            List<SimulationOwnershipData.RevokedLock> revokedLocks = simulationOwnershipData.RevokeAllLocksForOwner(args.Session.Id);
+            List<NitroxId> revokedEntityIds = revokedLocks.Select(revoked => revoked.EntityId).ToList();
+            List<Entity> revokedEntities = entityRegistry.GetEntities(revokedEntityIds);
+            List<NitroxId> unregisteredRevokedIds = revokedEntityIds.Except(revokedEntities.Select(entity => entity.Id)).ToList();
+
+            foreach (SimulationOwnershipData.RevokedLock revokedLock in revokedLocks)
+            {
+                if (cameraControlReleaseFactory.TryCreate(revokedLock.EntityId, revokedLock.Lock, "disconnect", out MapRoomCameraControl release))
+                {
+                    await packetSender.SendPacketToAllAsync(release);
+                }
+            }
+
+            // Release control first; only then may another player receive ordinary simulation.
+            List<SimulatedEntity> ownershipChanges = [];
+            AssignEntitiesToOtherPlayers(args.Session.Id, revokedEntities, ownershipChanges);
+            if (ownershipChanges.Count > 0)
+            {
+                await packetSender.SendPacketToAllAsync(new SimulationOwnershipChange(ownershipChanges));
+            }
+            foreach (NitroxId revokedId in unregisteredRevokedIds)
+            {
+                logger.ZLogInformation($"Dropping unregistered simulation lock {revokedId} after session {args.Session.Id} disconnected");
+                await packetSender.SendPacketToAllAsync(new DropSimulationOwnership(revokedId));
+            }
         }
-        foreach (NitroxId revokedId in unregisteredRevokedIds)
+        finally
         {
-            logger.ZLogInformation($"Dropping unregistered simulation lock {revokedId} after session {args.Session.Id} disconnected");
-            await packetSender.SendPacketToAllAsync(new DropSimulationOwnership(revokedId));
+            MapRoomCameraControlLifecycle.ReleaseReverse(lifecycleGates);
         }
-    }
 
-    private List<SimulatedEntity> CalculateSimulationChangesFromPlayerDisconnect(SessionId sessionId, out List<NitroxId> unregisteredRevokedIds)
-    {
-        List<SimulatedEntity> ownershipChanges = new();
-
-        List<NitroxId> revokedEntityIds = simulationOwnershipData.RevokeAllForOwner(sessionId);
-        List<Entity> revokedEntities = entityRegistry.GetEntities(revokedEntityIds);
-        unregisteredRevokedIds = revokedEntityIds.Except(revokedEntities.Select(entity => entity.Id)).ToList();
-
-        AssignEntitiesToOtherPlayers(sessionId, revokedEntities, ownershipChanges);
-
-        return ownershipChanges;
     }
 
     private void AssignEntitiesToOtherPlayers(SessionId oldSessionId, IEnumerable<Entity> entities, List<SimulatedEntity> ownershipChanges)

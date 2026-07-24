@@ -91,6 +91,7 @@ namespace NitroxClient
             containerBuilder.RegisterType<AI>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<SimulationOwnership>().InstancePerLifetimeScope();
 			containerBuilder.RegisterType<BasePowerState>().InstancePerLifetimeScope();
+			containerBuilder.RegisterType<BasePowerClientDiagnostics>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<LiveMixinManager>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<Entities>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<MedkitFabricator>().InstancePerLifetimeScope();
@@ -107,6 +108,8 @@ namespace NitroxClient
             containerBuilder.RegisterType<SeamothModulesEvent>().InstancePerLifetimeScope();
         containerBuilder.RegisterType<Fires>().InstancePerLifetimeScope();
         containerBuilder.RegisterType<MapRoomCameras>().InstancePerLifetimeScope();
+		containerBuilder.RegisterType<StalkerCameraLockPurposeTracker>().InstancePerLifetimeScope();
+		containerBuilder.RegisterType<ScannerRoomClientDiagnostics>().InstancePerLifetimeScope();
 		containerBuilder.RegisterType<MapRoomScanResultBroadcaster>().InstancePerLifetimeScope();
 		containerBuilder.RegisterType<MapRoomScanResultSubscriber>().InstancePerLifetimeScope();
         containerBuilder.RegisterType<MapRoomScanTypes>().InstancePerLifetimeScope();

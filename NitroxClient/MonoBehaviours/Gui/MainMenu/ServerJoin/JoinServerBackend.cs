@@ -12,6 +12,7 @@ using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Helper;
 using Nitrox.Model.MultiplayerSession;
+using Nitrox.Model.Networking;
 using Nitrox.Model.Subnautica.DataStructures;
 using Nitrox.Model.Subnautica.MultiplayerSession;
 using UnityEngine;
@@ -122,19 +123,31 @@ public static class JoinServerBackend
         catch (ClientConnectionFailedException ex)
         {
             Log.ErrorSensitive("Unable to contact the remote server at: {ip}:{port}", serverIp, serverPort);
-            string msg = $"{Language.main.Get("Nitrox_UnableToConnect")} {serverIp}:{serverPort}";
+            string msg;
 
-            if (ip.IsLocalhost())
+            if (ex is MultiplayerProtocolMismatchException protocolMismatch && NitroxNetworkProtocol.TryGetEpoch(protocolMismatch.ServerConnectionKey, out int serverEpoch))
             {
-                if (Process.GetProcessesByName("Nitrox.Server.Subnautica").Length == 0)
+                string languageKey = serverEpoch > NitroxNetworkProtocol.Epoch ? "Nitrox_OutOfDateClient" : "Nitrox_OutOfDateServer";
+                msg = Language.main.Get(languageKey)
+                              .Replace("{serverVersion}", protocolMismatch.ServerConnectionKey)
+                              .Replace("{localVersion}", protocolMismatch.ClientConnectionKey);
+                Log.Error(ex);
+            }
+            else
+            {
+                msg = $"{Language.main.Get("Nitrox_UnableToConnect")} {serverIp}:{serverPort}";
+                if (ip.IsLocalhost())
                 {
-                    Log.Error("No server process was found while address was localhost");
-                    msg += $"\n{Language.main.Get("Nitrox_StartServer")}";
-                }
-                else
-                {
-                    Log.Error(ex);
-                    msg += $"\n{Language.main.Get("Nitrox_FirewallInterfering")}";
+                    if (Process.GetProcessesByName("Nitrox.Server.Subnautica").Length == 0)
+                    {
+                        Log.Error("No server process was found while address was localhost");
+                        msg += $"\n{Language.main.Get("Nitrox_StartServer")}";
+                    }
+                    else
+                    {
+                        Log.Error(ex);
+                        msg += $"\n{Language.main.Get("Nitrox_FirewallInterfering")}";
+                    }
                 }
             }
 

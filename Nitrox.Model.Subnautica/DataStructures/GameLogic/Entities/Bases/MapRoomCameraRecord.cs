@@ -8,6 +8,9 @@ namespace Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 [Serializable, DataContract]
 public class MapRoomCameraRecord
 {
+    public const float MAX_ENERGY = 100f;
+    public const float MAX_HEALTH = 400f;
+
     [DataMember(Order = 1)]
     public NitroxId CameraId { get; set; }
 
@@ -34,7 +37,8 @@ public class MapRoomCameraRecord
     {
     }
 
-    public MapRoomCameraRecord(NitroxId cameraId, int cameraNumber, bool lightOn = false, long lightRevision = 0, float energy = 100f, float health = 100f, long componentRevision = 0)
+    public MapRoomCameraRecord(NitroxId cameraId, int cameraNumber, bool lightOn = false, long lightRevision = 0,
+        float energy = MAX_ENERGY, float health = MAX_HEALTH, long componentRevision = 0)
     {
         CameraId = cameraId;
         CameraNumber = cameraNumber;

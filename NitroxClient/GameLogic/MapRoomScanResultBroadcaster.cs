@@ -25,35 +25,73 @@ public sealed class MapRoomScanResultBroadcaster(IPacketSender packetSender, Thr
                 results.Add(new(info.uniqueId, info.techType.ToDto(), info.position.ToDto()));
             }
         }
-        packetSender.Send(new MapRoomScanResultSnapshot(roomId, generation, results));
+        packetSender.Send(CreateSnapshotPacket(roomId, generation, results, mapRoom.wireFrameWorld.position, mapRoom.GetScanRange()));
     }
 
     public void BroadcastDiscovered(MapRoomFunctionality mapRoom, ResourceTrackerDatabase.ResourceInfo info)
     {
-        if (TryGetAuthority(mapRoom, out NitroxId roomId, out long generation) && IsCurrentInRangeResult(mapRoom, info))
+        if (!TryGetAuthority(mapRoom, out NitroxId roomId, out long generation))
         {
-            Send(roomId, generation, info, removed: false);
+            return;
         }
+
+        if (!HasValidResultIdentity(mapRoom, info))
+        {
+            MapRoomScanResults.EvictDiscoveredResource(mapRoom, info);
+            return;
+        }
+        if (!IsWithinCurrentScanRange(mapRoom, info))
+        {
+            MapRoomScanResults.EvictDiscoveredResource(mapRoom, info);
+            SendRangeExit(mapRoom, roomId, generation, info);
+            return;
+        }
+
+        MapRoomScanResults.PreferLiveDiscoveredResource(mapRoom, info);
+        Send(mapRoom, roomId, generation, info, removed: false);
     }
 
     public void BroadcastRemoved(MapRoomFunctionality mapRoom, ResourceTrackerDatabase.ResourceInfo info)
     {
-        if (info != null && info.techType == mapRoom.typeToScan && TryGetAuthority(mapRoom, out NitroxId roomId, out long generation))
+        if (info != null && !string.IsNullOrEmpty(info.uniqueId) && info.techType == mapRoom.typeToScan &&
+            TryGetAuthority(mapRoom, out NitroxId roomId, out long generation))
         {
-            Send(roomId, generation, info, removed: true);
+            // Vanilla removes by reference. Remove any same-ID synthetic/duplicate left behind before
+            // publishing the authoritative removal.
+            MapRoomScanResults.EvictDiscoveredResource(mapRoom, info);
+            Send(mapRoom, roomId, generation, info, removed: true);
         }
     }
 
     public void BroadcastMoved(MapRoomFunctionality mapRoom, ResourceTrackerDatabase.ResourceInfo info)
     {
-        if (info == null || info.techType != mapRoom.typeToScan || !TryGetAuthority(mapRoom, out NitroxId roomId, out long generation))
+        if (info == null || string.IsNullOrEmpty(info.uniqueId) || info.techType != mapRoom.typeToScan ||
+            !TryGetAuthority(mapRoom, out NitroxId roomId, out long generation))
         {
             return;
         }
-        bool removed = !IsCurrentInRangeResult(mapRoom, info);
-        MapRoomScanResultChanged packet = new(roomId, generation, info.uniqueId, info.techType.ToDto(), info.position.ToDto(), removed);
-        throttledPacketSender.SendThrottled(packet, changed => (changed.MapRoomId, changed.ResourceId), 0.5f);
+        bool removed = !IsWithinCurrentScanRange(mapRoom, info);
+        if (removed)
+        {
+            SendRangeExit(mapRoom, roomId, generation, info);
+        }
+        else
+        {
+            MapRoomScanResultChanged packet = CreateChangedPacket(roomId, generation, info, removed: false,
+                isRangeExit: false, mapRoom.wireFrameWorld.position, mapRoom.GetScanRange());
+            throttledPacketSender.SendThrottled(packet, changed => (changed.MapRoomId, changed.ResourceId), 0.5f);
+        }
     }
+
+    public bool ShouldRunVanillaResults(MapRoomFunctionality mapRoom)
+    {
+        MapRoomNetworkState state = mapRoom ? mapRoom.GetComponent<MapRoomNetworkState>() : null;
+        bool hasAuthority = TryGetAuthority(mapRoom, out _, out _);
+        return ShouldRunVanillaResults(state && state.ResultStateInitialized, hasAuthority);
+    }
+
+    internal static bool ShouldRunVanillaResults(bool resultStateInitialized, bool hasAuthority) =>
+        !resultStateInitialized || hasAuthority;
 
     private bool TryGetAuthority(MapRoomFunctionality mapRoom, out NitroxId roomId, out long generation)
     {
@@ -74,11 +112,36 @@ public sealed class MapRoomScanResultBroadcaster(IPacketSender packetSender, Thr
 
     private static bool IsCurrentInRangeResult(MapRoomFunctionality mapRoom, ResourceTrackerDatabase.ResourceInfo info)
     {
-        return info != null && !string.IsNullOrEmpty(info.uniqueId) && info.techType == mapRoom.typeToScan && (mapRoom.wireFrameWorld.position - info.position).sqrMagnitude <= mapRoom.GetScanRange() * mapRoom.GetScanRange();
+        return HasValidResultIdentity(mapRoom, info) && IsWithinCurrentScanRange(mapRoom, info);
     }
 
-    private void Send(NitroxId roomId, long generation, ResourceTrackerDatabase.ResourceInfo info, bool removed)
+    private static bool HasValidResultIdentity(MapRoomFunctionality mapRoom, ResourceTrackerDatabase.ResourceInfo info) =>
+        mapRoom && info != null && !string.IsNullOrEmpty(info.uniqueId) && info.techType == mapRoom.typeToScan;
+
+    private static bool IsWithinCurrentScanRange(MapRoomFunctionality mapRoom, ResourceTrackerDatabase.ResourceInfo info) =>
+        (mapRoom.wireFrameWorld.position - info.position).sqrMagnitude <= mapRoom.GetScanRange() * mapRoom.GetScanRange();
+
+    private void SendRangeExit(MapRoomFunctionality mapRoom, NitroxId roomId, long generation,
+        ResourceTrackerDatabase.ResourceInfo info)
     {
-        packetSender.Send(new MapRoomScanResultChanged(roomId, generation, info.uniqueId, info.techType.ToDto(), info.position.ToDto(), removed));
+        MapRoomScanResultChanged packet = CreateChangedPacket(roomId, generation, info, removed: true,
+            isRangeExit: true, mapRoom.wireFrameWorld.position, mapRoom.GetScanRange());
+        throttledPacketSender.SendThrottled(packet, changed => (changed.MapRoomId, changed.ResourceId), 0.5f);
     }
+
+    private void Send(MapRoomFunctionality mapRoom, NitroxId roomId, long generation, ResourceTrackerDatabase.ResourceInfo info, bool removed)
+    {
+        packetSender.Send(CreateChangedPacket(roomId, generation, info, removed, isRangeExit: false,
+            mapRoom.wireFrameWorld.position, mapRoom.GetScanRange()));
+    }
+
+    internal static MapRoomScanResultChanged CreateChangedPacket(NitroxId roomId, long generation,
+        ResourceTrackerDatabase.ResourceInfo info, bool removed, bool isRangeExit, UnityEngine.Vector3 scanOrigin, float scanRange) =>
+        new(roomId, generation, info.uniqueId, info.techType.ToDto(), info.position.ToDto(), removed, isRangeExit,
+            scanOrigin.ToDto(), scanRange);
+
+    internal static MapRoomScanResultSnapshot CreateSnapshotPacket(NitroxId roomId, long generation,
+        List<Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases.MapRoomScanResultRecord> results,
+        UnityEngine.Vector3 scanOrigin, float scanRange) =>
+        new(roomId, generation, results, scanOrigin.ToDto(), scanRange);
 }

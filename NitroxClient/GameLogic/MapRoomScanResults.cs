@@ -65,6 +65,7 @@ public static class MapRoomScanResults
         ReconcileSnapshot(mapRoom.resourceNodes, results);
         state.ResultGeneration = generation;
         state.ResultRevision = revision;
+        state.ResultStateInitialized = true;
         mapRoom.numNodesScanned = System.Math.Min(mapRoom.numNodesScanned, mapRoom.resourceNodes.Count);
         RefreshResultConsumers(mapRoom);
     }
@@ -87,6 +88,7 @@ public static class MapRoomScanResults
         }
         ApplyDeltaToList(mapRoom.resourceNodes, packet);
         state.ResultRevision = packet.Revision;
+        state.ResultStateInitialized = true;
         mapRoom.numNodesScanned = System.Math.Min(mapRoom.numNodesScanned, mapRoom.resourceNodes.Count);
         RefreshResultConsumers(mapRoom);
     }
@@ -117,15 +119,101 @@ public static class MapRoomScanResults
             return;
         }
         int index = target.FindIndex(info => info.uniqueId == packet.ResourceId);
-        ResourceTrackerDatabase.ResourceInfo updated = ToResourceInfo(packet.ResourceId, packet.TechType, packet.Position.ToUnity());
         if (index >= 0)
         {
-            target[index] = updated;
+            // Preserve a streamed live ResourceInfo reference when the server echoes the canonical position/type.
+            // Vanilla removal later uses object identity, so replacing the live object with a synthetic copy would
+            // leave a ghost node when its cell unloads.
+            ResourceTrackerDatabase.ResourceInfo existing = target[index];
+            existing.uniqueId = packet.ResourceId;
+            existing.techType = packet.TechType.ToUnity();
+            existing.position = packet.Position.ToUnity();
+            for (int duplicateIndex = target.Count - 1; duplicateIndex > index; duplicateIndex--)
+            {
+                if (target[duplicateIndex].uniqueId == packet.ResourceId)
+                {
+                    target.RemoveAt(duplicateIndex);
+                }
+            }
         }
         else
         {
-            target.Add(updated);
+            target.Add(ToResourceInfo(packet.ResourceId, packet.TechType, packet.Position.ToUnity()));
         }
+    }
+
+    /// <summary>
+    ///     Runs after vanilla appended a newly streamed live resource. Replace any synthetic or duplicate
+    ///     stable-ID entries with that exact live object so vanilla's later identity-based removal still works.
+    /// </summary>
+    public static void PreferLiveDiscoveredResource(MapRoomFunctionality mapRoom,
+        ResourceTrackerDatabase.ResourceInfo liveInfo)
+    {
+        if (!mapRoom || !UpsertLiveDiscoveredResource(mapRoom.resourceNodes, liveInfo))
+        {
+            return;
+        }
+        mapRoom.numNodesScanned = System.Math.Min(mapRoom.numNodesScanned, mapRoom.resourceNodes.Count);
+        RefreshResultConsumers(mapRoom);
+    }
+
+    public static bool EvictDiscoveredResource(MapRoomFunctionality mapRoom,
+        ResourceTrackerDatabase.ResourceInfo info)
+    {
+        if (!mapRoom || !EvictDiscoveredResourceFromList(mapRoom.resourceNodes, info))
+        {
+            return false;
+        }
+        mapRoom.numNodesScanned = System.Math.Min(mapRoom.numNodesScanned, mapRoom.resourceNodes.Count);
+        RefreshResultConsumers(mapRoom);
+        return true;
+    }
+
+    internal static bool UpsertLiveDiscoveredResource(List<ResourceTrackerDatabase.ResourceInfo> target,
+        ResourceTrackerDatabase.ResourceInfo liveInfo)
+    {
+        if (target == null || liveInfo == null || string.IsNullOrEmpty(liveInfo.uniqueId))
+        {
+            return false;
+        }
+
+        int firstMatchIndex = target.FindIndex(info => info != null && info.uniqueId == liveInfo.uniqueId);
+        if (firstMatchIndex < 0)
+        {
+            target.Add(liveInfo);
+            return true;
+        }
+
+        int matchCount = 0;
+        bool onlyMatchIsLive = false;
+        foreach (ResourceTrackerDatabase.ResourceInfo info in target)
+        {
+            if (info != null && info.uniqueId == liveInfo.uniqueId)
+            {
+                matchCount++;
+                onlyMatchIsLive = ReferenceEquals(info, liveInfo);
+            }
+        }
+        if (matchCount == 1 && onlyMatchIsLive)
+        {
+            return false;
+        }
+
+        target.RemoveAll(info => info != null && info.uniqueId == liveInfo.uniqueId);
+        target.Insert(System.Math.Min(firstMatchIndex, target.Count), liveInfo);
+        return true;
+    }
+
+    internal static bool EvictDiscoveredResourceFromList(List<ResourceTrackerDatabase.ResourceInfo> target,
+        ResourceTrackerDatabase.ResourceInfo info)
+    {
+        if (target == null || info == null)
+        {
+            return false;
+        }
+        return string.IsNullOrEmpty(info.uniqueId)
+            ? target.RemoveAll(candidate => ReferenceEquals(candidate, info)) > 0
+            : RemoveFromList(target, info.uniqueId);
     }
 
     internal static bool RemoveFromList(List<ResourceTrackerDatabase.ResourceInfo> target, string resourceId)

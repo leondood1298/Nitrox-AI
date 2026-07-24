@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.Unity;
@@ -8,6 +9,7 @@ using Nitrox.Model.Serialization;
 using Nitrox.Model.Server;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities.Spawning;
@@ -20,6 +22,8 @@ namespace Nitrox.Server.Subnautica.Models.Serialization.World;
 
 internal class WorldService : IHostedService
 {
+    private const int SCANNER_ROOM_LOCK_RETRY_DELAY_MS = 1;
+
     private readonly BatchEntitySpawner batchEntitySpawner;
     private readonly EntityRegistry entityRegistry;
     private readonly EscapePodManager escapePodManager;
@@ -32,6 +36,7 @@ internal class WorldService : IHostedService
     private readonly TaskCompletionSource<bool> hasFinishedLoadingTcs = new();
     private readonly SubnauticaServerProtoBufSerializer protoBufSerializer;
     private readonly SaveService saveService;
+    private readonly ScannerRoomDiagnostics scannerRoomDiagnostics;
     private readonly IOptions<ServerStartOptions> startOptions;
     private readonly StoryManager storyManager;
     private readonly StoryScheduler storyScheduler;
@@ -56,6 +61,7 @@ internal class WorldService : IHostedService
         PdaManager pdaManager,
         EscapePodManager escapePodManager,
         SaveService saveService,
+        ScannerRoomDiagnostics scannerRoomDiagnostics,
         IOptions<ServerStartOptions> startOptions,
         ILogger<WorldService> logger)
     {
@@ -73,6 +79,7 @@ internal class WorldService : IHostedService
         this.pdaManager = pdaManager;
         this.escapePodManager = escapePodManager;
         this.saveService = saveService;
+        this.scannerRoomDiagnostics = scannerRoomDiagnostics;
         this.startOptions = startOptions;
         this.logger = logger;
 
@@ -102,7 +109,17 @@ internal class WorldService : IHostedService
             GlobalRootData = GlobalRootData.From(worldEntityManager.GetPersistentGlobalRootEntities()),
             EntityData = EntityData.From(entityRegistry.GetAllEntities(true))
         };
-        return Save(persistedWorld, saveDir);
+        bool saved = Save(persistedWorld, saveDir, () => entityRegistry.GetEntities<MapRoomEntity>(), cancellationToken,
+            out IReadOnlyList<SerializedScannerRoomState> serializedScannerRooms);
+        if (saved)
+        {
+            foreach (SerializedScannerRoomState serializedRoom in serializedScannerRooms)
+            {
+                scannerRoomDiagnostics.RecordCapturedCheckpoint("save", serializedRoom.Room, serializedRoom.Snapshot,
+                    serializedRoom.InvariantFailure, "serialized_snapshot");
+            }
+        }
+        return saved;
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -157,6 +174,15 @@ internal class WorldService : IHostedService
 
     internal bool Save(PersistedWorldData persistedData, string saveDir)
     {
+        IReadOnlyList<MapRoomEntity> scannerRooms = GetSerializedScannerRooms(persistedData.GlobalRootData);
+        return Save(persistedData, saveDir, () => scannerRooms, CancellationToken.None, out _);
+    }
+
+    private bool Save(PersistedWorldData persistedData, string saveDir,
+        Func<IReadOnlyList<MapRoomEntity>> scannerRoomsProvider, CancellationToken cancellationToken,
+        out IReadOnlyList<SerializedScannerRoomState> serializedScannerRooms)
+    {
+        serializedScannerRooms = [];
         try
         {
             Directory.CreateDirectory(saveDir);
@@ -164,16 +190,169 @@ internal class WorldService : IHostedService
             Serializer.Serialize(Path.Combine(saveDir, $"Version{FileEnding}"), new SaveFileVersion());
             Serializer.Serialize(Path.Combine(saveDir, $"PlayerData{FileEnding}"), persistedData.PlayerData);
             Serializer.Serialize(Path.Combine(saveDir, $"WorldData{FileEnding}"), persistedData.WorldData);
-            Serializer.Serialize(Path.Combine(saveDir, $"GlobalRootData{FileEnding}"), persistedData.GlobalRootData);
+            serializedScannerRooms = SerializeGlobalRootDataWithScannerRoomSnapshot(scannerRoomsProvider,
+                () => Serializer.Serialize(Path.Combine(saveDir, $"GlobalRootData{FileEnding}"), persistedData.GlobalRootData),
+                cancellationToken);
+            // The large EntityData payload does not contain Scanner Room global roots and must not extend their lock window.
             Serializer.Serialize(Path.Combine(saveDir, $"EntityData{FileEnding}"), persistedData.EntityData);
 
             logger.ZLogInformation($"World state saved");
             return true;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return false;
+        }
         catch (Exception ex)
         {
             logger.ZLogError(ex, $"Could not save world :");
             return false;
+        }
+    }
+
+    internal static IReadOnlyList<SerializedScannerRoomState> SerializeGlobalRootDataWithScannerRoomSnapshot(
+        Func<IReadOnlyList<MapRoomEntity>> scannerRoomsProvider, Action serialize,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(scannerRoomsProvider);
+        ArgumentNullException.ThrowIfNull(serialize);
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            List<MapRoomEntity> rooms = NormalizeScannerRooms(scannerRoomsProvider());
+            EnterScannerRoomLocks(rooms, cancellationToken);
+
+            List<MapRoomEntity> currentRooms;
+            try
+            {
+                currentRooms = NormalizeScannerRooms(scannerRoomsProvider());
+            }
+            catch
+            {
+                ReleaseScannerRoomLocks(rooms, rooms.Count);
+                throw;
+            }
+
+            if (!rooms.SequenceEqual<MapRoomEntity>(currentRooms, ReferenceEqualityComparer.Instance))
+            {
+                ReleaseScannerRoomLocks(rooms, rooms.Count);
+                PauseBeforeScannerRoomMembershipRetry(cancellationToken);
+                continue;
+            }
+
+            try
+            {
+                serialize();
+                return rooms.Select(room => new SerializedScannerRoomState(
+                                room,
+                                ScannerRoomStateFingerprint.Create(room),
+                                ScannerRoomStateFingerprint.Validate(room)))
+                            .ToArray();
+            }
+            finally
+            {
+                ReleaseScannerRoomLocks(rooms, rooms.Count);
+            }
+        }
+    }
+
+    private static List<MapRoomEntity> NormalizeScannerRooms(IEnumerable<MapRoomEntity> rooms)
+    {
+        ArgumentNullException.ThrowIfNull(rooms);
+        return rooms.Where(room => room != null)
+                    .Distinct<MapRoomEntity>(ReferenceEqualityComparer.Instance)
+                    .OrderBy(room => room.Id.ToString(), StringComparer.Ordinal)
+                    .ToList();
+    }
+
+    private static List<MapRoomEntity> GetSerializedScannerRooms(GlobalRootData globalRootData)
+    {
+        HashSet<Entity> visited = new(ReferenceEqualityComparer.Instance);
+        Stack<Entity> pending = new(globalRootData.Entities.OfType<Entity>().Reverse());
+        List<MapRoomEntity> rooms = [];
+
+        while (pending.TryPop(out Entity? entity))
+        {
+            if (!visited.Add(entity))
+            {
+                continue;
+            }
+            if (entity is MapRoomEntity room)
+            {
+                rooms.Add(room);
+            }
+            foreach (Entity child in entity.ChildEntities)
+            {
+                if (child != null)
+                {
+                    pending.Push(child);
+                }
+            }
+        }
+
+        return NormalizeScannerRooms(rooms);
+    }
+
+    internal static void EnterScannerRoomLocks(IReadOnlyList<MapRoomEntity> rooms, CancellationToken cancellationToken)
+    {
+        // Docking can hold a target room while inspecting a source room. Never wait while holding a partial
+        // ID-ordered set, otherwise that target-to-source path can invert this order and deadlock a save.
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            int acquired = 0;
+            try
+            {
+                while (acquired < rooms.Count && Monitor.TryEnter(rooms[acquired]))
+                {
+                    acquired++;
+                }
+                if (acquired == rooms.Count)
+                {
+                    return;
+                }
+            }
+            catch
+            {
+                ReleaseScannerRoomLocks(rooms, acquired);
+                throw;
+            }
+
+            MapRoomEntity contendedRoom = rooms[acquired];
+            ReleaseScannerRoomLocks(rooms, acquired);
+            WaitForContendedScannerRoom(contendedRoom, cancellationToken);
+        }
+    }
+
+    private static void WaitForContendedScannerRoom(MapRoomEntity room, CancellationToken cancellationToken)
+    {
+        // Wait on the contended room alone. In particular, do not reacquire lower-ID rooms while a dock transfer
+        // holds this room and needs one of them to finish.
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (Monitor.TryEnter(room, SCANNER_ROOM_LOCK_RETRY_DELAY_MS))
+            {
+                Monitor.Exit(room);
+                Thread.Yield();
+                return;
+            }
+        }
+    }
+
+    private static void PauseBeforeScannerRoomMembershipRetry(CancellationToken cancellationToken)
+    {
+        // Avoid a hot loop while a room is being added to or removed from the registry.
+        Thread.Sleep(SCANNER_ROOM_LOCK_RETRY_DELAY_MS);
+        cancellationToken.ThrowIfCancellationRequested();
+    }
+
+    private static void ReleaseScannerRoomLocks(IReadOnlyList<MapRoomEntity> rooms, int acquired)
+    {
+        for (int index = acquired - 1; index >= 0; index--)
+        {
+            Monitor.Exit(rooms[index]);
         }
     }
 
@@ -190,6 +369,22 @@ internal class WorldService : IHostedService
             };
             EntityDataPostProcessing(persistedData.EntityData);
             GlobalRootDataPostProcessing(persistedData.GlobalRootData);
+            IReadOnlyList<BuildEntity> removedEmptyBuildEntities = RemoveChildlessStructurallyEmptyBuildEntities(persistedData.GlobalRootData);
+            foreach (BuildEntity buildEntity in removedEmptyBuildEntities)
+            {
+                logger.ZLogWarning($"Removed childless structurally empty base {buildEntity.Id} while loading the save.");
+            }
+            foreach (BuildEntity buildEntity in persistedData.GlobalRootData.Entities.OfType<BuildEntity>())
+            {
+                if (!buildEntity.TryIsStructurallyEmpty(out bool isStructurallyEmpty))
+                {
+                    logger.ZLogError($"Base {buildEntity.Id} has malformed cell data and was retained for manual recovery.");
+                }
+                else if (isStructurallyEmpty)
+                {
+                    logger.ZLogError($"Base {buildEntity.Id} is structurally empty but has {buildEntity.ChildEntities.Count} child entities, so the server retained and clients will quarantine it for manual recovery.");
+                }
+            }
 
             if (!persistedData.IsValid())
             {
@@ -317,6 +512,24 @@ internal class WorldService : IHostedService
         }
     }
 
+    internal static IReadOnlyList<BuildEntity> RemoveChildlessStructurallyEmptyBuildEntities(GlobalRootData globalRootData)
+    {
+        List<BuildEntity> removedBuildEntities = [];
+        foreach (BuildEntity buildEntity in globalRootData.Entities.OfType<BuildEntity>().ToList())
+        {
+            if (!buildEntity.TryIsStructurallyEmpty(out bool isStructurallyEmpty) ||
+                !isStructurallyEmpty ||
+                buildEntity.ChildEntities.Count != 0)
+            {
+                continue;
+            }
+
+            globalRootData.Entities.Remove(buildEntity);
+            removedBuildEntities.Add(buildEntity);
+        }
+        return removedBuildEntities;
+    }
+
     // TODO: This method should be removed. Each service should load its own data instead of centralizing it here.
     private async Task LoadPersistedWorldIntoServicesAsync(PersistedWorldData pWorldData)
     {
@@ -379,6 +592,10 @@ internal class WorldService : IHostedService
             return false;
         }
         await LoadPersistedWorldIntoServicesAsync(persistedData);
+        foreach (MapRoomEntity room in entityRegistry.GetEntities<MapRoomEntity>())
+        {
+            scannerRoomDiagnostics.RecordCheckpoint("load", room);
+        }
         return true;
     }
 
@@ -461,3 +678,8 @@ internal class WorldService : IHostedService
         }
     }
 }
+
+internal readonly record struct SerializedScannerRoomState(
+    MapRoomEntity Room,
+    ScannerRoomStateSnapshot Snapshot,
+    string? InvariantFailure);

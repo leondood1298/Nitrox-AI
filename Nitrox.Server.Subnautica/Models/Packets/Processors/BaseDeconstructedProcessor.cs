@@ -8,20 +8,40 @@ using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
-internal sealed class BaseDeconstructedProcessor(BuildingManager buildingManager, EntityRegistry entityRegistry, MapRoomDeconstructionCleanup mapRoomCleanup) : BuildingProcessor<BaseDeconstructed>(buildingManager)
+internal sealed class BaseDeconstructedProcessor(BuildingManager buildingManager, EntityRegistry entityRegistry,
+    MapRoomDeconstructionCleanup mapRoomCleanup, MapRoomLifecycle roomLifecycle,
+    MapRoomCameraControlLifecycle cameraControlLifecycle) : BuildingProcessor<BaseDeconstructed>(buildingManager)
 {
     public override async Task Process(AuthProcessorContext context, BaseDeconstructed packet)
     {
         List<MapRoomEntity> removedMapRooms = entityRegistry.TryGetEntityById(packet.FormerBaseId, out Entity root)
             ? Descendants(root).OfType<MapRoomEntity>().ToList()
             : [];
-        if (BuildingManager.ReplaceBaseByGhost(packet))
+        IReadOnlyList<IDisposable> roomGates = await roomLifecycle.EnterManyAsync(removedMapRooms.Select(room => room.Id));
+        try
         {
             foreach (MapRoomEntity mapRoom in removedMapRooms)
             {
-                await mapRoomCleanup.CleanupAsync(mapRoom, context);
+                lock (mapRoom)
+                {
+                    foreach (MapRoomCameraRecord camera in mapRoom.CameraRegistry)
+                    {
+                        cameraControlLifecycle.RememberKnown(camera.CameraId);
+                    }
+                }
             }
-            await context.SendToOthersAsync(packet);
+            if (BuildingManager.ReplaceBaseByGhost(packet))
+            {
+                foreach (MapRoomEntity mapRoom in removedMapRooms)
+                {
+                    await mapRoomCleanup.CleanupAsync(mapRoom, context);
+                }
+                await context.SendToOthersAsync(packet);
+            }
+        }
+        finally
+        {
+            MapRoomLifecycle.ReleaseReverse(roomGates);
         }
     }
 

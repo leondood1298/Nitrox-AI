@@ -216,7 +216,10 @@ internal sealed class BuildingManager
         {
             if (entityRegistry.TryGetEntityById(updatedMapRoom.Key, out MapRoomEntity childEntity))
             {
-                childEntity.Cell = updatedMapRoom.Value;
+                lock (childEntity)
+                {
+                    childEntity.Cell = updatedMapRoom.Value;
+                }
             }
         }
 

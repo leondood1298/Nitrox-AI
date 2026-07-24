@@ -7,7 +7,8 @@ using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
-internal sealed class PlayerUnseeOutOfCellEntityProcessor(SimulationOwnershipData simulationOwnershipData, PlayerManager playerManager, EntitySimulation entitySimulation, EntityRegistry entityRegistry)
+internal sealed class PlayerUnseeOutOfCellEntityProcessor(SimulationOwnershipData simulationOwnershipData, PlayerManager playerManager,
+    EntitySimulation entitySimulation, EntityRegistry entityRegistry, MapRoomCameraControlReleaseFactory cameraControlReleaseFactory)
     : IAuthPacketProcessor<PlayerUnseeOutOfCellEntity>
 {
     private readonly SimulationOwnershipData simulationOwnershipData = simulationOwnershipData;
@@ -28,6 +29,15 @@ internal sealed class PlayerUnseeOutOfCellEntityProcessor(SimulationOwnershipDat
         {
             return;
         }
+        // Visibility refreshes must not implicitly end active remote camera control. That lifecycle
+        // is released explicitly by the control, pickup, docking, destruction, or disconnect path.
+        if (simulationOwnershipData.TryGetLock(packet.EntityId, out SimulationOwnershipData.PlayerLock currentLock) &&
+            currentLock.Player == context.Sender && currentLock.LockType == SimulationLockType.EXCLUSIVE &&
+            cameraControlReleaseFactory.IsScannerCamera(packet.EntityId))
+        {
+            return;
+        }
+
         // If the player doesn't own the entity's simulation then we don't need to do anything
         if (!simulationOwnershipData.RevokeIfOwner(packet.EntityId, context.Sender))
         {
