@@ -34,7 +34,15 @@ These checks exhaust the deterministic, serialization, process, packaging, and i
 - Full Release suite: `650 passed / 8 skipped / 0 failed` (`658 total`). The eight skips are the same pre-existing platform/filesystem cases.
 - Release solution build: `0` errors and `42` existing analyzer warning emissions across `net10.0` and `net472`.
 - Packet-processor DI resolution: `1 passed / 0 failed`. Windows PowerShell 5.1 evidence-summary self-test: `PASS`. `git diff --check`: clean. Independent review found no remaining P0–P2 issue.
-- Automated qualification is `PASS`. Immutable-package verification is pending the clean pushed commit; neither result promotes a real-game matrix row.
+- Automated qualification for exact branch commit `70ef86d3284eb197686d8721da83440fec3ab775` is `PASS`: the full Release suite passed `661`, skipped the same `8` platform/filesystem cases, and failed `0`. Its immutable package also passed manifest, runtime, fresh-extraction, installed-copy, launcher, and two-boot server verification. Neither result promotes a real-game matrix row.
+
+### Owner-authorized intermediate release (2026-07-24)
+
+- The owner explicitly waived the unrun post-save recovery restart and every formal Scanner Room matrix row for the `custom-build-1.16.25-final` intermediate release. The owner authorized a protected pull request, merge to `master`, exact-`master` requalification, fresh packaging, and GitHub release, and accepted the held-camera presentation defect below as deferred.
+- This waiver is not Phase 1 completion or formal multiplayer acceptance. Every R/S/P/F/D/N row and the formal real-game result remain `NOT RUN`; Phase 1 stays open and those cases remain future work.
+- In the exact `70ef86d3284eb197686d8721da83440fec3ab775` two-client `gottem` smoke, pickup by another player correctly revoked active camera control and both cameras were subsequently redocked. The picker briefly saw the held camera above/in front of the avatar; switching toolbar items corrected it. Treat this as a deferred low-severity client-local cosmetic known issue.
+- The same smoke passed the first-load/save half of stale empty-base recovery with no paired client NRE and with the valid Scanner base preserved. It used the live save rather than an isolated copy, and no post-save restart occurred; those boundaries remain explicit.
+- After the release, ongoing development continues on `agent/nitrox-ai-development`, synchronized to the released `master` commit.
 
 ## Scope and source state
 
@@ -100,11 +108,15 @@ These checks exhaust the deterministic, serialization, process, packaging, and i
 
 ## Sign-off
 
-- Automated qualification: earlier scan/preview repair `PASS`; current player-body/loose-camera restore follow-up `PASS`
-- Replacement immutable package: `PENDING`
+- Automated qualification: earlier scan/preview repair `PASS`; current exact-branch qualification `PASS` (`661 passed / 8 skipped / 0 failed`)
+- Exact-branch immutable package: `PASS` — `scanner-room-70ef86d3284e-q772a1be7-20260724T204353Z-win-x64`, SHA-256 `80012280B5E227A046ADE739B41F22574161DFAD96F608C7B03AAE475FC5E0E3`
 - 2026-07-18 exploratory smoke: prior diagnostic invariant failures are fixed and did not recur in the replacement run
-- 2026-07-19 replacement smoke: `FAIL` on scan discovery and camera preview presentation in the superseded package; both fixes now pass automated qualification and await the targeted two-client retest
-- 2026-07-19 e59 targeted smoke: scan discovery and preview behaved correctly; one intermittent observer-body drift and one loose-camera restore/selectability failure await the replacement-package retest
+- 2026-07-19 replacement smoke: `FAIL` on scan discovery and camera preview presentation in the superseded package; both fixes later passed automated qualification and targeted live follow-up
+- 2026-07-19 e59 targeted smoke: scan discovery and preview behaved correctly; its intermittent observer-body drift and loose-camera restore/selectability failures were repaired and did not recur in the 2026-07-24 follow-up
+- 2026-07-24 exact-build targeted smoke: `PASS` within its exploratory scope; restore/control/switch/preview/body anchoring/recharge, pickup-forced release, and redocking passed
+- Intermediate-release waiver: `APPROVED 2026-07-24`; post-save restart and formal matrix remain `NOT RUN`
+- Held-camera cosmetic: `ACCEPTED / DEFERRED`
+- Phase 1 acceptance: `OPEN`
 - Formal server/client matrix evidence: `NOT RUN`
 - Save before/after formal real-game matrix: `NOT RUN`
 - Real-game result: `NOT RUN`

@@ -98,29 +98,30 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Keep the physical player anchored at the Scanner Room console with zero-velocity broadcasts during camera control and bounded `[SRD1] player_body_pin` diagnostics
 - [x] Preserve loose-camera record/light/component state across restore ordering with a durable cache, initial-load barrier, and camera-instance battery initialization
 - [x] Qualify the body-anchor/restore follow-up: focused Release/Debug `40/40`, broader relevant `352/352`, full Release `650 passed / 8 skipped / 0 failed`, build `0` errors
+- [x] Build and verify exact `70ef86d3` immutable package `scanner-room-70ef86d3284e-q772a1be7-20260724T204353Z-win-x64`
+- [x] Complete and audit the targeted two-client smoke: restore/control/switch/preview/body anchoring/recharge, pickup-forced release, and redocking passed
+- [x] Record the self-clearing held-camera offset as a deferred low-severity client-local cosmetic issue
+- [x] Record the owner's intermediate-release waiver and authorization without promoting any formal matrix row or completing Phase 1
 
 ## Remaining
 
-- [ ] Build and verify the next immutable Drive package from the clean pushed commit
-- [ ] Run the short two-client `gottem` reload/control smoke: retain both loose cameras, switch A-B-A, keep the observer-visible body at the console, and exit normally
-- [ ] Preserve the server and both client logs from that smoke; do not promote a formal matrix row from it
-- [ ] Restart once after a Scanner Room autosave when broader exploratory persistence work resumes
-- [ ] Execute in-game acceptance matrix (`SCANNER_ROOM_ACCEPTANCE.md`; requires 2–3 game clients)
+- [ ] Open a protected PR to `master`, merge, requalify the exact merge commit, build a fresh exact-`master` artifact, and publish `custom-build-1.16.25-final`
+- [ ] Fast-forward `agent/nitrox-ai-development` to released `master` and continue Phase 1 development there
+- [ ] Restart once after a Scanner Room save and execute the formal matrix before Phase 1 completion; these gates were waived only for this intermediate release
+- [ ] Undock camera 1, restart, and verify it persists loose instead of vanishing or duplicating (#51)
+- [ ] Verify Shale HUD markers disappear for collector and observer after local break cleanup (#51)
 
 ## Next
 
-- [ ] Reload `gottem` with both cameras loose and confirm both retain charge/health and remain selectable
-- [ ] Have client 1 drive camera A while client 2 verifies the player body remains at the console; switch A-B-A, exit, and confirm ordinary player movement resumes
-- [ ] Collect the server log and both client logs; no full matrix, PowerShell scripts, or deliberate base-power test is required for this smoke
-- [ ] Undock camera 1, restart, and verify it persists loose instead of vanishing or duplicating (#51)
-- [ ] Verify shale HUD markers disappear for collector and observer after local break cleanup (#51)
-- [ ] Execute in-game acceptance matrix (`SCANNER_ROOM_ACCEPTANCE.md`; requires 2–3 game clients)
+- [ ] Complete the protected intermediate-release workflow without changing any formal `NOT RUN` row
+- [ ] Resume Phase 1 development on `agent/nitrox-ai-development` from the released `master` commit
+- [ ] Select the next bounded correctness goal while preserving the deferred restart/matrix work
 
 ## Rules
 
 - Push only to `leondood1298/Nitrox-AI`; upstream push stays disabled.
-- One focused draft PR at a time; merge before starting the next branch.
-- Publish interim two-client test artifacts as immutable Drive packages. Reserve GitHub releases/prereleases for an intentional release milestone.
-- Keep updating the current Scanner Room repair PR until the user merges it.
+- One focused PR at a time; merge before starting the next branch.
+- Publish interim two-client test artifacts as immutable Drive packages. GitHub releases are reserved for phase completion or an explicitly owner-designated intermediate milestone whose open gates remain visible.
+- Use `agent/nitrox-ai-development` as the durable project branch; merge through protected PRs, then synchronize it to released `master` before continuing.
 - Preserve unrelated custom fixes.
 - Build and run the full test suite before every PR.
