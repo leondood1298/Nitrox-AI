@@ -17,6 +17,8 @@ internal static class MapRoomTopologyAuthority
         }
 
         HashSet<NitroxInt3> cells = [];
+        MapRoomEntity? builtRoom = update.BuiltPieceEntity as MapRoomEntity;
+        bool builtRoomValidated = builtRoom == null;
         foreach ((NitroxId roomId, NitroxInt3 cell) in update.UpdatedMapRooms)
         {
             if (!cells.Add(cell))
@@ -25,18 +27,36 @@ internal static class MapRoomTopologyAuthority
             }
             if (!entityRegistry.TryGetEntityById(roomId, out MapRoomEntity room))
             {
-                return false;
+                if (builtRoom == null ||
+                    builtRoomValidated ||
+                    builtRoom.Id != roomId ||
+                    builtRoom.Id != update.FormerGhostId ||
+                    builtRoom.Cell != cell ||
+                    builtRoom.ParentId != update.BaseId ||
+                    !IsPendingMapRoomGhost(entityRegistry, update))
+                {
+                    return false;
+                }
+                room = builtRoom;
+                builtRoomValidated = true;
             }
             if (!IsAllowedParent(room.ParentId, update.BaseId, update.ChildrenTransfer))
             {
                 return false;
             }
         }
-        return true;
+        return builtRoomValidated;
     }
 
     public static bool IsAllowedParent(NitroxId? roomParentId, NitroxId baseId, (NitroxId From, NitroxId To) transfer)
     {
         return roomParentId == baseId || (transfer.To == baseId && transfer.From != null && roomParentId == transfer.From);
+    }
+
+    private static bool IsPendingMapRoomGhost(EntityRegistry entityRegistry, UpdateBase update)
+    {
+        return entityRegistry.TryGetEntityById(update.FormerGhostId, out GhostEntity ghost) &&
+               ghost.TechType?.Name == "BaseMapRoom" &&
+               ghost.ParentId == update.BaseId;
     }
 }
