@@ -13,8 +13,10 @@ public sealed class MapRoomCameraDocking_DockCamera_Patch : NitroxPatch, IDynami
 
 	public static void Postfix(MapRoomCameraDocking __instance, MapRoomCamera camera)
 	{
-		MapRoomCameras.EnsureCameraId(__instance, camera);
-		NitroxPatch.Resolve<MapRoomCameras>().BroadcastDock(__instance, camera);
+		if (MapRoomCameras.EnsureCameraId(__instance, camera))
+		{
+			NitroxPatch.Resolve<MapRoomCameras>().BroadcastDock(__instance, camera);
+		}
 	}
 
 	[GeneratedCode("Nitrox.Analyzers", "1.0.13.0")]

@@ -287,17 +287,19 @@ public sealed class MapRoomCameraPreviewProcessorTest
     }
 
     [TestMethod]
-    public async Task GenericDowngradeEndsPreviewEligibility()
+    public async Task GenericDowngradeCannotReplaceCanonicalControlRelease()
     {
         ScannerRoomScenarioFixture scenario = await CreateControlledScenarioAsync();
-        Assert.IsTrue((await scenario.RequestOwnershipAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId,
-            SimulationLockType.TRANSIENT)).LockAcquired);
+        Assert.IsFalse((await scenario.RequestOwnershipAsync(scenario.PlayerA,
+            ScannerRoomScenarioFixture.CameraAId, SimulationLockType.TRANSIENT)).LockAcquired);
         Assert.IsTrue(scenario.Ownership.TryGetLock(ScannerRoomScenarioFixture.CameraAId,
-            out SimulationOwnershipData.PlayerLock downgradedLock));
-        Assert.AreEqual(SimulationLockType.TRANSIENT, downgradedLock.LockType,
-            "Only explicit ownership requests retain downgrade semantics.");
-        Assert.IsTrue((await scenario.RequestOwnershipAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId,
-            SimulationLockType.EXCLUSIVE)).LockAcquired);
+            out SimulationOwnershipData.PlayerLock preservedLock));
+        Assert.AreEqual(SimulationLockType.EXCLUSIVE, preservedLock.LockType,
+            "Only the canonical MapRoomCameraControl release may end active camera control.");
+        Assert.IsTrue(scenario.ControlLifecycle.IsActiveController(
+            ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA.SessionId));
+        Assert.IsTrue((await scenario.RequestOwnershipAsync(scenario.PlayerA,
+            ScannerRoomScenarioFixture.CameraAId, SimulationLockType.EXCLUSIVE)).LockAcquired);
         MapRoomCameraPreviewProcessor processor = new(scenario.Ownership, scenario.EntityRegistry,
             scenario.ControlLifecycle, scenario.Diagnostics);
         RecordingSender sender = new();
@@ -306,8 +308,8 @@ public sealed class MapRoomCameraPreviewProcessorTest
             new MapRoomCameraPreview(ScannerRoomScenarioFixture.CameraAId, 1,
                 MapRoomCameraPreviewImageTest.CreateJpeg(64, 64)));
 
-        Assert.AreEqual(0, sender.ToAll.Count);
-        Assert.AreEqual(1, sender.Replies.Count(packet => !packet.Granted));
+        Assert.AreEqual(1, sender.ToAll.Count);
+        Assert.AreEqual(0, sender.Replies.Count);
     }
 
     private static async Task<ScannerRoomScenarioFixture> CreateControlledScenarioAsync()

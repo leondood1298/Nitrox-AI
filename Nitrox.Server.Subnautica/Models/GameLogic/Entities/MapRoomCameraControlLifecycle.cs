@@ -54,6 +54,12 @@ internal sealed class MapRoomCameraControlLifecycle
         return true;
     }
 
+    internal bool IsActiveController(NitroxId cameraId, SessionId controllerSessionId) =>
+        previewAcquisitions.TryGetValue(cameraId, out PreviewAcquisition current) &&
+        current.ControllerSessionId == controllerSessionId;
+
+    internal bool HasActiveController(NitroxId cameraId) => previewAcquisitions.ContainsKey(cameraId);
+
     internal void EndPreviewAcquisition(NitroxId cameraId, SessionId controllerSessionId)
     {
         if (previewAcquisitions.TryGetValue(cameraId, out PreviewAcquisition current) &&
