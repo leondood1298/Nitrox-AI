@@ -109,7 +109,7 @@ Update this file after each completed work slice. Keep entries short; link the P
 
 ## Remaining
 
-- [ ] Retest D0 from an unpolluted checkpoint with both clients present for construction; preserve both client logs and compare the two canonical IDs before control and after pickup/drop
+- [ ] Retest D0 from an unpolluted checkpoint with both clients present for construction; test camera movement observation in both directions, have the non-builder perform pickup/drop/redock, preserve both client logs, and compare canonical IDs/counts throughout
 - [ ] Separate camera creation provenance from generic pickup/drop packets before adding a server-side unknown-camera admission gate; preserve crafted, console-created, and legacy loose cameras
 - [ ] Restart once after a Scanner Room save and execute the formal matrix before Phase 1 completion; these gates were waived only for this intermediate release
 - [ ] Undock camera 1, restart, and verify it persists loose instead of vanishing or duplicating (#51)
