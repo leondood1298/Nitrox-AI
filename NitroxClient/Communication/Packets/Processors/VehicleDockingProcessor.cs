@@ -29,11 +29,7 @@ internal sealed class VehicleDockingProcessor(Vehicles vehicles) : IClientPacket
             return Task.CompletedTask;
         }
 
-        if (vehicle.TryGetComponent(out VehicleMovementReplicator vehicleMovementReplicator))
-        {
-            vehicleMovementReplicator.enabled = false;
-            Log.Debug($"[{nameof(VehicleDockingProcessor)}] Disabled VehicleMovementReplicator on {packet.VehicleId}");
-        }
+        VehicleMovementReplicator vehicleMovementReplicator = vehicle.GetComponent<VehicleMovementReplicator>();
 
         vehicle.StartCoroutine(DelayAnimationAndDisablePiloting(vehicle, vehicleMovementReplicator, dockingBay, packet.VehicleId, packet.SessionId));
         return Task.CompletedTask;

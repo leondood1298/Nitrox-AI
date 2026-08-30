@@ -1,14 +1,13 @@
 using System.Reflection;
-using NitroxClient.Communication.Abstract;
-using NitroxClient.GameLogic;
-using NitroxClient.MonoBehaviours.Vehicles;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.Packets;
+using NitroxClient.Communication.Abstract;
+using NitroxClient.GameLogic;
 
 namespace NitroxPatcher.Patches.Dynamic;
 
 /// <summary>
-/// Broadcasts the exosuit grab by Sea Dragons (if local player has remote control of them) and temporarily disables exosuit's position sync while they're grabbed.
+/// Broadcasts simulated Sea Dragons exosuit grabbing.
 /// </summary>
 public sealed partial class SeaDragon_GrabExosuit_Patch : NitroxPatch, IDynamicPatch
 {
@@ -16,11 +15,6 @@ public sealed partial class SeaDragon_GrabExosuit_Patch : NitroxPatch, IDynamicP
 
     public static void Prefix(SeaDragon __instance, Exosuit exosuit)
     {
-        if (exosuit.TryGetComponent(out VehicleMovementReplicator vehicleMovementReplicator))
-        {
-            vehicleMovementReplicator.enabled = false;
-        }
-
         if (__instance.TryGetNitroxId(out NitroxId seaDragonId) && Resolve<SimulationOwnership>().HasAnyLockType(seaDragonId) &&
             exosuit.TryGetNitroxId(out NitroxId targetId))
         {
