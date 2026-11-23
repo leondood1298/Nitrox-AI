@@ -27,7 +27,7 @@ internal sealed class BasePowerSourceUpdateProcessor(EntityRegistry entityRegist
             return;
         }
 
-        diagnostics.RecordAccepted();
+        diagnostics.RecordAccepted(packet.SourceId, context.Sender.SessionId, accepted);
         if (diagnostics.TraceEnabled)
         {
             logger.ZLogInformation($"[BasePower] accepted {accepted.SourceType} source {packet.SourceId}: {accepted.Power:F2}/{accepted.MaxPower:F2}, fuel progress {accepted.FuelConsumed:F2}, revision {accepted.Revision}, client sequence {packet.ClientSequence}, owner {context.Sender.Name} #{context.Sender.SessionId}");
@@ -38,10 +38,8 @@ internal sealed class BasePowerSourceUpdateProcessor(EntityRegistry entityRegist
 
     private async Task Reject(AuthProcessorContext context, BasePowerSourceUpdate packet, PowerSourceMetadata canonical, string reason)
     {
-        diagnostics.RecordRejected();
-        // An owner sends an update per source every second, so a client that keeps being rejected would fill the log.
-        // The count is in the basepower command.
-        logger.ZLogDebug($"[BasePower] rejected source {packet.SourceId} update from {context.Sender.Name} #{context.Sender.SessionId}: {reason}");
+        // An owner sends an update per source every second, so the diagnostics thin out the repeats of a rejection.
+        diagnostics.RecordRejected(packet.SourceId, context.Sender.SessionId, canonical, reason);
         await context.ReplyAsync(Response(packet, canonical, false, reason));
     }
 

@@ -18,12 +18,13 @@ internal sealed class BasePowerSourceUpdateProcessor(BasePowerState state, BaseP
         PowerSourceMetadata requested = new(packet.Power, packet.MaxPower, packet.SourceType, packet.Revision, packet.FuelConsumed);
         if (!state.TryApply(packet.SourceId, requested, out PowerSourceMetadata accepted))
         {
+            diagnostics.RecordSourceStale(packet.SourceId, requested, accepted);
             return Task.CompletedTask;
         }
         if (!packet.Granted)
         {
-            // Not a warning: a rejection follows every update this client keeps sending, up to once a second per source
-            Log.Debug($"[BasePower] Server rejected source {packet.SourceId} sequence {packet.ClientSequence}: {packet.RejectionReason}. Restoring revision {packet.Revision}.");
+            // Not a warning, and thinned out: a rejection follows every update this client keeps sending, up to once a second per source
+            diagnostics.RecordSourceRejected(packet.SourceId, accepted, packet.RejectionReason);
         }
         bool objectFound = NitroxEntity.TryGetComponentFrom(packet.SourceId, out PowerSource powerSource);
         if (objectFound)

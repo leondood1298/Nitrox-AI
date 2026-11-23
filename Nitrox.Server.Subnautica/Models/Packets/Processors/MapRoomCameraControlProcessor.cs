@@ -54,6 +54,7 @@ internal sealed class MapRoomCameraControlProcessor(SimulationOwnershipData simu
             if (!granted && unusableReason == null && takenFromAnotherPlayer && CanPreempt(previousLock.LockType, controlLifecycle.IsActiveController(packet.CameraId, previousLock.Player.SessionId)))
             {
                 simulationOwnershipData.ForceAcquire(packet.CameraId, context.Sender, SimulationLockType.EXCLUSIVE);
+                diagnostics.RecordAccepted("control_preempt", GetRoom(packet.MapRoomId), packet.CameraId, previousLock.Player.SessionId, packet.CameraIndex, $"exclusive_lock_taken_by_{context.Sender.SessionId}");
                 granted = true;
             }
             SessionId controller = granted ? context.Sender.SessionId : simulationOwnershipData.GetPlayerForLock(packet.CameraId)?.SessionId ?? context.Sender.SessionId;
