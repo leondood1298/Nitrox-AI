@@ -1,4 +1,3 @@
-using System;
 using System.Reflection;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Helper;
@@ -65,7 +64,7 @@ public sealed partial class Bed_OnHandClick_Patch : NitroxPatch, IDynamicPatch
         else
         {
             target.gameObject.AddComponent<DenyOwnershipHand>();
-            ErrorMessage.AddMessage("Another player is using this bed");
+            ErrorMessage.AddMessage(Language.main.Get("Nitrox_DenyOwnershipHand"));
         }
     }
 }

@@ -1,31 +1,30 @@
-using System;
-using System.Reflection;
-using Nitrox.Model.Helper;
+﻿using System.Reflection;
+using Nitrox.Model.DataStructures;
 using NitroxClient.GameLogic;
+using NitroxClient.GameLogic.PlayerLogic;
 
 namespace NitroxPatcher.Patches.Dynamic;
 
 public sealed partial class FireExtinguisher_Update_Patch : NitroxPatch, IDynamicPatch
 {
-    private static readonly MethodInfo TARGET_METHOD = Reflect.Method((FireExtinguisher t) => t.Update());
-
-    private static bool localWasSpraying;
+    public static readonly MethodInfo TARGET_METHOD = Reflect.Method((FireExtinguisher t) => t.Update());
 
     public static bool Prefix(FireExtinguisher __instance)
     {
-        if (Player.main)
+        if (__instance.transform.TryGetComponentInAscendance(12, out RemotePlayerIdentifier identifier))
         {
-            return ((PlayerTool)__instance).usingPlayer == Player.main;
+            Resolve<FireExtinguishers>().RemoteUpdate(__instance, identifier);
+            return false;
         }
-        return false;
+
+        return true;
     }
 
-    public static void Postfix(FireExtinguisher __instance)
+    public static void Postfix(FireExtinguisher __instance, bool __runOriginal)
     {
-        if (Player.main && ((PlayerTool)__instance).usingPlayer == Player.main && __instance.fxIsPlaying != localWasSpraying)
+        if (__runOriginal && __instance.TryGetNitroxId(out NitroxId id))
         {
-            localWasSpraying = __instance.fxIsPlaying;
-            Resolve<LocalPlayer>().BroadcastFireExtinguisherUse(__instance.fxIsPlaying);
+            Resolve<FireExtinguishers>().BroadcastLocalState(id, __instance);
         }
     }
 }

@@ -373,9 +373,9 @@ event:/player/damage;false;false;20
 event:/player/data_terminal_use;false;false;0
 event:/player/depth_100;false;false;0
 event:/player/depth_200;false;false;0
-event:/player/drink;false;false;0
-event:/player/drink_stillsuit;false;false;0
-event:/player/eat;false;false;0
+event:/player/drink;true;false;20
+event:/player/drink_stillsuit;true;false;20
+event:/player/eat;true;false;20
 event:/player/elevator_down;false;false;0
 event:/player/elevator_up;false;false;0
 event:/player/end_freedive;false;false;0
@@ -622,7 +622,7 @@ event:/player/surface_tank;false;false;20
 event:/player/swim_surface;false;false;20
 event:/player/swim_underwater;true;false;20
 event:/player/thirsty_damage;true;false;20
-event:/player/use_first_aid;false;false;0
+event:/player/use_first_aid;true;false;20
 event:/player/vitals_ok;false;false;0
 event:/player/vomit;false;false;0
 event:/player/water_critical;false;false;0
@@ -987,7 +987,7 @@ event:/tools/dolls/mark;false;false;0
 event:/tools/extinguisher/deploy;false;false;0
 event:/tools/extinguisher/first use;false;false;0
 event:/tools/extinguisher/shoot;false;false;0
-event:/tools/extinguisher/use_loop;false;false;0
+event:/tools/extinguisher/use_loop;false;false;30
 event:/tools/flare/deploy;false;false;20
 event:/tools/flare/first_use;false;false;20
 event:/tools/flare/on_loop;false;false;20

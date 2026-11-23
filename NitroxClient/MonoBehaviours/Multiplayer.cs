@@ -34,6 +34,7 @@ namespace NitroxClient.MonoBehaviours
         private IPacketSender packetSender;
         private ThrottledPacketSender throttledPacketSender;
         private BasePowerConsumptionForwarder basePowerConsumptionForwarder;
+        private CreatureHealthManager creatureHealthManager;
         private GameLogic.Terrain terrain;
 
         public bool InitialSyncCompleted { get; set; }
@@ -56,6 +57,7 @@ namespace NitroxClient.MonoBehaviours
             packetSender = NitroxServiceLocator.LocateService<IPacketSender>();
             throttledPacketSender = NitroxServiceLocator.LocateService<ThrottledPacketSender>();
             basePowerConsumptionForwarder = NitroxServiceLocator.LocateService<BasePowerConsumptionForwarder>();
+            creatureHealthManager = NitroxServiceLocator.LocateService<CreatureHealthManager>();
             terrain = NitroxServiceLocator.LocateService<GameLogic.Terrain>();
             packetProcessorContext = new ClientProcessorContext(packetSender);
             processorInvoker = NitroxServiceLocator.LocateService<PacketProcessorsInvoker>();
@@ -76,6 +78,7 @@ namespace NitroxClient.MonoBehaviours
                 ProcessPackets();
                 throttledPacketSender.Update();
                 basePowerConsumptionForwarder.Flush(Time.realtimeSinceStartup);
+                creatureHealthManager.Update();
 
                 // Loading up shouldn't be bothered by entities spawning in the surroundings
                 if (multiplayerSession.CurrentState.CurrentStage == MultiplayerSessionConnectionStage.SESSION_JOINED &&
@@ -168,6 +171,7 @@ namespace NitroxClient.MonoBehaviours
         {
             // Gameplay.
             gameObject.AddComponent<UnderwaterStateTracker>();
+            gameObject.AddComponent<PlayerAnimatorStateTracker>();
             gameObject.AddComponent<PrecursorTracker>();
             gameObject.AddComponent<PlayerMovementBroadcaster>();
             gameObject.AddComponent<PlayerDeathBroadcaster>();
@@ -176,6 +180,7 @@ namespace NitroxClient.MonoBehaviours
             gameObject.AddComponent<BuildingHandler>();
             gameObject.AddComponent<MovementBroadcaster>();
             gameObject.AddComponent<PlayerPingManager>();
+            gameObject.AddComponent<InvokeHelper>();
             VirtualCyclops.Initialize();
         }
 

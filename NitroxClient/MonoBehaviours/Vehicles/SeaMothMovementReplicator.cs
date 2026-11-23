@@ -67,6 +67,14 @@ public class SeamothMovementReplicator : VehicleMovementReplicator
         throttleApplied = vehicleMovementData.ThrottleApplied && drivingPlayer != null;
     }
 
+    public override void SetCoordinates(Vector3 position, Quaternion rotation)
+    {
+        if (!seaMoth.isGrabbed && !seaMoth.docked)
+        {
+            base.SetCoordinates(position, rotation);
+        }
+    }
+
     private void SetupSound()
     {
         rpmSound = seaMoth.engineSound.engineRpmSFX;

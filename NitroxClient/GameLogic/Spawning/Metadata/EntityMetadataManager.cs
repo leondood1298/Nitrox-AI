@@ -18,7 +18,12 @@ public class EntityMetadataManager
     /// As it takes some time spawning lots of entities, it can happen that we receive metadata updates for those which are still in the queue.
     /// Therefore we list the updates which happened while we didn't have the said objects loaded
     /// </summary>
-    private readonly Dictionary<NitroxId, EntityMetadata> newerMetadataById = new();
+    /// <summary>
+    ///     Updates received while their entity was still waiting to be spawned. Kept per kind of metadata: an entity can
+    ///     receive more than one kind (a Scanner Room gets its own and its fabricator's), and a waiting update must only
+    ///     ever stand in for older metadata of the same kind.
+    /// </summary>
+    private readonly Dictionary<NitroxId, Dictionary<Type, EntityMetadata>> newerMetadataById = new();
 
     public EntityMetadataManager(IEnumerable<IEntityMetadataExtractor> extractors, IEnumerable<IEntityMetadataProcessor> processors)
     {
@@ -73,11 +78,16 @@ public class EntityMetadataManager
     public void ApplyMetadata(GameObject gameObject, EntityMetadata metadata)
     {
         // In case a metadata update was received while this entity was in the spawn queue
-        if (gameObject.TryGetNitroxId(out NitroxId objectId) &&
-            newerMetadataById.TryGetValue(objectId, out EntityMetadata newMetadata))
+        if (metadata != null && gameObject.TryGetNitroxId(out NitroxId objectId) &&
+            newerMetadataById.TryGetValue(objectId, out Dictionary<Type, EntityMetadata> newerByType) &&
+            newerByType.TryGetValue(metadata.GetType(), out EntityMetadata newMetadata))
         {
             metadata = newMetadata;
-            newerMetadataById.Remove(objectId);
+            newerByType.Remove(newMetadata.GetType());
+            if (newerByType.Count == 0)
+            {
+                newerMetadataById.Remove(objectId);
+            }
         }
         Optional<IEntityMetadataProcessor> metadataProcessor = FromMetaData(metadata);
 
@@ -89,7 +99,11 @@ public class EntityMetadataManager
 
     public void RegisterNewerMetadata(NitroxId entityId, EntityMetadata metadata)
     {
-        newerMetadataById[entityId] = metadata;
+        if (!newerMetadataById.TryGetValue(entityId, out Dictionary<Type, EntityMetadata> newerByType))
+        {
+            newerMetadataById[entityId] = newerByType = [];
+        }
+        newerByType[metadata.GetType()] = metadata;
     }
 
     public void ClearNewerMetadata()

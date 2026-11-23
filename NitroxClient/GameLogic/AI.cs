@@ -32,8 +32,19 @@ public sealed class AI
     /// </summary>
     private readonly HashSet<Type> syncedCreatureWhitelist =
     [
-        typeof(ReaperLeviathan), typeof(SeaDragon), typeof(SeaTreader), typeof(GhostLeviathan)
+        typeof(ReaperLeviathan), typeof(SeaDragon), typeof(SeaTreader), typeof(GhostLeviathan),
+        // Predators whose only behaviour beyond swimming is to attack what they see. Judged from their classes, not yet
+        // confirmed in game: without this they can never bite a player who is not simulating them.
+        typeof(BoneShark), typeof(Biter), typeof(SpineEel), typeof(Shocker)
     ];
+
+    /// <summary>
+    ///     A creature's action is repeated this often even if it did not change, for players who loaded the creature
+    ///     after it was last sent.
+    /// </summary>
+    private const float ACTION_RESEND_SECONDS = 5f;
+
+    private readonly CreatureActionBroadcastFilter actionBroadcastFilter = new(ACTION_RESEND_SECONDS);
 
     public AI(IPacketSender packetSender)
     {
@@ -46,12 +57,17 @@ public sealed class AI
 
     public void BroadcastNewAction(NitroxId creatureId, Creature creature, CreatureAction newAction)
     {
-        if (!syncedCreatureWhitelist.Contains(creature.GetType()))
+        // ChooseBestAction returns nothing while none of the creature's actions wants to run.
+        if (!newAction || !syncedCreatureWhitelist.Contains(creature.GetType()))
         {
             return;
         }
 
-        packetSender.Send(new CreatureActionChanged(creatureId, newAction.GetType().FullName));
+        string actionTypeName = newAction.GetType().FullName;
+        if (actionBroadcastFilter.ShouldSend(creatureId, actionTypeName, Time.realtimeSinceStartup))
+        {
+            packetSender.Send(new CreatureActionChanged(creatureId, actionTypeName));
+        }
     }
 
     public void CreatureActionChanged(NitroxId id, string creatureActionTypeName)
@@ -70,7 +86,8 @@ public sealed class AI
     public static void AggressiveWhenSeeTargetChanged(NitroxId creatureId, NitroxId targetId, bool locked, float aggressionAmount)
     {
         if (!NitroxEntity.TryGetComponentFrom(creatureId, out AggressiveWhenSeeTarget aggressiveWhenSeeTarget) ||
-            !NitroxEntity.TryGetObjectFrom(targetId, out GameObject targetObject))
+            !NitroxEntity.TryGetObjectFrom(targetId, out GameObject targetObject) ||
+            IsDead(aggressiveWhenSeeTarget))
         {
             return;
         }
@@ -98,7 +115,8 @@ public sealed class AI
     public static void AttackCyclopsTargetChanged(NitroxId creatureId, NitroxId targetId, float aggressiveToNoiseAmount)
     {
         if (!NitroxEntity.TryGetComponentFrom(creatureId, out AttackCyclops attackCyclops) ||
-            !NitroxEntity.TryGetObjectFrom(targetId, out GameObject targetObject))
+            !NitroxEntity.TryGetObjectFrom(targetId, out GameObject targetObject) ||
+            IsDead(attackCyclops))
         {
             return;
         }
@@ -113,7 +131,8 @@ public sealed class AI
     public static void RangedAttackLastTargetUpdate(NitroxId creatureId, NitroxId targetId, int attackTypeIndex, ActionState state)
     {
         if (!NitroxEntity.TryGetComponentFrom(creatureId, out RangedAttackLastTarget rangedAttackLastTarget) ||
-            !NitroxEntity.TryGetObjectFrom(targetId, out GameObject targetObject))
+            !NitroxEntity.TryGetObjectFrom(targetId, out GameObject targetObject) ||
+            IsDead(rangedAttackLastTarget))
         {
             return;
         }
@@ -145,7 +164,19 @@ public sealed class AI
 
     public bool TryGetActionForCreature(Creature creature, out CreatureAction action)
     {
-        return actions.TryGetValue(creature, out action);
+        if (!actions.TryGetValue(creature, out action))
+        {
+            return false;
+        }
+
+        // The simulating player can send actions before learning that the creature died, they'd make its corpse act as if it was alive
+        if (IsDead(creature))
+        {
+            actions.Remove(creature);
+            action = null;
+            return false;
+        }
+        return true;
     }
 
     public bool IsCreatureActionWhitelisted(CreatureAction creatureAction)
@@ -156,5 +187,14 @@ public sealed class AI
     public bool IsCreatureWhitelisted(Creature creature)
     {
         return syncedCreatureWhitelist.Contains(creature.GetType());
+    }
+
+    /// <summary>
+    /// Remote AI updates can still arrive for a creature which already died for us (sent by its simulating player before it learned about the death)
+    /// </summary>
+    private static bool IsDead(Component creatureComponent)
+    {
+        LiveMixin liveMixin = creatureComponent.GetComponentInParent<LiveMixin>();
+        return liveMixin && !liveMixin.IsAlive();
     }
 }

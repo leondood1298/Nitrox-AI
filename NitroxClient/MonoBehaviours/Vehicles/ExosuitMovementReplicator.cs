@@ -128,6 +128,14 @@ public class ExosuitMovementReplicator : VehicleMovementReplicator
         ikEnabled = exosuitMovementData.IKEnabled;
     }
 
+    public override void SetCoordinates(Vector3 position, Quaternion rotation)
+    {
+        if (!exosuit.isGrabbed && !exosuit.docked)
+        {
+            base.SetCoordinates(position, rotation);
+        }
+    }
+
     private void SetupSound()
     {
         FMODWhitelist whitelist = this.Resolve<FMODWhitelist>();

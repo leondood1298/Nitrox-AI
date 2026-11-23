@@ -197,16 +197,22 @@ public abstract class MovementReplicator : MonoBehaviour
 
         float t = (realTime - previousSnapshot.Time) / (nextSnapshot.Time - previousSnapshot.Time);
 
-        transform.position = Vector3.Lerp(previousSnapshot.Data.Position.ToUnity(), nextSnapshot.Data.Position.ToUnity(), t);
-        
-        transform.rotation = Quaternion.Lerp(previousSnapshot.Data.Rotation.ToUnity(), nextSnapshot.Data.Rotation.ToUnity(), t);
+        Vector3 position = Vector3.Lerp(previousSnapshot.Data.Position.ToUnity(), nextSnapshot.Data.Position.ToUnity(), t);
+        Quaternion rotation = Quaternion.Lerp(previousSnapshot.Data.Rotation.ToUnity(), nextSnapshot.Data.Rotation.ToUnity(), t);
 
+        SetCoordinates(position, rotation);
         ApplyNewMovementData(nextSnapshot.Data);
 
         // TODO: fix remote players being able to go through the object (ex: cyclops)
     }
 
     public abstract void ApplyNewMovementData(MovementData newMovementData);
+
+    public virtual void SetCoordinates(Vector3 position, Quaternion rotation)
+    {
+        transform.position = position;
+        transform.rotation = rotation;
+    }
 
     public record struct Snapshot(MovementData Data, float Time)
     {

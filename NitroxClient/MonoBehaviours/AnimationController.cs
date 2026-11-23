@@ -1,3 +1,4 @@
+using NitroxClient.GameLogic.PlayerLogic;
 using UnityEngine;
 
 namespace NitroxClient.MonoBehaviours;
@@ -6,6 +7,13 @@ namespace NitroxClient.MonoBehaviours;
 public class AnimationController : MonoBehaviour
 {
     private const float SMOOTHING_SPEED = 4f;
+
+    /// <summary>
+    ///     A few frames at any frame rate the game is playable at.
+    /// </summary>
+    private const float MINIMUM_SWITCH_ON_SECONDS = 0.1f;
+
+    private readonly AnimatorPulseHold switchHold = new(MINIMUM_SWITCH_ON_SECONDS);
     private Animator animator;
 
     public bool UpdatePlayerAnimations { get; set; } = true;
@@ -64,8 +72,34 @@ public class AnimationController : MonoBehaviour
 		animator.SetFloat(id, value);
 	}
 
+    public void Update()
+    {
+        foreach (string parameter in switchHold.TakeDue(Time.time))
+        {
+            animator.SetBool(parameter, false);
+        }
+    }
+
+    /// <summary>
+    ///     Sets a switch that the player's own game may only have on for a single frame, such as a tool swing. It is kept
+    ///     on long enough for the animator to act on it.
+    /// </summary>
+    public void SetSwitch(string name, bool value)
+    {
+        if (switchHold.Request(name, value, Time.time))
+        {
+            animator.SetBool(name, value);
+        }
+    }
+
+    public void SetTrigger(string name)
+    {
+        animator.SetTrigger(name);
+    }
+
 	public void Reset()
 	{
+        switchHold.Clear();
 		animator.Rebind();
 		animator.Update(0f);
 	}

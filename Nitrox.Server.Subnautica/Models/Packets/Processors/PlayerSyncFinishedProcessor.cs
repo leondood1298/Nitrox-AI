@@ -5,7 +5,7 @@ using Nitrox.Server.Subnautica.Services;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
-internal class PlayerSyncFinishedProcessor(SessionManager sessionManager, JoiningManager joiningManager, HibernateService hibernateService)
+internal class PlayerSyncFinishedProcessor(SessionManager sessionManager, JoiningManager joiningManager, HibernateService hibernateService, BedOccupancy bedOccupancy, PlayerAnimationStates animationStates)
     : IAuthPacketProcessor<PlayerSyncFinished>
 {
     private readonly SessionManager sessionManager = sessionManager;
@@ -20,5 +20,16 @@ internal class PlayerSyncFinishedProcessor(SessionManager sessionManager, Joinin
         }
 
         joiningManager.SyncFinishedCallback?.Invoke();
+
+        // The world and the other players exist on the joining client now, so it can show who is lying in bed.
+        foreach (BedEnterAnimation lyingDown in bedOccupancy.GetAnnouncementsFor(context.Sender.SessionId))
+        {
+            await context.ReplyAsync(lyingDown);
+        }
+        // And who is holding up their PDA or using a tool.
+        foreach (AnimationChangeEvent switchedOn in animationStates.GetAnnouncementsFor(context.Sender.SessionId))
+        {
+            await context.ReplyAsync(switchedOn);
+        }
     }
 }
