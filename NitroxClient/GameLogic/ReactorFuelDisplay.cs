@@ -55,16 +55,17 @@ public static class ReactorFuelDisplay
 
     public static float CalculateRemainingEnergy(float fuelCapacity, float fuelConsumed) => Math.Max(0f, fuelCapacity - fuelConsumed);
 
-    public static string FormatRuntime(float seconds)
+    /// <summary>
+    ///     A duration in whole minutes, at least one, in the shortest of three forms. The forms come from the language
+    ///     file and name the numbers as {HOURS} and {MINUTES}.
+    /// </summary>
+    public static string FormatRuntime(float seconds, string hoursMinutesFormat, string hoursFormat, string minutesFormat)
     {
         int totalMinutes = Math.Max(1, Mathf.CeilToInt(seconds / SECONDS_PER_MINUTE));
         int hours = totalMinutes / MINUTES_PER_HOUR;
         int minutes = totalMinutes % MINUTES_PER_HOUR;
-        if (hours == 0)
-        {
-            return $"{minutes}m";
-        }
-        return minutes == 0 ? $"{hours}h" : $"{hours}h {minutes}m";
+        string format = hours == 0 ? minutesFormat : minutes == 0 ? hoursFormat : hoursMinutesFormat;
+        return format.Replace("{HOURS}", hours.ToString()).Replace("{MINUTES}", minutes.ToString());
     }
 
     /// <param name="gameTextKey">The language key of the game's own line, which takes the stored power and the capacity.</param>
@@ -81,7 +82,8 @@ public static class ReactorFuelDisplay
         {
             return Language.main.Get("Nitrox_ReactorFuelEmpty");
         }
-        string runtime = FormatRuntime(remaining / Math.Max(powerPerSecond, float.Epsilon));
+        string runtime = FormatRuntime(remaining / Math.Max(powerPerSecond, float.Epsilon), Language.main.Get("Nitrox_ReactorFuelRuntimeHoursMinutes"),
+            Language.main.Get("Nitrox_ReactorFuelRuntimeHours"), Language.main.Get("Nitrox_ReactorFuelRuntimeMinutes"));
         return Language.main.Get("Nitrox_ReactorFuelStatus")
                             .Replace("{COUNT}", itemCount.ToString())
                             .Replace("{ITEMS}", Language.main.Get(itemLabelKey))

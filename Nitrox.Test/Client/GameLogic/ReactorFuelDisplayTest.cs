@@ -18,6 +18,6 @@ public sealed class ReactorFuelDisplayTest
     [DataRow(7200f, "2h")]
     public void RuntimeIsCompactForHoverText(float seconds, string expected)
     {
-        Assert.AreEqual(expected, ReactorFuelDisplay.FormatRuntime(seconds));
+        Assert.AreEqual(expected, ReactorFuelDisplay.FormatRuntime(seconds, "{HOURS}h {MINUTES}m", "{HOURS}h", "{MINUTES}m"));
     }
 }
