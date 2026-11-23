@@ -13,6 +13,16 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic;
 /// </summary>
 internal sealed class StoryManager : ISummarize
 {
+    /// <summary>
+    ///     Completed when a player disables the Sunbeam gun (StoryGoalCustomEventHandler.gunDeactivate).
+    /// </summary>
+    public const string GUN_DISABLED_GOAL = "Goal_Disable_Gun";
+
+    /// <summary>
+    ///     The radio message that starts the Sunbeam landing countdown when played.
+    /// </summary>
+    public const string SUNBEAM_LAST_RADIO_MESSAGE = "RadioSunbeam4";
+
     private readonly ILogger<StoryManager> logger;
     private readonly IOptions<SubnauticaServerOptions> options;
     private readonly PdaManager pdaManager;
@@ -152,18 +162,47 @@ internal sealed class StoryManager : ISummarize
         return new(timeService.MakeTimePacket(), MakeAuroraData());
     }
 
-    public bool RemovedLatestRadioMessage()
+    /// <summary>
+    ///     Removes a radio message a player played from the queue and marks it as played.
+    /// </summary>
+    /// <returns>False if the message was not waiting in the queue.</returns>
+    public bool RemovePlayedRadioMessage(string messageKey)
     {
-        if (StoryGoalData.RadioQueue.Count <= 0)
+        if (!RemoveQueuedRadioMessage(messageKey))
         {
             return false;
         }
-
-        string message = StoryGoalData.RadioQueue.Dequeue();
         // Just like StoryGoalManager.ExecutePendingRadioMessage
-        StoryGoalData.CompletedGoals.Add($"OnPlay{message}");
-
+        StoryGoalData.CompletedGoals.Add($"OnPlay{messageKey}");
         return true;
+    }
+
+    /// <summary>
+    ///     Updates the story for a goal a player completed.
+    /// </summary>
+    public void OnGoalCompleted(string goalKey)
+    {
+        // Like StoryGoalCustomEventHandler.NotifyGoalComplete, which removes this message in every connected game. Playing
+        // it would start a Sunbeam countdown for a gun that is already disabled.
+        if (string.Equals(goalKey, GUN_DISABLED_GOAL, StringComparison.OrdinalIgnoreCase))
+        {
+            RemoveQueuedRadioMessage(SUNBEAM_LAST_RADIO_MESSAGE);
+        }
+    }
+
+    private bool RemoveQueuedRadioMessage(string messageKey)
+    {
+        bool removed = false;
+        StoryGoalData.RadioQueue.RemoveWhere(queuedKey =>
+        {
+            if (removed || !string.Equals(queuedKey, messageKey, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+            removed = true;
+            return true;
+        });
+        return removed;
     }
 
     public InitialStoryGoalData GetInitialStoryGoalData(StoryScheduler storyScheduler, Player player)
