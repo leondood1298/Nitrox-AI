@@ -1,5 +1,6 @@
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication.Packets.Processors.Core;
+using NitroxClient.GameLogic;
 using Story;
 
 namespace NitroxClient.Communication.Packets.Processors;
@@ -8,6 +9,11 @@ internal sealed class PlaySunbeamEventProcessor : IClientPacketProcessor<PlaySun
 {
     public Task Process(ClientProcessorContext context, PlaySunbeamEvent packet)
     {
+        if (!StoryManager.IsStoryLoaded())
+        {
+            return Task.CompletedTask;
+        }
+
         // TODO: Look into compound goals and OnUnlock goals to bring back the necessary ones
         int beginIndex = PlaySunbeamEvent.SunbeamGoals.GetIndex(packet.EventKey);
         if (beginIndex == -1)

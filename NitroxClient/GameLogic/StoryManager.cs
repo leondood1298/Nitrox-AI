@@ -67,6 +67,13 @@ public static class StoryManager
                string.Equals(key, handler.sunbeamDestroyEventOutOfRange.key, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    ///     False until the game scene with its story objects exists. The server sends story packets to every connected
+    ///     session, also to one that still loads the game. Such a session can drop them: the snapshot it is given when it
+    ///     joins is made later and has what they say.
+    /// </summary>
+    public static bool IsStoryLoaded() => StoryGoalManager.main && StoryGoalScheduler.main && DayNightCycle.main;
+
     public static void UpdateAuroraData(AuroraEventData auroraEventData)
     {
         // A time skip sends this to players still in the loading screen too; initial sync applies the Aurora data later

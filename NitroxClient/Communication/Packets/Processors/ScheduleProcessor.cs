@@ -10,6 +10,11 @@ internal sealed class ScheduleProcessor : IClientPacketProcessor<Schedule>
 {
     public Task Process(ClientProcessorContext context, Schedule schedulePacket)
     {
+        if (!StoryManager.IsStoryLoaded())
+        {
+            return Task.CompletedTask;
+        }
+
         ScheduledGoal goal = new()
         {
             goalKey = schedulePacket.Key,

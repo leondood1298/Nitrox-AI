@@ -12,6 +12,11 @@ internal sealed class StoryGoalExecutedClientProcessor(IPacketSender packetSende
 
     public Task Process(ClientProcessorContext context, StoryGoalExecuted packet)
     {
+        if (!StoryManager.IsStoryLoaded())
+        {
+            return Task.CompletedTask;
+        }
+
         // The sender's game picked this line from its player's position, this game picks its own. The schedule is left
         // alone too: an entry with this key is this game's own pick.
         if (StoryManager.IsSunbeamDestroyEventPickedByPosition(packet.Key))

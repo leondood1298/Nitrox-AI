@@ -9,6 +9,11 @@ internal sealed class RadioPlayPendingMessageProcessor : IClientPacketProcessor<
 {
     public Task Process(ClientProcessorContext context, RadioPlayPendingMessage packet)
     {
+        if (!StoryManager.IsStoryLoaded())
+        {
+            return Task.CompletedTask;
+        }
+
         StoryGoalManager storyGoalManager = StoryGoalManager.main;
         // The game always plays the head of its queue, which need not be the message the other player played
         if (!PendingRadioMessages.TryMoveToFront(storyGoalManager.pendingRadioMessages, packet.MessageKey))
