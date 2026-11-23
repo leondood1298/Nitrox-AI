@@ -290,7 +290,7 @@ public sealed class ScannerRoomScenarioTest
         ScannerRoomDiagnosticEntry[] trace = scenario.Diagnostics.GetHistory().ToArray();
         CollectionAssert.AreEqual(new long[] { 1, 2, 3, 4 }, trace.Select(entry => entry.Sequence).ToArray());
         CollectionAssert.AreEqual(new[] { "dock", "control_acquire", "control_acquire", "control_release" }, trace.Select(entry => entry.EventName).ToArray());
-        Assert.AreEqual(ScannerRoomDiagnosticOutcome.Rejected, trace[2].Outcome);
+        Assert.AreEqual(ScannerRoomDiagnosticOutcome.REJECTED, trace[2].Outcome);
         Assert.AreEqual("locked", trace[2].Reason);
         Assert.AreEqual(ScannerRoomScenarioFixture.RoomId.ToString()[..8], trace[2].RoomId);
         string cameraId = ScannerRoomScenarioFixture.CameraAId.ToString();
@@ -380,7 +380,7 @@ public sealed class ScannerRoomScenarioTest
             scenario.Ownership.GetPlayerForLock(ScannerRoomScenarioFixture.CameraAId));
         ScannerRoomDiagnosticEntry diagnostic = scenario.Diagnostics.GetHistory().Single();
         Assert.AreEqual("camera_lock", diagnostic.EventName);
-        Assert.AreEqual(ScannerRoomDiagnosticOutcome.Accepted, diagnostic.Outcome);
+        Assert.AreEqual(ScannerRoomDiagnosticOutcome.ACCEPTED, diagnostic.Outcome);
         Assert.AreEqual("exclusive", diagnostic.Reason);
     }
 
@@ -398,7 +398,7 @@ public sealed class ScannerRoomScenarioTest
         Assert.IsNull(scenario.Ownership.GetPlayerForLock(ScannerRoomScenarioFixture.CameraAId));
         ScannerRoomDiagnosticEntry diagnostic = scenario.Diagnostics.GetHistory()
             .Last(entry => entry.EventName == "camera_lock");
-        Assert.AreEqual(ScannerRoomDiagnosticOutcome.Rejected, diagnostic.Outcome);
+        Assert.AreEqual(ScannerRoomDiagnosticOutcome.REJECTED, diagnostic.Outcome);
         Assert.AreEqual("control_required", diagnostic.Reason);
     }
 
@@ -416,7 +416,7 @@ public sealed class ScannerRoomScenarioTest
         Assert.IsNull(scenario.Ownership.GetPlayerForLock(ScannerRoomScenarioFixture.CameraAId));
         ScannerRoomDiagnosticEntry diagnostic = scenario.Diagnostics.GetHistory()
             .Last(entry => entry.EventName == "camera_lock");
-        Assert.AreEqual(ScannerRoomDiagnosticOutcome.Rejected, diagnostic.Outcome);
+        Assert.AreEqual(ScannerRoomDiagnosticOutcome.REJECTED, diagnostic.Outcome);
         Assert.AreEqual("control_required", diagnostic.Reason);
     }
 
@@ -475,7 +475,7 @@ public sealed class ScannerRoomScenarioTest
         Assert.IsFalse(response.LockAcquired);
         Assert.IsNull(scenario.Ownership.GetPlayerForLock(ScannerRoomScenarioFixture.CameraAId));
         ScannerRoomDiagnosticEntry diagnostic = scenario.Diagnostics.GetHistory().Single();
-        Assert.AreEqual(ScannerRoomDiagnosticOutcome.Rejected, diagnostic.Outcome);
+        Assert.AreEqual(ScannerRoomDiagnosticOutcome.REJECTED, diagnostic.Outcome);
         Assert.AreEqual("control_required", diagnostic.Reason);
     }
 
@@ -578,7 +578,7 @@ public sealed class ScannerRoomScenarioTest
         Assert.IsNull(scenario.Ownership.GetPlayerForLock(ScannerRoomScenarioFixture.CameraAId));
         ScannerRoomDiagnosticEntry diagnostic = scenario.Diagnostics.GetHistory().Single();
         Assert.AreEqual("camera_lock", diagnostic.EventName);
-        Assert.AreEqual(ScannerRoomDiagnosticOutcome.Rejected, diagnostic.Outcome);
+        Assert.AreEqual(ScannerRoomDiagnosticOutcome.REJECTED, diagnostic.Outcome);
         Assert.AreEqual("removed", diagnostic.Reason);
     }
 
@@ -598,7 +598,7 @@ public sealed class ScannerRoomScenarioTest
         Assert.IsNull(scenario.Ownership.GetPlayerForLock(ScannerRoomScenarioFixture.CameraAId));
         ScannerRoomDiagnosticEntry diagnostic = scenario.Diagnostics.GetHistory().Single();
         Assert.AreEqual("camera_lock", diagnostic.EventName);
-        Assert.AreEqual(ScannerRoomDiagnosticOutcome.Rejected, diagnostic.Outcome);
+        Assert.AreEqual(ScannerRoomDiagnosticOutcome.REJECTED, diagnostic.Outcome);
         Assert.AreEqual("removed", diagnostic.Reason);
     }
 
@@ -623,7 +623,7 @@ public sealed class ScannerRoomScenarioTest
         Assert.IsNull(scenario.Ownership.GetPlayerForLock(registryOnlyCamera));
         ScannerRoomDiagnosticEntry diagnostic = scenario.Diagnostics.GetHistory().Single();
         Assert.AreEqual("camera_lock", diagnostic.EventName);
-        Assert.AreEqual(ScannerRoomDiagnosticOutcome.Rejected, diagnostic.Outcome);
+        Assert.AreEqual(ScannerRoomDiagnosticOutcome.REJECTED, diagnostic.Outcome);
         Assert.AreEqual("removed", diagnostic.Reason);
     }
 

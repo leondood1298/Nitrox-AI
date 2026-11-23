@@ -1,9 +1,8 @@
 using System.Collections.Generic;
 using Nitrox.Model.DataStructures;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
-using Nitrox.Model.Subnautica.Extensions;
 using Nitrox.Model.Subnautica.Packets;
-using NitroxClient.Extensions;
 using NitroxClient.MonoBehaviours;
 using UnityEngine;
 
@@ -12,11 +11,6 @@ namespace NitroxClient.GameLogic;
 public static class MapRoomScanResults
 {
     private const float PICKUP_POSITION_TOLERANCE_SQUARED = 0.01f;
-
-    public static void RemoveLocalResource(NitroxId resourceId)
-    {
-        RemoveLocalResource(resourceId, TechType.None, null);
-    }
 
     public static void RemoveLocalResource(NitroxId resourceId, TechType techType, Vector3 pickupPosition)
     {
@@ -30,7 +24,7 @@ public static class MapRoomScanResults
         {
             if (mapRoom && RemoveFromList(mapRoom.resourceNodes, id, techType, pickupPosition))
             {
-                mapRoom.numNodesScanned = System.Math.Min(mapRoom.numNodesScanned, mapRoom.resourceNodes.Count);
+                mapRoom.numNodesScanned = Mathf.Min(mapRoom.numNodesScanned, mapRoom.resourceNodes.Count);
                 RefreshResultConsumers(mapRoom);
             }
         }
@@ -66,7 +60,7 @@ public static class MapRoomScanResults
         state.ResultGeneration = generation;
         state.ResultRevision = revision;
         state.ResultStateInitialized = true;
-        mapRoom.numNodesScanned = System.Math.Min(mapRoom.numNodesScanned, mapRoom.resourceNodes.Count);
+        mapRoom.numNodesScanned = Mathf.Min(mapRoom.numNodesScanned, mapRoom.resourceNodes.Count);
         RefreshResultConsumers(mapRoom);
     }
 
@@ -89,7 +83,7 @@ public static class MapRoomScanResults
         ApplyDeltaToList(mapRoom.resourceNodes, packet);
         state.ResultRevision = packet.Revision;
         state.ResultStateInitialized = true;
-        mapRoom.numNodesScanned = System.Math.Min(mapRoom.numNodesScanned, mapRoom.resourceNodes.Count);
+        mapRoom.numNodesScanned = Mathf.Min(mapRoom.numNodesScanned, mapRoom.resourceNodes.Count);
         RefreshResultConsumers(mapRoom);
     }
 
@@ -153,7 +147,7 @@ public static class MapRoomScanResults
         {
             return;
         }
-        mapRoom.numNodesScanned = System.Math.Min(mapRoom.numNodesScanned, mapRoom.resourceNodes.Count);
+        mapRoom.numNodesScanned = Mathf.Min(mapRoom.numNodesScanned, mapRoom.resourceNodes.Count);
         RefreshResultConsumers(mapRoom);
     }
 
@@ -164,7 +158,7 @@ public static class MapRoomScanResults
         {
             return false;
         }
-        mapRoom.numNodesScanned = System.Math.Min(mapRoom.numNodesScanned, mapRoom.resourceNodes.Count);
+        mapRoom.numNodesScanned = Mathf.Min(mapRoom.numNodesScanned, mapRoom.resourceNodes.Count);
         RefreshResultConsumers(mapRoom);
         return true;
     }
@@ -200,7 +194,7 @@ public static class MapRoomScanResults
         }
 
         target.RemoveAll(info => info != null && info.uniqueId == liveInfo.uniqueId);
-        target.Insert(System.Math.Min(firstMatchIndex, target.Count), liveInfo);
+        target.Insert(Mathf.Min(firstMatchIndex, target.Count), liveInfo);
         return true;
     }
 
@@ -270,7 +264,7 @@ public static class MapRoomScanResults
             return;
         }
 
-        int visibleCount = System.Math.Min(mapRoom.numNodesScanned, mapRoom.resourceNodes.Count);
+        int visibleCount = Mathf.Min(mapRoom.numNodesScanned, mapRoom.resourceNodes.Count);
         Vector3 origin = mapRoom.mapBlipRoot.transform.position;
         for (int i = 0; i < visibleCount; i++)
         {
@@ -290,7 +284,7 @@ public static class MapRoomScanResults
         }
     }
 
-    private static ResourceTrackerDatabase.ResourceInfo ToResourceInfo(string resourceId, Nitrox.Model.Subnautica.DataStructures.GameLogic.NitroxTechType techType, Vector3 position) => new()
+    private static ResourceTrackerDatabase.ResourceInfo ToResourceInfo(string resourceId, NitroxTechType techType, Vector3 position) => new()
     {
         uniqueId = resourceId,
         techType = techType.ToUnity(),

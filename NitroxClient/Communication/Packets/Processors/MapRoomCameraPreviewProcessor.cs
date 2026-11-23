@@ -1,4 +1,3 @@
-using Nitrox.Model.Packets.Core;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication.Packets.Processors.Core;
 using NitroxClient.GameLogic;

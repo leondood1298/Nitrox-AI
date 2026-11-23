@@ -7,10 +7,11 @@ namespace NitroxPatcher.Patches.Dynamic;
 /// <summary>
 ///     Reports energy drawn from a base power source that another player simulates (see
 ///     <see cref="BasePowerConsumptionForwarder" />).
-///     <p />
+///     <para>
 ///     Every draw on a base ends here: PowerSystem.ConsumeEnergy calls the relay's ModifyPower with a negative amount,
 ///     and the relay spreads it over its sources. The out parameter cannot be used to measure the draw because the game
 ///     sets it to the requested amount, without touching the level, in modes that do not require power.
+///     </para>
 /// </summary>
 public sealed partial class PowerSource_ModifyPower_Patch : NitroxPatch, IDynamicPatch
 {

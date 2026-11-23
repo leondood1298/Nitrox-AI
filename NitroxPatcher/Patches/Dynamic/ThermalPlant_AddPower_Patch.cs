@@ -1,8 +1,6 @@
-using System;
 using System.Reflection;
-using Nitrox.Model.Helper;
+using Nitrox.Model.DataStructures;
 using NitroxClient.Communication.Abstract;
-using NitroxClient.Extensions;
 using NitroxClient.GameLogic;
 
 namespace NitroxPatcher.Patches.Dynamic;
@@ -13,7 +11,7 @@ public sealed partial class ThermalPlant_AddPower_Patch : NitroxPatch, IDynamicP
 
     public static bool Prefix(ThermalPlant __instance)
     {
-        return !__instance.TryGetNitroxId(out var id) || Resolve<SimulationOwnership>().HasAnyLockType(id);
+        return !__instance.TryGetNitroxId(out NitroxId id) || Resolve<SimulationOwnership>().HasAnyLockType(id);
     }
 
     public static void Postfix(ThermalPlant __instance)

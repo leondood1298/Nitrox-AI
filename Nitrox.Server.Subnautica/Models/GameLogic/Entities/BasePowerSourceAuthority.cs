@@ -4,7 +4,6 @@ using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
-using Nitrox.Model.Subnautica.Packets;
 
 namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 
@@ -16,7 +15,7 @@ internal sealed class BasePowerSourceAuthority
     ///     Upper bound for one consumption request. Clients batch a fraction of a second of use, so anything near the
     ///     largest source capacity (a nuclear reactor) is not a real request.
     /// </summary>
-    internal const float MAX_CONSUMPTION_PER_REQUEST = 2500f;
+    internal const float MAX_CONSUMPTION_PER_REQUEST = BasePowerSourceTypes.NUCLEAR_MAX_POWER;
     private readonly Dictionary<NitroxId, OwnerSequence> lastOwnerSequenceBySource = [];
 
     public bool TryApply(Entity entity, SessionId senderSessionId, BasePowerSourceUpdate requested, out PowerSourceMetadata accepted, out string rejectionReason)

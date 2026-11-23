@@ -1,7 +1,5 @@
-using System;
 using System.Reflection;
 using Nitrox.Model.DataStructures;
-using Nitrox.Model.Helper;
 using NitroxClient.GameLogic;
 using NitroxClient.GameLogic.Simulation;
 using NitroxClient.MonoBehaviours;

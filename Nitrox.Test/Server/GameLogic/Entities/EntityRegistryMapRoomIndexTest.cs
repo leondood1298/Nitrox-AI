@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Nitrox.Model.DataStructures;
-using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 

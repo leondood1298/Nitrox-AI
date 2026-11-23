@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
 using Nitrox.Model.DataStructures;
 
 namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities;

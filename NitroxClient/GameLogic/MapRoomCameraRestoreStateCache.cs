@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
@@ -36,10 +37,10 @@ internal sealed class MapRoomCameraRestoreStateCache
     private bool IsNewerRestoreRecord(MapRoomCameraRecord candidate, MapRoomCameraRecord existing)
     {
         long knownLightRevision = lights.TryGetValue(candidate.CameraId, out MapRoomCameraLight? light)
-            ? System.Math.Max(existing.LightRevision, light.Revision)
+            ? Math.Max(existing.LightRevision, light.Revision)
             : existing.LightRevision;
         long knownComponentRevision = components.TryGetValue(candidate.CameraId, out MapRoomCameraComponentState? component)
-            ? System.Math.Max(existing.ComponentRevision, component.Revision)
+            ? Math.Max(existing.ComponentRevision, component.Revision)
             : existing.ComponentRevision;
         return candidate.LightRevision >= knownLightRevision &&
                candidate.ComponentRevision >= knownComponentRevision &&

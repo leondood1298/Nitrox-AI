@@ -1,11 +1,8 @@
-using System;
 using System.Collections.Generic;
 using System.Reflection;
 using Nitrox.Model.DataStructures;
-using Nitrox.Model.Helper;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication.Abstract;
-using NitroxClient.Extensions;
 using NitroxClient.GameLogic;
 
 namespace NitroxPatcher.Patches.Dynamic;
@@ -26,30 +23,30 @@ public sealed partial class BaseBioReactor_ProducePower_Patch : NitroxPatch, IDy
         {
             return;
         }
-        HashSet<NitroxId> hashSet = new HashSet<NitroxId>(CollectItemIds(__instance));
-        foreach (NitroxId item in __state)
+        HashSet<NitroxId> remainingIds = new(CollectItemIds(__instance));
+        foreach (NitroxId consumedId in __state)
         {
-            if (!hashSet.Contains(item))
+            if (!remainingIds.Contains(consumedId))
             {
-                Resolve<Entities>().RemoveEntity(item);
-                Resolve<IPacketSender>().Send(new EntityDestroyed(item));
+                Resolve<Entities>().RemoveEntity(consumedId);
+                Resolve<IPacketSender>().Send(new EntityDestroyed(consumedId));
             }
         }
     }
 
     private static List<NitroxId> CollectItemIds(BaseBioReactor reactor)
     {
-        List<NitroxId> list = new List<NitroxId>();
+        List<NitroxId> itemIds = new();
         if (reactor.container != null)
         {
-            foreach (InventoryItem item in (IEnumerable<InventoryItem>)reactor.container)
+            foreach (InventoryItem inventoryItem in reactor.container)
             {
-                if (item != null && item.item && item.item.TryGetNitroxId(out NitroxId nitroxId))
+                if (inventoryItem != null && inventoryItem.item && inventoryItem.item.TryGetNitroxId(out NitroxId nitroxId))
                 {
-                    list.Add(nitroxId);
+                    itemIds.Add(nitroxId);
                 }
             }
         }
-        return list;
+        return itemIds;
     }
 }

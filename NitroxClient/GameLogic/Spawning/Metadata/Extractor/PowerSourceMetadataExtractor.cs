@@ -1,5 +1,4 @@
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
-using NitroxClient.GameLogic;
 using NitroxClient.GameLogic.Spawning.Metadata.Extractor.Abstract;
 
 namespace NitroxClient.GameLogic.Spawning.Metadata.Extractor;
