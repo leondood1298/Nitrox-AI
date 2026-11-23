@@ -19,13 +19,14 @@ internal sealed class BasePowerSourceConsumeProcessor(EntityRegistry entityRegis
     {
         if (!entityRegistry.TryGetEntityById(packet.SourceId, out Entity entity))
         {
-            logger.ZLogWarningOnce($"[BasePower] {context.Sender.Name} #{context.Sender.SessionId} consumed from unknown source {packet.SourceId}");
+            diagnostics.RecordConsumption(packet.SourceId, context.Sender.SessionId, null, packet.Amount, ConsumptionRoute.REJECTED, null, "unknown source");
             return;
         }
 
         Player? owner = simulationOwnershipData.GetPlayerForLock(packet.SourceId);
         ConsumptionRoute route = authority.RouteConsumption(entity, owner?.SessionId, context.Sender.SessionId, packet.Amount,
             out PowerSourceMetadata accepted, out string reason);
+        diagnostics.RecordConsumption(packet.SourceId, context.Sender.SessionId, owner?.SessionId, packet.Amount, route, accepted, reason);
         switch (route)
         {
             case ConsumptionRoute.FORWARD_TO_OWNER:
@@ -36,8 +37,6 @@ internal sealed class BasePowerSourceConsumeProcessor(EntityRegistry entityRegis
                     accepted.MaxPower, accepted.Revision, true, true, "", accepted.FuelConsumed));
                 break;
             default:
-                diagnostics.RecordRejected();
-                logger.ZLogWarningOnce($"[BasePower] rejected consumption of {packet.Amount} from source {packet.SourceId} by {context.Sender.Name} #{context.Sender.SessionId}: {reason}");
                 return;
         }
 
