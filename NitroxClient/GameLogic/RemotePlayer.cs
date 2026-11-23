@@ -165,15 +165,21 @@ public class RemotePlayer : INitroxPlayer
 
         Body.SetActive(true);
 
-        if (!InCinematic)
+        if (InCinematic)
         {
-            // When receiving movement packets, a player can not be controlling a vehicle (they can walk through subroots though).
-            SetVehicle(null);
-            SetPilotingChair(null);
-
-            AnimationController.AimingRotation = aimingRotation;
-            AnimationController.UpdatePlayerAnimations = true;
+            // The cinematic (ladder, hatch, bed) places the body itself. A velocity from movement packets sent in the
+            // meantime would push it out of the animation.
+            RigidBody.velocity = Vector3.zero;
+            RigidBody.angularVelocity = Vector3.zero;
+            return;
         }
+
+        // When receiving movement packets, a player can not be controlling a vehicle (they can walk through subroots though).
+        SetVehicle(null);
+        SetPilotingChair(null);
+
+        AnimationController.AimingRotation = aimingRotation;
+        AnimationController.UpdatePlayerAnimations = true;
         AnimationController.Velocity = MovementHelper.GetCorrectedVelocity(position, velocity, Body, Time.fixedDeltaTime);
 
         // If in a subroot the position will be relative to the subroot

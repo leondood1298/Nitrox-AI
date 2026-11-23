@@ -125,6 +125,9 @@ internal sealed class PlayerCinematicControllerCallProcessor(PlayerManager playe
         if (remotePlayer.AnimationController)
         {
             remotePlayer.AnimationController.UpdatePlayerAnimations = false;
+            // The game switches this on for its own player every frame in ArmsController.Update, which does not run for
+            // other players' bodies. Without it the body is moved through the cinematic in its walking pose.
+            remotePlayer.AnimationController["cinematics_enabled"] = true;
         }
     }
 
@@ -134,6 +137,7 @@ internal sealed class PlayerCinematicControllerCallProcessor(PlayerManager playe
         if (remotePlayer.AnimationController)
         {
             remotePlayer.AnimationController.UpdatePlayerAnimations = true;
+            remotePlayer.AnimationController["cinematics_enabled"] = false;
         }
     }
 

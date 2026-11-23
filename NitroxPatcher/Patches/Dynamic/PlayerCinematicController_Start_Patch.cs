@@ -1,4 +1,3 @@
-using System;
 using System.Reflection;
 using Nitrox.Model.Helper;
 using Nitrox.Model.Logger;
