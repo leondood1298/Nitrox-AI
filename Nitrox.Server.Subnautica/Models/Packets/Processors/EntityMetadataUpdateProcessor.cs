@@ -41,7 +41,8 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
              GateScannerRoomMetadata(context.Sender, entity, packet.NewValue) ??
              GateCreatureMetadata(context.Sender, entity, packet.NewValue) ??
              GateFiltrationMachineMetadata(context.Sender, entity, packet.NewValue) ??
-             GateTimeCapsuleMetadata(context.Sender, entity, packet.NewValue)) is { } result)
+             GateTimeCapsuleMetadata(context.Sender, entity, packet.NewValue) ??
+             GatePictureFrameMetadata(context.Sender, entity, packet.NewValue)) is { } result)
         {
             await SendResultAsync(context, entity, result);
             return;
@@ -168,6 +169,21 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
                 logger.ZLogWarningOnce($"Player {sender.Name} tried replacing the {entity.Metadata.GetType().Name} of {entity.Id} with a time capsule");
                 return MetadataUpdateResult.Reject;
         }
+    }
+
+    /// <summary>
+    ///     A frame's picture is set by the server when it keeps an upload (see <see cref="PictureFrameUploadProcessor" />),
+    ///     never by a player's update: that could name a picture the world does not hold, or one beyond its room.
+    /// </summary>
+    /// <returns>Null when the update has nothing to do with a picture frame.</returns>
+    private MetadataUpdateResult? GatePictureFrameMetadata(Player sender, Entity entity, EntityMetadata metadata)
+    {
+        if (metadata is not PictureFrameMetadata && entity.Metadata is not PictureFrameMetadata)
+        {
+            return null;
+        }
+        logger.ZLogWarningOnce($"Player {sender.Name} tried setting the picture of {entity.Id} with {metadata.GetType().Name}");
+        return MetadataUpdateResult.Reject;
     }
 
     /// <summary>
