@@ -1,7 +1,9 @@
 using System;
+using NitroxClient.Communication.Abstract;
 using NitroxClient.MonoBehaviours;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
+using Nitrox.Model.Subnautica.Packets;
 using Story;
 using UnityEngine;
 
@@ -65,6 +67,28 @@ public static class StoryManager
         }
         return string.Equals(key, handler.sunbeamDestroyEventInRange.key, StringComparison.OrdinalIgnoreCase) ||
                string.Equals(key, handler.sunbeamDestroyEventOutOfRange.key, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool IsGoalComplete(string key) => !string.IsNullOrEmpty(key) && StoryGoalManager.main && StoryGoalManager.main.IsGoalComplete(key);
+
+    /// <summary>
+    ///     Reports a goal the game completed on the goal manager directly. Goals are reported from StoryGoal.Execute, but the
+    ///     game completes some without it: the intro's PDA triggers (IntroLifepodDirector.OpenPDA and OnClosePDA) and the
+    ///     goal of a Precursor door that opens (PrecursorGlobalKeyActivator.ToggleDoor). They were neither shared nor saved.
+    /// </summary>
+    /// <param name="wasComplete">
+    ///     Whether the goal was complete before the game's call. Then the call did nothing, also when it was the network
+    ///     that made this game complete it.
+    /// </param>
+    public static void ReportGoalCompletedDirectly(IPacketSender packetSender, string key, bool wasComplete)
+    {
+        // Goals the ending completes are not saved in single player, which saves nothing after the launch
+        if (wasComplete || !Multiplayer.Main || !Multiplayer.Main.InitialSyncCompleted || LaunchRocket.launchStarted || !IsGoalComplete(key))
+        {
+            return;
+        }
+        // STORY: the receivers complete it through StoryGoal.Execute, which then only calls the goal manager, as the game did here
+        packetSender.Send(new StoryGoalExecuted(key, StoryGoalExecuted.EventType.STORY));
     }
 
     /// <summary>
