@@ -129,19 +129,19 @@ public sealed class BasePowerSources(IPacketSender packetSender, SimulationOwner
 
     public static BasePowerSourceType GetSourceType(Component component)
     {
-        if (component is SolarPanel || component.GetComponentInParent<SolarPanel>())
+        if (TryGetOwner(component, out SolarPanel _))
         {
             return BasePowerSourceType.SOLAR;
         }
-        if (component is ThermalPlant || component.GetComponentInParent<ThermalPlant>())
+        if (TryGetOwner(component, out ThermalPlant _))
         {
             return BasePowerSourceType.THERMAL;
         }
-        if (component is BaseBioReactor || component.GetComponentInParent<BaseBioReactor>())
+        if (TryGetOwner(component, out BaseBioReactor _))
         {
             return BasePowerSourceType.BIOREACTOR;
         }
-        if (component is BaseNuclearReactor || component.GetComponentInParent<BaseNuclearReactor>())
+        if (TryGetOwner(component, out BaseNuclearReactor _))
         {
             return BasePowerSourceType.NUCLEAR;
         }
@@ -150,11 +150,11 @@ public sealed class BasePowerSources(IPacketSender packetSender, SimulationOwner
 
     public static float GetFuelConsumed(Component component)
     {
-        if (component is BaseBioReactor bioReactor || (bioReactor = component.GetComponentInParent<BaseBioReactor>()))
+        if (TryGetOwner(component, out BaseBioReactor bioReactor))
         {
             return bioReactor._toConsume;
         }
-        if (component is BaseNuclearReactor nuclearReactor || (nuclearReactor = component.GetComponentInParent<BaseNuclearReactor>()))
+        if (TryGetOwner(component, out BaseNuclearReactor nuclearReactor))
         {
             return nuclearReactor._toConsume;
         }
@@ -165,11 +165,11 @@ public sealed class BasePowerSources(IPacketSender packetSender, SimulationOwner
     {
         BasePowerSourceTypes.TryGetMaxFuelProgress(sourceType, out float maximum);
         float accepted = Mathf.Clamp(fuelConsumed, 0f, maximum);
-        if (sourceType == BasePowerSourceType.BIOREACTOR && (component is BaseBioReactor bioReactor || (bioReactor = component.GetComponentInParent<BaseBioReactor>())))
+        if (sourceType == BasePowerSourceType.BIOREACTOR && TryGetOwner(component, out BaseBioReactor bioReactor))
         {
             bioReactor._toConsume = accepted;
         }
-        else if (sourceType == BasePowerSourceType.NUCLEAR && (component is BaseNuclearReactor nuclearReactor || (nuclearReactor = component.GetComponentInParent<BaseNuclearReactor>())))
+        else if (sourceType == BasePowerSourceType.NUCLEAR && TryGetOwner(component, out BaseNuclearReactor nuclearReactor))
         {
             nuclearReactor._toConsume = accepted;
         }
@@ -178,14 +178,21 @@ public sealed class BasePowerSources(IPacketSender packetSender, SimulationOwner
     /// <summary>
     ///     The temperature a thermal plant has reached, zero for anything else.
     /// </summary>
-    public static float GetTemperature(Component component)
+    public static float GetTemperature(Component component) => TryGetOwner(component, out ThermalPlant thermalPlant) ? thermalPlant.temperature : 0f;
+
+    /// <summary>
+    ///     Finds the solar panel, thermal plant or reactor that <paramref name="component" /> is, or that its power
+    ///     source belongs to.
+    ///     <para>
+    ///     Inactive objects are included: a base is put together while inactive when a player joins, and the stored
+    ///     state is applied to its reactors then. A search that skips inactive objects finds no reactor at that point,
+    ///     and the fuel progress of a part-used rod or bioreactor load would be dropped.
+    ///     </para>
+    /// </summary>
+    private static bool TryGetOwner<T>(Component component, out T owner) where T : Component
     {
-        ThermalPlant thermalPlant = component as ThermalPlant;
-        if (!thermalPlant)
-        {
-            thermalPlant = component.GetComponentInParent<ThermalPlant>();
-        }
-        return thermalPlant ? thermalPlant.temperature : 0f;
+        owner = component as T;
+        return owner || component.TryGetComponentInParent(out owner, true);
     }
 
     /// <inheritdoc cref="CanSimulate(bool, bool, bool)" />

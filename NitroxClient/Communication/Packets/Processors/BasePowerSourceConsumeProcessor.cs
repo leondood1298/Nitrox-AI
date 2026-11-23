@@ -29,8 +29,9 @@ internal sealed class BasePowerSourceConsumeProcessor(SimulationOwnership simula
                 Log.Warn($"[BasePower] Power source {packet.SourceId} does not exist on this client; handing its simulation back");
                 simulationOwnership.StopSimulatingEntity(packet.SourceId);
                 context.Send(new SimulationOwnershipRelease(packet.SourceId));
-                // Sent after the release, so the server passes it to whoever simulates the source from now on
-                context.Send(packet);
+                // The request itself is dropped. Sent on, it would come from this client: if the player who drew the
+                // energy is given the source, which is certain with two players, that player would take it off a
+                // level that already includes it.
                 break;
             default:
                 // Ownership can move while the request travels. Whoever simulates the source now started from the
