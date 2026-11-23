@@ -78,6 +78,65 @@ public sealed class ScannerRoomClientDiagnosticsTest
     }
 
     [TestMethod]
+    public void RepeatsOfAnythingButASuccessAreThinnedOut()
+    {
+        ScannerRoomClientDiagnostics diagnostics = new();
+        NitroxId cameraId = new("11111111-1111-1111-1111-111111111111");
+
+        for (int index = 0; index < 9; index++)
+        {
+            diagnostics.Record("component_apply", "reject", cameraId, revision: index, reason: "server_reject");
+            diagnostics.Record("dock_apply", "ok", cameraId, revision: index);
+        }
+
+        string[] rejections = diagnostics.GetHistory().Where(line => line.Contains(" out=reject ")).ToArray();
+        Assert.AreEqual(4, rejections.Length, "the first two and then every power of two are written");
+        Assert.IsTrue(rejections[0].EndsWith(" rev=0 reason=server_reject"));
+        Assert.IsTrue(rejections[3].EndsWith(" rev=7 rep=8 reason=server_reject"));
+        Assert.AreEqual(9, diagnostics.GetHistory().Count(line => line.Contains(" ev=dock_apply out=ok ")), "a transition that went through is never dropped");
+    }
+
+    [TestMethod]
+    public void PacketsAboutToBeIgnoredAreRecorded()
+    {
+        ScannerRoomClientDiagnostics diagnostics = new();
+        NitroxId cameraId = new("11111111-1111-1111-1111-111111111111");
+        Dictionary<NitroxId, long> appliedRevisions = new() { [cameraId] = 5 };
+
+        diagnostics.RecordIfIgnored("light_apply", cameraId, isServerResponse: true, granted: false, revision: 0, appliedRevisions);
+        diagnostics.RecordIfIgnored("light_apply", cameraId, isServerResponse: true, granted: true, revision: 3, appliedRevisions);
+        diagnostics.RecordIfIgnored("light_apply", cameraId, isServerResponse: true, granted: true, revision: 5, appliedRevisions);
+        diagnostics.RecordIfIgnored("light_apply", cameraId, isServerResponse: true, granted: true, revision: 6, appliedRevisions);
+        diagnostics.RecordIfIgnored("light_apply", new NitroxId(), isServerResponse: true, granted: true, revision: 1, appliedRevisions);
+        diagnostics.RecordIfIgnored("light_apply", cameraId, isServerResponse: false, granted: false, revision: 0, appliedRevisions);
+
+        IReadOnlyList<string> history = diagnostics.GetHistory();
+        Assert.AreEqual(2, history.Count, "packets that will be applied, and this client's own requests, are not ignored packets");
+        StringAssert.Contains(history[0], " ev=light_apply out=reject room=- cam=11111111.1111 slot=- rev=0 reason=server_reject");
+        StringAssert.Contains(history[1], " ev=light_apply out=stale room=- cam=11111111.1111 slot=- rev=3 reason=applied_5");
+    }
+
+    [TestMethod]
+    public void CameraManagerRecordsRefusedAndOutdatedCameraState()
+    {
+        IMultiplayerSession multiplayerSession = Substitute.For<IMultiplayerSession>();
+        multiplayerSession.Reservation.Returns(new MultiplayerSessionReservation((SessionId)(ushort)1));
+        ScannerRoomClientDiagnostics diagnostics = new();
+        MapRoomCameras cameras = new(multiplayerSession, multiplayerSession, null!, new SimulationOwnership(multiplayerSession, multiplayerSession),
+            diagnostics, new StalkerCameraLockPurposeTracker());
+        NitroxId cameraId = new("11111111-1111-1111-1111-111111111111");
+
+        // The server refuses what this client reported, for instance a recharge from a player who does not simulate the room.
+        cameras.ProcessComponentState(new MapRoomCameraComponentState(cameraId, 50f, 50f, 0, true, false));
+        cameras.ProcessLight(new MapRoomCameraLight(cameraId, true, 0, true, false));
+
+        IReadOnlyList<string> history = diagnostics.GetHistory();
+        Assert.AreEqual(2, history.Count);
+        StringAssert.Contains(history[0], " ev=component_apply out=reject ");
+        StringAssert.Contains(history[1], " ev=light_apply out=reject ");
+    }
+
+    [TestMethod]
     public void EpochIsStableWithinInstanceAndDistinctAcrossInstances()
     {
         ScannerRoomClientDiagnostics first = new();

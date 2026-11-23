@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Helper;
 
 namespace Nitrox.Server.Subnautica.Models.GameLogic;
@@ -9,6 +10,7 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic;
 /// <summary>
 ///     Compact, bounded diagnostics for canonical Scanner Room transitions.
 ///     Callers must record transition boundaries only, never per-frame movement or sampling updates.
+///     The history holds the same events as the log: a repeated rejection that got no line is counted only.
 ///     <p />
 ///     Line shape (see <see cref="DiagnosticLineFormat" />):
 ///     <c>[SRD1] n= ep= side=S sid= ev= out= room= cam= slot= dockRev= cams= roomLock= camLock= fp= reason=</c>.
@@ -90,6 +92,30 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
     public ScannerRoomDiagnosticEntry RecordRejected(string eventName, MapRoomEntity? room = null, NitroxId? cameraId = null,
         SessionId? sessionId = null, int? slot = null, string? reason = null) =>
         Record(ScannerRoomDiagnosticOutcome.Rejected, eventName, room, cameraId, sessionId, slot, reason);
+
+    /// <summary>
+    ///     Records a scan target or scan progress request that was dropped because it was based on an older state
+    ///     of the room than the server holds. Only a dropped change of target gets a line: it is a choice a player
+    ///     made and lost. Repeated progress from the simulating player is dropped all the time and means nothing.
+    /// </summary>
+    public void RecordStaleScanRequest(MapRoomEntity room, SessionId sessionId, MapRoomMetadata requested)
+    {
+        try
+        {
+            MapRoomMetadata? current = room.Metadata as MapRoomMetadata;
+            if (current != null && Equals(current.TypeToScan, requested.TypeToScan))
+            {
+                Interlocked.Increment(ref unchangedRepeats);
+                return;
+            }
+            Record(ScannerRoomDiagnosticOutcome.Rejected, "scan_target", room, sessionId: sessionId,
+                reason: $"stale_request_gen_{requested.Generation}_rev_{requested.Revision}_room_gen_{current?.Generation ?? 0}_rev_{current?.Revision ?? 0}");
+        }
+        catch (Exception exception)
+        {
+            ReportOwnFailure(exception, ScannerRoomDiagnosticOutcome.Rejected, "scan_target", sessionId);
+        }
+    }
 
     public ScannerRoomDiagnosticEntry RecordInvariantFailure(string eventName, MapRoomEntity? room = null, NitroxId? cameraId = null,
         SessionId? sessionId = null, int? slot = null, string? reason = null) =>
@@ -292,31 +318,22 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
             }
 
             IncrementCounter(outcome);
+            if (outcome == ScannerRoomDiagnosticOutcome.Rejected && !writeRejection)
+            {
+                // Counted, but kept out of the history as well as out of the log: a request rejected on every
+                // packet would otherwise leave nothing else in the history within seconds.
+                suppressedWarnings++;
+                return entry;
+            }
+
             if (history.Count == HISTORY_CAPACITY)
             {
                 history.Dequeue();
             }
             history.Enqueue(entry);
-            if (outcome == ScannerRoomDiagnosticOutcome.InvariantFailure)
-            {
-                // Invariants are rare correctness failures. Never let a preceding rejection burst hide one.
-                Write(LogLevel.Warning, entry.Format());
-            }
-            else if (outcome == ScannerRoomDiagnosticOutcome.Rejected)
-            {
-                if (writeRejection)
-                {
-                    Write(LogLevel.Warning, entry.Format());
-                }
-                else
-                {
-                    suppressedWarnings++;
-                }
-            }
-            else
-            {
-                Write(LogLevel.Information, entry.Format());
-            }
+            // Invariants are rare correctness failures and are never thinned out, whatever came before them.
+            Write(outcome is ScannerRoomDiagnosticOutcome.Rejected or ScannerRoomDiagnosticOutcome.InvariantFailure ? LogLevel.Warning : LogLevel.Information,
+                entry.Format());
         }
         return entry;
     }

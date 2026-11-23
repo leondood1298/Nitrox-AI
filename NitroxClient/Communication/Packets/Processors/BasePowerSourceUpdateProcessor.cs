@@ -17,11 +17,12 @@ internal sealed class BasePowerSourceUpdateProcessor(BasePowerState state, BaseP
         PowerSourceMetadata requested = new(packet.Power, packet.MaxPower, packet.SourceType, packet.Revision, packet.FuelConsumed);
         if (!state.TryApply(packet.SourceId, requested, out PowerSourceMetadata accepted))
         {
+            diagnostics.RecordSourceStale(packet.SourceId, requested, accepted);
             return Task.CompletedTask;
         }
         if (!packet.Granted)
         {
-            Log.Warn($"[BasePower] Server rejected source {packet.SourceId} sequence {packet.ClientSequence}: {packet.RejectionReason}. Restoring revision {packet.Revision}.");
+            diagnostics.RecordSourceRejected(packet.SourceId, accepted, packet.RejectionReason);
         }
         bool objectFound = NitroxEntity.TryGetComponentFrom(packet.SourceId, out PowerSource powerSource);
         if (objectFound)

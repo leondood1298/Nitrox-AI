@@ -96,8 +96,9 @@ public sealed class DiagnosticsCommandsTest
         string[] lines = (await RunAsync(CreateScannerRoomCommand(scenario, scenario.Diagnostics))).Split(Environment.NewLine);
 
         int header = Array.FindIndex(lines, line => line.StartsWith("Recent transitions"));
-        lines[header].Should().Be("Recent transitions (newest last, 2 of the 41 kept, repeats folded):");
-        lines[header + 1].Should().Contain(" n=40 ").And.Contain(" ev=component out=reject ").And.EndWith(" rep=40 reason=non_owner (x40 since n=1)");
+        lines[0].Should().Contain("events=41 (accepted=1, rejected=40, ").And.Contain("rejections without a log line=34");
+        lines[header].Should().Be("Recent transitions (newest last, 2 of the 7 kept, repeats folded):");
+        lines[header + 1].Should().Contain(" n=32 ").And.Contain(" ev=component out=reject ").And.EndWith(" rep=32 reason=non_owner (x6 since n=1)");
         lines[header + 2].Should().Contain(" n=41 ").And.EndWith(" reason=changed");
     }
 

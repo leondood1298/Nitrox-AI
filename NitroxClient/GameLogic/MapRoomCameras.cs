@@ -187,6 +187,7 @@ public class MapRoomCameras
             lastBroadcastLightState[idOrGenerateNew] = flag;
             pendingControl.Add(idOrGenerateNew);
             packetSender.Send(new MapRoomCameraControl(idOrGenerateNew, mapRoomId, cameraIndex, isControlling: true, flag));
+            diagnostics.Record("control_publish", "ok", idOrGenerateNew, mapRoomId.HasValue ? mapRoomId.Value : null, slot: cameraIndex, reason: "acquire_requested");
         }
         else if (camera.TryGetNitroxId(out nitroxId2))
         {
@@ -196,6 +197,7 @@ public class MapRoomCameras
             // Release the camera-specific lock before generic movement ownership is relinquished.
             // Otherwise the server can see an already-unlocked camera and fail to notify remote clients.
             packetSender.Send(new MapRoomCameraControl(nitroxId2, Optional.Empty, -1, isControlling: false, lightOn: false));
+            diagnostics.Record("control_publish", "ok", nitroxId2, reason: "release_requested");
             MovementBroadcaster.UnregisterWatched(nitroxId2);
         }
     }
@@ -522,6 +524,7 @@ public class MapRoomCameras
 
     public void ProcessLight(MapRoomCameraLight packet)
     {
+        diagnostics.RecordIfIgnored("light_apply", packet.CameraId, packet.IsServerResponse, packet.Granted, packet.Revision, lightRevisions);
         if (!packet.IsServerResponse || !packet.Granted ||
             lightRevisions.TryGetValue(packet.CameraId, out long revision) && packet.Revision < revision)
         {
@@ -560,6 +563,7 @@ public class MapRoomCameras
 
     public void ProcessComponentState(MapRoomCameraComponentState packet)
     {
+        diagnostics.RecordIfIgnored("component_apply", packet.CameraId, packet.IsServerResponse, packet.Granted, packet.Revision, componentRevisions);
         if (!packet.IsServerResponse || !packet.Granted || componentRevisions.TryGetValue(packet.CameraId, out long revision) && packet.Revision < revision) return;
         componentRevisions[packet.CameraId] = packet.Revision;
         restoreStateCache.Retain(packet);

@@ -22,15 +22,20 @@ public sealed class BasePowerClientDiagnostics
     internal const int SOURCE_HISTORY_CAPACITY = 48;
     internal const int AUDIO_HISTORY_CAPACITY = 16;
     internal const int HISTORY_CAPACITY = SOURCE_HISTORY_CAPACITY + AUDIO_HISTORY_CAPACITY + 2;
+    private const int REPEAT_KEY_CAPACITY = 128;
+    private const int PROBLEM_CAPACITY = 32;
 
     private readonly string epoch = DiagnosticLineFormat.NewEpoch();
     private readonly List<string> history = new(HISTORY_CAPACITY);
     private readonly object sync = new();
+    private readonly DiagnosticRepeatSampler repeatSampler = new(REPEAT_KEY_CAPACITY);
+    private readonly Queue<string> problems = new(PROBLEM_CAPACITY);
     private readonly Func<SessionId?> localSessionId;
     private readonly Func<DateTimeOffset> utcNow;
     private bool epochAnnounced;
     private int audioEntries;
     private int sourceEntries;
+    private long nextSequence;
     private bool audioTruncated;
     private bool sourceTruncated;
     private long ownFailures;
@@ -74,6 +79,34 @@ public sealed class BasePowerClientDiagnostics
     {
         return Record(true, eventName, suppressed ? "suppress" : "pass", baseId, null, power, maxPower,
             initialSyncCompleted, waitScreenWaiting, reason ?? "live");
+    }
+
+    /// <summary>
+    ///     Records a source state from the server that this client dropped because it already holds a newer revision.
+    ///     When the server's revisions for a source start over (the source was rebuilt), this is all that is left of
+    ///     every later update: the source stays at the level it had. Not limited to the join phase, thinned out by
+    ///     repeat instead, because it lasts for as long as the source does.
+    /// </summary>
+    public string? RecordSourceStale(NitroxId sourceId, PowerSourceMetadata incoming, PowerSourceMetadata held) =>
+        RecordProblem("source_apply", "stale", sourceId, incoming, $"rev_{incoming.Revision}_held_{held.Revision}", "stale");
+
+    /// <summary>
+    ///     Records that the server refused a level this client reported for a source it believes it simulates. A
+    ///     client reports once a second, so repeats are thinned out.
+    /// </summary>
+    /// <param name="canonical">The state the server told this client to restore.</param>
+    public string? RecordSourceRejected(NitroxId sourceId, PowerSourceMetadata canonical, string? reason) =>
+        RecordProblem("source_update", "reject", sourceId, canonical, reason, WithoutDigits(reason));
+
+    /// <summary>
+    ///     The newest stale and rejected lines. Kept apart from the join trace, which stops at its capacity.
+    /// </summary>
+    internal IReadOnlyList<string> GetProblems()
+    {
+        lock (sync)
+        {
+            return problems.ToArray();
+        }
     }
 
     internal IReadOnlyList<string> GetHistory()
@@ -131,7 +164,7 @@ public sealed class BasePowerClientDiagnostics
                 {
                     sourceTruncated = true;
                 }
-                line = FormatLine(history.Count + 1, sessionId, audio ? "audio_trace_limit" : "source_trace_limit",
+                line = FormatLine(++nextSequence, sessionId, audio ? "audio_trace_limit" : "source_trace_limit",
                     "truncated", null, null, 0f, 0f, initialSyncCompleted, waitScreenWaiting, $"capacity_{capacity}");
                 history.Add(line);
             }
@@ -146,7 +179,7 @@ public sealed class BasePowerClientDiagnostics
                     sourceEntries++;
                 }
 
-                line = FormatLine(history.Count + 1, sessionId, eventName, outcome, baseId, sourceId, power, maxPower,
+                line = FormatLine(++nextSequence, sessionId, eventName, outcome, baseId, sourceId, power, maxPower,
                     initialSyncCompleted, waitScreenWaiting, reason);
                 history.Add(line);
             }
@@ -158,6 +191,67 @@ public sealed class BasePowerClientDiagnostics
         }
         Write(line);
         return line;
+    }
+
+    private string? RecordProblem(string eventName, string outcome, NitroxId sourceId, PowerSourceMetadata shown, string? reason, string repeatKey)
+    {
+        try
+        {
+            SessionId? sessionId = ReadLocalSessionId();
+            string line;
+            string? marker = null;
+            lock (sync)
+            {
+                if (!repeatSampler.Observe($"{eventName}|{sourceId}|{repeatKey}", out long occurrences))
+                {
+                    return null;
+                }
+                if (!epochAnnounced)
+                {
+                    epochAnnounced = true;
+                    marker = $"{DiagnosticLineFormat.Header(DiagnosticLineFormat.BASE_POWER_TAG, null, epoch, DiagnosticLineFormat.CLIENT_SIDE, sessionId, "epoch", "info")} utc={ReadUtcStamp()} reason=client_diagnostics_started";
+                }
+                line = FormattableString.Invariant(
+                    $"{DiagnosticLineFormat.Header(DiagnosticLineFormat.BASE_POWER_TAG, ++nextSequence, epoch, DiagnosticLineFormat.CLIENT_SIDE, sessionId, eventName, outcome)} base={DiagnosticLineFormat.NOT_APPLICABLE} source={DiagnosticLineFormat.ShortId(sourceId, true)} power={shown.Power:F2}/{shown.MaxPower:F2} initial={DiagnosticLineFormat.NOT_APPLICABLE} wait={DiagnosticLineFormat.NOT_APPLICABLE}{(occurrences > 1 ? $" rep={DiagnosticLineFormat.Number(occurrences)}" : "")} reason={DiagnosticLineFormat.Token($"{shown.SourceType}_{reason}", 64)}");
+                if (problems.Count == PROBLEM_CAPACITY)
+                {
+                    problems.Dequeue();
+                }
+                problems.Enqueue(line);
+            }
+            if (marker != null)
+            {
+                Write(marker);
+            }
+            Write(line, true);
+            return line;
+        }
+        catch (Exception)
+        {
+            Interlocked.Increment(ref ownFailures);
+            return null;
+        }
+    }
+
+    /// <summary>
+    ///     Rejection reasons quote the offending value. Repeats are recognised by the reason without its numbers.
+    /// </summary>
+    private static string WithoutDigits(string? reason)
+    {
+        if (string.IsNullOrEmpty(reason))
+        {
+            return "";
+        }
+        char[] kept = new char[reason.Length];
+        int length = 0;
+        foreach (char character in reason)
+        {
+            if (!char.IsDigit(character))
+            {
+                kept[length++] = character;
+            }
+        }
+        return new string(kept, 0, length);
     }
 
     private SessionId? ReadLocalSessionId()
@@ -188,11 +282,18 @@ public sealed class BasePowerClientDiagnostics
     /// <summary>
     ///     Writes a line without letting a failing log sink undo the bookkeeping already done for the event.
     /// </summary>
-    private void Write(string line)
+    private void Write(string line, bool warning = false)
     {
         try
         {
-            Log.Info(line);
+            if (warning)
+            {
+                Log.Warn(line);
+            }
+            else
+            {
+                Log.Info(line);
+            }
         }
         catch (Exception)
         {
@@ -200,7 +301,7 @@ public sealed class BasePowerClientDiagnostics
         }
     }
 
-    private string FormatLine(int sequence, SessionId? sessionId, string eventName, string outcome, NitroxId? baseId, NitroxId? sourceId,
+    private string FormatLine(long sequence, SessionId? sessionId, string eventName, string outcome, NitroxId? baseId, NitroxId? sourceId,
         float power, float maxPower, bool initialSyncCompleted, bool waitScreenWaiting, string reason) =>
         FormattableString.Invariant(
             $"{DiagnosticLineFormat.Header(DiagnosticLineFormat.BASE_POWER_TAG, sequence, epoch, DiagnosticLineFormat.CLIENT_SIDE, sessionId, eventName, outcome)} base={DiagnosticLineFormat.ShortId(baseId, true)} source={DiagnosticLineFormat.ShortId(sourceId, true)} power={power:F2}/{maxPower:F2} initial={(initialSyncCompleted ? 1 : 0)} wait={(waitScreenWaiting ? 1 : 0)} reason={DiagnosticLineFormat.Token(reason)}");

@@ -133,7 +133,7 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
                     looseCameraState.MoveIntoRecord(packet.CameraId, record);
                 }
                 response = new MapRoomCameraDock(packet.CameraId, packet.MapRoomId, packet.DockingIndex, mapRoom.DockingRevision, true, granted, packet.IsDocked, cameraNumber, record?.LightOn ?? false, record?.LightRevision ?? 0, record?.Energy ?? MapRoomCameraRecord.MAX_ENERGY, record?.Health ?? MapRoomCameraRecord.MAX_HEALTH, record?.ComponentRevision ?? 0);
-                diagnosticReason = granted ? alreadyCanonical ? "idempotent" : response.Revision == 0 ? "bootstrap" : "changed" : diagnosticReason;
+                diagnosticReason = granted ? alreadyCanonical ? "idempotent" : existingRecord == null && !validWorldCamera ? "bootstrap" : "changed" : diagnosticReason;
                 if (granted)
                 {
                     diagnostics.RecordAccepted(packet.IsDocked ? "dock" : "undock", mapRoom, packet.CameraId,

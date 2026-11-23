@@ -17,12 +17,17 @@ namespace NitroxClient.GameLogic;
 ///     <c>[SRD1] n= ep= side=C sid= ev= out= room= cam= slot= rev= reason=</c>. <c>sid</c> is this client's own
 ///     session id, the same number the server prints for this player's requests. <c>rev</c> is the revision the
 ///     event is about: the room's docking revision for dock events, the light or component revision for those, the
-///     preview revision for previews.
+///     preview revision for previews. Outcomes: <c>ok</c> (applied or sent), <c>reject</c> (refused by the server or
+///     by this client), <c>stale</c> (older than what is already applied), <c>pending</c> (waiting for a game object),
+///     <c>diverge</c> (the game object does not match the server's state). Everything but <c>ok</c> is thinned out
+///     when it repeats and then says how often it happened (<c>rep=</c>).
 /// </summary>
 public sealed class ScannerRoomClientDiagnostics
 {
     internal const int HISTORY_CAPACITY = 128;
+    private const int REPEAT_KEY_CAPACITY = 128;
     private readonly Queue<string> history = new(HISTORY_CAPACITY);
+    private readonly DiagnosticRepeatSampler repeatSampler = new(REPEAT_KEY_CAPACITY);
     private readonly Dictionary<NitroxId, (int Energy, int Health)> componentBands = [];
     private readonly object sync = new();
     private readonly string epoch = DiagnosticLineFormat.NewEpoch();
@@ -84,7 +89,18 @@ public sealed class ScannerRoomClientDiagnostics
         {
             AnnounceEpoch(sessionId);
             long sequence = ++nextSequence;
-            line = $"{DiagnosticLineFormat.Header(DiagnosticLineFormat.SCANNER_ROOM_TAG, sequence, epoch, DiagnosticLineFormat.CLIENT_SIDE, sessionId, eventName, outcome)} room={DiagnosticLineFormat.ShortId(roomId, false)} cam={DiagnosticLineFormat.ShortId(cameraId, true)} slot={DiagnosticLineFormat.Number(slot)} rev={DiagnosticLineFormat.Number(revision)} reason={DiagnosticLineFormat.Token(reason)}";
+            string room = DiagnosticLineFormat.ShortId(roomId, false);
+            string camera = DiagnosticLineFormat.ShortId(cameraId, true);
+            string reasonToken = DiagnosticLineFormat.Token(reason);
+            // A transition that went through is always written. Anything else can repeat for as long as its cause
+            // lasts (a rejection on every packet, a camera object that never arrives), so its repeats are thinned out.
+            long occurrences = 1;
+            bool write = outcome == "ok" || repeatSampler.Observe($"{eventName}|{outcome}|{room}|{camera}|{DiagnosticLineFormat.Number(slot)}|{reasonToken}", out occurrences);
+            line = $"{DiagnosticLineFormat.Header(DiagnosticLineFormat.SCANNER_ROOM_TAG, sequence, epoch, DiagnosticLineFormat.CLIENT_SIDE, sessionId, eventName, outcome)} room={room} cam={camera} slot={DiagnosticLineFormat.Number(slot)} rev={DiagnosticLineFormat.Number(revision)}{(occurrences > 1 ? $" rep={DiagnosticLineFormat.Number(occurrences)}" : "")} reason={reasonToken}";
+            if (!write)
+            {
+                return line;
+            }
             if (history.Count == HISTORY_CAPACITY)
             {
                 history.Dequeue();
@@ -93,6 +109,36 @@ public sealed class ScannerRoomClientDiagnostics
             Write(line, outcome is "reject" or "diverge");
         }
         return line;
+    }
+
+    /// <summary>
+    ///     Call before a light or component packet is checked. Records the packet when it is about to be ignored:
+    ///     the server refused the request this client sent (<c>reject</c>), or the packet is older than what this
+    ///     client already applied (<c>stale</c>). Both are dropped without any other trace, and the second one is
+    ///     what a camera looks like whose revisions started over on the server.
+    /// </summary>
+    internal void RecordIfIgnored(string eventName, NitroxId cameraId, bool isServerResponse, bool granted, long revision,
+        IReadOnlyDictionary<NitroxId, long> appliedRevisions)
+    {
+        try
+        {
+            if (!isServerResponse)
+            {
+                return;
+            }
+            if (!granted)
+            {
+                Record(eventName, "reject", cameraId, revision: revision, reason: "server_reject");
+            }
+            else if (appliedRevisions.TryGetValue(cameraId, out long applied) && revision < applied)
+            {
+                Record(eventName, "stale", cameraId, revision: revision, reason: $"applied_{DiagnosticLineFormat.Number(applied)}");
+            }
+        }
+        catch (Exception)
+        {
+            Interlocked.Increment(ref ownFailures);
+        }
     }
 
     internal void RecordComponentApplied(NitroxId cameraId, float energy, float health, long revision, bool objectFound)
