@@ -22,7 +22,7 @@ namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 ///     sees the room may choose while scan progress belongs to the room's simulating player. A room's fabricator is a
 ///     child entity whose state any player may set, like any other fabricator's. A Lifepod's repair state can only be
 ///     merged with another repair state, never replaced. A medical cabinet's state comes from any player and is only kept
-///     for a cabinet.
+///     for a cabinet, and so is the text of a rocket's time capsule for the capsule.
 /// </summary>
 [TestClass]
 public sealed class EntityMetadataUpdateProcessorTest
@@ -551,6 +551,42 @@ public sealed class EntityMetadataUpdateProcessorTest
 
         Assert.IsNull(locker.Metadata);
         Assert.AreEqual(0, packetSender.ReceivedCalls().Count());
+    }
+
+    [TestMethod]
+    public async Task TimeCapsuleTextFromAnyPlayerIsStoredForTheRocketsCapsuleAndSentToTheOthers()
+    {
+        VehicleEntity rocket = AddRocket(out PlayerTimeCapsuleEntity capsule);
+        PlayerTimeCapsuleMetadata text = new("Hello from 4546B", "");
+
+        await Send(otherPlayer, capsule, text);
+
+        Assert.AreSame(text, capsule.Metadata);
+        Assert.IsInstanceOfType<RocketMetadata>(rocket.Metadata, "The capsule's text is its own, not the rocket's.");
+        Assert.AreSame(text, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, simulator).Single().NewValue);
+        Assert.AreSame(text, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, thirdPlayer).Single().NewValue);
+        Assert.AreEqual(0, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, otherPlayer).Count);
+    }
+
+    [TestMethod]
+    public async Task TimeCapsuleTextForTheRocketItselfDoesNotReplaceTheRocketsState()
+    {
+        VehicleEntity rocket = AddRocket(out _);
+        EntityMetadata rocketState = rocket.Metadata;
+
+        await Send(otherPlayer, rocket, new PlayerTimeCapsuleMetadata("Hello", ""));
+
+        Assert.AreSame(rocketState, rocket.Metadata);
+        Assert.AreEqual(0, packetSender.ReceivedCalls().Count());
+    }
+
+    private VehicleEntity AddRocket(out PlayerTimeCapsuleEntity capsule)
+    {
+        VehicleEntity rocket = new(null, 0f, new NitroxTransform(), "", false, new NitroxId(), new NitroxTechType("RocketBase"), new RocketMetadata(1, 0f, 0, 0f, []));
+        capsule = new PlayerTimeCapsuleEntity(new NitroxId(), rocket.Id, null);
+        rocket.ChildEntities.Add(capsule);
+        entityRegistry.AddOrUpdate(rocket);
+        return rocket;
     }
 
     private Task Send(Player sender, Entity entity, EntityMetadata metadata)

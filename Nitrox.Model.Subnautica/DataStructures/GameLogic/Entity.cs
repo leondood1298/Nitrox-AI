@@ -21,6 +21,8 @@ namespace Nitrox.Model.Subnautica.DataStructures.GameLogic
     [ProtoInclude(57, typeof(BaseLeakEntity))]
     [ProtoInclude(58, typeof(CyclopsFireEntity))]
     [ProtoInclude(59, typeof(CyclopsDamagePointEntity))]
+    // Numbers from 200 are this fork's, so that they cannot collide with the ones upstream hands out next.
+    [ProtoInclude(200, typeof(PlayerTimeCapsuleEntity))]
     public abstract class Entity
     {
         [IgnoreConstructor]

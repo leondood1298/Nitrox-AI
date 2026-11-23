@@ -48,6 +48,7 @@ namespace Nitrox.Model.Subnautica.Packets
         ///     The PDA's unread markers of this player, the ones it had when it left and the ones others unlocked since.
         /// </summary>
         public List<PdaNotification> UnreadPdaNotifications { get; }
+        public List<CollectedTimeCapsule> CollectedTimeCapsules { get; }
 
         public InitialPlayerSync(NitroxId playerGameObjectId,
             bool firstTimeConnecting,
@@ -77,7 +78,8 @@ namespace Nitrox.Model.Subnautica.Packets
             bool displaySurfaceWater,
             bool markDeathPointsWithBeacon,
             IEnumerable<string> activeTeleporters,
-            IEnumerable<PdaNotification> unreadPdaNotifications)
+            IEnumerable<PdaNotification> unreadPdaNotifications,
+            IEnumerable<CollectedTimeCapsule> collectedTimeCapsules)
         {
             AssignedEscapePodId = assignedEscapePodId;
             PlayerGameObjectId = playerGameObjectId;
@@ -108,6 +110,7 @@ namespace Nitrox.Model.Subnautica.Packets
             MarkDeathPointsWithBeacon = markDeathPointsWithBeacon;
             ActiveTeleporters = activeTeleporters.ToList();
             UnreadPdaNotifications = unreadPdaNotifications.ToList();
+            CollectedTimeCapsules = collectedTimeCapsules.ToList();
         }
 
         /// <remarks>Used for deserialization</remarks>
@@ -140,7 +143,8 @@ namespace Nitrox.Model.Subnautica.Packets
             bool displaySurfaceWater,
             bool markDeathPointsWithBeacon,
             List<string> activeTeleporters,
-            List<PdaNotification> unreadPdaNotifications)
+            List<PdaNotification> unreadPdaNotifications,
+            List<CollectedTimeCapsule> collectedTimeCapsules)
         {
             AssignedEscapePodId = assignedEscapePodId;
             PlayerGameObjectId = playerGameObjectId;
@@ -171,6 +175,7 @@ namespace Nitrox.Model.Subnautica.Packets
             MarkDeathPointsWithBeacon = markDeathPointsWithBeacon;
             ActiveTeleporters = activeTeleporters;
             UnreadPdaNotifications = unreadPdaNotifications;
+            CollectedTimeCapsules = collectedTimeCapsules;
         }
     }
 }

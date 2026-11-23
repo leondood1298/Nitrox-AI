@@ -26,6 +26,12 @@ namespace NitroxClient.GameLogic.Helper
             {
                 return Optional.Of(remotePlayerId.RemotePlayer.Inventory);
             }
+            // The rocket's time capsule (see TimeCapsules)
+            PlayerTimeCapsule timeCapsule = owner.GetComponent<PlayerTimeCapsule>();
+            if (timeCapsule)
+            {
+                return Optional.Of(timeCapsule.container);
+            }
             SeamothStorageContainer seamothStorageContainer = owner.GetComponent<SeamothStorageContainer>();
             if (seamothStorageContainer)
             {
@@ -93,6 +99,11 @@ namespace NitroxClient.GameLogic.Helper
                 }
 
                 return storageContainer.TryGetIdOrWarn(out ownerId);
+            }
+            // The rocket's time capsule holds its items under a child object (PlayerTimeCapsule.storageRoot)
+            else if (parent.TryGetComponentInParent(out PlayerTimeCapsule timeCapsule, true))
+            {
+                return timeCapsule.TryGetIdOrWarn(out ownerId);
             }
             else if (parent.name.StartsWith(ESCAPEPOD_OBJECT_NAME))
             {
