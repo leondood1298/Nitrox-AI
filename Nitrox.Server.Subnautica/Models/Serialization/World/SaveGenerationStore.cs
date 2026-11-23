@@ -52,8 +52,12 @@ internal sealed class SaveGenerationStore
     ///     Writes <paramref name="files" /> as the world's new current generation.
     /// </summary>
     /// <exception cref="Exception">Anything a file's writer throws, or an I/O error. The previous generation stays loadable.</exception>
-    public SaveManifest Write(string saveDir, IReadOnlyList<GenerationFile> files)
+    public SaveManifest Write(string saveDir, IReadOnlyList<GenerationFile> files) => Write(saveDir, files, out _);
+
+    /// <param name="changed">False when every file came out the same as in the generation it replaces.</param>
+    public SaveManifest Write(string saveDir, IReadOnlyList<GenerationFile> files, out bool changed)
     {
+        changed = true;
         Directory.CreateDirectory(saveDir);
         string staging = Path.Combine(saveDir, STAGING_FOLDER_NAME);
         string previous = Path.Combine(saveDir, PREVIOUS_FOLDER_NAME);
@@ -81,6 +85,7 @@ internal sealed class SaveGenerationStore
         // may hold pieces, and the whole generation that was loaded is the one in the previous folder.
         if (TryReadManifest(saveDir) is { } currentManifest && Resolve(currentManifest, [saveDir], GenerationSource.CURRENT) != null)
         {
+            changed = !HaveSameFiles(currentManifest, manifest);
             Directory.CreateDirectory(previousStaging);
             // Manifest first: from here on, the world folder no longer claims a whole generation
             File.Move(Path.Combine(saveDir, MANIFEST_FILE_NAME), Path.Combine(previousStaging, MANIFEST_FILE_NAME));
@@ -242,6 +247,11 @@ internal sealed class SaveGenerationStore
             return null;
         }
     }
+
+    private static bool HaveSameFiles(SaveManifest a, SaveManifest b) =>
+        a.Files.Count == b.Files.Count &&
+        a.Files.All(entry => b.Files.Any(other => string.Equals(other.Name, entry.Name, StringComparison.OrdinalIgnoreCase) &&
+                                                 string.Equals(other.Sha256, entry.Sha256, StringComparison.OrdinalIgnoreCase)));
 
     private static ResolvedGeneration? Resolve(SaveManifest manifest, IReadOnlyList<string> folders, GenerationSource source)
     {

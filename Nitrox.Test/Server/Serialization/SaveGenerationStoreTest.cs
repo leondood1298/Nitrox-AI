@@ -51,6 +51,19 @@ public sealed class SaveGenerationStoreTest
     }
 
     [TestMethod]
+    public void SaveOfTheSameWorldIsReportedUnchanged()
+    {
+        SaveGenerationStore store = new();
+        store.Write(saveDir, Files("one"), out bool firstChanged);
+        store.Write(saveDir, Files("one"), out bool sameChanged);
+        store.Write(saveDir, Files("two"), out bool otherChanged);
+
+        firstChanged.Should().BeTrue();
+        sameChanged.Should().BeFalse();
+        otherChanged.Should().BeTrue();
+    }
+
+    [TestMethod]
     public void SaveCutShortAtAnyStepLeavesAWholeGeneration()
     {
         List<string> steps = [];

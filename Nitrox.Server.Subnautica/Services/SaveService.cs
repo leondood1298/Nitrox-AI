@@ -28,11 +28,18 @@ internal sealed class SaveService(Func<WorldService> worldServiceProvider, ISave
         {
             case ServiceActionType.SAVE:
                 string savePath = startOptions.Value.GetServerSavePath();
-                if (!await worldServiceProvider().SaveAsync(savePath, stoppingToken))
+                WorldService worldService = worldServiceProvider();
+                if (!await worldService.SaveAsync(savePath, stoppingToken))
                 {
                     return;
                 }
                 await saveStateTrigger.InvokeAsync(new ISaveState.Args(savePath));
+                if (!worldService.LastSaveChangedWorld)
+                {
+                    // Nothing new to hand to an external tool or to back up
+                    logger.ZLogTrace($"World unchanged since the last save; no post-save command or backup");
+                    return;
+                }
                 ExecutePostSaveCommand();
                 BackUp(savePath);
                 break;
@@ -42,30 +49,72 @@ internal sealed class SaveService(Func<WorldService> worldServiceProvider, ISave
     private void ExecutePostSaveCommand()
     {
         string postSaveCommandPath = options.Value.PostSaveCommandPath;
-        if (!string.IsNullOrWhiteSpace(postSaveCommandPath))
+        if (string.IsNullOrWhiteSpace(postSaveCommandPath))
+        {
+            return;
+        }
+        if (!File.Exists(postSaveCommandPath))
+        {
+            logger.ZLogError($"Post-save file does not exist: {postSaveCommandPath}");
+            return;
+        }
+        try
+        {
+            Process? process = Process.Start(CreatePostSaveStartInfo(postSaveCommandPath));
+            if (process == null)
+            {
+                logger.ZLogError($"Post-save command did not start: {postSaveCommandPath}");
+                return;
+            }
+            logger.ZLogInformation($"Post-save command started: {postSaveCommandPath}");
+            // Reported when it ends, without holding up the next save
+            _ = ReportWhenDoneAsync(process, postSaveCommandPath);
+        }
+        catch (Exception ex)
+        {
+            logger.ZLogError(ex, $"Post-save command failed");
+        }
+    }
+
+    private async Task ReportWhenDoneAsync(Process process, string commandPath)
+    {
+        using (process)
         {
             try
             {
-                // Call external tool for backups, etc
-                if (File.Exists(postSaveCommandPath))
+                await process.WaitForExitAsync();
+                if (process.ExitCode == 0)
                 {
-                    using Process process = Process.Start(new ProcessStartInfo
-                    {
-                        FileName = postSaveCommandPath,
-                        Verb = "open"
-                    });
-                    logger.ZLogInformation($"Post-save command completed successfully: {postSaveCommandPath}");
+                    logger.ZLogInformation($"Post-save command completed successfully: {commandPath}");
                 }
                 else
                 {
-                    logger.ZLogError($"Post-save file does not exist: {postSaveCommandPath}");
+                    logger.ZLogError($"Post-save command ended with exit code {process.ExitCode}: {commandPath}");
                 }
             }
             catch (Exception ex)
             {
-                logger.ZLogError(ex, $"Post-save command failed");
+                logger.ZLogError(ex, $"Post-save command could not be followed");
             }
         }
+    }
+
+    /// <summary>
+    ///     How to run the configured command. A PowerShell script, which the option's description promises, could not be
+    ///     started as a program, and opening it through the shell only showed it in an editor.
+    /// </summary>
+    internal static ProcessStartInfo CreatePostSaveStartInfo(string commandPath)
+    {
+        ProcessStartInfo startInfo = Path.GetExtension(commandPath).ToLowerInvariant() switch
+        {
+            ".ps1" => new ProcessStartInfo(OperatingSystem.IsWindows() ? "powershell.exe" : "pwsh") { ArgumentList = { "-NoProfile", "-File", commandPath } },
+            ".bat" or ".cmd" => new ProcessStartInfo("cmd.exe") { ArgumentList = { "/c", commandPath } },
+            _ => new ProcessStartInfo(commandPath)
+        };
+        startInfo.UseShellExecute = false;
+        startInfo.CreateNoWindow = true;
+        startInfo.WorkingDirectory = Path.GetDirectoryName(Path.GetFullPath(commandPath)) ?? "";
+        return startInfo;
     }
 
     /// <summary>

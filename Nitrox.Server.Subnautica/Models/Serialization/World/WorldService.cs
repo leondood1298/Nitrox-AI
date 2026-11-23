@@ -44,6 +44,11 @@ internal class WorldService : IHostedService
     private readonly ActiveTeleporters activeTeleporters;
     private readonly CollectedTimeCapsules collectedTimeCapsules;
     public IServerSerializer Serializer { get; private set; }
+
+    /// <summary>
+    ///     False when the last save wrote exactly what was saved before, so there is nothing new to back up.
+    /// </summary>
+    public bool LastSaveChangedWorld { get; private set; } = true;
     private string FileEnding => Serializer?.FileEnding ?? "";
 
     public WorldService(
@@ -192,9 +197,10 @@ internal class WorldService : IHostedService
                 new GenerationFile($"WorldData{FileEnding}", path => SerializeSnapshot(path, persistedData.WorldData)),
                 new GenerationFile($"GlobalRootData{FileEnding}", path => SerializeSnapshot(path, persistedData.GlobalRootData)),
                 new GenerationFile($"EntityData{FileEnding}", path => SerializeSnapshot(path, persistedData.EntityData))
-            ]);
+            ], out bool changed);
+            LastSaveChangedWorld = changed;
 
-            logger.ZLogInformation($"World state saved (generation {manifest.Generation})");
+            logger.ZLogInformation($"World state saved (generation {manifest.Generation}{(changed ? "" : ", unchanged")})");
             return true;
         }
         catch (Exception ex)
