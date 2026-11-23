@@ -6,12 +6,14 @@ using Nitrox.Model.DataStructures.GameLogic;
 using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.MultiplayerSession;
 using Nitrox.Server.Subnautica.Models.AppEvents;
 using Nitrox.Server.Subnautica.Models.Communication;
 using Nitrox.Server.Subnautica.Models.GameLogic.Bases;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
+using Nitrox.Server.Subnautica.Models.Serialization.World;
 
 namespace Nitrox.Server.Subnautica.Models.GameLogic;
 
@@ -178,40 +180,48 @@ internal sealed class JoiningManager(
 
         player.Entity = wasBrandNewPlayer ? SetupNewPlayerEntity(player) : RespawnExistingEntity(player);
 
-        List<GlobalRootEntity> globalRootEntities = worldEntityManager.GetInitialSyncGlobalRootEntities(true);
-        bool isFirstPlayer = playerManager.GetConnectedPlayers().Count == 1;
+        // The sync carries the live Scanner Room entities and is serialized inside the send, on this thread, while
+        // packet processors keep changing those rooms on theirs. The rooms are held still from the moment the entity
+        // list is taken until the packet has been written, so the joining player receives every room in one state.
+        await WorldService.RunWithScannerRoomsLocked(() => entityRegistry.GetEntities<MapRoomEntity>(), _ => SendSync());
 
-        InitialPlayerSync initialPlayerSync = new(
-            player.GameObjectId,
-            wasBrandNewPlayer,
-            assignedEscapePodId,
-            player.EquippedItems,
-            player.UsedItems,
-            player.QuickSlotsBindingIds,
-            pdaManager.GetInitialPDAData(),
-            storyManager.GetInitialStoryGoalData(storyScheduler, player),
-            player.Position,
-            player.Rotation,
-            player.SubRootId,
-            player.Stats,
-            GetOtherPlayers(player),
-            globalRootEntities,
-            simulations,
-            player.GameMode,
-            player.Permissions,
-            wasBrandNewPlayer ? IntroCinematicMode.LOADING : IntroCinematicMode.COMPLETED,
-            new(new(player.PingInstancePreferences), player.PinnedRecipePreferences.ToList()),
-            storyManager.GetTimeData(),
-            isFirstPlayer,
-            BuildingManager.GetEntitiesOperations(globalRootEntities),
-            options.Value.KeepInventoryOnDeath,
-            sessionSettings,
-            player.InPrecursor,
-            player.DisplaySurfaceWater,
-            options.Value.MarkDeathPointsWithBeacon
-        );
+        ValueTask SendSync()
+        {
+            List<GlobalRootEntity> globalRootEntities = worldEntityManager.GetInitialSyncGlobalRootEntities(true);
+            bool isFirstPlayer = playerManager.GetConnectedPlayers().Count == 1;
 
-        await packetSender.SendPacketAsync(initialPlayerSync, player.SessionId);
+            InitialPlayerSync initialPlayerSync = new(
+                player.GameObjectId,
+                wasBrandNewPlayer,
+                assignedEscapePodId,
+                player.EquippedItems,
+                player.UsedItems,
+                player.QuickSlotsBindingIds,
+                pdaManager.GetInitialPDAData(),
+                storyManager.GetInitialStoryGoalData(storyScheduler, player),
+                player.Position,
+                player.Rotation,
+                player.SubRootId,
+                player.Stats,
+                GetOtherPlayers(player),
+                globalRootEntities,
+                simulations,
+                player.GameMode,
+                player.Permissions,
+                wasBrandNewPlayer ? IntroCinematicMode.LOADING : IntroCinematicMode.COMPLETED,
+                new(new(player.PingInstancePreferences), player.PinnedRecipePreferences.ToList()),
+                storyManager.GetTimeData(),
+                isFirstPlayer,
+                BuildingManager.GetEntitiesOperations(globalRootEntities),
+                options.Value.KeepInventoryOnDeath,
+                sessionSettings,
+                player.InPrecursor,
+                player.DisplaySurfaceWater,
+                options.Value.MarkDeathPointsWithBeacon
+            );
+
+            return packetSender.SendPacketAsync(initialPlayerSync, player.SessionId);
+        }
 
         IEnumerable<PlayerContext> GetOtherPlayers(Player player)
         {

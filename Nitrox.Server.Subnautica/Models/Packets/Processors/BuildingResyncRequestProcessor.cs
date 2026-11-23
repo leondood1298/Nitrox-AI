@@ -4,6 +4,7 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
+using Nitrox.Server.Subnautica.Models.Serialization.World;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
@@ -41,6 +42,8 @@ sealed class BuildingResyncRequestProcessor(EntityRegistry entityRegistry, World
             AddEntityToResync(entity);
         }
 
-        await context.ReplyAsync(new BuildingResync(buildEntities, moduleEntities));
+        // The bases carry their live Scanner Room entities, which must not change while the reply is written.
+        await WorldService.RunWithScannerRoomsLocked(() => entityRegistry.GetEntities<MapRoomEntity>(),
+            _ => context.ReplyAsync(new BuildingResync(buildEntities, moduleEntities)));
     }
 }

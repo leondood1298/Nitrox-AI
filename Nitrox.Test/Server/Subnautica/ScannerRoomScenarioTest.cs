@@ -130,6 +130,31 @@ public sealed class ScannerRoomScenarioTest
     }
 
     [TestMethod]
+    public async Task DockReportedByTheRoomOwnerDoesNotEndAnotherPlayersControl()
+    {
+        // Every client whose own physics sees the camera enter the dock reports it. The room owner's report can arrive
+        // before the report of the player who is flying the camera in, and that player keeps control while docked.
+        ScannerRoomScenarioFixture scenario = new();
+        Assert.IsTrue((await scenario.ControlLooseAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, true)).Granted);
+        Assert.IsTrue(scenario.Ownership.TryAcquire(scenario.Room.Id, scenario.PlayerB, SimulationLockType.TRANSIENT));
+
+        IReadOnlyList<Nitrox.Model.Packets.Packet> sent = await scenario.DockPacketsAsync(scenario.PlayerB,
+            new MapRoomCameraDock(ScannerRoomScenarioFixture.CameraAId, ScannerRoomScenarioFixture.RoomId, 0));
+
+        Assert.IsTrue(sent.OfType<MapRoomCameraDock>().Single().Granted, "The camera is docked all the same.");
+        Assert.AreEqual(ScannerRoomScenarioFixture.CameraAId, scenario.Room.LeftDockCameraId);
+        Assert.AreEqual(0, sent.OfType<MapRoomCameraControl>().Count(), "Nobody may be told that control ended.");
+        Assert.IsTrue(scenario.Ownership.TryGetLock(ScannerRoomScenarioFixture.CameraAId, out SimulationOwnershipData.PlayerLock controlLock));
+        Assert.AreSame(scenario.PlayerA, controlLock.Player);
+        Assert.AreEqual(SimulationLockType.EXCLUSIVE, controlLock.LockType);
+        Assert.IsTrue(scenario.ControlLifecycle.IsActiveController(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA.SessionId));
+
+        MapRoomCameraDock controllersOwnReport = await scenario.DockAsync(scenario.PlayerA,
+            ScannerRoomScenarioFixture.CameraAId, 0, true, establishAuthority: false);
+        Assert.IsTrue(controllersOwnReport.Granted, "The controller's later report is a replay of the canonical state.");
+    }
+
+    [TestMethod]
     public async Task ExclusiveControlTransfersOnlyAfterCanonicalRelease()
     {
         ScannerRoomScenarioFixture scenario = new();

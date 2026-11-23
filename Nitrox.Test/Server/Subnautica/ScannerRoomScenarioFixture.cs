@@ -1,5 +1,8 @@
+using System.Net;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Nitrox.Model.Configuration;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.GameLogic;
@@ -7,8 +10,12 @@ using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Packets;
+using Nitrox.Server.Subnautica.Models.AppEvents;
+using Nitrox.Server.Subnautica.Models.Communication;
 using Nitrox.Server.Subnautica.Models.GameLogic;
+using Nitrox.Server.Subnautica.Models.GameLogic.Bases;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
 using Nitrox.Server.Subnautica.Models.Packets.Processors;
@@ -28,11 +35,19 @@ internal sealed class ScannerRoomScenarioFixture
     internal static readonly NitroxId CameraAId = new("00000000-0000-0000-0000-000000000201");
     internal static readonly NitroxId CameraBId = new("00000000-0000-0000-0000-000000000202");
     internal static readonly NitroxId CameraCId = new("00000000-0000-0000-0000-000000000203");
+    private const string CAMERA_CLASS_ID = "733fd479-0760-4bc2-a03e-281cbf02bfa4";
 
     private readonly MapRoomCameraDockProcessor dockProcessor;
     private readonly MapRoomCameraControlProcessor controlProcessor;
     private readonly MapRoomDeconstructionCleanup deconstructionCleanup;
     private readonly SimulationOwnershipRequestProcessor ownershipRequestProcessor;
+    private readonly PlaceBaseProcessor placeBaseProcessor;
+    private readonly RecordingPacketSender worldPacketSender = new();
+    private readonly PickupItemPacketProcessor pickupProcessor;
+    private readonly EntitySpawnedByClientProcessor spawnProcessor;
+    private readonly UpdateBaseProcessor updateBaseProcessor;
+    private readonly EntityDestroyedPacketProcessor destroyProcessor;
+    private readonly EntityMetadataUpdateProcessor metadataProcessor;
 
     internal EntityRegistry EntityRegistry { get; }
     internal SimulationOwnershipData Ownership { get; } = new();
@@ -41,7 +56,9 @@ internal sealed class ScannerRoomScenarioFixture
     internal MapRoomLifecycle RoomLifecycle { get; } = new();
     internal MapRoomCameraControlLifecycle ControlLifecycle { get; } = new();
     internal MapRoomLooseCameraState LooseCameraState { get; }
+    internal MapRoomRevisionFloors RevisionFloors { get; } = new();
     internal EntitySimulation EntitySimulation { get; }
+    internal WorldEntityManager WorldEntityManager { get; }
     internal MapRoomEntity Room { get; }
     internal ServerPlayer PlayerA { get; } = CreatePlayer(1, "A");
     internal ServerPlayer PlayerB { get; } = CreatePlayer(2, "B");
@@ -59,20 +76,29 @@ internal sealed class ScannerRoomScenarioFixture
 
         // Dock processing only uses the world manager when it must persist a previously untracked
         // loose camera. All fixture cameras are registered, so unrelated world services stay absent.
-        RecordingPacketSender worldPacketSender = new();
         Diagnostics = new ScannerRoomDiagnostics(NullLogger<ScannerRoomDiagnostics>.Instance);
         ControlReleaseFactory = new MapRoomCameraControlReleaseFactory(EntityRegistry, Diagnostics, ControlLifecycle);
         WorldEntityManager worldEntityManager = new(worldPacketSender, EntityRegistry, null!, null!, null!, Diagnostics, null!, NullLogger<WorldEntityManager>.Instance);
+        WorldEntityManager = worldEntityManager;
         LooseCameraState = new MapRoomLooseCameraState(EntityRegistry);
         dockProcessor = new(EntityRegistry, worldEntityManager, Ownership, ControlReleaseFactory, RoomLifecycle,
-            ControlLifecycle, Diagnostics, LooseCameraState, NullLogger<MapRoomCameraDockProcessor>.Instance);
-        controlProcessor = new(Ownership, EntityRegistry, ControlLifecycle, Diagnostics);
+            ControlLifecycle, Diagnostics, LooseCameraState, RevisionFloors, NullLogger<MapRoomCameraDockProcessor>.Instance);
+        controlProcessor = new(Ownership, EntityRegistry, ControlLifecycle, ControlReleaseFactory, Diagnostics);
         PlayerManager playerManager = new(null!, null!, null!, NullLogger<PlayerManager>.Instance);
         deconstructionCleanup = new(EntityRegistry, Ownership, ControlReleaseFactory,
-            new MapRoomScanResultSubscriptions(), ControlLifecycle, playerManager, Diagnostics, worldEntityManager, LooseCameraState);
+            new MapRoomScanResultSubscriptions(), ControlLifecycle, playerManager, Diagnostics, worldEntityManager, LooseCameraState, RevisionFloors);
         EntitySimulation = new(worldPacketSender, EntityRegistry, worldEntityManager, Ownership,
             playerManager, ControlReleaseFactory, ControlLifecycle, NullLogger<EntitySimulation>.Instance);
         ownershipRequestProcessor = new(Ownership, EntitySimulation, EntityRegistry, ControlReleaseFactory, ControlLifecycle, Diagnostics);
+        BuildingManager buildingManager = new(worldPacketSender, EntityRegistry, worldEntityManager,
+            Options.Create(new SubnauticaServerOptions()), RevisionFloors, NullLogger<BuildingManager>.Instance);
+        placeBaseProcessor = new(buildingManager, EntitySimulation);
+        updateBaseProcessor = new(buildingManager, EntitySimulation);
+        destroyProcessor = new(playerManager, EntitySimulation, worldEntityManager, EntityRegistry, ControlReleaseFactory, ControlLifecycle, Diagnostics, RevisionFloors);
+        // Base power sources are not part of these scenarios.
+        metadataProcessor = new(playerManager, EntityRegistry, Ownership, Diagnostics, null!, NullLogger<EntityMetadataUpdateProcessor>.Instance);
+        pickupProcessor = new(EntityRegistry, worldEntityManager, Ownership, ControlReleaseFactory, ControlLifecycle, Diagnostics, LooseCameraState);
+        spawnProcessor = new(playerManager, EntityRegistry, worldEntityManager, EntitySimulation, LooseCameraState);
     }
 
     internal async Task<MapRoomCameraDock> DockAsync(ServerPlayer player, NitroxId cameraId, int slot, bool isDocked,
@@ -96,11 +122,21 @@ internal sealed class ScannerRoomScenarioFixture
         return requestPacketSender.Single<MapRoomCameraDock>();
     }
 
+    /// <summary>
+    ///     Everything the server sends in answer to a dock packet, sent as is: no authority is set up for the sender.
+    /// </summary>
+    internal async Task<IReadOnlyList<Packet>> DockPacketsAsync(ServerPlayer player, MapRoomCameraDock packet)
+    {
+        RecordingPacketSender requestPacketSender = new();
+        await dockProcessor.Process(new AuthProcessorContext(player, requestPacketSender), packet);
+        return requestPacketSender.Packets;
+    }
+
     internal async Task<MapRoomCameraControl> ControlAsync(ServerPlayer player, NitroxId cameraId, int slot, bool isControlling)
     {
         RecordingPacketSender requestPacketSender = new();
         await controlProcessor.Process(new AuthProcessorContext(player, requestPacketSender), new MapRoomCameraControl(cameraId, RoomId, slot, isControlling, false));
-        return requestPacketSender.Single<MapRoomCameraControl>();
+        return ControlResponse(requestPacketSender, cameraId);
     }
 
     internal async Task<MapRoomCameraControl> ControlLooseAsync(ServerPlayer player, NitroxId cameraId, bool isControlling)
@@ -108,13 +144,116 @@ internal sealed class ScannerRoomScenarioFixture
         RecordingPacketSender requestPacketSender = new();
         await controlProcessor.Process(new AuthProcessorContext(player, requestPacketSender),
             new MapRoomCameraControl(cameraId, Optional.Empty, -1, isControlling, false));
-        return requestPacketSender.Single<MapRoomCameraControl>();
+        return ControlResponse(requestPacketSender, cameraId);
+    }
+
+    /// <summary>
+    ///     Taking a camera can also end control of the camera the player had before, which is announced in the same go.
+    /// </summary>
+    private static MapRoomCameraControl ControlResponse(RecordingPacketSender requestPacketSender, NitroxId cameraId) =>
+        requestPacketSender.Packets.OfType<MapRoomCameraControl>().Single(packet => packet.CameraId == cameraId);
+
+    /// <summary>
+    ///     Everything the server sends in answer to a control packet, for tests that look beyond the control response.
+    /// </summary>
+    internal async Task<IReadOnlyList<Packet>> ControlPacketsAsync(ServerPlayer player, MapRoomCameraControl packet)
+    {
+        RecordingPacketSender requestPacketSender = new();
+        await controlProcessor.Process(new AuthProcessorContext(player, requestPacketSender), packet);
+        return requestPacketSender.Packets;
     }
 
     internal async Task<IReadOnlyList<Packet>> CleanupAsync(MapRoomEntity room)
     {
         RecordingPacketSender requestPacketSender = new();
         await deconstructionCleanup.CleanupAsync(room, new AuthProcessorContext(PlayerA, requestPacketSender));
+        return requestPacketSender.Packets;
+    }
+
+    /// <summary>
+    ///     Picks a camera up into the inventory of <paramref name="player" />. A client never sends camera state with
+    ///     the inventory item; <paramref name="clientMetadata" /> is for tests of a client that does.
+    /// </summary>
+    internal async Task<IReadOnlyList<Packet>> PickupAsync(ServerPlayer player, NitroxId cameraId, EntityMetadata? clientMetadata = null)
+    {
+        RecordingPacketSender requestPacketSender = new();
+        InventoryItemEntity item = new(cameraId, CAMERA_CLASS_ID, new NitroxTechType("MapRoomCamera"), clientMetadata, player.GameObjectId, []);
+        await pickupProcessor.Process(new AuthProcessorContext(player, requestPacketSender), new PickupItem(item));
+        return requestPacketSender.Packets;
+    }
+
+    /// <summary>
+    ///     Drops a camera from an inventory back into the world, the way the dropping client reports it.
+    /// </summary>
+    internal async Task<IReadOnlyList<Packet>> DropAsync(ServerPlayer player, NitroxId cameraId, EntityMetadata? clientMetadata = null)
+    {
+        RecordingPacketSender requestPacketSender = new();
+        GlobalRootEntity camera = CreateCamera(cameraId);
+        camera.Metadata = clientMetadata;
+        await spawnProcessor.Process(new AuthProcessorContext(player, requestPacketSender), new EntitySpawnedByClient(camera, true, true));
+        return requestPacketSender.Packets;
+    }
+
+    /// <summary>
+    ///     Finishes a piece on an existing base, the way the builder's client reports it.
+    /// </summary>
+    internal async Task<IReadOnlyList<Packet>> UpdateBaseAsync(ServerPlayer player, UpdateBase packet)
+    {
+        RecordingPacketSender requestPacketSender = new();
+        await updateBaseProcessor.Process(new AuthProcessorContext(player, requestPacketSender), packet);
+        return requestPacketSender.Packets;
+    }
+
+    /// <summary>
+    ///     Reports an entity as destroyed, the way the client that saw it die does.
+    /// </summary>
+    internal async Task<IReadOnlyList<Packet>> DestroyAsync(ServerPlayer player, NitroxId entityId)
+    {
+        RecordingPacketSender requestPacketSender = new();
+        await destroyProcessor.Process(new AuthProcessorContext(player, requestPacketSender), new EntityDestroyed(entityId));
+        return requestPacketSender.Packets;
+    }
+
+    /// <summary>
+    ///     Sends a metadata update for an entity. The fixture has no connected players to relay an accepted update to,
+    ///     so what comes back is only what the server replied to <paramref name="player" />.
+    /// </summary>
+    internal async Task<IReadOnlyList<Packet>> UpdateMetadataAsync(ServerPlayer player, NitroxId entityId, EntityMetadata metadata)
+    {
+        RecordingPacketSender requestPacketSender = new();
+        await metadataProcessor.Process(new AuthProcessorContext(player, requestPacketSender), new EntityMetadataUpdate(entityId, metadata));
+        return requestPacketSender.Packets;
+    }
+
+    /// <summary>
+    ///     What a player is told about camera control once their initial sync has finished.
+    /// </summary>
+    internal async Task<IReadOnlyList<MapRoomCameraControl>> JoinedPlayerControlGrantsAsync(SessionId joinedSessionId)
+    {
+        int alreadySent = worldPacketSender.Packets.Count;
+        await EntitySimulation.SendCameraControlGrantsAsync(joinedSessionId);
+        return worldPacketSender.Packets.Skip(alreadySent).Cast<MapRoomCameraControl>().ToList();
+    }
+
+    /// <summary>
+    ///     Runs the simulation cleanup of a player who left.
+    /// </summary>
+    /// <returns>The packets that cleanup sent.</returns>
+    internal async Task<IReadOnlyList<Packet>> DisconnectAsync(ServerPlayer player)
+    {
+        int alreadySent = worldPacketSender.Packets.Count;
+        await EntitySimulation.OnEventAsync(new ISessionCleaner.Args(
+            new SessionManager.Session(player.SessionId, new IPEndPoint(IPAddress.Loopback, 11000)), 1));
+        return worldPacketSender.Packets.Skip(alreadySent).ToList();
+    }
+
+    /// <summary>
+    ///     Finishes the first piece of a new base, the way the builder's client reports it.
+    /// </summary>
+    internal async Task<IReadOnlyList<Packet>> PlaceBaseAsync(ServerPlayer player, PlaceBase packet)
+    {
+        RecordingPacketSender requestPacketSender = new();
+        await placeBaseProcessor.Process(new AuthProcessorContext(player, requestPacketSender), packet);
         return requestPacketSender.Packets;
     }
 
@@ -152,7 +291,7 @@ internal sealed class ScannerRoomScenarioFixture
     private static GlobalRootEntity CreateCamera(NitroxId cameraId) => new(
         new NitroxTransform(),
         GlobalRootEntity.GLOBAL_ROOT_LEVEL,
-        "733fd479-0760-4bc2-a03e-281cbf02bfa4",
+        CAMERA_CLASS_ID,
         true,
         cameraId,
         new NitroxTechType("MapRoomCamera"),
@@ -182,7 +321,7 @@ internal sealed class ScannerRoomScenarioFixture
         false,
         false);
 
-    private sealed class RecordingPacketSender : IPacketSender
+    internal sealed class RecordingPacketSender : IPacketSender
     {
         private readonly List<Packet> packets = [];
 

@@ -57,6 +57,18 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
             }
             await SendUpdateToVisiblePlayersAsync(context, acceptedUpdate, entity, acceptedMetadata is MapRoomMetadata);
         }
+        else if (packet.NewValue is MapRoomMetadata && entity is MapRoomEntity refusedMapRoom)
+        {
+            // The sender has already applied its request locally: its Scanner Room shows the target or progress it
+            // asked for. Nothing else would tell it that the room is in another state, and with the generation and
+            // revision it holds every later request would be refused as stale too. It is sent the room's real state.
+            MapRoomMetadata canonicalMetadata;
+            lock (refusedMapRoom)
+            {
+                canonicalMetadata = refusedMapRoom.Metadata as MapRoomMetadata ?? new MapRoomMetadata(NitroxTechType.None, 0);
+            }
+            await context.ReplyAsync(new EntityMetadataUpdate(packet.Id, canonicalMetadata));
+        }
     }
 
     private async Task SendUpdateToVisiblePlayersAsync(AuthProcessorContext context, EntityMetadataUpdate packet, Entity entity, bool includeSender)
