@@ -12,13 +12,13 @@ namespace NitroxClient.GameLogic;
 /// </summary>
 public sealed class BasePowerClientDiagnostics
 {
-    internal const int SourceHistoryCapacity = 48;
-    internal const int AudioHistoryCapacity = 16;
-    internal const int HistoryCapacity = SourceHistoryCapacity + AudioHistoryCapacity + 2;
+    internal const int SOURCE_HISTORY_CAPACITY = 48;
+    internal const int AUDIO_HISTORY_CAPACITY = 16;
+    internal const int HISTORY_CAPACITY = SOURCE_HISTORY_CAPACITY + AUDIO_HISTORY_CAPACITY + 2;
 
     private static int nextEpoch = BitConverter.ToInt32(Guid.NewGuid().ToByteArray(), 0);
     private readonly string epoch = unchecked((uint)Interlocked.Increment(ref nextEpoch)).ToString("x8", CultureInfo.InvariantCulture);
-    private readonly List<string> history = new(HistoryCapacity);
+    private readonly List<string> history = new(HISTORY_CAPACITY);
     private readonly object sync = new();
     private int audioEntries;
     private int sourceEntries;
@@ -55,7 +55,7 @@ public sealed class BasePowerClientDiagnostics
         string line;
         lock (sync)
         {
-            int capacity = audio ? AudioHistoryCapacity : SourceHistoryCapacity;
+            int capacity = audio ? AUDIO_HISTORY_CAPACITY : SOURCE_HISTORY_CAPACITY;
             bool atCapacity = audio ? audioEntries >= capacity : sourceEntries >= capacity;
             if (atCapacity)
             {

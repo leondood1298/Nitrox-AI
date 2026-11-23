@@ -14,9 +14,9 @@ namespace NitroxClient.GameLogic;
 /// </summary>
 public sealed class ScannerRoomClientDiagnostics
 {
-    internal const int HistoryCapacity = 128;
+    internal const int HISTORY_CAPACITY = 128;
     private static int nextEpoch = BitConverter.ToInt32(Guid.NewGuid().ToByteArray(), 0);
-    private readonly Queue<string> history = new(HistoryCapacity);
+    private readonly Queue<string> history = new(HISTORY_CAPACITY);
     private readonly Dictionary<NitroxId, (int Energy, int Health)> componentBands = [];
     private readonly object sync = new();
     private readonly string epoch = unchecked((uint)Interlocked.Increment(ref nextEpoch)).ToString("x8", CultureInfo.InvariantCulture);
@@ -33,7 +33,7 @@ public sealed class ScannerRoomClientDiagnostics
             long sequence = ++nextSequence;
             line = FormattableString.Invariant(
                 $"[SRD1] n={sequence} ep={epoch} side=C ev={Token(eventName)} out={Token(outcome)} room={ShortId(roomId)} cam={ShortId(cameraId, distinguishSiblingCamera: true)} slot={Format(slot)} rev={Format(revision)} reason={Token(reason)}");
-            if (history.Count == HistoryCapacity)
+            if (history.Count == HISTORY_CAPACITY)
             {
                 history.Dequeue();
             }

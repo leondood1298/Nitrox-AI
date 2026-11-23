@@ -8,20 +8,16 @@ namespace Nitrox.Model.Subnautica.Packets;
 [Serializable]
 public class BedEnterAnimation : Packet
 {
-	public SessionId SessionId { get; }
+    public SessionId SessionId { get; }
 
-	public NitroxId BedId { get; }
+    public NitroxId BedId { get; }
 
-	public string AnimationKey { get; }
+    public string AnimationKey { get; }
 
-	public BedEnterAnimation(SessionId sessionId, NitroxId bedId, string animationKey)
-	{
-		SessionId = sessionId;
-		BedId = bedId;
-		AnimationKey = animationKey;
-	}
+    public BedEnterAnimation(SessionId sessionId, NitroxId bedId, string animationKey)
+    {
+        SessionId = sessionId;
+        BedId = bedId;
+        AnimationKey = animationKey;
+    }
 }
-
-
-
-

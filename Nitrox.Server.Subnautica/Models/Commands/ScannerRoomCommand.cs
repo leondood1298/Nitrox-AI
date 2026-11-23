@@ -46,7 +46,7 @@ internal sealed class ScannerRoomCommand(EntityRegistry entityRegistry, ScannerR
         foreach (MapRoomEntity room in rooms)
         {
             ScannerRoomStateSnapshot snapshot = ScannerRoomStateFingerprint.Create(room);
-            output.Append(ScannerRoomDiagnostics.Prefix)
+            output.Append(ScannerRoomDiagnostics.PREFIX)
                   .Append(" snapshot ep=").Append(diagnostics.Epoch)
                   .Append(" side=S room=").Append(room.Id)
                   .Append(" left=").Append(ShortId(room.LeftDockCameraId))

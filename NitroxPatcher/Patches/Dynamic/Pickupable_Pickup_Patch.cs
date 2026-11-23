@@ -27,4 +27,3 @@ public sealed partial class Pickupable_Pickup_Patch : NitroxPatch, IDynamicPatch
         }
     }
 }
-

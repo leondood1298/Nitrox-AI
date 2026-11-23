@@ -55,14 +55,14 @@ public sealed class BasePowerClientDiagnosticsTest
     {
         BasePowerClientDiagnostics diagnostics = new();
 
-        for (int i = 0; i < BasePowerClientDiagnostics.AudioHistoryCapacity + 10; i++)
+        for (int i = 0; i < BasePowerClientDiagnostics.AUDIO_HISTORY_CAPACITY + 10; i++)
         {
             diagnostics.RecordAudioTransition("audio_up", false, null, i, 100f, true, false, null);
         }
 
-        Assert.AreEqual(BasePowerClientDiagnostics.AudioHistoryCapacity + 1, diagnostics.GetHistory().Count);
+        Assert.AreEqual(BasePowerClientDiagnostics.AUDIO_HISTORY_CAPACITY + 1, diagnostics.GetHistory().Count);
         StringAssert.Contains(diagnostics.GetHistory()[^1], " ev=audio_trace_limit out=truncated ");
-        StringAssert.Contains(diagnostics.GetHistory()[^1], $" reason=capacity_{BasePowerClientDiagnostics.AudioHistoryCapacity}");
+        StringAssert.Contains(diagnostics.GetHistory()[^1], $" reason=capacity_{BasePowerClientDiagnostics.AUDIO_HISTORY_CAPACITY}");
     }
 
     [TestMethod]
@@ -71,14 +71,14 @@ public sealed class BasePowerClientDiagnosticsTest
         BasePowerClientDiagnostics diagnostics = new();
         PowerSourceMetadata metadata = new(10f, 75f, BasePowerSourceType.SOLAR, 1);
 
-        for (int i = 0; i < BasePowerClientDiagnostics.SourceHistoryCapacity + 10; i++)
+        for (int i = 0; i < BasePowerClientDiagnostics.SOURCE_HISTORY_CAPACITY + 10; i++)
         {
             diagnostics.RecordSourceApply(new NitroxId(), metadata, true, false, true, "metadata");
         }
         string audio = diagnostics.RecordAudioTransition("audio_down", true, null, 0f, 75f, true, false,
             "load_settle")!;
 
-        Assert.AreEqual(BasePowerClientDiagnostics.SourceHistoryCapacity + 2, diagnostics.GetHistory().Count);
+        Assert.AreEqual(BasePowerClientDiagnostics.SOURCE_HISTORY_CAPACITY + 2, diagnostics.GetHistory().Count);
         StringAssert.Contains(diagnostics.GetHistory()[^2], " ev=source_trace_limit out=truncated ");
         StringAssert.Contains(audio, " ev=audio_down out=suppress ");
     }

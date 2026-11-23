@@ -14,13 +14,13 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic;
 /// </summary>
 internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> logger)
 {
-    public const string Prefix = "[SRD1]";
-    public const int HistoryCapacity = 256;
+    public const string PREFIX = "[SRD1]";
+    public const int HISTORY_CAPACITY = 256;
     private const int WARNING_KEY_CAPACITY = 256;
     private const int WARNING_BURST_LIMIT = 128;
     private static int nextEpoch = BitConverter.ToInt32(Guid.NewGuid().ToByteArray(), 0);
 
-    private readonly Queue<ScannerRoomDiagnosticEntry> history = new(HistoryCapacity);
+    private readonly Queue<ScannerRoomDiagnosticEntry> history = new(HISTORY_CAPACITY);
     private readonly object sync = new();
     private readonly Dictionary<string, long> warningOccurrences = new(WARNING_KEY_CAPACITY);
     private readonly Queue<string> warningKeys = new(WARNING_KEY_CAPACITY);
@@ -120,7 +120,7 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
                 NormalizeToken(reason, 64));
 
             IncrementCounter(outcome);
-            if (history.Count == HistoryCapacity)
+            if (history.Count == HISTORY_CAPACITY)
             {
                 history.Dequeue();
             }
@@ -265,7 +265,7 @@ internal readonly record struct ScannerRoomDiagnosticEntry(
     private static readonly CultureInfo invariantCulture = CultureInfo.InvariantCulture;
 
     public string Format() => FormattableString.Invariant(
-        $"{ScannerRoomDiagnostics.Prefix} n={Sequence} ep={Epoch} side=S ev={EventName} out={OutcomeToken()} sid={Format(SessionId)} room={RoomId} cam={CameraId} slot={Format(Slot)} dRev={Format(DockingRevision)} cams={Format(CameraCount)} fp={StateFingerprint ?? "-"} reason={Reason}");
+        $"{ScannerRoomDiagnostics.PREFIX} n={Sequence} ep={Epoch} side=S ev={EventName} out={OutcomeToken()} sid={Format(SessionId)} room={RoomId} cam={CameraId} slot={Format(Slot)} dRev={Format(DockingRevision)} cams={Format(CameraCount)} fp={StateFingerprint ?? "-"} reason={Reason}");
 
     public override string ToString() => Format();
 

@@ -6,10 +6,8 @@ namespace NitroxClient.GameLogic.Spawning.Metadata.Extractor;
 
 public class PowerSourceMetadataExtractor : EntityMetadataExtractor<PowerSource, PowerSourceMetadata>
 {
-	public override PowerSourceMetadata Extract(PowerSource entity)
-	{
-		return new PowerSourceMetadata(entity.power, entity.maxPower, BasePowerSources.GetSourceType(entity), fuelConsumed: BasePowerSources.GetFuelConsumed(entity));
-	}
+    public override PowerSourceMetadata Extract(PowerSource entity)
+    {
+        return new PowerSourceMetadata(entity.power, entity.maxPower, BasePowerSources.GetSourceType(entity), fuelConsumed: BasePowerSources.GetFuelConsumed(entity));
+    }
 }
-
-

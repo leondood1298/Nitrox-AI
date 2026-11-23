@@ -4,9 +4,7 @@ namespace NitroxClient.MonoBehaviours;
 
 public class MapRoomCameraMovementReplicator : MovementReplicator
 {
-	public override void ApplyNewMovementData(MovementData newMovementData)
-	{
-	}
+    public override void ApplyNewMovementData(MovementData newMovementData)
+    {
+    }
 }
-
-

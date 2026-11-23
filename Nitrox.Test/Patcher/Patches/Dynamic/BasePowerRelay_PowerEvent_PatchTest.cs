@@ -7,9 +7,9 @@ namespace Nitrox.Test.Patcher.Patches.Dynamic;
 public sealed class BasePowerRelay_PowerEvent_PatchTest
 {
     [TestMethod]
-    [DataRow("START")]
-    [DataRow("POWER_DOWN_EVENT")]
-    [DataRow("POWER_UP_EVENT")]
+    [DataRow("TARGET_METHOD_START")]
+    [DataRow("TARGET_METHOD_POWER_DOWN_EVENT")]
+    [DataRow("TARGET_METHOD_POWER_UP_EVENT")]
     public void PatchTargetsExistInCurrentGameAssembly(string fieldName)
     {
         FieldInfo targetField = typeof(BasePowerRelay_PowerEvent_Patch).GetField(fieldName,
@@ -18,7 +18,7 @@ public sealed class BasePowerRelay_PowerEvent_PatchTest
         Assert.IsNotNull(targetField);
         MethodInfo targetMethod = (MethodInfo)targetField.GetValue(null)!;
         Assert.IsNotNull(targetMethod);
-        if (fieldName != "START")
+        if (fieldName != "TARGET_METHOD_START")
         {
             ParameterInfo[] parameters = targetMethod.GetParameters();
             Assert.AreEqual(1, parameters.Length);

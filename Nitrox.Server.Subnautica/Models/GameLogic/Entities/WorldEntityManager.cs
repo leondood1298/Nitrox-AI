@@ -82,11 +82,11 @@ internal sealed class WorldEntityManager
         HashSet<NitroxId> dockedCameraIds = [];
         foreach (MapRoomEntity mapRoom in entityRegistry.GetEntities<MapRoomEntity>())
         {
-			int restored = MapRoomCameraPersistence.RestoreOrphanedRegistrations(mapRoom, id => entityRegistry.TryGetEntityById(id, out Entity _));
-			if (restored > 0)
-			{
-				scannerRoomDiagnostics.RecordInvariantFailure("orphan_recovery", mapRoom, reason: $"restored_{restored}");
-			}
+            int restored = MapRoomCameraPersistence.RestoreOrphanedRegistrations(mapRoom, id => entityRegistry.TryGetEntityById(id, out Entity _));
+            if (restored > 0)
+            {
+                scannerRoomDiagnostics.RecordInvariantFailure("orphan_recovery", mapRoom, reason: $"restored_{restored}");
+            }
             lock (mapRoom)
             {
                 if (mapRoom.LeftDockCameraId != null)

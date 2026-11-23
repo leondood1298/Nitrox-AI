@@ -32,8 +32,8 @@ internal sealed class BasePowerSourceAuthority
 
             BasePowerSourceTypes.TryGetMaxPower(requested.SourceType, out float maxPower);
             float power = Math.Clamp(requested.Power, 0f, maxPower);
-			BasePowerSourceTypes.TryGetMaxFuelProgress(requested.SourceType, out float maxFuelProgress);
-			float fuelConsumed = Math.Clamp(requested.FuelConsumed, 0f, maxFuelProgress);
+            BasePowerSourceTypes.TryGetMaxFuelProgress(requested.SourceType, out float maxFuelProgress);
+            float fuelConsumed = Math.Clamp(requested.FuelConsumed, 0f, maxFuelProgress);
             long revision = entity.Metadata is PowerSourceMetadata current ? current.Revision + 1 : 1;
             // The thermal plant temperature shares this metadata slot and must survive every power update.
             accepted = new PowerSourceMetadata(power, maxPower, requested.SourceType, revision, fuelConsumed, GetStoredTemperature(entity.Metadata));
@@ -140,19 +140,19 @@ internal sealed class BasePowerSourceAuthority
         {
             return $"source type {requested.SourceType} is incompatible with {entity.GetType().Name}";
         }
-		if (!HasCompatibleTechType(entity, requested.SourceType))
-		{
-			return $"source type {requested.SourceType} does not match tech type {entity.TechType}";
-		}
+        if (!HasCompatibleTechType(entity, requested.SourceType))
+        {
+            return $"source type {requested.SourceType} does not match tech type {entity.TechType}";
+        }
         if (float.IsNaN(requested.Power) || float.IsInfinity(requested.Power) || requested.Power < -POWER_TOLERANCE || requested.Power > maxPower + POWER_TOLERANCE)
         {
             return $"power {requested.Power} is outside 0-{maxPower}";
         }
-		BasePowerSourceTypes.TryGetMaxFuelProgress(requested.SourceType, out float maxFuelProgress);
-		if (float.IsNaN(requested.FuelConsumed) || float.IsInfinity(requested.FuelConsumed) || requested.FuelConsumed < -POWER_TOLERANCE || requested.FuelConsumed > maxFuelProgress + POWER_TOLERANCE)
-		{
-			return $"fuel progress {requested.FuelConsumed} is outside 0-{maxFuelProgress}";
-		}
+        BasePowerSourceTypes.TryGetMaxFuelProgress(requested.SourceType, out float maxFuelProgress);
+        if (float.IsNaN(requested.FuelConsumed) || float.IsInfinity(requested.FuelConsumed) || requested.FuelConsumed < -POWER_TOLERANCE || requested.FuelConsumed > maxFuelProgress + POWER_TOLERANCE)
+        {
+            return $"fuel progress {requested.FuelConsumed} is outside 0-{maxFuelProgress}";
+        }
         if (requested.ClientSequence <= 0)
         {
             return "client sequence must be positive";
@@ -173,22 +173,22 @@ internal sealed class BasePowerSourceAuthority
         _ => false
     };
 
-	private static bool HasCompatibleTechType(Entity entity, BasePowerSourceType sourceType)
-	{
-		string techType = entity.TechType?.Name ?? "None";
-		if (techType == "None")
-		{
-			return true; // Legacy build entities did not persist their TechType.
-		}
-		return sourceType switch
-		{
-			BasePowerSourceType.SOLAR => techType == "SolarPanel",
-			BasePowerSourceType.THERMAL => techType == "ThermalPlant",
-			BasePowerSourceType.BIOREACTOR => techType is "Bioreactor" or "BaseBioReactor",
-			BasePowerSourceType.NUCLEAR => techType is "NuclearReactor" or "BaseNuclearReactor",
-			_ => false
-		};
-	}
+    private static bool HasCompatibleTechType(Entity entity, BasePowerSourceType sourceType)
+    {
+        string techType = entity.TechType?.Name ?? "None";
+        if (techType == "None")
+        {
+            return true; // Legacy build entities did not persist their TechType.
+        }
+        return sourceType switch
+        {
+            BasePowerSourceType.SOLAR => techType == "SolarPanel",
+            BasePowerSourceType.THERMAL => techType == "ThermalPlant",
+            BasePowerSourceType.BIOREACTOR => techType is "Bioreactor" or "BaseBioReactor",
+            BasePowerSourceType.NUCLEAR => techType is "NuclearReactor" or "BaseNuclearReactor",
+            _ => false
+        };
+    }
 
     private static PowerSourceMetadata CanonicalOrFallback(Entity entity, BasePowerSourceUpdate requested)
     {

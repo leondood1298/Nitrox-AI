@@ -88,35 +88,35 @@ public sealed class BasePowerSourceAuthorityTest
         Assert.AreEqual(75f, accepted.Power);
     }
 
-	[TestMethod]
-	[DataRow(BasePowerSourceType.BIOREACTOR, 420f)]
-	[DataRow(BasePowerSourceType.NUCLEAR, 12345f)]
-	public void AcceptsAndPersistsReactorFuelProgress(BasePowerSourceType sourceType, float fuelConsumed)
-	{
-		BasePowerSourceAuthority authority = new();
-		InteriorPieceEntity source = CreateInterior();
+    [TestMethod]
+    [DataRow(BasePowerSourceType.BIOREACTOR, 420f)]
+    [DataRow(BasePowerSourceType.NUCLEAR, 12345f)]
+    public void AcceptsAndPersistsReactorFuelProgress(BasePowerSourceType sourceType, float fuelConsumed)
+    {
+        BasePowerSourceAuthority authority = new();
+        InteriorPieceEntity source = CreateInterior();
 
-		Assert.IsTrue(authority.TryApply(source, firstOwner, Request(source.Id, sourceType, 100f, 1, fuelConsumed), out PowerSourceMetadata accepted, out _));
+        Assert.IsTrue(authority.TryApply(source, firstOwner, Request(source.Id, sourceType, 100f, 1, fuelConsumed), out PowerSourceMetadata accepted, out _));
 
-		Assert.AreEqual(fuelConsumed, accepted.FuelConsumed);
-		Assert.AreEqual(fuelConsumed, ((PowerSourceMetadata)source.Metadata).FuelConsumed);
-	}
+        Assert.AreEqual(fuelConsumed, accepted.FuelConsumed);
+        Assert.AreEqual(fuelConsumed, ((PowerSourceMetadata)source.Metadata).FuelConsumed);
+    }
 
-	[TestMethod]
-	[DataRow(BasePowerSourceType.SOLAR, 1f)]
-	[DataRow(BasePowerSourceType.BIOREACTOR, 841f)]
-	[DataRow(BasePowerSourceType.NUCLEAR, 20001f)]
-	[DataRow(BasePowerSourceType.NUCLEAR, -1f)]
-	[DataRow(BasePowerSourceType.NUCLEAR, float.NaN)]
-	public void RejectsInvalidFuelProgress(BasePowerSourceType sourceType, float fuelConsumed)
-	{
-		BasePowerSourceAuthority authority = new();
-		Entity source = CreateCompatibleEntity(sourceType);
+    [TestMethod]
+    [DataRow(BasePowerSourceType.SOLAR, 1f)]
+    [DataRow(BasePowerSourceType.BIOREACTOR, 841f)]
+    [DataRow(BasePowerSourceType.NUCLEAR, 20001f)]
+    [DataRow(BasePowerSourceType.NUCLEAR, -1f)]
+    [DataRow(BasePowerSourceType.NUCLEAR, float.NaN)]
+    public void RejectsInvalidFuelProgress(BasePowerSourceType sourceType, float fuelConsumed)
+    {
+        BasePowerSourceAuthority authority = new();
+        Entity source = CreateCompatibleEntity(sourceType);
 
-		Assert.IsFalse(authority.TryApply(source, firstOwner, Request(source.Id, sourceType, 10f, 1, fuelConsumed), out _, out string reason));
+        Assert.IsFalse(authority.TryApply(source, firstOwner, Request(source.Id, sourceType, 10f, 1, fuelConsumed), out _, out string reason));
 
-		StringAssert.Contains(reason, "fuel progress");
-	}
+        StringAssert.Contains(reason, "fuel progress");
+    }
 
     [TestMethod]
     public void RejectsIncompatibleEntityKindsAndSourceTypeChanges()
@@ -132,19 +132,19 @@ public sealed class BasePowerSourceAuthorityTest
         StringAssert.Contains(changed, "changed");
     }
 
-	[TestMethod]
-	public void RejectsMismatchedPersistedTechTypeButAllowsLegacyNone()
-	{
-		BasePowerSourceAuthority authority = new();
-		ModuleEntity mismatched = CreateModule();
-		mismatched.TechType = new("ThermalPlant");
-		ModuleEntity legacy = CreateModule();
-		legacy.TechType = NitroxTechType.None;
+    [TestMethod]
+    public void RejectsMismatchedPersistedTechTypeButAllowsLegacyNone()
+    {
+        BasePowerSourceAuthority authority = new();
+        ModuleEntity mismatched = CreateModule();
+        mismatched.TechType = new("ThermalPlant");
+        ModuleEntity legacy = CreateModule();
+        legacy.TechType = NitroxTechType.None;
 
-		Assert.IsFalse(authority.TryApply(mismatched, firstOwner, Request(mismatched.Id, BasePowerSourceType.SOLAR, 20f, 1), out _, out string reason));
-		Assert.IsTrue(authority.TryApply(legacy, firstOwner, Request(legacy.Id, BasePowerSourceType.SOLAR, 20f, 1), out _, out _));
-		StringAssert.Contains(reason, "tech type");
-	}
+        Assert.IsFalse(authority.TryApply(mismatched, firstOwner, Request(mismatched.Id, BasePowerSourceType.SOLAR, 20f, 1), out _, out string reason));
+        Assert.IsTrue(authority.TryApply(legacy, firstOwner, Request(legacy.Id, BasePowerSourceType.SOLAR, 20f, 1), out _, out _));
+        StringAssert.Contains(reason, "tech type");
+    }
 
     [TestMethod]
     public void RejectsServerResponsesUnknownKindsAndNonPositiveSequences()

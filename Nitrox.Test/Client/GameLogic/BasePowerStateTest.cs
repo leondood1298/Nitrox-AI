@@ -19,14 +19,14 @@ public sealed class BasePowerStateTest
         Assert.AreEqual(1, state.CreateUpdate(second, BasePowerSourceType.THERMAL, 3f).ClientSequence);
     }
 
-	[TestMethod]
-	public void ReactorUpdateIncludesPartialFuelProgress()
-	{
-		BasePowerState state = new();
-		BasePowerSourceUpdate update = state.CreateUpdate(new NitroxId(), BasePowerSourceType.NUCLEAR, 100f, 1234.5f);
+    [TestMethod]
+    public void ReactorUpdateIncludesPartialFuelProgress()
+    {
+        BasePowerState state = new();
+        BasePowerSourceUpdate update = state.CreateUpdate(new NitroxId(), BasePowerSourceType.NUCLEAR, 100f, 1234.5f);
 
-		Assert.AreEqual(1234.5f, update.FuelConsumed);
-	}
+        Assert.AreEqual(1234.5f, update.FuelConsumed);
+    }
 
     [TestMethod]
     public void StaleServerRevisionCannotReplaceNewerCanonicalState()

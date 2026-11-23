@@ -22,26 +22,26 @@ internal sealed class PieceDeconstructedProcessor(BuildingManager buildingManage
             : null;
         try
         {
-			if (roomGate != null)
-			{
-				lock (room)
-				{
-					foreach (MapRoomCameraRecord camera in room.CameraRegistry)
-					{
-						cameraControlLifecycle.RememberKnown(camera.CameraId);
-					}
-				}
-			}
-			if (BuildingManager.ReplacePieceByGhost(context.Sender, packet, out Entity? removedEntity, out int operationId))
-			{
-				if (removedEntity is MapRoomEntity mapRoom)
-				{
-					await mapRoomCleanup.CleanupAsync(mapRoom, context);
-					logger.ZLogInformation($"Cleared results, subscriptions, room lock, and {mapRoom.CameraRegistry.Count} camera registration(s) while deconstructing Scanner Room {mapRoom.Id}");
-				}
-				packet.BaseData = null;
-				await SendToOtherPlayersWithOperationIdAsync(context, packet, operationId);
-			}
+            if (roomGate != null)
+            {
+                lock (room)
+                {
+                    foreach (MapRoomCameraRecord camera in room.CameraRegistry)
+                    {
+                        cameraControlLifecycle.RememberKnown(camera.CameraId);
+                    }
+                }
+            }
+            if (BuildingManager.ReplacePieceByGhost(context.Sender, packet, out Entity? removedEntity, out int operationId))
+            {
+                if (removedEntity is MapRoomEntity mapRoom)
+                {
+                    await mapRoomCleanup.CleanupAsync(mapRoom, context);
+                    logger.ZLogInformation($"Cleared results, subscriptions, room lock, and {mapRoom.CameraRegistry.Count} camera registration(s) while deconstructing Scanner Room {mapRoom.Id}");
+                }
+                packet.BaseData = null;
+                await SendToOtherPlayersWithOperationIdAsync(context, packet, operationId);
+            }
         }
         finally
         {

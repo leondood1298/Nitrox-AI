@@ -1,7 +1,5 @@
 using System;
-using System.CodeDom.Compiler;
 using System.Reflection;
-using HarmonyLib;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Helper;
 using Nitrox.Model.Subnautica.Packets;
@@ -11,23 +9,15 @@ using NitroxClient.GameLogic;
 
 namespace NitroxPatcher.Patches.Dynamic;
 
-public sealed class CyclopsSonarButton_TurnOnSonar_Patch : NitroxPatch, IDynamicPatch, INitroxPatch
+public sealed partial class CyclopsSonarButton_TurnOnSonar_Patch : NitroxPatch, IDynamicPatch
 {
-	private static readonly MethodInfo TARGET_METHOD = Reflect.Method((CyclopsSonarButton t) => t.TurnOnSonar());
+    private static readonly MethodInfo TARGET_METHOD = Reflect.Method((CyclopsSonarButton t) => t.TurnOnSonar());
 
-	public static void Postfix(CyclopsSonarButton __instance)
-	{
-		if (!PacketSuppressor<EntityMetadataUpdate>.IsSuppressed && __instance.subRoot.TryGetIdOrWarn(out NitroxId nitroxId, "Postfix", "NitroxPatcher\\Patches\\Dynamic\\CyclopsSonarButton_TurnOnSonar_Patch.cs", 29))
-		{
-			NitroxPatch.Resolve<Cyclops>().BroadcastMetadataChange(nitroxId);
-		}
-	}
-
-	[GeneratedCode("Nitrox.Analyzers", "1.0.13.0")]
-	public override void Patch(Harmony harmony)
-	{
-		PatchMultiple(harmony, TARGET_METHOD, null, new Action<CyclopsSonarButton>(Postfix).Method);
-	}
+    public static void Postfix(CyclopsSonarButton __instance)
+    {
+        if (!PacketSuppressor<EntityMetadataUpdate>.IsSuppressed && __instance.subRoot.TryGetIdOrWarn(out NitroxId nitroxId))
+        {
+            Resolve<Cyclops>().BroadcastMetadataChange(nitroxId);
+        }
+    }
 }
-
-

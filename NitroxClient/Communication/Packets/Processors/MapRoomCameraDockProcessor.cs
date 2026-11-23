@@ -6,15 +6,13 @@ using NitroxClient.GameLogic;
 
 namespace NitroxClient.Communication.Packets.Processors;
 
-internal sealed class MapRoomCameraDockProcessor(MapRoomCameras mapRoomCameras) : IClientPacketProcessor<MapRoomCameraDock>, IClientPacketProcessor, IPacketProcessor, IPacketProcessor<ClientProcessorContext, MapRoomCameraDock>
+internal sealed class MapRoomCameraDockProcessor(MapRoomCameras mapRoomCameras) : IClientPacketProcessor<MapRoomCameraDock>
 {
-	private readonly MapRoomCameras mapRoomCameras = mapRoomCameras;
+    private readonly MapRoomCameras mapRoomCameras = mapRoomCameras;
 
-	public Task Process(ClientProcessorContext context, MapRoomCameraDock packet)
-	{
-		mapRoomCameras.ProcessDock(packet);
-		return Task.CompletedTask;
-	}
+    public Task Process(ClientProcessorContext context, MapRoomCameraDock packet)
+    {
+        mapRoomCameras.ProcessDock(packet);
+        return Task.CompletedTask;
+    }
 }
-
-

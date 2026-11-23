@@ -1,27 +1,17 @@
 using System;
-using System.CodeDom.Compiler;
 using System.Reflection;
-using HarmonyLib;
 using Nitrox.Model.Helper;
 using NitroxClient.Communication.Abstract;
 using NitroxClient.GameLogic;
 
 namespace NitroxPatcher.Patches.Dynamic;
 
-public sealed class BaseBioReactor_Update_Patch : NitroxPatch, IDynamicPatch, INitroxPatch
+public sealed partial class BaseBioReactor_Update_Patch : NitroxPatch, IDynamicPatch
 {
-	private static readonly MethodInfo TARGET_METHOD = Reflect.Method((BaseBioReactor t) => t.Update());
+    private static readonly MethodInfo TARGET_METHOD = Reflect.Method((BaseBioReactor t) => t.Update());
 
-	public static void Postfix(BaseBioReactor __instance)
-	{
-		BasePowerBroadcaster.BroadcastIfOwner(__instance, __instance._powerSource, NitroxPatch.Resolve<SimulationOwnership>(), NitroxPatch.Resolve<BasePowerState>(), NitroxPatch.Resolve<IPacketSender>());
-	}
-
-	[GeneratedCode("Nitrox.Analyzers", "1.0.13.0")]
-	public override void Patch(Harmony harmony)
-	{
-		PatchMultiple(harmony, TARGET_METHOD, null, new Action<BaseBioReactor>(Postfix).Method);
-	}
+    public static void Postfix(BaseBioReactor __instance)
+    {
+        BasePowerBroadcaster.BroadcastIfOwner(__instance, __instance._powerSource, Resolve<SimulationOwnership>(), Resolve<BasePowerState>(), Resolve<IPacketSender>());
+    }
 }
-
-

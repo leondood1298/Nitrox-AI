@@ -1,17 +1,13 @@
 using System;
-using System.CodeDom.Compiler;
 using System.Reflection;
-using HarmonyLib;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Helper;
 using NitroxClient.GameLogic;
 
 namespace NitroxPatcher.Patches.Dynamic;
 
-public sealed class MapRoomFunctionality_UpdateBlips_Patch : NitroxPatch, IDynamicPatch, INitroxPatch
+public sealed partial class MapRoomFunctionality_UpdateBlips_Patch : NitroxPatch, IDynamicPatch
 {
-    private delegate void PrefixDelegate(MapRoomFunctionality __instance, out int __state);
-
     private static readonly MethodInfo TARGET_METHOD = Reflect.Method((MapRoomFunctionality t) => t.UpdateBlips());
 
     public static void Prefix(MapRoomFunctionality __instance, out int __state)
@@ -25,11 +21,5 @@ public sealed class MapRoomFunctionality_UpdateBlips_Patch : NitroxPatch, IDynam
         {
             Resolve<Entities>().EntityMetadataChangedThrottled(__instance, roomId);
         }
-    }
-
-    [GeneratedCode("Nitrox.Analyzers", "1.0.13.0")]
-    public override void Patch(Harmony harmony)
-    {
-        PatchMultiple(harmony, TARGET_METHOD, new PrefixDelegate(Prefix).Method, new Action<MapRoomFunctionality, int>(Postfix).Method);
     }
 }
