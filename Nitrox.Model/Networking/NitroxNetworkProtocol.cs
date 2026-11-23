@@ -10,7 +10,7 @@ public static class NitroxNetworkProtocol
     /// <summary>
     ///     Increment before shipping an incompatible packet type or schema change.
     /// </summary>
-    public const int EPOCH = 6;
+    public const int EPOCH = 7;
 
     public static string ConnectionKey { get; } = $"{CONNECTION_KEY_PREFIX}{EPOCH}";
 
