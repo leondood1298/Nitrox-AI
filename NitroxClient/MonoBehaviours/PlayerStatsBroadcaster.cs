@@ -36,6 +36,13 @@ public class PlayerStatsBroadcaster : MonoBehaviour
 
     public void Update()
     {
+        // Until the snapshot is applied this is the fresh game's player: its health, food, water and infection would
+        // be stored as the player's, and kept if the game crashed or quit on the loading screen.
+        if (!Multiplayer.Main || !Multiplayer.Main.InitialSyncCompleted)
+        {
+            return;
+        }
+
         time += Time.deltaTime;
 
         // Only do on a specific cadence to avoid hammering server
