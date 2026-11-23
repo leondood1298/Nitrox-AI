@@ -79,6 +79,31 @@ public sealed class CreatureMetadataAuthorityTest
     }
 
     [TestMethod]
+    public void StalkerKeepsItsFriendWhenCured()
+    {
+        NitroxId friendId = new();
+        StalkerMetadata stored = new(Optional.Of(friendId), 1500d, 1f);
+
+        CreatureMetadata? accepted = CreatureMetadataAuthority.Merge(stored, new CreatureInfectionMetadata(0f));
+
+        StalkerMetadata stalker = accepted.Should().BeOfType<StalkerMetadata>().Subject;
+        stalker.FriendId.Value.Should().Be(friendId);
+        stalker.FriendshipEndTime.Should().Be(1500d);
+        stalker.InfectedAmount.Should().Be(0f);
+    }
+
+    [TestMethod]
+    public void NewFriendshipKeepsTheDecidedInfection()
+    {
+        StalkerMetadata friendship = new(Optional.Of(new NitroxId()), 900d, CreatureMetadata.UNDECIDED);
+
+        CreatureMetadata? accepted = CreatureMetadataAuthority.Merge(new CreatureInfectionMetadata(0.6f), friendship);
+
+        accepted.Should().BeSameAs(friendship);
+        accepted!.InfectedAmount.Should().Be(0.6f);
+    }
+
+    [TestMethod]
     public void InfectionOfACreatureWithNothingStoredIsStoredAsItIs()
     {
         CreatureInfectionMetadata requested = new(1f);
