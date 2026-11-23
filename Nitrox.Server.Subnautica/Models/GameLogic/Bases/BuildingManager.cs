@@ -309,11 +309,19 @@ internal sealed class BuildingManager
         }
     }
 
-    public bool ReplaceBaseByGhost(BaseDeconstructed baseDeconstructed)
+    public bool ReplaceBaseByGhost(Player player, BaseDeconstructed baseDeconstructed)
     {
-        if (!entityRegistry.TryGetEntityById(baseDeconstructed.FormerBaseId, out BuildEntity _))
+        if (!entityRegistry.TryGetEntityById(baseDeconstructed.FormerBaseId, out BuildEntity buildEntity))
         {
             logger.ZLogError($"Trying to replace a non-registered build (BaseId: {baseDeconstructed.FormerBaseId})");
+            return false;
+        }
+        // The player removed what was, for them, the last piece. Another player may have finished a piece on it meanwhile.
+        int deltaOperations = buildEntity.OperationId + 1 - baseDeconstructed.OperationId;
+        if (deltaOperations != 0 && options.Value.SafeBuilding)
+        {
+            logger.ZLogWarning($"Ignoring a {nameof(BaseDeconstructed)} packet from [{player.Name}] which is {Math.Abs(deltaOperations) + (deltaOperations > 0 ? " operations ahead" : " operations late")}");
+            NotifyPlayerDesync(player, baseDeconstructed.FormerBaseId);
             return false;
         }
 

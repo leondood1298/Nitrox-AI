@@ -97,6 +97,10 @@ public partial class BuildingHandler : MonoBehaviour
                 baseId = pieceDeconstructed.BaseId;
                 operationId = pieceDeconstructed.OperationId;
                 return true;
+            case BaseDeconstructed baseDeconstructed:
+                baseId = baseDeconstructed.FormerBaseId;
+                operationId = baseDeconstructed.OperationId;
+                return true;
             default:
                 baseId = null;
                 operationId = -1;

@@ -155,6 +155,22 @@ internal sealed class BuildingResyncProcessor(Entities entities, EntityMetadataM
             Log.Info($"[{typeof(E)} RESYNC] Destroyed GameObject {unmarkedComponents[i].gameObject}");
             GameObject.Destroy(unmarkedComponents[i].gameObject);
         }
+        // What we have under the id is something else (a base that became a ghost here only, say): it makes way
+        bool destroyedStandIns = false;
+        foreach (E entity in entitiesToUpdate)
+        {
+            if (NitroxEntity.TryGetObjectFrom(entity.Id, out GameObject standIn))
+            {
+                Log.Info($"[{typeof(E)} RESYNC] Destroyed {standIn} standing in for entity {entity.Id}");
+                NitroxEntity.RemoveFrom(standIn);
+                GameObject.Destroy(standIn);
+                destroyedStandIns = true;
+            }
+        }
+        if (destroyedStandIns)
+        {
+            yield return Yielders.WaitForEndOfFrame;
+        }
         foreach (E entity in entitiesToUpdate)
         {
             Log.Info($"[{typeof(E)} RESYNC] spawning entity {entity.Id}");

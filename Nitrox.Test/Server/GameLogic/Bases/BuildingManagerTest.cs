@@ -136,6 +136,44 @@ public sealed class BuildingManagerTest
         Assert.AreEqual(1, warning.Operations[BuildingScenarioFixture.BaseId]);
     }
 
+    /// <summary>
+    ///     A removes the last room while B attaches a corridor to it. The corridor came first: the base must not become a
+    ///     ghost of one room and lose it.
+    /// </summary>
+    [TestMethod]
+    public void LastPieceRemovalAfterAnotherPlayersBuildIsRefused()
+    {
+        BuildingScenarioFixture scenario = new();
+        NitroxId corridorGhost = new("00000000-0000-0000-0000-000000000561");
+        scenario.AddGhost(corridorGhost);
+        Assert.IsTrue(scenario.BuildingManager.UpdateBase(scenario.PlayerB, Update(corridorGhost, default, 1), out _));
+
+        bool accepted = scenario.BuildingManager.ReplaceBaseByGhost(scenario.PlayerA,
+            new BaseDeconstructed(BuildingScenarioFixture.BaseId, BaseGhost(), 1));
+
+        Assert.IsFalse(accepted);
+        Assert.IsTrue(scenario.EntityRegistry.TryGetEntityById(BuildingScenarioFixture.BaseId, out BuildEntity _));
+        Assert.AreEqual(BuildingScenarioFixture.BaseId, scenario.SentTo<BuildingDesyncWarning>(scenario.PlayerA).Single().BaseId);
+    }
+
+    [TestMethod]
+    public void LastPieceRemovalInOrderReplacesTheBase()
+    {
+        BuildingScenarioFixture scenario = new();
+
+        Assert.IsTrue(scenario.BuildingManager.ReplaceBaseByGhost(scenario.PlayerA,
+            new BaseDeconstructed(BuildingScenarioFixture.BaseId, BaseGhost(), 1)));
+
+        Assert.IsTrue(scenario.EntityRegistry.TryGetEntityById(BuildingScenarioFixture.BaseId, out GhostEntity _));
+    }
+
+    private static GhostEntity BaseGhost()
+    {
+        GhostEntity ghost = BuildingScenarioFixture.Ghost(BuildingScenarioFixture.BaseId);
+        ghost.ParentId = null;
+        return ghost;
+    }
+
     private static PieceDeconstructed Deconstructed(NitroxId pieceId, int operationId) =>
         new(BuildingScenarioFixture.BaseId, pieceId, default, BuildingScenarioFixture.Ghost(pieceId), new BaseData(), operationId);
 
