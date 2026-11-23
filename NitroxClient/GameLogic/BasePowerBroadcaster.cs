@@ -1,8 +1,7 @@
-using Nitrox.Model.DataStructures;
 using System.Collections.Generic;
+using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using NitroxClient.Communication.Abstract;
-using NitroxClient.Extensions;
 using UnityEngine;
 
 namespace NitroxClient.GameLogic;

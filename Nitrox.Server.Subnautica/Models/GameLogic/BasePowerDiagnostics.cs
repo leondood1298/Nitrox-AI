@@ -1,5 +1,3 @@
-using System.Threading;
-
 namespace Nitrox.Server.Subnautica.Models.GameLogic;
 
 internal sealed class BasePowerDiagnostics

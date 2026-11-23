@@ -1,5 +1,4 @@
 using Nitrox.Model.DataStructures;
-using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 
 namespace Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;

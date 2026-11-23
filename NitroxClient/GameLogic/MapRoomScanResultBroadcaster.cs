@@ -1,10 +1,7 @@
 using System.Collections.Generic;
 using Nitrox.Model.DataStructures;
-using Nitrox.Model.Subnautica.Extensions;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication.Abstract;
-using NitroxClient.Extensions;
-using NitroxClient.Helpers;
 using NitroxClient.MonoBehaviours;
 
 namespace NitroxClient.GameLogic;

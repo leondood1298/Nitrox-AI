@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.Runtime.Serialization;
 using System.Linq;
+using System.Runtime.Serialization;
 using BinaryPack.Attributes;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.Unity;

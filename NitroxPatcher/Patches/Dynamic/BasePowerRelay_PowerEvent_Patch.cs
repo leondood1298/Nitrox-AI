@@ -3,7 +3,6 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using HarmonyLib;
 using Nitrox.Model.DataStructures;
-using NitroxClient.Extensions;
 using NitroxClient.GameLogic;
 using NitroxClient.MonoBehaviours;
 using UnityEngine;

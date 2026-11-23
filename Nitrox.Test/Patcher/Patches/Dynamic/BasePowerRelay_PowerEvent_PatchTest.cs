@@ -1,4 +1,3 @@
-using System.Reflection;
 using NitroxPatcher.Patches.Dynamic;
 
 namespace Nitrox.Test.Patcher.Patches.Dynamic;

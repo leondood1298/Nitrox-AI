@@ -1,7 +1,4 @@
-using Nitrox.Model.Logger;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
-using NitroxClient.Extensions;
-using NitroxClient.GameLogic;
 using NitroxClient.GameLogic.Spawning.Metadata.Processor.Abstract;
 using NitroxClient.MonoBehaviours;
 using UnityEngine;
