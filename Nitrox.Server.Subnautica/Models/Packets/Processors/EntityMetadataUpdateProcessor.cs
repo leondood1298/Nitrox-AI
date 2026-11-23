@@ -75,7 +75,8 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
     {
         PowerSourceMetadata powerState => basePowerManager.AcceptState(sender, entity, powerState),
         ThermalPlantMetadata temperatureReport => basePowerManager.AcceptTemperature(entity, temperatureReport),
-        _ when entity.Metadata is PowerSourceMetadata => basePowerManager.RejectReplacement(sender, entity, metadata),
+        // A Lifepod cell holds nothing but its power state, also before its first report
+        _ when entity.Metadata is PowerSourceMetadata || entity is EscapePodPowerCellEntity => basePowerManager.RejectReplacement(sender, entity, metadata),
         _ => null
     };
 

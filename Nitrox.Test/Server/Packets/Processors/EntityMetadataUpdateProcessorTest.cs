@@ -499,6 +499,26 @@ public sealed class EntityMetadataUpdateProcessorTest
     }
 
     [TestMethod]
+    public async Task ALifepodCellsLevelFromItsSimulatingPlayerIsStoredAndNothingElseTakesItsPlace()
+    {
+        EscapePodPowerCellEntity cell = new(new NitroxId(), 0, new NitroxId());
+        entityRegistry.AddEntity(cell);
+        Assert.IsTrue(simulationOwnershipData.TryAcquire(cell.Id, simulator, SimulationLockType.TRANSIENT));
+
+        // Before its first report the cell holds no metadata; it must not take another kind then either
+        await Send(otherPlayer, cell, new BatteryMetadata(100f));
+        Assert.IsNull(cell.Metadata);
+
+        await Send(simulator, cell, new PowerSourceMetadata(18f, 0f, BasePowerSourceType.ESCAPE_POD));
+        await Send(otherPlayer, cell, new PowerSourceMetadata(25f, 0f, BasePowerSourceType.ESCAPE_POD));
+
+        Assert.AreEqual(18f, ((PowerSourceMetadata)cell.Metadata).Power);
+        Assert.AreEqual(18f, ((PowerSourceMetadata)ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, thirdPlayer).Single().NewValue).Power);
+        Assert.AreEqual(18f, ((PowerSourceMetadata)ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, otherPlayer).Last().NewValue).Power,
+            "The other player is given the stored level back.");
+    }
+
+    [TestMethod]
     public async Task CabinetStateFromAnyPlayerIsStoredForThePodsCabinetAndABuiltOne()
     {
         // The Lifepod's cabinet is a child of the pod; one built in a base is a module of it.

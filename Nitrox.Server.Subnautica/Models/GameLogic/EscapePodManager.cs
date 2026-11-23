@@ -18,6 +18,12 @@ internal class EscapePodManager(RandomFactory randomFactory, EntityRegistry enti
 {
     private const int PLAYERS_PER_ESCAPEPOD = 50;
 
+    /// <summary>
+    ///     The vanilla Lifepod has three power cells (RegeneratePowerSource components). A client that finds fewer logs it
+    ///     and leaves the rest unsynchronized.
+    /// </summary>
+    internal const int POWER_CELLS_PER_ESCAPEPOD = 3;
+
     private readonly EntityRegistry entityRegistry = entityRegistry;
     private readonly RandomStartResource randomStartResource = randomStartResource;
     private readonly IOptions<SubnauticaServerOptions> options = options;
@@ -55,10 +61,34 @@ internal class EscapePodManager(RandomFactory randomFactory, EntityRegistry enti
         escapePod.ChildEntities.Add(new PrefabChildEntity(new NitroxId(), "c0175cf7-0b6a-4a1d-938f-dad0dbb6fa06", new NitroxTechType("MedicalCabinet"), 0, null, escapePod.Id));
         escapePod.ChildEntities.Add(new PrefabChildEntity(new NitroxId(), "9f16d82b-11f4-4eeb-aedf-f2fa2bfca8e3", new NitroxTechType("Fabricator"), 0, null, escapePod.Id));
         escapePod.ChildEntities.Add(new InventoryEntity(0, new NitroxId(), new NitroxTechType("SmallStorage"), null, escapePod.Id, []));
+        AddMissingPowerCells(escapePod);
 
         entityRegistry.AddOrUpdate(escapePod);
 
         return escapePod;
+    }
+
+    /// <summary>
+    ///     Gives a pod an entity for each of its power cells it has none for: a new pod, and one from a save made before
+    ///     the cells were synchronized. A cell without stored state keeps the level of the game's prefab until the player
+    ///     who simulates it reports it.
+    /// </summary>
+    /// <returns>The cells that were added.</returns>
+    internal static List<EscapePodPowerCellEntity> AddMissingPowerCells(EscapePodEntity escapePod)
+    {
+        HashSet<int> present = escapePod.ChildEntities.OfType<EscapePodPowerCellEntity>().Select(cell => cell.CellIndex).ToHashSet();
+        List<EscapePodPowerCellEntity> added = [];
+        for (int cellIndex = 0; cellIndex < POWER_CELLS_PER_ESCAPEPOD; cellIndex++)
+        {
+            if (present.Contains(cellIndex))
+            {
+                continue;
+            }
+            EscapePodPowerCellEntity cell = new(new NitroxId(), cellIndex, escapePod.Id);
+            escapePod.ChildEntities.Add(cell);
+            added.Add(cell);
+        }
+        return added;
     }
 
     private async Task<NitroxVector3> GetStartPositionAsync()
@@ -122,8 +152,20 @@ internal class EscapePodManager(RandomFactory randomFactory, EntityRegistry enti
 
     public async Task AddKnownPodsAsync(IReadOnlyCollection<EscapePodEntity> escapePods)
     {
+        AddPowerCellsToKnownPods();
         await InitializePodForNextPlayerAsync();
         InitializeEscapePodsByPlayerId();
+
+        void AddPowerCellsToKnownPods()
+        {
+            foreach (EscapePodEntity pod in escapePods)
+            {
+                foreach (EscapePodPowerCellEntity cell in AddMissingPowerCells(pod))
+                {
+                    entityRegistry.AddEntity(cell);
+                }
+            }
+        }
 
         async Task InitializePodForNextPlayerAsync()
         {

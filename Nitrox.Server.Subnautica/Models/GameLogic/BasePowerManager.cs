@@ -3,6 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
@@ -280,13 +281,14 @@ internal sealed class BasePowerManager(EntityRegistry entityRegistry, Simulation
     {
         BasePowerSourceType.SOLAR or BasePowerSourceType.THERMAL => entity is ModuleEntity,
         BasePowerSourceType.BIOREACTOR or BasePowerSourceType.NUCLEAR => entity is InteriorPieceEntity,
+        BasePowerSourceType.ESCAPE_POD => entity is EscapePodPowerCellEntity,
         _ => false
     };
 
     private static bool HasCompatibleTechType(Entity entity, BasePowerSourceType sourceType)
     {
         string techType = entity.TechType?.Name ?? "None";
-        if (techType == "None")
+        if (techType == "None" && entity is not EscapePodPowerCellEntity)
         {
             // The entity carries no tech type to check against
             return true;
@@ -295,9 +297,10 @@ internal sealed class BasePowerManager(EntityRegistry entityRegistry, Simulation
     }
 
     /// <summary>
-    ///     The kind of power source an entity's tech type says it is.
+    ///     The kind of power source an entity's tech type says it is. A Lifepod cell carries no tech type; its entity type
+    ///     says what it is.
     /// </summary>
-    private static BasePowerSourceType GetSourceType(Entity entity) => entity.TechType?.Name switch
+    private static BasePowerSourceType GetSourceType(Entity entity) => entity is EscapePodPowerCellEntity ? BasePowerSourceType.ESCAPE_POD : entity.TechType?.Name switch
     {
         "SolarPanel" => BasePowerSourceType.SOLAR,
         "ThermalPlant" => BasePowerSourceType.THERMAL,
@@ -307,10 +310,12 @@ internal sealed class BasePowerManager(EntityRegistry entityRegistry, Simulation
     };
 
     /// <summary>
-    ///     A source that has reported its state holds it as metadata. One that was just built is known by its tech type.
+    ///     A source that has reported its state holds it as metadata. One that was just built, or a Lifepod cell that
+    ///     has not been reported yet, is known by what its entity is.
     /// </summary>
     private static bool IsPowerSource(Entity entity) =>
-        entity.Metadata is PowerSourceMetadata || (entity is ModuleEntity or InteriorPieceEntity && GetSourceType(entity) != BasePowerSourceType.UNKNOWN);
+        entity.Metadata is PowerSourceMetadata ||
+        (entity is ModuleEntity or InteriorPieceEntity or EscapePodPowerCellEntity && GetSourceType(entity) != BasePowerSourceType.UNKNOWN);
 
     private static bool IsThermalPlant(Entity entity) => entity is ModuleEntity && entity.Metadata switch
     {
