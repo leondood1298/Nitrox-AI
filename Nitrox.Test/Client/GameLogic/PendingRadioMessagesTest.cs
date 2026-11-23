@@ -30,7 +30,7 @@ public sealed class PendingRadioMessagesTest
     {
         List<string> pending = ["RadioB", "RadioC"];
 
-        PendingRadioMessages.Merge(pending, ["RadioA", "RadioB"]);
+        PendingRadioMessages.Merge(pending, ["RadioA", "RadioB"], _ => false);
 
         pending.Should().Equal("RadioA", "RadioB", "RadioC");
     }
@@ -40,8 +40,26 @@ public sealed class PendingRadioMessagesTest
     {
         List<string> pending = [];
 
-        PendingRadioMessages.Merge(pending, ["RadioA", "RadioB"]);
+        PendingRadioMessages.Merge(pending, ["RadioA", "RadioB"], _ => false);
 
         pending.Should().Equal("RadioA", "RadioB");
+    }
+
+    [TestMethod]
+    public void Merge_MessagePlayedByAnotherPlayerWhileLoading_IsNotPending()
+    {
+        // RadioA is still in an older snapshot's queue, RadioB came by packet before another player played both
+        List<string> pending = ["RadioB"];
+        HashSet<string> completed = ["OnPlayRadioA", "OnPlayRadioB"];
+
+        PendingRadioMessages.Merge(pending, ["RadioA", "RadioC"], completed.Contains);
+
+        pending.Should().Equal("RadioC");
+    }
+
+    [TestMethod]
+    public void GetPlayedGoal_IsTheGoalTheGameCompletesWhenItPlaysTheMessage()
+    {
+        PendingRadioMessages.GetPlayedGoal("RadioSunbeam4").Should().Be("OnPlayRadioSunbeam4");
     }
 }
