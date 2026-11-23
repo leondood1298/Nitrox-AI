@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using NitroxClient.GameLogic.Spawning.Metadata.Extractor.Abstract;
 using UnityEngine;
@@ -30,7 +32,11 @@ public class CyclopsMetadataExtractor : EntityMetadataExtractor<CyclopsGameObjec
         SubRoot subRoot = gameObject.RequireComponentInChildren<SubRoot>();
         bool isDestroyed = subRoot.subDestroyed || health <= 0f;
 
-        return new(silentRunning.active, shieldOn, sonarOn, engineOn, (int)motorMode, health, isDestroyed);
+        // Leaks and fires only exist once the Cyclops' Start methods have run; before that they are reported as unknown.
+        List<int> damagePointIndexes = subRoot.damageManager && subRoot.damageManager.damageRecievers != null ? [..CyclopsDamageSync.GetActiveDamagePoints(subRoot)] : null;
+        List<CyclopsFireData> fires = gameObject.TryGetComponent(out SubFire subFire) && subFire.roomFires.Count > 0 ? [..CyclopsDamageSync.GetActiveRoomFires(subFire)] : null;
+
+        return new(silentRunning.active, shieldOn, sonarOn, engineOn, (int)motorMode, health, isDestroyed, damagePointIndexes, fires);
     }
 
     public struct CyclopsGameObject

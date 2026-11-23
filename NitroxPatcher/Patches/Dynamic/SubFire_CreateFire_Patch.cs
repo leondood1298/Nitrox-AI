@@ -30,7 +30,14 @@ public sealed partial class SubFire_CreateFire_Patch : NitroxPatch, IDynamicPatc
         // goes through a SpawnRequest that completes later, so the fire object does not exist yet when this runs.
         if (__state)
         {
-            Resolve<Fires>().AnnounceNewFire(__instance, startInRoom);
+            Resolve<Fires>().AnnounceNewFire(__instance, startInRoom, () =>
+            {
+                // The fire packet is only relayed. The Cyclops' metadata is what the server stores for later joiners.
+                if (__instance && __instance.subRoot.TryGetNitroxId(out NitroxId cyclopsId))
+                {
+                    Resolve<Cyclops>().BroadcastMetadataChange(cyclopsId);
+                }
+            });
         }
     }
 }

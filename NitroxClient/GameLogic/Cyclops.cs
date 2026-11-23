@@ -93,6 +93,11 @@ namespace NitroxClient.GameLogic
         public void OnCreateDamagePoint(SubRoot subRoot)
         {
             BroadcastDamageState(subRoot, Optional.Empty);
+            // The damage packet is only relayed. The metadata is what the server stores for players who join later.
+            if (subRoot.TryGetNitroxId(out NitroxId subId))
+            {
+                BroadcastMetadataChange(subId);
+            }
         }
 
         /// <summary>
@@ -146,53 +151,11 @@ namespace NitroxClient.GameLogic
                 damageInfo = new CyclopsDamageInfoData(subId, dealerId, damage.originalDamage, damage.damage, damage.position.ToDto(), damage.type);
             }
 
-            int[] damagePointIndexes = GetActiveDamagePoints(subRoot).ToArray();
-            CyclopsFireData[] firePoints = GetActiveRoomFires(subRoot.GetComponent<SubFire>()).ToArray();
+            int[] damagePointIndexes = CyclopsDamageSync.GetActiveDamagePoints(subRoot);
+            CyclopsFireData[] firePoints = CyclopsDamageSync.GetActiveRoomFires(subRoot.GetComponent<SubFire>());
 
             CyclopsDamage packet = new(subId, subRoot.GetComponent<LiveMixin>().health, subRoot.damageManager.subLiveMixin.health, subRoot.GetComponent<SubFire>().liveMixin.health, damagePointIndexes, firePoints, damageInfo);
             packetSender.Send(packet);
-        }
-
-        /// <summary>
-        /// Get all of the index locations of <see cref="CyclopsDamagePoint"/>s in <see cref="CyclopsExternalDamageManager.damagePoints"/>.
-        /// </summary>
-        private IEnumerable<int> GetActiveDamagePoints(SubRoot subRoot)
-        {
-            for (int i = 0; i < subRoot.damageManager.damagePoints.Length; i++)
-            {
-                if (subRoot.damageManager.damagePoints[i].gameObject.activeSelf)
-                {
-                    yield return i;
-                }
-            }
-        }
-
-        /// <summary>
-        /// Get all of the index locations of all the fires on the <see cref="SubRoot"/>. <see cref="SubFire.RoomFire.spawnNodes"/> contains
-        /// a static list of all possible fire nodes.
-        /// </summary>
-        private IEnumerable<CyclopsFireData> GetActiveRoomFires(SubFire subFire)
-        {
-            if (!subFire.subRoot.TryGetIdOrWarn(out NitroxId subRootId))
-            {
-                yield break;
-            }
-
-            foreach (KeyValuePair<CyclopsRooms, SubFire.RoomFire> roomFire in subFire.roomFires)
-            {
-                for (int i = 0; i < roomFire.Value.spawnNodes.Length; i++)
-                {
-                    if (roomFire.Value.spawnNodes[i].childCount > 0)
-                    {
-                        if (!roomFire.Value.spawnNodes[i].GetComponentInChildren<Fire>().TryGetIdOrWarn(out NitroxId fireId))
-                        {
-                            yield break;
-                        }
-
-                        yield return new CyclopsFireData(fireId, subRootId, roomFire.Key, i);
-                    }
-                }
-            }
         }
     }
 }

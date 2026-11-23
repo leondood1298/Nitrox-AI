@@ -11,11 +11,13 @@ public class CyclopsMetadataProcessor : EntityMetadataProcessor<CyclopsMetadata>
 {
     private readonly IPacketSender packetSender;
     private readonly LiveMixinManager liveMixinManager;
+    private readonly CyclopsDamageSync damageSync;
 
-    public CyclopsMetadataProcessor(IPacketSender packetSender, LiveMixinManager liveMixinManager)
+    public CyclopsMetadataProcessor(IPacketSender packetSender, LiveMixinManager liveMixinManager, CyclopsDamageSync damageSync)
     {
         this.packetSender = packetSender;
         this.liveMixinManager = liveMixinManager;
+        this.damageSync = damageSync;
     }
 
     public override void ProcessMetadata(GameObject cyclops, CyclopsMetadata metadata)
@@ -29,6 +31,11 @@ public class CyclopsMetadataProcessor : EntityMetadataProcessor<CyclopsMetadata>
             SetEngineState(cyclops, metadata.EngineOn);
             SetHealth(cyclops, metadata.Health);
             SetDestroyed(cyclops, metadata.IsDestroyed);
+        }
+
+        if (!metadata.IsDestroyed)
+        {
+            damageSync.ApplyWhenReady(cyclops, metadata.DamagePointIndexes?.ToArray(), metadata.Fires?.ToArray());
         }
     }
 

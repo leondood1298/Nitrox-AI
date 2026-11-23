@@ -47,6 +47,32 @@ public sealed class ScannerRoomPersistenceQualificationTest
     }
 
     [TestMethod]
+    public void SaveKeepsCyclopsLeaksAndFiresAndLoadsOlderSavesWithoutThem()
+    {
+        ServerJsonSerializer serializer = new(NullLogger<ServerJsonSerializer>.Instance);
+        GlobalRootEntity cyclops = CreateLooseCamera(CameraAId, new NitroxVector3(0f, -10f, 0f));
+        NitroxId fireId = new("00000000-0000-0000-0000-000000000777");
+        cyclops.Metadata = new CyclopsMetadata(false, true, false, true, 2, 640f, false, [0, 3, 7],
+            [new CyclopsFireData(fireId, CameraAId, CyclopsRooms.EngineRoom, 1)]);
+        GlobalRootEntity olderSave = CreateLooseCamera(CameraBId, new NitroxVector3(5f, -10f, 0f));
+        olderSave.Metadata = new CyclopsMetadata(false, false, false, false, 0, 1500f, false);
+
+        GlobalRootData restored = RoundTrip(serializer, GlobalRootData.From([cyclops, olderSave]), nameof(ServerJsonSerializer));
+
+        CyclopsMetadata withState = (CyclopsMetadata)restored.Entities.Single(entity => entity.Id == CameraAId).Metadata;
+        CollectionAssert.AreEqual(new List<int> { 0, 3, 7 }, withState.DamagePointIndexes);
+        CyclopsFireData fire = withState.Fires.Single();
+        Assert.AreEqual(fireId, fire.FireId);
+        Assert.AreEqual(CyclopsRooms.EngineRoom, fire.Room);
+        Assert.AreEqual(1, fire.NodeIndex);
+        Assert.AreEqual(640f, withState.Health);
+
+        CyclopsMetadata withoutState = (CyclopsMetadata)restored.Entities.Single(entity => entity.Id == CameraBId).Metadata;
+        Assert.IsNull(withoutState.DamagePointIndexes, "Unknown must stay unknown, not become \"no leaks\".");
+        Assert.IsNull(withoutState.Fires);
+    }
+
+    [TestMethod]
     public void FingerprintValidationEnforcesCameraHealthContract()
     {
         MapRoomEntity room = CreateRoom();

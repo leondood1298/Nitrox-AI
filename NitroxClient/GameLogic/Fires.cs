@@ -47,12 +47,13 @@ namespace NitroxClient.GameLogic
         /// The game spawns the fire object through a spawn request that completes later, so the new fire is looked for
         /// over the next frames instead of right away.
         /// </summary>
-        public void AnnounceNewFire(SubFire subFire, SubFire.RoomFire room)
+        /// <param name="onAnnounced">Called once the fire has been announced to the other players.</param>
+        public void AnnounceNewFire(SubFire subFire, SubFire.RoomFire room, System.Action onAnnounced = null)
         {
-            UWE.CoroutineHost.StartCoroutine(AnnounceWhenSpawned(subFire, room));
+            UWE.CoroutineHost.StartCoroutine(AnnounceWhenSpawned(subFire, room, onAnnounced));
         }
 
-        private IEnumerator AnnounceWhenSpawned(SubFire subFire, SubFire.RoomFire room)
+        private IEnumerator AnnounceWhenSpawned(SubFire subFire, SubFire.RoomFire room, System.Action onAnnounced)
         {
             float deadline = Time.realtimeSinceStartup + NEW_FIRE_WAIT_SECONDS;
             while (Time.realtimeSinceStartup < deadline)
@@ -75,6 +76,7 @@ namespace NitroxClient.GameLogic
                         continue;
                     }
                     OnCreate(fire, room, nodeIndex);
+                    onAnnounced?.Invoke();
                     yield break;
                 }
                 yield return null;
