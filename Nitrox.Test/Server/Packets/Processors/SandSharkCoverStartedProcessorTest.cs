@@ -10,18 +10,17 @@ using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
 using Nitrox.Test.Server.Helper;
 using NSubstitute;
-using static Nitrox.Model.Subnautica.Packets.SandSharkBurrowChanged;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
 [TestClass]
-public sealed class SandSharkBurrowChangedProcessorTest
+public sealed class SandSharkCoverStartedProcessorTest
 {
     private ConnectedPlayers players;
     private EntityRegistry entityRegistry;
     private SimulationOwnershipData simulationOwnershipData;
     private IPacketSender packetSender;
-    private SandSharkBurrowChangedProcessor processor;
+    private SandSharkCoverStartedProcessor processor;
     private WorldEntity shark;
     private Player simulator;
     private Player watcher;
@@ -33,7 +32,7 @@ public sealed class SandSharkBurrowChangedProcessorTest
         entityRegistry = new EntityRegistry(NullLogger<EntityRegistry>.Instance);
         simulationOwnershipData = new SimulationOwnershipData();
         packetSender = Substitute.For<IPacketSender>();
-        processor = new SandSharkBurrowChangedProcessor(players.PlayerManager, entityRegistry, simulationOwnershipData);
+        processor = new SandSharkCoverStartedProcessor(players.PlayerManager, entityRegistry, simulationOwnershipData);
 
         shark = new WorldEntity(new NitroxVector3(100f, -200f, 50f), NitroxQuaternion.Identity, NitroxVector3.One, new NitroxTechType("Sandshark"), 0, "sandshark", true,
                                 new NitroxId(), null);
@@ -46,12 +45,12 @@ public sealed class SandSharkBurrowChangedProcessorTest
     }
 
     [TestMethod]
-    public async Task BurrowOfTheSimulatingPlayersSharkReachesThePlayersWhoSeeIt()
+    public async Task SandCoveringTheSimulatingPlayersSharkReachesThePlayersWhoSeeIt()
     {
         await Send(simulator);
 
-        Assert.AreEqual(BurrowState.BURIED, ConnectedPlayers.SentTo<SandSharkBurrowChanged>(packetSender, watcher).Single().State);
-        Assert.AreEqual(0, ConnectedPlayers.SentTo<SandSharkBurrowChanged>(packetSender, simulator).Count, "Its own game already shows it.");
+        Assert.AreEqual(shark.Id, ConnectedPlayers.SentTo<SandSharkCoverStarted>(packetSender, watcher).Single().CreatureId);
+        Assert.AreEqual(0, ConnectedPlayers.SentTo<SandSharkCoverStarted>(packetSender, simulator).Count, "Its own game already shows it.");
     }
 
     [TestMethod]
@@ -65,7 +64,7 @@ public sealed class SandSharkBurrowChangedProcessorTest
     }
 
     [TestMethod]
-    public async Task BurrowFromAPlayerWhoDoesNotSimulateTheSharkIsDropped()
+    public async Task SandCoveringFromAPlayerWhoDoesNotSimulateTheSharkIsDropped()
     {
         // That player's copy only replays what it is told; anything it sent would contradict the shark
         await Send(watcher);
@@ -74,7 +73,7 @@ public sealed class SandSharkBurrowChangedProcessorTest
     }
 
     [TestMethod]
-    public async Task BurrowOfASharkNobodySimulatesIsDropped()
+    public async Task SandCoveringOfASharkNobodySimulatesIsDropped()
     {
         simulationOwnershipData.RevokeIfOwner(shark.Id, simulator);
 
@@ -85,6 +84,6 @@ public sealed class SandSharkBurrowChangedProcessorTest
 
     private Task Send(Player sender)
     {
-        return processor.Process(new AuthProcessorContext(sender, packetSender), new SandSharkBurrowChanged(shark.Id, BurrowState.BURIED, shark.Transform.Position, NitroxQuaternion.Identity));
+        return processor.Process(new AuthProcessorContext(sender, packetSender), new SandSharkCoverStarted(shark.Id, shark.Transform.Position, NitroxQuaternion.Identity));
     }
 }

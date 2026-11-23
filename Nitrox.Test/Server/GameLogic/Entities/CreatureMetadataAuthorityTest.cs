@@ -54,6 +54,31 @@ public sealed class CreatureMetadataAuthorityTest
     }
 
     [TestMethod]
+    public void BuriedSandSharkStaysBuriedWhenItsInfectionChanges()
+    {
+        SandSharkMetadata stored = new(true, leashPosition, NitroxQuaternion.Identity, CreatureMetadata.UNDECIDED);
+
+        CreatureMetadata? accepted = CreatureMetadataAuthority.Merge(stored, new CreatureInfectionMetadata(1f));
+
+        SandSharkMetadata sandShark = accepted.Should().BeOfType<SandSharkMetadata>().Subject;
+        sandShark.Buried.Should().BeTrue();
+        sandShark.BurryPosition.Should().Be(leashPosition);
+        sandShark.InfectedAmount.Should().Be(1f);
+    }
+
+    [TestMethod]
+    public void SandSharkGoingUnderKeepsTheDecidedInfection()
+    {
+        SandSharkMetadata stored = new(false, NitroxVector3.Zero, NitroxQuaternion.Identity, 1f);
+        SandSharkMetadata buried = new(true, leashPosition, NitroxQuaternion.Identity, CreatureMetadata.UNDECIDED);
+
+        CreatureMetadata? accepted = CreatureMetadataAuthority.Merge(stored, buried);
+
+        accepted.Should().BeSameAs(buried);
+        accepted!.InfectedAmount.Should().Be(1f);
+    }
+
+    [TestMethod]
     public void InfectionOfACreatureWithNothingStoredIsStoredAsItIs()
     {
         CreatureInfectionMetadata requested = new(1f);
