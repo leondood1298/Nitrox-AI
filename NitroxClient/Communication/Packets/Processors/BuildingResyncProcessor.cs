@@ -202,6 +202,8 @@ internal sealed class BuildingResyncProcessor(Entities entities, EntityMetadataM
             Log.Warn($"[Base RESYNC] Base {buildEntity.Id} was destroyed while it was being restored");
             yield break;
         }
+        // SetupBase doesn't apply the base's own metadata (its flood state), unlike the regular entity spawn path.
+        entityMetadataManager.ApplyMetadata(@base.gameObject, buildEntity.Metadata);
         yield return MoonpoolManager.RestoreMoonpools(buildEntity.ChildEntities.OfType<MoonpoolEntity>(), @base);
         if (@base)
         {
