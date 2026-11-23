@@ -1,14 +1,8 @@
 using System.Globalization;
-using System.Threading.Tasks;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
-using Nitrox.Model.Subnautica.Packets;
-using NitroxClient.Communication.Abstract;
-using NitroxClient.Communication.Packets.Processors;
-using NitroxClient.Communication.Packets.Processors.Core;
 using NitroxClient.GameLogic;
-using NSubstitute;
 
 namespace Nitrox.Test.Client.GameLogic;
 
@@ -54,32 +48,11 @@ public sealed class BasePowerClientDiagnosticsTest
     }
 
     [TestMethod]
-    public void StateOlderThanWhatIsHeldIsRecordedAfterTheJoinPhaseToo()
-    {
-        BasePowerClientDiagnostics diagnostics = new();
-        NitroxId sourceId = new("22222222-2222-2222-2222-222222222222");
-        PowerSourceMetadata held = new(40f, 75f, BasePowerSourceType.SOLAR, 57);
-        for (int i = 0; i < BasePowerClientDiagnostics.SOURCE_HISTORY_CAPACITY + 5; i++)
-        {
-            diagnostics.RecordSourceApply(new NitroxId(), held, true, false, true, "metadata");
-        }
-
-        // The source was rebuilt: the server counts from one again and this client drops every update it gets.
-        string?[] lines = Enumerable.Range(1, 9).Select(revision =>
-            diagnostics.RecordSourceStale(sourceId, new PowerSourceMetadata(revision, 75f, BasePowerSourceType.SOLAR, revision), held)).ToArray();
-
-        Assert.AreEqual(4, lines.Count(line => line != null), "the first two and then every power of two are written");
-        StringAssert.Contains(lines[0], " ev=source_apply out=stale base=- source=22222222.2222 power=1.00/75.00 initial=- wait=- reason=solar_rev_1_held_57");
-        StringAssert.Contains(lines[7], " power=8.00/75.00 initial=- wait=- rep=8 reason=solar_rev_8_held_57");
-        Assert.IsNull(lines[8]);
-    }
-
-    [TestMethod]
     public void RefusedReportIsRecordedOncePerReason()
     {
         BasePowerClientDiagnostics diagnostics = new();
         NitroxId sourceId = new("22222222-2222-2222-2222-222222222222");
-        PowerSourceMetadata canonical = new(30f, 75f, BasePowerSourceType.SOLAR, 5);
+        PowerSourceMetadata canonical = new(30f, 0f, BasePowerSourceType.SOLAR);
 
         string? first = diagnostics.RecordSourceRejected(sourceId, canonical, "power 80.5 is outside 0-75");
         string? second = diagnostics.RecordSourceRejected(sourceId, canonical, "power 81.5 is outside 0-75");
@@ -93,34 +66,16 @@ public sealed class BasePowerClientDiagnosticsTest
     }
 
     [TestMethod]
-    public async Task ProcessorRecordsAnUpdateItDropsAsOutdated()
-    {
-        IMultiplayerSession multiplayerSession = Substitute.For<IMultiplayerSession>();
-        BasePowerState state = new();
-        BasePowerClientDiagnostics diagnostics = new();
-        NitroxId sourceId = new("22222222-2222-2222-2222-222222222222");
-        state.TryApply(sourceId, new PowerSourceMetadata(40f, 75f, BasePowerSourceType.SOLAR, 57), out _);
-        BasePowerSourceUpdateProcessor processor = new(state, diagnostics);
-
-        await processor.Process(new ClientProcessorContext(multiplayerSession),
-            new BasePowerSourceUpdate(sourceId, BasePowerSourceType.SOLAR, 10f, 0, 75f, 1, true, true, "", 0f));
-
-        Assert.AreEqual(1, diagnostics.GetProblems().Count);
-        StringAssert.Contains(diagnostics.GetProblems()[0], " ev=source_apply out=stale ");
-        StringAssert.Contains(diagnostics.GetProblems()[0], " reason=solar_rev_1_held_57");
-    }
-
-    [TestMethod]
-    public void SourceTraceIncludesCanonicalTypeAndRevision()
+    public void SourceTraceIncludesTheSourceTypeAndItsCapacity()
     {
         BasePowerClientDiagnostics diagnostics = new();
         NitroxId sourceId = new("22222222-2222-2222-2222-222222222222");
-        PowerSourceMetadata metadata = new(125.25f, 250f, BasePowerSourceType.THERMAL, 17);
+        PowerSourceMetadata metadata = new(125.25f, 0f, BasePowerSourceType.THERMAL);
 
         string line = diagnostics.RecordSourceApply(sourceId, metadata, true, false, true, "metadata")!;
 
         Assert.AreEqual(
-            $"[BPD1] n=1 ep={diagnostics.Epoch} side=C sid=- ev=source_apply out=ok base=- source=22222222.2222 power=125.25/250.00 initial=0 wait=1 reason=metadata_thermal_17",
+            $"[BPD1] n=1 ep={diagnostics.Epoch} side=C sid=- ev=source_apply out=ok base=- source=22222222.2222 power=125.25/250.00 initial=0 wait=1 reason=metadata_thermal",
             line);
     }
 
@@ -129,12 +84,12 @@ public sealed class BasePowerClientDiagnosticsTest
     {
         BasePowerClientDiagnostics diagnostics = new();
         NitroxId sourceId = new("33333333-3333-3333-3333-333333333333");
-        PowerSourceMetadata metadata = new(0f, 75f, BasePowerSourceType.SOLAR, 4);
+        PowerSourceMetadata metadata = new(0f, 0f, BasePowerSourceType.SOLAR);
 
         string line = diagnostics.RecordSourceApply(sourceId, metadata, false, false, true, "packet")!;
 
         StringAssert.Contains(line, " ev=source_apply out=missing ");
-        StringAssert.Contains(line, " source=33333333.3333 power=0.00/75.00 initial=0 wait=1 reason=packet_solar_4");
+        StringAssert.Contains(line, " source=33333333.3333 power=0.00/75.00 initial=0 wait=1 reason=packet_solar");
     }
 
     [TestMethod]
@@ -156,7 +111,7 @@ public sealed class BasePowerClientDiagnosticsTest
     public void SourceBudgetCannotConsumeReservedAudioEntries()
     {
         BasePowerClientDiagnostics diagnostics = new();
-        PowerSourceMetadata metadata = new(10f, 75f, BasePowerSourceType.SOLAR, 1);
+        PowerSourceMetadata metadata = new(10f, 0f, BasePowerSourceType.SOLAR);
 
         for (int i = 0; i < BasePowerClientDiagnostics.SOURCE_HISTORY_CAPACITY + 10; i++)
         {

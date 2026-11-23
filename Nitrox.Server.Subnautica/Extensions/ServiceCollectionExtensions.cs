@@ -172,7 +172,7 @@ internal static partial class ServiceCollectionExtensions
                     .AddSingleton<StoryManager>()
                     .AddSingleton<StoryScheduler>()
                     .AddSingleton<SimulationOwnershipData>()
-                    .AddSingleton<BasePowerSourceAuthority>()
+                    .AddSingleton<BasePowerManager>()
                     .AddSingleton<BasePowerDiagnostics>()
                     .AddSingleton<ScannerRoomDiagnostics>()
                     .AddSingleton<MapRoomLifecycle>()

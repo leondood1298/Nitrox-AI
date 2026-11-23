@@ -169,7 +169,7 @@ public sealed class ScannerRoomDiagnosticsCallSiteTest
     private static EntityMetadataUpdateProcessor CreateMetadataProcessor(ScannerRoomScenarioFixture scenario, ScannerRoomDiagnostics diagnostics,
         ILogger<EntityMetadataUpdateProcessor> logger) =>
         new(new PlayerManager(null!, null!, null!, NullLogger<PlayerManager>.Instance), scenario.EntityRegistry, scenario.Ownership, diagnostics,
-            new BasePowerSourceAuthority(), logger);
+            new BasePowerManager(scenario.EntityRegistry, scenario.Ownership, new BasePowerDiagnostics(), NullLogger<BasePowerManager>.Instance), logger);
 
     private static ScannerRoomScenarioFixture CreateScenarioWithOwnedRoom()
     {

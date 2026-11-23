@@ -7,6 +7,6 @@ public class PowerSourceMetadataExtractor : EntityMetadataExtractor<PowerSource,
 {
     public override PowerSourceMetadata Extract(PowerSource entity)
     {
-        return new PowerSourceMetadata(entity.power, entity.maxPower, BasePowerSources.GetSourceType(entity), fuelConsumed: BasePowerSources.GetFuelConsumed(entity));
+        return new PowerSourceMetadata(entity.power, BasePowerSources.GetFuelConsumed(entity), BasePowerSources.GetSourceType(entity), BasePowerSources.GetTemperature(entity));
     }
 }

@@ -9,7 +9,6 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Extensions;
 using Nitrox.Server.Subnautica.Models.GameLogic;
-using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
 using Nitrox.Server.Subnautica.Models.Packets.Processors;
 using Nitrox.Test.Server.Subnautica;
@@ -32,7 +31,7 @@ public sealed class BasePowerDiagnosticsTest
         CapturingLogger<BasePowerSourceConsumeProcessor> processorLog = new();
         CapturingLogger<BasePowerDiagnostics> diagnosticsLog = new();
         BasePowerDiagnostics diagnostics = new(diagnosticsLog, scenario.Ownership);
-        BasePowerSourceConsumeProcessor processor = new(scenario.EntityRegistry, scenario.Ownership, new BasePowerSourceAuthority(), diagnostics, processorLog);
+        BasePowerSourceConsumeProcessor processor = new(scenario.EntityRegistry, CreateManager(scenario, diagnostics), diagnostics, processorLog);
 
         // A consumer reports four times a second, each time a slightly different amount. Nobody simulates the
         // source and it has no stored power yet, so every report is rejected.
@@ -54,23 +53,24 @@ public sealed class BasePowerDiagnosticsTest
     {
         ScannerRoomScenarioFixture scenario = new();
         ModuleEntity source = AddSolarPanel(scenario);
-        source.Metadata = new PowerSourceMetadata(30f, 75f, BasePowerSourceType.SOLAR, 5);
+        source.Metadata = new PowerSourceMetadata(30f, 0f, BasePowerSourceType.SOLAR);
         Assert.IsTrue(scenario.Ownership.TryAcquire(source.Id, scenario.PlayerA, SimulationLockType.TRANSIENT));
-        CapturingLogger<BasePowerSourceUpdateProcessor> processorLog = new();
+        CapturingLogger<EntityMetadataUpdateProcessor> processorLog = new();
         CapturingLogger<BasePowerDiagnostics> diagnosticsLog = new();
         BasePowerDiagnostics diagnostics = new(diagnosticsLog, scenario.Ownership);
-        BasePowerSourceUpdateProcessor processor = new(scenario.EntityRegistry, scenario.Ownership, new BasePowerSourceAuthority(), diagnostics, processorLog);
+        EntityMetadataUpdateProcessor processor = new(new PlayerManager(null!, null!, null!, NullLogger<PlayerManager>.Instance), scenario.EntityRegistry,
+            scenario.Ownership, scenario.Diagnostics, CreateManager(scenario, diagnostics), processorLog);
 
         // Player B wrongly believes it simulates the source and reports its level once a second.
         for (int report = 0; report < 40; report++)
         {
             await processor.Process(new AuthProcessorContext(scenario.PlayerB, new DiscardingPacketSender()),
-                new BasePowerSourceUpdate(source.Id, BasePowerSourceType.SOLAR, 10f + report, report + 1));
+                new EntityMetadataUpdate(source.Id, new PowerSourceMetadata(10f + report, 0f, BasePowerSourceType.SOLAR)));
         }
 
         (LogLevel Level, string Message)[] rejections = processorLog.Entries.Concat(diagnosticsLog.Entries).Where(entry => entry.Message.Contains("reject")).ToArray();
         rejections.Should().HaveCountLessThan(10);
-        rejections[0].Message.Should().Contain(" sid=2 ev=source_update out=reject ").And.Contain(" type=solar power=30.00/75.00 rev=5 owner=1 ")
+        rejections[0].Message.Should().Contain(" sid=2 ev=source_update out=reject ").And.Contain(" type=solar power=30.00/75.00 owner=1 ")
                 .And.EndWith(" reason=sender_does_not_own_source_simulation");
         rejections[^1].Message.Should().Contain(" rep=32 ");
         rejections.Should().OnlyContain(entry => entry.Level == LogLevel.Information,
@@ -84,7 +84,7 @@ public sealed class BasePowerDiagnosticsTest
     {
         ScannerRoomScenarioFixture scenario = new();
         ModuleEntity source = AddSolarPanel(scenario);
-        source.Metadata = new PowerSourceMetadata(60f, 75f, BasePowerSourceType.SOLAR, 5);
+        source.Metadata = new PowerSourceMetadata(60f, 0f, BasePowerSourceType.SOLAR);
         Assert.IsTrue(scenario.Ownership.TryAcquire(source.Id, scenario.PlayerA, SimulationLockType.TRANSIENT));
         CapturingLogger<BasePowerDiagnostics> log = new();
         BasePowerDiagnostics diagnostics = new(log, scenario.Ownership);
@@ -98,7 +98,7 @@ public sealed class BasePowerDiagnosticsTest
 
         string[] lines = log.Entries.Select(entry => entry.Message).Where(line => line.Contains(" ev=source_handback ")).ToArray();
         lines.Should().HaveCount(2);
-        lines[0].Should().Contain(" sid=1 ev=source_handback out=ok ").And.Contain(" type=solar power=60.00/75.00 rev=5 owner=none ")
+        lines[0].Should().Contain(" sid=1 ev=source_handback out=ok ").And.Contain(" type=solar power=60.00/75.00 owner=none ")
                 .And.EndWith(" reason=nobody_else_can_simulate");
         lines[1].Should().Contain(" sid=2 ev=source_handback out=reject ").And.EndWith(" reason=sender_holds_no_plain_simulation_lock");
         diagnostics.GetSources()[source.Id].HandBacks.Should().Be(1);
@@ -125,33 +125,17 @@ public sealed class BasePowerDiagnosticsTest
         ManualTimeProvider time = new(new DateTimeOffset(2026, 11, 23, 14, 4, 5, TimeSpan.Zero));
         BasePowerDiagnostics diagnostics = new(log, timeProvider: time);
 
-        for (int revision = 1; revision <= 100; revision++)
+        for (int report = 1; report <= 100; report++)
         {
-            diagnostics.RecordAccepted(sourceId, owner, new PowerSourceMetadata(revision, 75f, BasePowerSourceType.SOLAR, revision));
+            diagnostics.RecordAccepted(sourceId, owner, new PowerSourceMetadata(report * 0.5f, 0f, BasePowerSourceType.SOLAR));
         }
-        diagnostics.RecordAccepted(sourceId, consumer, new PowerSourceMetadata(50f, 75f, BasePowerSourceType.SOLAR, 101));
+        diagnostics.RecordAccepted(sourceId, consumer, new PowerSourceMetadata(50f, 0f, BasePowerSourceType.SOLAR));
 
         log.Entries.Select(entry => entry.Message).Should().Equal(
             $"[BPD1] n=- ep={diagnostics.Epoch} side=S sid=- ev=epoch out=info utc=2026-11-23T14:04:05Z reason=server_diagnostics_started",
-            $"[BPD1] n=1 ep={diagnostics.Epoch} side=S sid=1 ev=source_update out=ok source=99e1d312.8c30 type=solar power=1.00/75.00 rev=1 owner=? amount=- total=- reason=first_update",
-            $"[BPD1] n=101 ep={diagnostics.Epoch} side=S sid=2 ev=source_update out=ok source=99e1d312.8c30 type=solar power=50.00/75.00 rev=101 owner=? amount=- total=- reason=owner_changed_from_1");
+            $"[BPD1] n=1 ep={diagnostics.Epoch} side=S sid=1 ev=source_update out=ok source=99e1d312.8c30 type=solar power=0.50/75.00 owner=? amount=- total=- reason=first_update",
+            $"[BPD1] n=101 ep={diagnostics.Epoch} side=S sid=2 ev=source_update out=ok source=99e1d312.8c30 type=solar power=50.00/75.00 owner=? amount=- total=- reason=owner_changed_from_1");
         diagnostics.AcceptedUpdates.Should().Be(101);
-    }
-
-    [TestMethod]
-    public void RevisionThatDoesNotAdvanceIsReported()
-    {
-        CapturingLogger<BasePowerDiagnostics> log = new();
-        BasePowerDiagnostics diagnostics = new(log);
-        diagnostics.RecordAccepted(sourceId, owner, new PowerSourceMetadata(40f, 75f, BasePowerSourceType.SOLAR, 57));
-
-        // The source was rebuilt: the server starts counting at one again while clients still hold revision 57.
-        diagnostics.RecordAccepted(sourceId, owner, new PowerSourceMetadata(10f, 75f, BasePowerSourceType.SOLAR, 1));
-
-        log.Entries[^1].Level.Should().Be(LogLevel.Warning);
-        log.Entries[^1].Message.Should().Contain(" ev=source_update out=invariant ").And.EndWith(" reason=revision_1_after_57");
-        diagnostics.GetSources()[sourceId].RevisionRegressions.Should().Be(1);
-        diagnostics.GetTotals().RevisionRegressions.Should().Be(1);
     }
 
     [TestMethod]
@@ -159,15 +143,15 @@ public sealed class BasePowerDiagnosticsTest
     {
         CapturingLogger<BasePowerDiagnostics> log = new();
         BasePowerDiagnostics diagnostics = new(log);
-        PowerSourceMetadata stored = new(60f, 75f, BasePowerSourceType.SOLAR, 5);
+        PowerSourceMetadata stored = new(60f, 0f, BasePowerSourceType.SOLAR);
         SessionId secondConsumer = (SessionId)(ushort)3;
 
         for (int report = 0; report < 8; report++)
         {
-            diagnostics.RecordConsumption(sourceId, consumer, owner, 0.5f, ConsumptionRoute.FORWARD_TO_OWNER, stored, "");
+            diagnostics.RecordConsumption(sourceId, consumer, owner, 0.5f, ConsumptionRoute.FORWARD_TO_SIMULATOR, stored, "");
         }
-        diagnostics.RecordConsumption(sourceId, secondConsumer, owner, 0.5f, ConsumptionRoute.FORWARD_TO_OWNER, stored, "");
-        diagnostics.RecordConsumption(sourceId, consumer, null, 2f, ConsumptionRoute.APPLIED_BY_SERVER, new PowerSourceMetadata(58f, 75f, BasePowerSourceType.SOLAR, 6), "");
+        diagnostics.RecordConsumption(sourceId, secondConsumer, owner, 0.5f, ConsumptionRoute.FORWARD_TO_SIMULATOR, stored, "");
+        diagnostics.RecordConsumption(sourceId, consumer, null, 2f, ConsumptionRoute.APPLIED_BY_SERVER, new PowerSourceMetadata(58f, 0f, BasePowerSourceType.SOLAR), "");
         diagnostics.RecordConsumption(sourceId, consumer, owner, float.NaN, ConsumptionRoute.REJECTED, stored, "amount NaN is outside 0-2500");
 
         BasePowerSourceDiagnostics source = diagnostics.GetSources()[sourceId];
@@ -182,7 +166,7 @@ public sealed class BasePowerDiagnosticsTest
         string[] forwardLines = log.Entries.Select(entry => entry.Message).Where(line => line.Contains(" sid=2 ev=consume out=forward ")).ToArray();
         forwardLines.Should().HaveCount(4, "the first two reports and then every power of two get a line");
         forwardLines[^1].Should().Contain(" amount=0.500 total=4.000 rep=8 reason=sent_to_owner_to_apply");
-        log.Entries.Select(entry => entry.Message).Should().ContainSingle(line => line.Contains(" ev=consume out=server ") && line.Contains(" power=58.00/75.00 rev=6 "));
+        log.Entries.Select(entry => entry.Message).Should().ContainSingle(line => line.Contains(" ev=consume out=server ") && line.Contains(" power=58.00/75.00 "));
     }
 
     [TestMethod]
@@ -190,10 +174,10 @@ public sealed class BasePowerDiagnosticsTest
     {
         ManualTimeProvider time = new(DateTimeOffset.UnixEpoch);
         BasePowerDiagnostics diagnostics = new(timeProvider: time);
-        diagnostics.RecordRejected(sourceId, consumer, new PowerSourceMetadata(40f, 75f, BasePowerSourceType.SOLAR, 3), "sender does not own source simulation");
+        diagnostics.RecordRejected(sourceId, consumer, new PowerSourceMetadata(40f, 0f, BasePowerSourceType.SOLAR), "sender does not own source simulation");
         diagnostics.GetSources()[sourceId].SinceLastUpdate.Should().BeNull("a rejected update says nothing about the owner being alive");
 
-        diagnostics.RecordAccepted(sourceId, owner, new PowerSourceMetadata(40f, 75f, BasePowerSourceType.SOLAR, 4));
+        diagnostics.RecordAccepted(sourceId, owner, new PowerSourceMetadata(40f, 0f, BasePowerSourceType.SOLAR));
         time.Advance(TimeSpan.FromSeconds(95));
 
         BasePowerSourceDiagnostics source = diagnostics.GetSources()[sourceId];
@@ -208,7 +192,7 @@ public sealed class BasePowerDiagnosticsTest
 
         for (int index = 0; index < BasePowerDiagnostics.SOURCE_CAPACITY * 2; index++)
         {
-            diagnostics.RecordRejected(new NitroxId(), consumer, new PowerSourceMetadata(0f), "unknown source entity");
+            diagnostics.RecordRejected(new NitroxId(), consumer, new PowerSourceMetadata(0f, 0f, BasePowerSourceType.UNKNOWN), "unknown source entity");
             diagnostics.RecordConsumption(new NitroxId(), consumer, null, 1f, ConsumptionRoute.REJECTED, null, "unknown source");
         }
 
@@ -223,9 +207,9 @@ public sealed class BasePowerDiagnosticsTest
 
         Action record = () =>
         {
-            diagnostics.RecordAccepted(sourceId, owner, new PowerSourceMetadata(40f, 75f, BasePowerSourceType.SOLAR, 1));
-            diagnostics.RecordRejected(sourceId, consumer, new PowerSourceMetadata(40f, 75f, BasePowerSourceType.SOLAR, 1), "sender does not own source simulation");
-            diagnostics.RecordConsumption(sourceId, consumer, owner, 1f, ConsumptionRoute.FORWARD_TO_OWNER, null, "");
+            diagnostics.RecordAccepted(sourceId, owner, new PowerSourceMetadata(40f, 0f, BasePowerSourceType.SOLAR));
+            diagnostics.RecordRejected(sourceId, consumer, new PowerSourceMetadata(40f, 0f, BasePowerSourceType.SOLAR), "sender does not own source simulation");
+            diagnostics.RecordConsumption(sourceId, consumer, owner, 1f, ConsumptionRoute.FORWARD_TO_SIMULATOR, null, "");
             diagnostics.RecordMark("step-1");
         };
 
@@ -247,6 +231,9 @@ public sealed class BasePowerDiagnosticsTest
 
         diagnostics.DescribeOwner(new NitroxId()).Should().Be(BasePowerDiagnostics.NO_OWNER);
     }
+
+    private static BasePowerManager CreateManager(ScannerRoomScenarioFixture scenario, BasePowerDiagnostics diagnostics) =>
+        new(scenario.EntityRegistry, scenario.Ownership, diagnostics, NullLogger<BasePowerManager>.Instance);
 
     private static ModuleEntity AddSolarPanel(ScannerRoomScenarioFixture scenario)
     {

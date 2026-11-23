@@ -112,7 +112,7 @@ public class InteriorPieceEntitySpawner : EntitySpawner<InteriorPieceEntity>
                 moduleObject.AddComponent<RemoteBedController>();
             }
             yield return BuildingPostSpawner.ApplyPostSpawner(moduleObject, interiorPiece.Id);
-            entityMetadataManager.ApplyMetadata(moduleObject, interiorPiece.Metadata);
+            entityMetadataManager.ApplyMetadata(moduleObject, interiorPiece.Metadata, spawnContinues: true);
             result.Set(moduleObject);
         }
     }
