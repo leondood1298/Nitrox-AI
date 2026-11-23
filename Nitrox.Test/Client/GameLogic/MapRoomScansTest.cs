@@ -29,7 +29,8 @@ public sealed class MapRoomScansTest
     {
         packetSender.Send(Arg.Any<MapRoomScanSubscription>()).Returns(true);
         simulationOwnership = new SimulationOwnership(Substitute.For<IMultiplayerSession>(), packetSender);
-        scans = new MapRoomScans(packetSender, new ThrottledPacketSender(packetSender), simulationOwnership, () => now, () => worldLoaded);
+        scans = new MapRoomScans(packetSender, new ThrottledPacketSender(packetSender), simulationOwnership, new BasePowerConsumptionForwarder(packetSender, simulationOwnership),
+            () => now, () => worldLoaded);
         room = new FakeRoom(new NitroxId(), scans);
     }
 
@@ -809,6 +810,15 @@ public sealed class MapRoomScansTest
         scans.ApplyTypes(room, new MapRoomScanTypesChanged(room.Id, [quartz, titanium]));
 
         Assert.AreEqual(0, room.DiscoveriesShown.Count, "It would be told twice.");
+    }
+
+    [TestMethod]
+    [DataRow(false, false, false)]
+    [DataRow(true, true, false)]
+    [DataRow(true, false, true)]
+    public void SuppressesOnlyKnownNonOwnerDrain(bool hasEntityId, bool hasOwnership, bool expected)
+    {
+        Assert.AreEqual(expected, MapRoomScans.ShouldSuppressPowerDrain(hasEntityId, hasOwnership));
     }
 
     private List<T> Sent<T>() where T : Packet => packetSender.ReceivedCalls().Select(call => call.GetArguments()[0]).OfType<T>().ToList();

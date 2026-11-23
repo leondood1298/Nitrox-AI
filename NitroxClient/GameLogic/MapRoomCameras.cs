@@ -38,6 +38,12 @@ public class MapRoomCameras
     /// </summary>
     private readonly Dictionary<NitroxId, SessionId> remoteControllers = [];
 
+    /// <summary>
+    ///     The instance ids of the cameras that were last not offered to the player, so that the log says why once
+    ///     and not every time the game asks.
+    /// </summary>
+    private readonly HashSet<int> loggedUnavailableCameras = [];
+
     public MapRoomCameras(IPacketSender packetSender, IMultiplayerSession multiplayerSession, SimulationOwnership simulationOwnership, ScannerRoomClientDiagnostics diagnostics)
     {
         this.packetSender = packetSender;
@@ -263,9 +269,34 @@ public class MapRoomCameras
     }
 
     /// <summary>
+    ///     Called after the game decided whether it offers a camera to the player. A camera another player controls
+    ///     is offered to nobody.
+    /// </summary>
+    /// <param name="gameOffers">What the game decided.</param>
+    /// <returns>Whether the camera is offered.</returns>
+    public bool CanBeControlled(MapRoomCamera camera, bool gameOffers)
+    {
+        bool controllerStateAllows = CanSelectForControl(camera);
+        bool offered = gameOffers && controllerStateAllows;
+        int instanceId = camera.GetInstanceID();
+        if (offered)
+        {
+            loggedUnavailableCameras.Remove(instanceId);
+        }
+        else if (loggedUnavailableCameras.Add(instanceId))
+        {
+            float energy = camera.energyMixin ? camera.energyMixin.charge : -1f;
+            bool alive = camera.liveMixin && camera.liveMixin.IsAlive();
+            bool attached = camera.pickupAble && camera.pickupAble.attached;
+            Log.Warn($"[MapRoomCamera] Camera {camera.cameraNumber} unavailable: vanilla={gameOffers}, controllerState={controllerStateAllows}, energy={energy:F2}, alive={alive}, attached={attached}, activeAndEnabled={camera.isActiveAndEnabled}");
+        }
+        return offered;
+    }
+
+    /// <summary>
     ///     Whether the game may offer a camera to the player. A camera another player controls is offered to nobody.
     /// </summary>
-    public bool CanSelectForControl(MapRoomCamera camera) => !camera || !camera.TryGetNitroxId(out NitroxId cameraId) || CanSelectForControl(cameraId);
+    internal bool CanSelectForControl(MapRoomCamera camera) => !camera || !camera.TryGetNitroxId(out NitroxId cameraId) || CanSelectForControl(cameraId);
 
     internal bool CanSelectForControl(NitroxId cameraId) => !remoteControllers.ContainsKey(cameraId);
 

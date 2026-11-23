@@ -28,7 +28,7 @@ public sealed class MapRoomCameraDocks(IPacketSender packetSender, SimulationOwn
     ///     the room means walking the whole base, which the game would otherwise have this class do for every camera
     ///     every frame.
     /// </summary>
-    private static readonly ConditionalWeakTable<MapRoomCameraDocking, DockPlace> placesByDock = new();
+    private readonly ConditionalWeakTable<MapRoomCameraDocking, DockPlace> placesByDock = new();
 
     /// <summary>
     ///     The dock every camera this client undocked was in before. If the server refuses the undock, the camera goes
@@ -45,7 +45,7 @@ public sealed class MapRoomCameraDocks(IPacketSender packetSender, SimulationOwn
     /// <summary>
     ///     The room a dock belongs to and the dock's index in that room.
     /// </summary>
-    public static bool TryGetPlace(MapRoomCameraDocking dockingPoint, out MapRoomFunctionality mapRoom, out int dockingIndex)
+    public bool TryGetPlace(MapRoomCameraDocking dockingPoint, out MapRoomFunctionality mapRoom, out int dockingIndex)
     {
         mapRoom = null;
         dockingIndex = MapRoomCameraMetadata.NOT_DOCKED;
@@ -63,6 +63,11 @@ public sealed class MapRoomCameraDocks(IPacketSender packetSender, SimulationOwn
         dockingIndex = place.DockingIndex;
         return mapRoom && dockingIndex >= 0;
     }
+
+    /// <summary>
+    ///     The index of the dock a camera sits in, or <see cref="MapRoomCameraMetadata.NOT_DOCKED" />.
+    /// </summary>
+    public int GetDockingIndex(MapRoomCamera camera) => TryGetPlace(camera.dockingPoint, out _, out int dockingIndex) ? dockingIndex : MapRoomCameraMetadata.NOT_DOCKED;
 
     /// <summary>
     ///     The docks of a room, in the order of their docking index. The game has no such order, so they are sorted by

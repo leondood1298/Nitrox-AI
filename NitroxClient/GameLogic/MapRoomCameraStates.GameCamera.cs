@@ -50,11 +50,9 @@ public sealed partial class MapRoomCameraStates
     ///     What the game shows for a camera, for the entity a client makes of it. The server keeps its own state for
     ///     a camera it knows and takes nothing from here.
     /// </summary>
-    public static MapRoomCameraMetadata Extract(MapRoomCamera camera)
-    {
-        int dockingIndex = MapRoomCameraDocks.TryGetPlace(camera.dockingPoint, out _, out int index) ? index : MapRoomCameraMetadata.NOT_DOCKED;
-        return new MapRoomCameraMetadata(IsLightOn(camera), camera.energyMixin.charge, camera.liveMixin.health, camera.cameraNumber, dockingIndex);
-    }
+    /// <param name="dockingIndex">The dock the camera sits in, which <see cref="MapRoomCameraDocks" /> knows.</param>
+    public static MapRoomCameraMetadata Extract(MapRoomCamera camera, int dockingIndex) =>
+        new(IsLightOn(camera), camera.energyMixin.charge, camera.liveMixin.health, camera.cameraNumber, dockingIndex);
 
     /// <summary>
     ///     Gives a camera the number the server assigned to it. Without one, the game numbers a camera by its place in

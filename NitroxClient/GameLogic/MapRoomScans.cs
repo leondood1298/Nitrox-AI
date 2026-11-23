@@ -12,7 +12,8 @@ namespace NitroxClient.GameLogic;
 /// <summary>
 ///     The scans of the Scanner Rooms this client has loaded: what a room scans for, what it has found, and which
 ///     types it offers to scan for. The server holds the state everybody sees. The player who simulates a room runs
-///     its scan in their own game and reports what it finds; everybody else shows what the server sends.
+///     its scan in their own game and reports what it finds; everybody else shows what the server sends. The scan's
+///     power is drawn from the base in that player's game alone.
 /// </summary>
 public sealed partial class MapRoomScans
 {
@@ -21,6 +22,7 @@ public sealed partial class MapRoomScans
     private readonly IPacketSender packetSender;
     private readonly ThrottledPacketSender throttledPacketSender;
     private readonly SimulationOwnership simulationOwnership;
+    private readonly BasePowerConsumptionForwarder powerConsumptionForwarder;
     private readonly Func<float> secondsSinceStartup;
     private readonly Func<bool> worldLoaded;
 
@@ -29,8 +31,9 @@ public sealed partial class MapRoomScans
     /// </summary>
     private readonly Dictionary<NitroxId, RoomState> statesByRoomId = [];
 
-    public MapRoomScans(IPacketSender packetSender, ThrottledPacketSender throttledPacketSender, SimulationOwnership simulationOwnership)
-        : this(packetSender, throttledPacketSender, simulationOwnership, static () => Time.realtimeSinceStartup,
+    public MapRoomScans(IPacketSender packetSender, ThrottledPacketSender throttledPacketSender, SimulationOwnership simulationOwnership,
+        BasePowerConsumptionForwarder powerConsumptionForwarder)
+        : this(packetSender, throttledPacketSender, simulationOwnership, powerConsumptionForwarder, static () => Time.realtimeSinceStartup,
             static () => Multiplayer.Main && Multiplayer.Main.InitialSyncCompleted && !BasePowerSources.IsRebuildingBases())
     {
     }
@@ -40,24 +43,53 @@ public sealed partial class MapRoomScans
     ///     bases anew.
     /// </param>
     internal MapRoomScans(IPacketSender packetSender, ThrottledPacketSender throttledPacketSender, SimulationOwnership simulationOwnership,
-        Func<float> secondsSinceStartup, Func<bool> worldLoaded)
+        BasePowerConsumptionForwarder powerConsumptionForwarder, Func<float> secondsSinceStartup, Func<bool> worldLoaded)
     {
         this.packetSender = packetSender;
         this.throttledPacketSender = throttledPacketSender;
         this.simulationOwnership = simulationOwnership;
+        this.powerConsumptionForwarder = powerConsumptionForwarder;
         this.secondsSinceStartup = secondsSinceStartup;
         this.worldLoaded = worldLoaded;
     }
 
     /// <summary>
-    ///     Called every frame for every room that has an id. Subscribes to the room's scan, notices when this client
-    ///     starts or stops simulating the room and when the room loses power, and sends the reports that are due.
+    ///     Called before the game updates a room's scan, which it does every frame and in every player's game. A room
+    ///     that has an id gets its own update here (see <see cref="Update(IRoom)" />). The game also drains the room's
+    ///     power in its update, whenever a timer has run out. Only the player who simulates the room may: everybody
+    ///     else's timer is kept from running out, and the simulating player's drain is reported to whoever simulates
+    ///     the power sources (see <see cref="BasePowerConsumptionForwarder" />).
     /// </summary>
-    public void Update(MapRoomFunctionality mapRoom, NitroxId roomId)
+    /// <returns>Whether this client simulates the room, for <see cref="ScanUpdated" />.</returns>
+    public bool BeforeScanUpdate(MapRoomFunctionality mapRoom)
     {
-        if (IsRoomOf(roomId, mapRoom))
+        bool hasEntityId = mapRoom.TryGetNitroxId(out NitroxId roomId);
+        bool hasOwnership = hasEntityId && simulationOwnership.HasAnyLockType(roomId);
+        if (hasEntityId && IsRoomOf(roomId, mapRoom))
         {
             Update(GetRoom(mapRoom, roomId));
+        }
+        if (ShouldSuppressPowerDrain(hasEntityId, hasOwnership))
+        {
+            mapRoom.timeLastPowerDrain = Time.time;
+        }
+        // A room without an id drains on every client, which must not be reported once per player.
+        if (hasOwnership)
+        {
+            powerConsumptionForwarder.EnterConsumer();
+        }
+        return hasOwnership;
+    }
+
+    /// <summary>
+    ///     Called after the game updated a room's scan, also when that failed.
+    /// </summary>
+    /// <param name="simulated">What <see cref="BeforeScanUpdate" /> returned for this update.</param>
+    public void ScanUpdated(bool simulated)
+    {
+        if (simulated)
+        {
+            powerConsumptionForwarder.ExitConsumer();
         }
     }
 
@@ -119,8 +151,14 @@ public sealed partial class MapRoomScans
         }
     }
 
+    internal static bool ShouldSuppressPowerDrain(bool hasEntityId, bool hasOwnership) => hasEntityId && !hasOwnership;
+
     internal long GetGeneration(NitroxId roomId) => statesByRoomId.TryGetValue(roomId, out RoomState? state) ? state.Generation : 0;
 
+    /// <summary>
+    ///     Called every frame for every room that has an id. Subscribes to the room's scan, notices when this client
+    ///     starts or stops simulating the room and when the room loses power, and sends the reports that are due.
+    /// </summary>
     internal void Update(IRoom room)
     {
         RoomState state = GetState(room);

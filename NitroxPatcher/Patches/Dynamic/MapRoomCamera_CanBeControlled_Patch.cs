@@ -1,30 +1,15 @@
-using System.Collections.Generic;
 using System.Reflection;
 using NitroxClient.GameLogic;
 
 namespace NitroxPatcher.Patches.Dynamic;
 
+/// <summary>
+///     The game decides here whether a room's screen offers a camera to the player. A camera another player controls
+///     is taken out of that offer (see <see cref="MapRoomCameras" />).
+/// </summary>
 public sealed partial class MapRoomCamera_CanBeControlled_Patch : NitroxPatch, IDynamicPatch
 {
     private static readonly MethodInfo TARGET_METHOD = Reflect.Method((MapRoomCamera t) => t.CanBeControlled(null));
-    private static readonly HashSet<int> loggedUnavailableCameras = [];
 
-    public static void Postfix(MapRoomCamera __instance, ref bool __result)
-    {
-        bool vanillaResult = __result;
-        bool controllerStateAllows = Resolve<MapRoomCameras>().CanSelectForControl(__instance);
-        __result &= controllerStateAllows;
-        int instanceId = __instance.GetInstanceID();
-        if (__result)
-        {
-            loggedUnavailableCameras.Remove(instanceId);
-        }
-        else if (loggedUnavailableCameras.Add(instanceId))
-        {
-            float energy = __instance.energyMixin ? __instance.energyMixin.charge : -1f;
-            bool alive = __instance.liveMixin && __instance.liveMixin.IsAlive();
-            bool attached = __instance.pickupAble && __instance.pickupAble.attached;
-            Log.Warn($"[MapRoomCamera] Camera {__instance.cameraNumber} unavailable: vanilla={vanillaResult}, controllerState={controllerStateAllows}, energy={energy:F2}, alive={alive}, attached={attached}, activeAndEnabled={__instance.isActiveAndEnabled}");
-        }
-    }
+    public static void Postfix(MapRoomCamera __instance, ref bool __result) => __result = Resolve<MapRoomCameras>().CanBeControlled(__instance, __result);
 }

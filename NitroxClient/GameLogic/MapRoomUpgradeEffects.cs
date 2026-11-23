@@ -14,4 +14,10 @@ public static class MapRoomUpgradeEffects
     public static float ScanRange(int rangeModules) => Math.Min(MAX_RANGE, BASE_RANGE + Math.Max(0, rangeModules) * RANGE_PER_MODULE);
 
     public static float ScanInterval(int speedModules) => Math.Max(MIN_INTERVAL, BASE_INTERVAL - Math.Max(0, speedModules) * INTERVAL_REDUCTION_PER_MODULE);
+
+    public static void Apply(MapRoomFunctionality mapRoom)
+    {
+        mapRoom.scanRange = ScanRange(mapRoom.storageContainer.container.GetCount(TechType.MapRoomUpgradeScanRange));
+        mapRoom.scanInterval = ScanInterval(mapRoom.storageContainer.container.GetCount(TechType.MapRoomUpgradeScanSpeed));
+    }
 }
