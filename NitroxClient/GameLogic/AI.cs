@@ -14,6 +14,7 @@ namespace NitroxClient.GameLogic;
 public sealed class AI
 {
     private readonly IPacketSender packetSender;
+    private readonly SimulationOwnership simulationOwnership;
     private readonly Dictionary<Creature, CreatureAction> actions = [];
     private readonly Dictionary<string, Type> cachedCreatureActionTypeByFullName;
 
@@ -61,9 +62,10 @@ public sealed class AI
 
     private readonly CreatureActionBroadcastFilter actionBroadcastFilter = new(ACTION_RESEND_SECONDS);
 
-    public AI(IPacketSender packetSender)
+    public AI(IPacketSender packetSender, SimulationOwnership simulationOwnership)
     {
         this.packetSender = packetSender;
+        this.simulationOwnership = simulationOwnership;
         Assembly assembly = Assembly.GetAssembly(typeof(CreatureAction));
         cachedCreatureActionTypeByFullName = assembly.GetTypes()
                                                      .Where(type => typeof(CreatureAction).IsAssignableFrom(type))
@@ -91,11 +93,40 @@ public sealed class AI
         {
             return;
         }
-        if (cachedCreatureActionTypeByFullName.TryGetValue(creatureActionTypeName, out Type creatureActionType) &&
+        // Only the actions this game replays are kept; any other one means the creature does none of them now
+        if (cachedCreatureActionTypeByFullName.TryGetValue(creatureActionTypeName, out Type creatureActionType) && IsReplayedAction(creatureActionType) &&
             creature.TryGetComponent(creatureActionType, out Component component) && component is CreatureAction creatureAction)
         {
             actions[creature] = creatureAction;
         }
+        else
+        {
+            actions.Remove(creature);
+        }
+    }
+
+    /// <summary>
+    ///     Called where Creature.UpdateBehaviour starts, stops or performs an action.
+    /// </summary>
+    public bool MayRunAction(Creature creature, CreatureAction action, bool isPerform)
+    {
+        bool hasId = creature.TryGetNitroxId(out NitroxId creatureId);
+        return MayRunActionHere(hasId, hasId && simulationOwnership.HasAnyLockType(creatureId), IsReplayedAction(action.GetType()), isPerform);
+    }
+
+    /// <summary>
+    ///     A creature that is not shared (it has no id) and one this player simulates run every action. A copy of a creature
+    ///     another player simulates only starts and stops the actions it replays, which show the creature's pose; it never
+    ///     performs one, which would steer it away from where its simulating player moves it, or attack on its own.
+    /// </summary>
+    public static bool MayRunActionHere(bool hasId, bool simulatedLocally, bool actionReplayed, bool isPerform)
+    {
+        return !hasId || simulatedLocally || (actionReplayed && !isPerform);
+    }
+
+    internal bool IsReplayedAction(Type actionType)
+    {
+        return creatureActionWhitelist.Contains(actionType);
     }
 
     public static void AggressiveWhenSeeTargetChanged(NitroxId creatureId, NitroxId targetId, bool locked, float aggressionAmount)
