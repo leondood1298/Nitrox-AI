@@ -61,7 +61,7 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
     public async Task UnauthorizedCameraMovementCannotMutateOrRebroadcast()
     {
         MovementScenario test = new();
-        Assert.IsTrue(test.Scenario.Ownership.TryToAcquire(ScannerRoomScenarioFixture.CameraAId, test.Scenario.PlayerA, SimulationLockType.EXCLUSIVE));
+        Assert.IsTrue(test.Scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.CameraAId, test.Scenario.PlayerA, SimulationLockType.EXCLUSIVE));
         SimpleMovementData movement = CreateMovement(ScannerRoomScenarioFixture.CameraAId, 1f);
 
         await test.Processor.Process(
@@ -76,9 +76,9 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
     public async Task MixedBatchForwardsOnlyOwnedEntriesInOriginalOrder()
     {
         MovementScenario test = new();
-        Assert.IsTrue(test.Scenario.Ownership.TryToAcquire(ScannerRoomScenarioFixture.CameraAId, test.Scenario.PlayerA, SimulationLockType.EXCLUSIVE));
-        Assert.IsTrue(test.Scenario.Ownership.TryToAcquire(ScannerRoomScenarioFixture.CameraBId, test.Scenario.PlayerB, SimulationLockType.EXCLUSIVE));
-        Assert.IsTrue(test.Scenario.Ownership.TryToAcquire(ScannerRoomScenarioFixture.CameraCId, test.Scenario.PlayerA, SimulationLockType.TRANSIENT));
+        Assert.IsTrue(test.Scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.CameraAId, test.Scenario.PlayerA, SimulationLockType.EXCLUSIVE));
+        Assert.IsTrue(test.Scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.CameraBId, test.Scenario.PlayerB, SimulationLockType.EXCLUSIVE));
+        Assert.IsTrue(test.Scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.CameraCId, test.Scenario.PlayerA, SimulationLockType.TRANSIENT));
         SimpleMovementData ownedA = CreateMovement(ScannerRoomScenarioFixture.CameraAId, 1f);
         SimpleMovementData foreignB = CreateMovement(ScannerRoomScenarioFixture.CameraBId, 2f);
         SimpleMovementData ownedC = CreateMovement(ScannerRoomScenarioFixture.CameraCId, 3f);
@@ -118,7 +118,7 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
         ordinaryEntity.Transform.LocalRotation = NitroxQuaternion.Identity;
         ordinaryEntity.Transform.LocalScale = NitroxVector3.One;
         test.Scenario.EntityRegistry.AddEntity(ordinaryEntity);
-        Assert.IsTrue(test.Scenario.Ownership.TryToAcquire(
+        Assert.IsTrue(test.Scenario.Ownership.TryAcquire(
             ordinaryId, test.Scenario.PlayerA, SimulationLockType.TRANSIENT));
         SimpleMovementData movement = CreateMovement(ordinaryId, 3.5f);
 
@@ -146,7 +146,7 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
         MovementScenario test = new();
         foreach (NitroxId cameraId in test.Scenario.CameraIds)
         {
-            Assert.IsTrue(test.Scenario.Ownership.TryToAcquire(cameraId, test.Scenario.PlayerA, SimulationLockType.EXCLUSIVE));
+            Assert.IsTrue(test.Scenario.Ownership.TryAcquire(cameraId, test.Scenario.PlayerA, SimulationLockType.EXCLUSIVE));
         }
         List<MovementData> malformed =
         [
@@ -172,7 +172,7 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
     public async Task EmptyOversizedAndOutOfRangeTimeBatchesAreRejectedAtomically()
     {
         MovementScenario test = new();
-        Assert.IsTrue(test.Scenario.Ownership.TryToAcquire(ScannerRoomScenarioFixture.CameraAId, test.Scenario.PlayerA, SimulationLockType.EXCLUSIVE));
+        Assert.IsTrue(test.Scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.CameraAId, test.Scenario.PlayerA, SimulationLockType.EXCLUSIVE));
         AuthProcessorContext context = new(test.Scenario.PlayerA, test.Sender);
         SimpleMovementData movement = CreateMovement(ScannerRoomScenarioFixture.CameraAId, 4f);
         List<MovementData> oversized = Enumerable.Range(0, VehicleMovementsPacketProcessor.MAX_MOVEMENTS_PER_PACKET + 1)
@@ -195,7 +195,7 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
     public async Task OwnedExclusiveCameraMovementIsAppliedAndForwarded()
     {
         MovementScenario test = new();
-        Assert.IsTrue(test.Scenario.Ownership.TryToAcquire(ScannerRoomScenarioFixture.CameraAId, test.Scenario.PlayerA, SimulationLockType.EXCLUSIVE));
+        Assert.IsTrue(test.Scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.CameraAId, test.Scenario.PlayerA, SimulationLockType.EXCLUSIVE));
         SimpleMovementData movement = CreateMovement(ScannerRoomScenarioFixture.CameraAId, 7f);
 
         await test.Processor.Process(
@@ -216,7 +216,7 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
         NitroxId cameraId = ScannerRoomScenarioFixture.CameraAId;
         Assert.IsTrue((await test.Scenario.DockAsync(
             test.Scenario.PlayerA, cameraId, 0, true)).Granted);
-        Assert.IsTrue(test.Scenario.Ownership.TryToAcquire(
+        Assert.IsTrue(test.Scenario.Ownership.TryAcquire(
             cameraId, test.Scenario.PlayerA, SimulationLockType.TRANSIENT));
 
         await test.Processor.Process(
@@ -227,7 +227,7 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
         AssertCanonicalTransform(test.Entity(cameraId),
             NitroxVector3.Zero, NitroxQuaternion.Identity);
 
-        Assert.IsTrue(test.Scenario.Ownership.TryToAcquire(
+        Assert.IsTrue(test.Scenario.Ownership.TryAcquire(
             cameraId, test.Scenario.PlayerA, SimulationLockType.EXCLUSIVE));
         await test.Processor.Process(
             new AuthProcessorContext(test.Scenario.PlayerA, test.Sender),
@@ -272,7 +272,7 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
         collision.Transform.LocalRotation = NitroxQuaternion.Identity;
         collision.Transform.LocalScale = NitroxVector3.One;
         test.Scenario.EntityRegistry.AddEntity(collision);
-        Assert.IsTrue(test.Scenario.Ownership.TryToAcquire(
+        Assert.IsTrue(test.Scenario.Ownership.TryAcquire(
             cameraId, test.Scenario.PlayerA, SimulationLockType.EXCLUSIVE));
 
         await test.Processor.Process(
@@ -317,7 +317,7 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
             test.Scenario.EntityRegistry.GetEntities<MapRoomEntity>(),
             test.Scenario.ControlLifecycle));
         Assert.IsTrue(test.Scenario.ControlLifecycle.IsKnown(cameraId));
-        Assert.IsTrue(test.Scenario.Ownership.TryToAcquire(
+        Assert.IsTrue(test.Scenario.Ownership.TryAcquire(
             cameraId, test.Scenario.PlayerA, SimulationLockType.TRANSIENT));
 
         using ManualResetEventSlim processingStarted = new();
@@ -380,7 +380,7 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
         MovementScenario test = new();
         NitroxId cameraId = ScannerRoomScenarioFixture.CameraAId;
         RegisterCameraWithoutWorldEntity(test, test.Scenario.Room, cameraId, 1, dockingSlot: 0);
-        Assert.IsTrue(test.Scenario.Ownership.TryToAcquire(
+        Assert.IsTrue(test.Scenario.Ownership.TryAcquire(
             cameraId, test.Scenario.PlayerA, SimulationLockType.EXCLUSIVE));
         Assert.IsFalse(test.Scenario.ControlLifecycle.IsActiveController(
             cameraId, test.Scenario.PlayerA.SessionId));
@@ -406,7 +406,7 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
             new NitroxInt3(5, -2, 9));
         duplicateRoom.GetOrAssignCameraNumber(ambiguousId, 1);
         test.Scenario.EntityRegistry.AddEntity(duplicateRoom);
-        Assert.IsTrue(test.Scenario.Ownership.TryToAcquire(unknownId, test.Scenario.PlayerA, SimulationLockType.EXCLUSIVE));
+        Assert.IsTrue(test.Scenario.Ownership.TryAcquire(unknownId, test.Scenario.PlayerA, SimulationLockType.EXCLUSIVE));
         Assert.IsTrue((await test.Scenario.ControlAsync(
             test.Scenario.PlayerA, ambiguousId, 0, true)).Granted);
 
@@ -446,7 +446,7 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
     {
         MovementScenario test = new();
         NitroxId cameraId = ScannerRoomScenarioFixture.CameraAId;
-        Assert.IsTrue(test.Scenario.Ownership.TryToAcquire(cameraId, test.Scenario.PlayerA, SimulationLockType.EXCLUSIVE));
+        Assert.IsTrue(test.Scenario.Ownership.TryAcquire(cameraId, test.Scenario.PlayerA, SimulationLockType.EXCLUSIVE));
         using ManualResetEventSlim sendEntered = new();
         using ManualResetEventSlim continueSend = new();
         test.Sender.SendEntered = sendEntered;
@@ -480,7 +480,7 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
         // server has processed its pilot-mode packet. The vehicle must keep moving for everyone else meanwhile.
         MovementScenario test = new();
         NitroxId cameraId = ScannerRoomScenarioFixture.CameraAId;
-        Assert.IsTrue(test.Scenario.Ownership.TryToAcquire(cameraId, test.Scenario.PlayerA, SimulationLockType.EXCLUSIVE));
+        Assert.IsTrue(test.Scenario.Ownership.TryAcquire(cameraId, test.Scenario.PlayerA, SimulationLockType.EXCLUSIVE));
         DrivenVehicleMovementData movement = new(cameraId, new NitroxVector3(8f, 9f, 10f), NitroxQuaternion.Identity, 0, 0, true);
         NitroxVector3 playerPositionBefore = test.Scenario.PlayerA.Position;
 
@@ -499,7 +499,7 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
     {
         MovementScenario test = new();
         NitroxId cameraId = ScannerRoomScenarioFixture.CameraAId;
-        Assert.IsTrue(test.Scenario.Ownership.TryToAcquire(cameraId, test.Scenario.PlayerA, SimulationLockType.EXCLUSIVE));
+        Assert.IsTrue(test.Scenario.Ownership.TryAcquire(cameraId, test.Scenario.PlayerA, SimulationLockType.EXCLUSIVE));
         DrivenVehicleMovementData movement = new(cameraId, new NitroxVector3(8f, 9f, 10f), NitroxQuaternion.Identity, 0, 0, true);
         test.Scenario.PlayerA.PlayerContext = CreatePlayerContext(test.Scenario.PlayerA, cameraId);
 

@@ -33,7 +33,7 @@ public sealed partial class CollectShiny_TryPickupShinyTarget_Patch : NitroxPatc
         SimulationOwnership ownership = Resolve<SimulationOwnership>();
         if (ownership.HasExclusiveLock(cameraId))
         {
-            EntityPositionBroadcaster.WatchEntity(cameraId);
+            EntityPositionBroadcaster.Instance.WatchEntity(cameraId);
             return true;
         }
 
@@ -62,7 +62,7 @@ public sealed partial class CollectShiny_TryPickupShinyTarget_Patch : NitroxPatc
             return;
         }
 
-        EntityPositionBroadcaster.WatchEntity(cameraId);
+        EntityPositionBroadcaster.Instance.WatchEntity(cameraId);
         bool pickupApplied = false;
         try
         {

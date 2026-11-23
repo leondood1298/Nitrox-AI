@@ -133,9 +133,7 @@ public sealed class MapRoomCameraPreviewProcessorTest
         Assert.IsTrue(scenario.EntityRegistry.TryGetEntityById(ScannerRoomScenarioFixture.CameraAId,
             out Entity cameraEntity));
 
-        Assert.IsTrue(scenario.EntitySimulation.TryAssignEntityToPlayer(cameraEntity, scenario.PlayerA,
-            shouldEntityMove: true, out SimulatedEntity? refreshedAssignment));
-        Assert.IsNotNull(refreshedAssignment);
+        SimulatedEntity refreshedAssignment = scenario.EntitySimulation.TryAcquireEntity(scenario.PlayerA, cameraEntity, propagate: true).Single();
         Assert.AreEqual(SimulationLockType.EXCLUSIVE, refreshedAssignment.LockType,
             "A background visibility refresh must report the effective interactive lock.");
         Assert.IsTrue(scenario.Ownership.TryGetLock(ScannerRoomScenarioFixture.CameraAId,
@@ -243,7 +241,7 @@ public sealed class MapRoomCameraPreviewProcessorTest
             out SimulationOwnershipData.PlayerLock revoked));
         Assert.IsTrue(scenario.ControlReleaseFactory.TryCreate(ScannerRoomScenarioFixture.CameraAId, revoked,
             "test_cleanup", out _));
-        Assert.IsTrue(scenario.Ownership.TryToAcquire(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA,
+        Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA,
             SimulationLockType.EXCLUSIVE));
         MapRoomCameraPreviewProcessor processor = new(scenario.Ownership, scenario.EntityRegistry,
             scenario.ControlLifecycle, scenario.Diagnostics);
@@ -271,7 +269,7 @@ public sealed class MapRoomCameraPreviewProcessorTest
 
         // Model a lock left transient by an older/background path. Cleanup emits no control-release packet
         // for it, but must still remove the consumed preview acquisition state.
-        Assert.IsTrue(scenario.Ownership.TryToAcquire(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA,
+        Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA,
             SimulationLockType.TRANSIENT));
         Assert.IsTrue(scenario.Ownership.RevokeOwnerOfId(ScannerRoomScenarioFixture.CameraAId,
             out SimulationOwnershipData.PlayerLock revoked));

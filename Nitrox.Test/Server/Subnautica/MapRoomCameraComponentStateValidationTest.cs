@@ -80,8 +80,8 @@ public sealed class MapRoomCameraComponentStateValidationTest
     public async Task ExclusiveCameraOwnerWinsConcurrentWriteAgainstDockedRoomOwner()
     {
         ScannerRoomScenarioFixture scenario = await CreateDockedScenarioAsync();
-        Assert.IsTrue(scenario.Ownership.TryToAcquire(ScannerRoomScenarioFixture.RoomId, scenario.PlayerA, SimulationLockType.TRANSIENT));
-        Assert.IsTrue(scenario.Ownership.TryToAcquire(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerB, SimulationLockType.EXCLUSIVE));
+        Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.RoomId, scenario.PlayerA, SimulationLockType.TRANSIENT));
+        Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerB, SimulationLockType.EXCLUSIVE));
         MapRoomCameraComponentStateProcessor processor = new(scenario.Ownership, scenario.EntityRegistry, scenario.Diagnostics, scenario.LooseCameraState);
         RecordingPacketSender roomSender = new();
         RecordingPacketSender cameraSender = new();
@@ -126,8 +126,8 @@ public sealed class MapRoomCameraComponentStateValidationTest
     public async Task TransientCameraLockDoesNotBlockDockedRoomOwner()
     {
         ScannerRoomScenarioFixture scenario = await CreateDockedScenarioAsync();
-        Assert.IsTrue(scenario.Ownership.TryToAcquire(ScannerRoomScenarioFixture.RoomId, scenario.PlayerA, SimulationLockType.TRANSIENT));
-        Assert.IsTrue(scenario.Ownership.TryToAcquire(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerB, SimulationLockType.TRANSIENT));
+        Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.RoomId, scenario.PlayerA, SimulationLockType.TRANSIENT));
+        Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerB, SimulationLockType.TRANSIENT));
         MapRoomCameraComponentStateProcessor processor = new(scenario.Ownership, scenario.EntityRegistry, scenario.Diagnostics, scenario.LooseCameraState);
         RecordingPacketSender sender = new();
 
@@ -148,7 +148,7 @@ public sealed class MapRoomCameraComponentStateValidationTest
     public async Task ExactDuplicateIsGrantedWithoutRevisionBump()
     {
         ScannerRoomScenarioFixture scenario = await CreateDockedScenarioAsync();
-        Assert.IsTrue(scenario.Ownership.TryToAcquire(ScannerRoomScenarioFixture.RoomId, scenario.PlayerA, SimulationLockType.TRANSIENT));
+        Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.RoomId, scenario.PlayerA, SimulationLockType.TRANSIENT));
         MapRoomCameraComponentStateProcessor processor = new(scenario.Ownership, scenario.EntityRegistry, scenario.Diagnostics, scenario.LooseCameraState);
         RecordingPacketSender sender = new();
         AuthProcessorContext context = new(scenario.PlayerA, sender);
@@ -169,7 +169,7 @@ public sealed class MapRoomCameraComponentStateValidationTest
     public async Task ConcurrentAcceptedResponsesUseAtomicValuesAndRevisions()
     {
         ScannerRoomScenarioFixture scenario = await CreateDockedScenarioAsync();
-        Assert.IsTrue(scenario.Ownership.TryToAcquire(ScannerRoomScenarioFixture.RoomId, scenario.PlayerA, SimulationLockType.TRANSIENT));
+        Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.RoomId, scenario.PlayerA, SimulationLockType.TRANSIENT));
         using BlockingLogger logger = new();
         ScannerRoomDiagnostics diagnostics = new(logger);
         MapRoomCameraComponentStateProcessor processor = new(scenario.Ownership, scenario.EntityRegistry, diagnostics, scenario.LooseCameraState);
@@ -223,7 +223,7 @@ public sealed class MapRoomCameraComponentStateValidationTest
     public async Task ProcessRejectsOutOfRangeValuesWithoutMutatingCanonicalState()
     {
         ScannerRoomScenarioFixture scenario = await CreateDockedScenarioAsync();
-        Assert.IsTrue(scenario.Ownership.TryToAcquire(ScannerRoomScenarioFixture.RoomId, scenario.PlayerA, SimulationLockType.TRANSIENT));
+        Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.RoomId, scenario.PlayerA, SimulationLockType.TRANSIENT));
         MapRoomCameraComponentStateProcessor processor = new(scenario.Ownership, scenario.EntityRegistry, scenario.Diagnostics, scenario.LooseCameraState);
         RecordingPacketSender sender = new();
 

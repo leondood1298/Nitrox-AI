@@ -21,7 +21,7 @@ public sealed class BasePowerSourceUpdateProcessorTest
     {
         ScannerRoomScenarioFixture scenario = new();
         ModuleEntity source = AddSolarPanel(scenario);
-        Assert.IsTrue(scenario.Ownership.TryToAcquire(source.Id, scenario.PlayerA, SimulationLockType.TRANSIENT));
+        Assert.IsTrue(scenario.Ownership.TryAcquire(source.Id, scenario.PlayerA, SimulationLockType.TRANSIENT));
         RecordingSender sender = new();
 
         await CreateProcessor(scenario).Process(new AuthProcessorContext(scenario.PlayerA, sender),
@@ -41,7 +41,7 @@ public sealed class BasePowerSourceUpdateProcessorTest
         ScannerRoomScenarioFixture scenario = new();
         ModuleEntity source = AddSolarPanel(scenario);
         source.Metadata = new PowerSourceMetadata(30f, 75f, BasePowerSourceType.SOLAR, 5);
-        Assert.IsTrue(scenario.Ownership.TryToAcquire(source.Id, scenario.PlayerA, SimulationLockType.TRANSIENT));
+        Assert.IsTrue(scenario.Ownership.TryAcquire(source.Id, scenario.PlayerA, SimulationLockType.TRANSIENT));
         RecordingSender sender = new();
 
         await CreateProcessor(scenario).Process(new AuthProcessorContext(scenario.PlayerB, sender),
@@ -63,7 +63,7 @@ public sealed class BasePowerSourceUpdateProcessorTest
         ScannerRoomScenarioFixture scenario = new();
         ModuleEntity source = AddSolarPanel(scenario);
         source.Metadata = new PowerSourceMetadata(60f, 75f, BasePowerSourceType.SOLAR, 5);
-        Assert.IsTrue(scenario.Ownership.TryToAcquire(source.Id, scenario.PlayerA, SimulationLockType.TRANSIENT));
+        Assert.IsTrue(scenario.Ownership.TryAcquire(source.Id, scenario.PlayerA, SimulationLockType.TRANSIENT));
         ConsumeSender sender = new();
 
         await CreateConsumeProcessor(scenario).Process(new AuthProcessorContext(scenario.PlayerB, sender),

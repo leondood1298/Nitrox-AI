@@ -43,7 +43,7 @@ public sealed class MapRoomCameraStateAuthorityAtomicityTest
 
         Assert.IsTrue(transferWasBlocked, "Camera ownership changed before the accepted light state was queued.");
         Assert.IsTrue(await transfer);
-        Assert.IsTrue(scenario.Ownership.TryToAcquire(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerB,
+        Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerB,
             SimulationLockType.EXCLUSIVE));
 
         MapRoomCameraRecord record = scenario.Room.GetCameraRecord(ScannerRoomScenarioFixture.CameraAId)!;
@@ -66,7 +66,7 @@ public sealed class MapRoomCameraStateAuthorityAtomicityTest
     public async Task TransientCameraOwnerCannotChangeLightWithoutCanonicalControl()
     {
         ScannerRoomScenarioFixture scenario = await CreateDockedScenarioAsync();
-        Assert.IsTrue(scenario.Ownership.TryToAcquire(
+        Assert.IsTrue(scenario.Ownership.TryAcquire(
             ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA,
             SimulationLockType.TRANSIENT));
         MapRoomCameraLightProcessor processor = new(
@@ -91,7 +91,7 @@ public sealed class MapRoomCameraStateAuthorityAtomicityTest
     public async Task ComponentStateIsQueuedBeforeCameraOwnershipCanTransfer()
     {
         ScannerRoomScenarioFixture scenario = await CreateDockedScenarioAsync();
-        Assert.IsTrue(scenario.Ownership.TryToAcquire(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA,
+        Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA,
             SimulationLockType.EXCLUSIVE));
         MapRoomCameraComponentStateProcessor processor = new(scenario.Ownership, scenario.EntityRegistry, scenario.Diagnostics, scenario.LooseCameraState);
         BlockingBroadcastPacketSender sender = new();
@@ -111,7 +111,7 @@ public sealed class MapRoomCameraStateAuthorityAtomicityTest
 
         Assert.IsTrue(transferWasBlocked, "Camera ownership changed before the accepted component state was queued.");
         Assert.IsTrue(await transfer);
-        Assert.IsTrue(scenario.Ownership.TryToAcquire(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerB,
+        Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerB,
             SimulationLockType.EXCLUSIVE));
 
         MapRoomCameraRecord record = scenario.Room.GetCameraRecord(ScannerRoomScenarioFixture.CameraAId)!;
@@ -138,7 +138,7 @@ public sealed class MapRoomCameraStateAuthorityAtomicityTest
     {
         ScannerRoomScenarioFixture scenario = await CreateDockedScenarioAsync();
         Assert.IsFalse(scenario.Ownership.TryGetLock(ScannerRoomScenarioFixture.CameraAId, out _));
-        Assert.IsTrue(scenario.Ownership.TryToAcquire(ScannerRoomScenarioFixture.RoomId, scenario.PlayerA,
+        Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.RoomId, scenario.PlayerA,
             SimulationLockType.TRANSIENT));
         MapRoomCameraComponentStateProcessor processor = new(scenario.Ownership, scenario.EntityRegistry, scenario.Diagnostics, scenario.LooseCameraState);
         BlockingBroadcastPacketSender sender = new();
@@ -152,7 +152,7 @@ public sealed class MapRoomCameraStateAuthorityAtomicityTest
         {
             transferStarted.Set();
             bool roomRevoked = scenario.Ownership.RevokeIfOwner(ScannerRoomScenarioFixture.RoomId, scenario.PlayerA);
-            bool cameraAcquired = scenario.Ownership.TryToAcquire(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerB,
+            bool cameraAcquired = scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerB,
                 SimulationLockType.EXCLUSIVE);
             return (roomRevoked, cameraAcquired);
         });

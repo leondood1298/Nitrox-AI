@@ -38,7 +38,7 @@ public class CreatureDamageActionProcessorTest
     public async Task Process_CreatureSimulatedByAnotherPlayer_SendsHitToSimulatingPlayer()
     {
         NitroxId creatureId = new();
-        simulationOwnershipData.TryToAcquire(creatureId, simulatingPlayer, SimulationLockType.TRANSIENT);
+        simulationOwnershipData.TryAcquire(creatureId, simulatingPlayer, SimulationLockType.TRANSIENT);
         CreatureDamageAction hit = CreateHit(creatureId, 25f, 0);
 
         await processor.Process(context, hit);
@@ -52,7 +52,7 @@ public class CreatureDamageActionProcessorTest
     public async Task Process_ExclusiveLockHolder_ReceivesHit()
     {
         NitroxId creatureId = new();
-        simulationOwnershipData.TryToAcquire(creatureId, simulatingPlayer, SimulationLockType.EXCLUSIVE);
+        simulationOwnershipData.TryAcquire(creatureId, simulatingPlayer, SimulationLockType.EXCLUSIVE);
 
         await processor.Process(context, CreateHit(creatureId, 25f, 0));
 
@@ -71,7 +71,7 @@ public class CreatureDamageActionProcessorTest
     public async Task Process_SenderSimulatesCreature_SendsHitBackToSender()
     {
         NitroxId creatureId = new();
-        simulationOwnershipData.TryToAcquire(creatureId, attacker, SimulationLockType.TRANSIENT);
+        simulationOwnershipData.TryAcquire(creatureId, attacker, SimulationLockType.TRANSIENT);
 
         await processor.Process(context, CreateHit(creatureId, 25f, 0));
 
@@ -82,7 +82,7 @@ public class CreatureDamageActionProcessorTest
     public async Task Process_ReroutedHitWithSimulatingPlayer_SendsHitToSimulatingPlayer()
     {
         NitroxId creatureId = new();
-        simulationOwnershipData.TryToAcquire(creatureId, simulatingPlayer, SimulationLockType.TRANSIENT);
+        simulationOwnershipData.TryAcquire(creatureId, simulatingPlayer, SimulationLockType.TRANSIENT);
 
         await processor.Process(context, CreateHit(creatureId, 25f, 1));
 
@@ -101,7 +101,7 @@ public class CreatureDamageActionProcessorTest
     public async Task Process_TooManyHops_DropsHit()
     {
         NitroxId creatureId = new();
-        simulationOwnershipData.TryToAcquire(creatureId, simulatingPlayer, SimulationLockType.TRANSIENT);
+        simulationOwnershipData.TryAcquire(creatureId, simulatingPlayer, SimulationLockType.TRANSIENT);
 
         await processor.Process(context, CreateHit(creatureId, 25f, CreatureDamageAction.MAX_HOPS + 1));
 
@@ -116,7 +116,7 @@ public class CreatureDamageActionProcessorTest
     public async Task Process_InvalidDamage_DropsHit(float damage)
     {
         NitroxId creatureId = new();
-        simulationOwnershipData.TryToAcquire(creatureId, simulatingPlayer, SimulationLockType.TRANSIENT);
+        simulationOwnershipData.TryAcquire(creatureId, simulatingPlayer, SimulationLockType.TRANSIENT);
 
         await processor.Process(context, CreateHit(creatureId, damage, 0));
 

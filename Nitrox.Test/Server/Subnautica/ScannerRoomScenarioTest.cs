@@ -34,7 +34,7 @@ public sealed class ScannerRoomScenarioTest
         Assert.IsFalse(unauthorizedUndock.Granted);
         Assert.AreEqual(ScannerRoomScenarioFixture.CameraAId, scenario.Room.LeftDockCameraId);
 
-        Assert.IsTrue(scenario.Ownership.TryToAcquire(scenario.Room.Id, scenario.PlayerB, SimulationLockType.TRANSIENT));
+        Assert.IsTrue(scenario.Ownership.TryAcquire(scenario.Room.Id, scenario.PlayerB, SimulationLockType.TRANSIENT));
         MapRoomCameraDock roomAuthorizedUndock = await scenario.DockAsync(scenario.PlayerB,
             ScannerRoomScenarioFixture.CameraAId, 0, false, establishAuthority: false);
         Assert.IsTrue(roomAuthorizedUndock.Granted);
@@ -305,7 +305,7 @@ public sealed class ScannerRoomScenarioTest
         Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
         Assert.IsTrue((await scenario.DockAsync(scenario.PlayerB, ScannerRoomScenarioFixture.CameraBId, 1, true)).Granted);
         Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
-        Assert.IsTrue(scenario.Ownership.TryToAcquire(ScannerRoomScenarioFixture.CameraBId, scenario.PlayerA, SimulationLockType.TRANSIENT));
+        Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.CameraBId, scenario.PlayerA, SimulationLockType.TRANSIENT));
 
         List<SimulationOwnershipData.RevokedLock> revokedLocks = scenario.Ownership.RevokeAllLocksForOwner(scenario.PlayerA.SessionId);
         List<MapRoomCameraControl> releases = [];
@@ -539,7 +539,7 @@ public sealed class ScannerRoomScenarioTest
             ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
         Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA,
             ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
-        Assert.IsTrue(scenario.Ownership.TryToAcquire(
+        Assert.IsTrue(scenario.Ownership.TryAcquire(
             ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA,
             SimulationLockType.TRANSIENT));
         Assert.IsTrue(scenario.ControlLifecycle.IsActiveController(
@@ -682,7 +682,7 @@ public sealed class ScannerRoomScenarioTest
         Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA,
             ScannerRoomScenarioFixture.CameraAId, 0, false)).Granted);
         Assert.IsNotNull(scenario.Room.GetCameraRecord(ScannerRoomScenarioFixture.CameraAId));
-        Assert.IsTrue(scenario.Ownership.TryToAcquire(ScannerRoomScenarioFixture.CameraAId,
+        Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.CameraAId,
             scenario.PlayerA, SimulationLockType.EXCLUSIVE));
 
         MapRoomEntity targetRoom = new(
@@ -719,7 +719,7 @@ public sealed class ScannerRoomScenarioTest
         Assert.AreSame(scenario.PlayerA, cameraLock.Player);
         Assert.AreEqual(SimulationLockType.EXCLUSIVE, cameraLock.LockType);
         Assert.IsFalse(cleanupPackets.OfType<DropSimulationOwnership>()
-            .Any(packet => packet.EntityId == ScannerRoomScenarioFixture.CameraAId));
+            .Any(packet => packet.EntityIds.Contains(ScannerRoomScenarioFixture.CameraAId)));
         Assert.IsFalse(cleanupPackets.OfType<MapRoomCameraControl>()
             .Any(packet => packet.CameraId == ScannerRoomScenarioFixture.CameraAId));
     }
@@ -728,7 +728,7 @@ public sealed class ScannerRoomScenarioTest
     public void ReleaseFactoryCoversAssociationlessLooseWorldCamera()
     {
         ScannerRoomScenarioFixture scenario = new();
-        Assert.IsTrue(scenario.Ownership.TryToAcquire(ScannerRoomScenarioFixture.CameraCId,
+        Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.CameraCId,
             scenario.PlayerA, SimulationLockType.EXCLUSIVE));
         Assert.IsTrue(scenario.Ownership.RevokeOwnerOfId(ScannerRoomScenarioFixture.CameraCId,
             out SimulationOwnershipData.PlayerLock revokedLock));

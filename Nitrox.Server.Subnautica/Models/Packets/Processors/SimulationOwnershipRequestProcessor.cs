@@ -1,4 +1,6 @@
+using System.Collections.Generic;
 using Nitrox.Model.DataStructures;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
@@ -6,20 +8,49 @@ using Nitrox.Server.Subnautica.Models.Packets.Core;
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
 internal sealed class SimulationOwnershipRequestProcessor(SimulationOwnershipData simulationOwnershipData,
-    EntitySimulation entitySimulation, MapRoomCameraControlReleaseFactory cameraControlReleaseFactory,
+    EntitySimulation entitySimulation, EntityRegistry entityRegistry, MapRoomCameraControlReleaseFactory cameraControlReleaseFactory,
     MapRoomCameraControlLifecycle cameraControlLifecycle, ScannerRoomDiagnostics diagnostics) : IAuthPacketProcessor<SimulationOwnershipRequest>
 {
     private readonly SimulationOwnershipData simulationOwnershipData = simulationOwnershipData;
     private readonly EntitySimulation entitySimulation = entitySimulation;
+    private readonly EntityRegistry entityRegistry = entityRegistry;
 
     public async Task Process(AuthProcessorContext context, SimulationOwnershipRequest ownershipRequest)
     {
         bool hasScannerLifecycle = cameraControlReleaseFactory.IsScannerCamera(ownershipRequest.Id) ||
                                    cameraControlLifecycle.IsKnown(ownershipRequest.Id);
-        using IDisposable? lifecycleGate = hasScannerLifecycle
-            ? await cameraControlLifecycle.EnterAsync(ownershipRequest.Id)
-            : null;
-        if (hasScannerLifecycle && !cameraControlReleaseFactory.IsScannerCamera(ownershipRequest.Id))
+        if (hasScannerLifecycle)
+        {
+            await ProcessScannerCameraRequest(context, ownershipRequest);
+            return;
+        }
+
+        if (!entityRegistry.TryGetEntityById(ownershipRequest.Id, out WorldEntity worldEntity))
+        {
+            await context.ReplyAsync(new SimulationOwnershipResponse(ownershipRequest.Id, false, ownershipRequest.LockType));
+            return;
+        }
+
+        List<SimulatedEntity> simulatedEntities = [.. entitySimulation.TryAcquireEntity(context.Sender, worldEntity, true, ownershipRequest.LockType, explicitRequest: true)];
+
+        if (simulatedEntities.Count == 0)
+        {
+            await context.ReplyAsync(new SimulationOwnershipResponse(ownershipRequest.Id, false, ownershipRequest.LockType));
+            return;
+        }
+
+        await context.ReplyAsync(new SimulationOwnershipResponse(ownershipRequest.Id, true, ownershipRequest.LockType));
+        await context.SendToAllAsync(new SimulationOwnershipChange(simulatedEntities));
+    }
+
+    /// <summary>
+    ///     A Scanner Room camera is locked through its control lifecycle. A docked camera is a record of its room, not a
+    ///     registered entity, so it cannot take the path above.
+    /// </summary>
+    private async Task ProcessScannerCameraRequest(AuthProcessorContext context, SimulationOwnershipRequest ownershipRequest)
+    {
+        using IDisposable lifecycleGate = await cameraControlLifecycle.EnterAsync(ownershipRequest.Id);
+        if (!cameraControlReleaseFactory.IsScannerCamera(ownershipRequest.Id))
         {
             await context.ReplyAsync(new SimulationOwnershipResponse(ownershipRequest.Id, false, ownershipRequest.LockType));
             diagnostics.RecordRejected("camera_lock", cameraId: ownershipRequest.Id,
@@ -31,8 +62,7 @@ internal sealed class SimulationOwnershipRequestProcessor(SimulationOwnershipDat
                 out SimulationOwnershipData.PlayerLock currentLock) &&
             currentLock.Player == context.Sender &&
             currentLock.LockType == SimulationLockType.EXCLUSIVE;
-        if (hasScannerLifecycle &&
-            !cameraControlReleaseFactory.CanGrantGenericOwnership(
+        if (!cameraControlReleaseFactory.CanGrantGenericOwnership(
                 ownershipRequest.Id, context.Sender.SessionId,
                 ownershipRequest.LockType, requesterOwnsExclusive))
         {
@@ -42,34 +72,30 @@ internal sealed class SimulationOwnershipRequestProcessor(SimulationOwnershipDat
                 sessionId: context.Sender.SessionId, reason: "control_required");
             return;
         }
-        bool aquiredLock = simulationOwnershipData.TryToAcquire(ownershipRequest.Id, context.Sender, ownershipRequest.LockType);
-        if (aquiredLock && hasScannerLifecycle && ownershipRequest.LockType != SimulationLockType.EXCLUSIVE)
+        bool acquiredLock = simulationOwnershipData.TryAcquire(ownershipRequest.Id, context.Sender, ownershipRequest.LockType);
+        if (acquiredLock && ownershipRequest.LockType != SimulationLockType.EXCLUSIVE)
         {
             cameraControlLifecycle.EndPreviewAcquisition(ownershipRequest.Id, context.Sender.SessionId);
         }
 
-        if (aquiredLock)
+        if (acquiredLock)
         {
             bool shouldEntityMove = entitySimulation.ShouldSimulateEntityMovement(ownershipRequest.Id);
             SimulationOwnershipChange simulationOwnershipChange = new(ownershipRequest.Id, context.Sender.SessionId, ownershipRequest.LockType, shouldEntityMove);
             await context.SendToOthersAsync(simulationOwnershipChange);
         }
 
-        SimulationOwnershipResponse responseToPlayer = new(ownershipRequest.Id, aquiredLock, ownershipRequest.LockType);
-        await context.ReplyAsync(responseToPlayer);
-        if (hasScannerLifecycle)
+        await context.ReplyAsync(new SimulationOwnershipResponse(ownershipRequest.Id, acquiredLock, ownershipRequest.LockType));
+        string reason = ownershipRequest.LockType == SimulationLockType.EXCLUSIVE ? "exclusive" : "transient";
+        if (acquiredLock)
         {
-            string reason = ownershipRequest.LockType == SimulationLockType.EXCLUSIVE ? "exclusive" : "transient";
-            if (aquiredLock)
-            {
-                diagnostics.RecordAccepted("camera_lock", cameraId: ownershipRequest.Id,
-                    sessionId: context.Sender.SessionId, reason: reason);
-            }
-            else
-            {
-                diagnostics.RecordRejected("camera_lock", cameraId: ownershipRequest.Id,
-                    sessionId: context.Sender.SessionId, reason: reason);
-            }
+            diagnostics.RecordAccepted("camera_lock", cameraId: ownershipRequest.Id,
+                sessionId: context.Sender.SessionId, reason: reason);
+        }
+        else
+        {
+            diagnostics.RecordRejected("camera_lock", cameraId: ownershipRequest.Id,
+                sessionId: context.Sender.SessionId, reason: reason);
         }
     }
 }

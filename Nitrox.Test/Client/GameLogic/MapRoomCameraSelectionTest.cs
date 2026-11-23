@@ -71,7 +71,7 @@ public sealed class MapRoomCameraSelectionTest
         purposeTracker.RecordAcquisition(cameraId, cameraControlAlreadyGranted: false);
         Assert.IsFalse(cameras.CanSelectForControl(cameraId, false));
 
-        await processor.Process(new ClientProcessorContext(multiplayerSession), new DropSimulationOwnership(cameraId));
+        await processor.Process(new ClientProcessorContext(multiplayerSession), new DropSimulationOwnership([cameraId]));
 
         Assert.IsTrue(cameras.CanSelectForControl(cameraId, false));
         Assert.IsFalse(purposeTracker.TryConsumeForDowngrade(cameraId, true, false));

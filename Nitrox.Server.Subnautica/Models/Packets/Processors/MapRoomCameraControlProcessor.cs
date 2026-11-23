@@ -40,7 +40,7 @@ internal sealed class MapRoomCameraControlProcessor(SimulationOwnershipData simu
 
         if (packet.IsControlling)
         {
-            bool granted = simulationOwnershipData.TryToAcquire(packet.CameraId, context.Sender, SimulationLockType.EXCLUSIVE);
+            bool granted = simulationOwnershipData.TryAcquire(packet.CameraId, context.Sender, SimulationLockType.EXCLUSIVE);
             SessionId controller = granted ? context.Sender.SessionId : simulationOwnershipData.GetPlayerForLock(packet.CameraId)?.SessionId ?? context.Sender.SessionId;
             MapRoomCameraControl response = CreateResponse(packet, granted, controller);
             if (granted)

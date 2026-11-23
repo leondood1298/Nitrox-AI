@@ -72,7 +72,7 @@ internal sealed class ScannerRoomScenarioFixture
             new MapRoomScanResultSubscriptions(), ControlLifecycle, playerManager, Diagnostics, worldEntityManager, LooseCameraState);
         EntitySimulation = new(worldPacketSender, EntityRegistry, worldEntityManager, Ownership,
             playerManager, ControlReleaseFactory, ControlLifecycle, NullLogger<EntitySimulation>.Instance);
-        ownershipRequestProcessor = new(Ownership, EntitySimulation, ControlReleaseFactory, ControlLifecycle, Diagnostics);
+        ownershipRequestProcessor = new(Ownership, EntitySimulation, EntityRegistry, ControlReleaseFactory, ControlLifecycle, Diagnostics);
     }
 
     internal async Task<MapRoomCameraDock> DockAsync(ServerPlayer player, NitroxId cameraId, int slot, bool isDocked,
@@ -89,7 +89,7 @@ internal sealed class ScannerRoomScenarioFixture
             // Packet processing assumes normal simulation assignment already made the actor the
             // camera authority. Establish that production precondition without mocking the processor.
             Ownership.RevokeOwnerOfId(cameraId);
-            Assert.IsTrue(Ownership.TryToAcquire(cameraId, player, SimulationLockType.TRANSIENT));
+            Assert.IsTrue(Ownership.TryAcquire(cameraId, player, SimulationLockType.TRANSIENT));
         }
         RecordingPacketSender requestPacketSender = new();
         await dockProcessor.Process(new AuthProcessorContext(player, requestPacketSender), new MapRoomCameraDock(cameraId, RoomId, slot, isDocked: isDocked));

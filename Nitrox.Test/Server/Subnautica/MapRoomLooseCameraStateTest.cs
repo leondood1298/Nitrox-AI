@@ -25,7 +25,7 @@ public sealed class MapRoomLooseCameraStateTest
     {
         ScannerRoomScenarioFixture scenario = new();
         Assert.IsNull(scenario.Room.GetCameraRecord(cameraId));
-        Assert.IsTrue(scenario.Ownership.TryToAcquire(cameraId, scenario.PlayerA, SimulationLockType.TRANSIENT));
+        Assert.IsTrue(scenario.Ownership.TryAcquire(cameraId, scenario.PlayerA, SimulationLockType.TRANSIENT));
         MapRoomCameraComponentStateProcessor processor = new(scenario.Ownership, scenario.EntityRegistry, scenario.Diagnostics, scenario.LooseCameraState);
         Sender sender = new();
 
@@ -49,7 +49,7 @@ public sealed class MapRoomLooseCameraStateTest
     public async Task PlayerWhoDoesNotSimulateTheCameraCannotSetItsState()
     {
         ScannerRoomScenarioFixture scenario = new();
-        Assert.IsTrue(scenario.Ownership.TryToAcquire(cameraId, scenario.PlayerA, SimulationLockType.TRANSIENT));
+        Assert.IsTrue(scenario.Ownership.TryAcquire(cameraId, scenario.PlayerA, SimulationLockType.TRANSIENT));
         MapRoomCameraComponentStateProcessor processor = new(scenario.Ownership, scenario.EntityRegistry, scenario.Diagnostics, scenario.LooseCameraState);
         Sender sender = new();
 

@@ -29,7 +29,7 @@ internal sealed class MapRoomDeconstructionCleanup(EntityRegistry entityRegistry
         }
 
         simulationOwnershipData.RevokeOwnerOfId(mapRoom.Id);
-        await context.SendToAllAsync(new DropSimulationOwnership(mapRoom.Id));
+        await context.SendToAllAsync(new DropSimulationOwnership([mapRoom.Id]));
         MapRoomCameraRecord[] cameras;
         HashSet<NitroxId> dockedCameraIds;
         lock (mapRoom)
@@ -49,7 +49,7 @@ internal sealed class MapRoomDeconstructionCleanup(EntityRegistry entityRegistry
             {
                 await context.SendToAllAsync(release);
             }
-            await context.SendToAllAsync(new DropSimulationOwnership(camera.CameraId));
+            await context.SendToAllAsync(new DropSimulationOwnership([camera.CameraId]));
             // The game destroys a docked camera together with its dock. Without removing the server's copy, a camera
             // that had ever been undocked would come back for later joiners as a loose camera at a stale position.
             if (dockedCameraIds.Contains(camera.CameraId) && worldEntityManager.TryDestroyEntity(camera.CameraId, out _))
