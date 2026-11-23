@@ -103,6 +103,14 @@ public sealed partial class LiveMixin_AddHealth_Patch : NitroxPatch, IDynamicPat
             return;
         }
 
+        // The Cyclops' metadata is not extracted from a component, so the lookup below finds nothing for it and a
+        // repaired hull would stay damaged for the other players.
+        if (victim.TryGetComponent(out SubRoot subRoot) && subRoot.isCyclops)
+        {
+            Resolve<Cyclops>().BroadcastMetadataChange(id);
+            return;
+        }
+
         Optional<EntityMetadata> metadata = Resolve<EntityMetadataManager>().Extract(victim.gameObject);
         if (metadata.HasValue)
         {

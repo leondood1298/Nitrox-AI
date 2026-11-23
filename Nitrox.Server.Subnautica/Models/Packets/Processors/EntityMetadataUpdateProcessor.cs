@@ -137,6 +137,13 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
             return false;
         }
 
+        if (metadata is CyclopsMetadata requestedCyclops)
+        {
+            Player? simulator = simulationOwnershipData.GetPlayerForLock(entity.Id);
+            metadata = CyclopsMetadataAuthority.Merge(entity.Metadata as CyclopsMetadata, requestedCyclops, simulator == null || simulator == sendingPlayer);
+            return true;
+        }
+
         return metadata switch
         {
             PlayerMetadata playerMetadata => ProcessPlayerMetadata(sendingPlayer, entity, playerMetadata),

@@ -21,7 +21,9 @@ public sealed partial class PlayerCinematicController_Start_Patch : NitroxPatch,
                 Log.Warn($"[PlayerCinematicController_Start_Patch] - No NitroxEntity for \"{__instance.gameObject.GetFullHierarchyPath()}\" found!");
             }
         }
-        else if (!component.gameObject.GetComponent<Bed>())
+        // Beds and benches are synced by their own packets (bed animations, BenchChanged). Registering them here as
+        // well would play the same animation twice on other players, which is how benches broke upstream.
+        else if (!component.gameObject.GetComponent<Bed>() && !__instance.GetComponentInParent<Bench>())
         {
             component.gameObject.EnsureComponent<MultiplayerCinematicReference>().AddController(__instance);
         }

@@ -13,8 +13,9 @@ public sealed partial class Stalker_CheckLoseTooth_Patch : NitroxPatch, IDynamic
     // Note that HardnessMixin is only used by Stalkers
     public static bool Prefix(Stalker __instance, GameObject target)
     {
+        // Only the player simulating the Stalker rolls for a tooth, otherwise each player would drop their own.
         if (!__instance.TryGetNitroxId(out NitroxId creatureId)
-            && !Resolve<SimulationOwnership>().HasAnyLockType(creatureId))
+            || !Resolve<SimulationOwnership>().HasAnyLockType(creatureId))
         {
             return false;
         }
