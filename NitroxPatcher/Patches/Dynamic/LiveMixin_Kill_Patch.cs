@@ -11,6 +11,16 @@ public sealed partial class LiveMixin_Kill_Patch : NitroxPatch, IDynamicPatch
 {
     internal static readonly MethodInfo TARGET_METHOD = Reflect.Method((LiveMixin t) => t.Kill(default));
 
+    public static void Prefix()
+    {
+        Resolve<LiveMixinManager>().EnterKill();
+    }
+
+    public static void Finalizer()
+    {
+        Resolve<LiveMixinManager>().ExitKill();
+    }
+
     public static void Postfix(LiveMixin __instance)
     {
         if (!Multiplayer.Main || !Multiplayer.Main.InitialSyncCompleted)
