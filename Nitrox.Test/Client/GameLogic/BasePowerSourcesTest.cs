@@ -33,6 +33,28 @@ public sealed class BasePowerSourcesTest
     }
 
     [TestMethod]
+    public void SourceIsSimulatedByThePlayerHoldingItsLock()
+    {
+        Assert.IsTrue(BasePowerSources.CanSimulate(hasId: true, simulatedLocally: true, rebuildingBases: false));
+        Assert.IsFalse(BasePowerSources.CanSimulate(hasId: true, simulatedLocally: false, rebuildingBases: false));
+    }
+
+    [TestMethod]
+    public void SourceIsNotSimulatedWhileItsBaseIsBeingRebuilt()
+    {
+        // During a resync a nuclear reactor exists before its rods do. Run in that state it would wipe its fuel
+        // progress and take the same amount off its stored power, and the owner would broadcast both.
+        Assert.IsFalse(BasePowerSources.CanSimulate(hasId: true, simulatedLocally: true, rebuildingBases: true));
+    }
+
+    [TestMethod]
+    public void SourceWithoutAnIdBehavesAsInTheGame()
+    {
+        Assert.IsTrue(BasePowerSources.CanSimulate(hasId: false, simulatedLocally: false, rebuildingBases: false));
+        Assert.IsTrue(BasePowerSources.CanSimulate(hasId: false, simulatedLocally: false, rebuildingBases: true));
+    }
+
+    [TestMethod]
     [DataRow(40f, 75f, 2f, 42f)]
     [DataRow(74.5f, 75f, 2f, 75f)]
     [DataRow(75f, 75f, 2f, 75f)]

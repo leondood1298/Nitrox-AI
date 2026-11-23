@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using NitroxClient.Communication.Abstract;
 using NitroxClient.Extensions;
+using NitroxClient.GameLogic.Bases;
 using UnityEngine;
 
 namespace NitroxClient.GameLogic;
@@ -16,9 +17,14 @@ public static class BasePowerBroadcaster
     private static readonly Dictionary<NitroxId, float> lastBroadcastPowerBySource = [];
     private static readonly Dictionary<NitroxId, float> lastBroadcastFuelConsumedBySource = [];
 
+    /// <summary>
+    ///     True while this client replaces its bases with the server's copy (see <see cref="BasePowerSources.CanSimulate" />).
+    /// </summary>
+    public static bool IsRebuildingBases() => BuildingHandler.Main && BuildingHandler.Main.Resyncing;
+
     public static void BroadcastIfOwner(Component owner, PowerSource powerSource, SimulationOwnership simulationOwnership, BasePowerState state, IPacketSender packetSender)
     {
-        if (!powerSource || !owner.TryGetNitroxId(out NitroxId nitroxId) || !simulationOwnership.HasAnyLockType(nitroxId))
+        if (!powerSource || !owner.TryGetNitroxId(out NitroxId nitroxId) || !BasePowerSources.CanSimulate(true, simulationOwnership.HasAnyLockType(nitroxId), IsRebuildingBases()))
         {
             return;
         }

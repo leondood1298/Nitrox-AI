@@ -23,6 +23,24 @@ public static class BasePowerSources
     public static float LevelAfterGenerating(float power, float maxPower, float amount) => Math.Max(0f, Math.Min(power + amount, maxPower));
 
     /// <summary>
+    ///     Whether this client runs a source's simulation right now.
+    ///     <p />
+    ///     Not while it rebuilds its bases from a resync: a reactor is then back before its fuel is. A nuclear reactor
+    ///     without rods zeroes its fuel progress and takes that progress off its stored power
+    ///     (BaseNuclearReactor.ProducePower), and both would be broadcast as the source's state before the resync has
+    ///     put the real values back.
+    /// </summary>
+    public static bool CanSimulate(bool hasId, bool simulatedLocally, bool rebuildingBases)
+    {
+        if (!hasId)
+        {
+            // Not a synchronized entity: it behaves as in the game
+            return true;
+        }
+        return simulatedLocally && !rebuildingBases;
+    }
+
+    /// <summary>
     ///     The level after another player took <paramref name="amount" /> from a source this client simulates.
     /// </summary>
     public static float LevelAfterDraw(float power, float amount) => Math.Max(0f, power - amount);
