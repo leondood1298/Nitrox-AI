@@ -87,8 +87,17 @@ public sealed partial class MapRoomScans
 
     internal void ApplyTypes(IRoom room, MapRoomScanTypesChanged change) => SetAvailableTypes(room, GetState(room), change.TechTypes);
 
-    private static void SetAvailableTypes(IRoom room, RoomState state, IEnumerable<NitroxTechType> types)
+    /// <summary>
+    ///     Makes the room list the server's types. A type the server's list did not have before has just been found,
+    ///     and the game tells a player of such a find. The simulating player's own game does that when it finds the
+    ///     type. Everybody else's game is not asked what it finds (see <see cref="ObtainsTypesLocally(IRoom)" />), so
+    ///     they are told here.
+    /// </summary>
+    private void SetAvailableTypes(IRoom room, RoomState state, IEnumerable<NitroxTechType> types)
     {
+        // The first list holds what the room could scan for all along.
+        bool tellsOfFinds = state.TypesReceived && !simulationOwnership.HasAnyLockType(room.Id);
+        HashSet<TechType> previous = [.. state.AvailableTypes];
         state.AvailableTypes.Clear();
         foreach (NitroxTechType type in types)
         {
@@ -96,5 +105,16 @@ public sealed partial class MapRoomScans
         }
         state.TypesReceived = true;
         room.ShowTypes(state.AvailableTypes);
+        if (!tellsOfFinds)
+        {
+            return;
+        }
+        foreach (TechType type in state.AvailableTypes)
+        {
+            if (!previous.Contains(type))
+            {
+                room.ShowDiscovery(type);
+            }
+        }
     }
 }

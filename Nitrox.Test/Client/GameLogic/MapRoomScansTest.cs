@@ -773,6 +773,44 @@ public sealed class MapRoomScansTest
         CollectionAssert.AreEquivalent(new[] { TechType.Titanium }, room.ShownTypes.ToArray());
     }
 
+    [TestMethod]
+    public void PlayerWhoDoesNotSimulateIsToldOfATypeTheServerAddsToItsList()
+    {
+        scans.ApplyTypes(room, new MapRoomScanTypesChanged(room.Id, [quartz]));
+        Assert.AreEqual(0, room.DiscoveriesShown.Count, "The first list holds what the room could scan for all along.");
+
+        scans.ApplyTypes(room, new MapRoomScanTypesChanged(room.Id, [quartz, titanium]));
+        scans.ApplyTypes(room, new MapRoomScanTypesChanged(room.Id, [quartz, titanium]));
+        CollectionAssert.AreEqual(new[] { TechType.Titanium }, room.DiscoveriesShown);
+
+        // A type that is gone from the list and found again is a find again, as in the game.
+        scans.ApplyTypes(room, new MapRoomScanTypesChanged(room.Id, [titanium]));
+        scans.ApplyTypes(room, new MapRoomScanTypesChanged(room.Id, [quartz, titanium]));
+        CollectionAssert.AreEqual(new[] { TechType.Titanium, TechType.Quartz }, room.DiscoveriesShown);
+    }
+
+    [TestMethod]
+    public void TypeThatComesWithTheResultsOfTheScanIsAFindAsWell()
+    {
+        scans.ApplySnapshot(room, new MapRoomScanSnapshot(room.Id, 0, [], [quartz]));
+
+        scans.ApplySnapshot(room, new MapRoomScanSnapshot(room.Id, 0, [], [quartz, titanium]));
+
+        CollectionAssert.AreEqual(new[] { TechType.Titanium }, room.DiscoveriesShown);
+    }
+
+    [TestMethod]
+    public void SimulatingPlayerIsNotToldOfATypeByTheServerBecauseItsOwnGameTellsIt()
+    {
+        simulationOwnership.SimulateEntity(room.Id, SimulationLockType.TRANSIENT);
+        scans.ApplyTypes(room, new MapRoomScanTypesChanged(room.Id, [quartz]));
+
+        // The server answers every report with its list, which holds the type this player's game has just found.
+        scans.ApplyTypes(room, new MapRoomScanTypesChanged(room.Id, [quartz, titanium]));
+
+        Assert.AreEqual(0, room.DiscoveriesShown.Count, "It would be told twice.");
+    }
+
     private List<T> Sent<T>() where T : Packet => packetSender.ReceivedCalls().Select(call => call.GetArguments()[0]).OfType<T>().ToList();
 
     private static ResourceTrackerDatabase.ResourceInfo Info(string id, float x, TechType techType = TechType.Quartz) => new()
@@ -797,6 +835,7 @@ public sealed class MapRoomScansTest
         public int ScansStarted { get; private set; }
         public int TargetsShown { get; private set; }
         public int ResultsShown { get; private set; }
+        public List<TechType> DiscoveriesShown { get; } = [];
 
         public NitroxId Id => id;
         public TechType Target { get; private set; }
@@ -842,5 +881,7 @@ public sealed class MapRoomScansTest
         public void ShowTarget() => TargetsShown++;
 
         public void ShowTypes(IEnumerable<TechType> types) => ShownTypes = [.. types];
+
+        public void ShowDiscovery(TechType type) => DiscoveriesShown.Add(type);
     }
 }
