@@ -648,6 +648,7 @@ internal class WorldService : IHostedService
             return false;
         }
         await LoadPersistedWorldIntoServicesAsync(persistedData);
+        worldEntityManager.RestoreOrphanedMapRoomCameras();
         foreach (MapRoomEntity room in entityRegistry.GetEntities<MapRoomEntity>())
         {
             scannerRoomDiagnostics.RecordCheckpoint("load", room);
