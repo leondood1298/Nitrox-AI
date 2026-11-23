@@ -110,6 +110,36 @@ public sealed class MapRoomCameraReleaseSimulationTest
             "Players must not be told to forget a lock that is still held.");
     }
 
+    [TestMethod]
+    public async Task DockingAReleasedCameraTellsItsSimulatingPlayerThatTheLockIsGone()
+    {
+        // A docked camera is simulated by nobody.
+        ScannerRoomScenarioFixture scenario = new();
+        Assert.IsTrue((await scenario.ControlLooseAsync(scenario.PlayerA, cameraId, true)).Granted);
+        await scenario.ControlPacketsAsync(scenario.PlayerA, Release(cameraId));
+        AssertLock(scenario, scenario.PlayerA, SimulationLockType.TRANSIENT);
+        Assert.IsTrue(scenario.Ownership.TryAcquire(scenario.Room.Id, scenario.PlayerB, SimulationLockType.TRANSIENT));
+
+        IReadOnlyList<Packet> sent = await scenario.DockPacketsAsync(scenario.PlayerB, new MapRoomCameraDock(cameraId, ScannerRoomScenarioFixture.RoomId, 0));
+
+        Assert.IsTrue(sent.OfType<MapRoomCameraDock>().Single().Granted);
+        Assert.IsNull(scenario.Ownership.GetPlayerForLock(cameraId));
+        Assert.IsTrue(sent.OfType<DropSimulationOwnership>().Single().EntityIds.Contains(cameraId));
+        Assert.AreEqual(0, sent.OfType<MapRoomCameraControl>().Count(), "Nobody was controlling it.");
+    }
+
+    [TestMethod]
+    public async Task DockingACameraNobodySimulatedAnnouncesNoDroppedLock()
+    {
+        ScannerRoomScenarioFixture scenario = new();
+        Assert.IsTrue(scenario.Ownership.TryAcquire(scenario.Room.Id, scenario.PlayerB, SimulationLockType.TRANSIENT));
+
+        IReadOnlyList<Packet> sent = await scenario.DockPacketsAsync(scenario.PlayerB, new MapRoomCameraDock(cameraId, ScannerRoomScenarioFixture.RoomId, 0));
+
+        Assert.IsTrue(sent.OfType<MapRoomCameraDock>().Single().Granted);
+        Assert.AreEqual(0, sent.OfType<DropSimulationOwnership>().Count());
+    }
+
     private static MapRoomCameraControl Release(NitroxId camera) => new(camera, Optional.Empty, -1, false, false);
 
     private static void AssertLock(ScannerRoomScenarioFixture scenario, ServerPlayer expectedPlayer, SimulationLockType expectedType)

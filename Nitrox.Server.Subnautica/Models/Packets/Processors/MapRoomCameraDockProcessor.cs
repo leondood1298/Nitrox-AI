@@ -174,19 +174,25 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
                     playerLock.LockType,
                     controlLifecycle.IsActiveController(packet.CameraId, playerLock.Player.SessionId));
             }
+            bool lockRevoked = false;
             if (stateChanged && packet.IsDocked && !preserveControlLock &&
-                simulationOwnershipData.RevokeOwnerOfId(packet.CameraId, out SimulationOwnershipData.PlayerLock revokedLock) &&
-                cameraControlReleaseFactory.TryCreate(packet.CameraId, revokedLock, "dock", out MapRoomCameraControl release))
+                simulationOwnershipData.RevokeOwnerOfId(packet.CameraId, out SimulationOwnershipData.PlayerLock revokedLock))
             {
-                controlRelease = release;
-            }
-            else if (stateChanged && packet.IsDocked && !preserveControlLock)
-            {
-                simulationOwnershipData.RevokeOwnerOfId(packet.CameraId);
+                lockRevoked = true;
+                if (cameraControlReleaseFactory.TryCreate(packet.CameraId, revokedLock, "dock", out MapRoomCameraControl release))
+                {
+                    controlRelease = release;
+                }
             }
             if (controlRelease != null)
             {
                 await context.SendToAllAsync(controlRelease);
+            }
+            if (lockRevoked)
+            {
+                // A docked camera is simulated by nobody. The player who simulated it until now (after letting go of
+                // its controls, for example) has to be told, or their client keeps counting the camera as its own.
+                await context.SendToAllAsync(new DropSimulationOwnership([packet.CameraId]));
             }
             await context.SendToAllAsync(response);
         }
