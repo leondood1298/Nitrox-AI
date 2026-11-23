@@ -316,6 +316,12 @@ internal sealed class ScannerRoomScenarioFixture
     }
 
     /// <summary>
+    ///     Announces an entity a client made, the way <c>Entities.BroadcastEntitySpawnedByClient</c> does.
+    /// </summary>
+    internal Task<IReadOnlyList<Packet>> SpawnByClientAsync(ServerPlayer player, Entity entity, bool requireSimulation = true) =>
+        SentDuringAsync(() => spawnProcessor.Process(Context(player), new EntitySpawnedByClient(entity, false, requireSimulation)));
+
+    /// <summary>
     ///     Finishes a piece on an existing base, the way the builder's client reports it.
     /// </summary>
     internal Task<IReadOnlyList<Packet>> UpdateBaseAsync(ServerPlayer player, UpdateBase packet) =>

@@ -54,7 +54,9 @@ public sealed partial class CreatureDeath_SpawnRespawner_Patch : NitroxPatch, ID
         CreatureRespawnEntity creatureSpawner = new(respawn.transform.ToWorldDto(), cellLevel, classId, false, respawnId, NitroxTechType.None, null, parentId, [],
                                                     respawn.spawnTime, respawn.techType.ToDto(), respawn.addComponents);
 
-        Resolve<Entities>().BroadcastEntitySpawnedByClient(creatureSpawner, true);
+        // Nobody simulates a respawner: the player whose game loads its cell once it is due takes its lock then
+        // (CreatureRespawnEntitySpawner). Held by this player, the lock kept anyone else from respawning the creature.
+        Resolve<Entities>().BroadcastEntitySpawnedByClient(creatureSpawner, true, false);
 
         // We don't need this object as the respawner only works when we load its cell
         // and it won't activate right now so we'll just delete the entity locally
