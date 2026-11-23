@@ -27,4 +27,30 @@ public static class PendingRadioMessages
         }
         return true;
     }
+
+    /// <summary>
+    ///     Applies the server's queue at initial sync. Messages that arrived by packet during the loading screen are
+    ///     already in the queue: each message is kept once, the server's order first.
+    /// </summary>
+    public static void Merge(List<string> pendingMessages, IEnumerable<string> serverQueue)
+    {
+        List<string> merged = [];
+        HashSet<string> added = new(StringComparer.OrdinalIgnoreCase);
+        foreach (string key in serverQueue)
+        {
+            if (added.Add(key))
+            {
+                merged.Add(key);
+            }
+        }
+        foreach (string key in pendingMessages)
+        {
+            if (added.Add(key))
+            {
+                merged.Add(key);
+            }
+        }
+        pendingMessages.Clear();
+        pendingMessages.AddRange(merged);
+    }
 }

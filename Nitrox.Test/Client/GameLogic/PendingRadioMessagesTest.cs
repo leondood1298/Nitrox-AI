@@ -24,4 +24,24 @@ public sealed class PendingRadioMessagesTest
 
         pending.Should().Equal("RadioA");
     }
+
+    [TestMethod]
+    public void Merge_MessageReceivedWhileLoading_IsKeptOnce()
+    {
+        List<string> pending = ["RadioB", "RadioC"];
+
+        PendingRadioMessages.Merge(pending, ["RadioA", "RadioB"]);
+
+        pending.Should().Equal("RadioA", "RadioB", "RadioC");
+    }
+
+    [TestMethod]
+    public void Merge_EmptyQueue_TakesTheServerQueue()
+    {
+        List<string> pending = [];
+
+        PendingRadioMessages.Merge(pending, ["RadioA", "RadioB"]);
+
+        pending.Should().Equal("RadioA", "RadioB");
+    }
 }
