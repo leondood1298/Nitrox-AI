@@ -41,14 +41,22 @@ internal sealed class PdaManager(ILogger<PdaManager> logger) : ISummarize
         }
     }
 
-    public void AddKnownTechType(NitroxTechType techType, List<NitroxTechType> partialTechTypesToRemove)
+    /// <param name="completedScannerEntries">
+    ///     Scanner entries the game marked as completely scanned when it learned the tech, so their fragments no longer
+    ///     count after a rejoin or restart.
+    /// </param>
+    public void AddKnownTechType(NitroxTechType techType, List<NitroxTechType> completedScannerEntries)
     {
         bool duplicateAttempt = false;
         try
         {
             lock (pdaStateLock)
             {
-                PdaState.ScannerPartial.RemoveAllFast(partialTechTypesToRemove, static (entry, list) => list.Contains(entry.TechType));
+                PdaState.ScannerPartial.RemoveAllFast(completedScannerEntries, static (entry, list) => list.Contains(entry.TechType));
+                foreach (NitroxTechType scannerEntry in completedScannerEntries)
+                {
+                    PdaState.ScannerComplete.Add(scannerEntry);
+                }
                 if (PdaState.KnownTechTypes.Contains(techType))
                 {
                     duplicateAttempt = true;

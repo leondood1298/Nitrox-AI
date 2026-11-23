@@ -7,6 +7,7 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic;
 public sealed class PdaManagerTest
 {
     private static readonly NitroxTechType fragment = new("SeamothFragment");
+    private static readonly NitroxTechType otherFragment = new("SeamothFragmentAlternative");
 
     private PdaManager pdaManager;
 
@@ -48,5 +49,19 @@ public sealed class PdaManagerTest
 
         fullyResearched.Should().BeTrue();
         pdaManager.GetInitialPDAData().ScannerPartial.Should().BeEmpty();
+    }
+
+    [TestMethod]
+    public void AddKnownTechType_CompletesTheScannerEntriesOfTheBlueprint()
+    {
+        NitroxTechType blueprint = new("Seamoth");
+        pdaManager.AddScannedFragment(fragment, 3, out _);
+
+        pdaManager.AddKnownTechType(blueprint, [fragment, otherFragment]);
+
+        InitialPDAData data = pdaManager.GetInitialPDAData();
+        data.ScannerPartial.Should().BeEmpty();
+        data.ScannerComplete.Should().BeEquivalentTo([fragment, otherFragment]);
+        data.KnownTechTypes.Should().Equal(blueprint);
     }
 }

@@ -12,7 +12,7 @@ internal sealed class KnownTechEntryAddProcessor(PdaManager pdaManager) : IAuthP
         switch (packet.Category)
         {
             case KnownTechEntryAdd.EntryCategory.KNOWN:
-                pdaManager.AddKnownTechType(packet.TechType, packet.PartialTechTypesToRemove);
+                pdaManager.AddKnownTechType(packet.TechType, packet.CompletedScannerEntries);
                 break;
             case KnownTechEntryAdd.EntryCategory.ANALYZED:
                 pdaManager.AddAnalyzedTechType(packet.TechType);
