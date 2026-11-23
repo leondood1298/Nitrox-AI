@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Server.Subnautica.Models.AppEvents;
@@ -43,15 +45,20 @@ internal sealed class SleepManager(IPacketSender packetSender, PlayerManager pla
         await BroadcastStatus();
     }
 
-    private bool AreAllPlayersInBed()
-    {
-        int totalPlayers = playerManager.GetConnectedPlayers().Count;
-        return totalPlayers > 0 && sessionIdsInBed.Count >= totalPlayers;
-    }
+    /// <summary>
+    ///     Everyone who has finished joining must be in bed for the night to pass. A player queued or on the loading
+    ///     screen does not count (their game drops the sleep packets until it is in the world).
+    /// </summary>
+    internal static int CountPlayersInGame(IEnumerable<Player> connectedPlayers, SessionId? leaving = null) =>
+        connectedPlayers.Count(player => player.HasFinishedInitialSync && (!leaving.HasValue || !player.SessionId.Equals(leaving.Value)));
+
+    internal static bool AreAllInBed(int playersInBed, int playersInGame) => playersInGame > 0 && playersInBed >= playersInGame;
+
+    private bool AreAllPlayersInBed() => AreAllInBed(sessionIdsInBed.Count, CountPlayersInGame(playerManager.ConnectedPlayers()));
 
     private async Task BroadcastStatus()
     {
-        int totalPlayers = playerManager.GetConnectedPlayers().Count;
+        int totalPlayers = CountPlayersInGame(playerManager.ConnectedPlayers());
         await packetSender.SendPacketToAllAsync(new SleepStatusUpdate(sessionIdsInBed.Count, totalPlayers));
     }
 
@@ -84,12 +91,15 @@ internal sealed class SleepManager(IPacketSender packetSender, PlayerManager pla
             return;
         }
 
+        // Players in the game, not sessions: a session may be in the main menu or the join queue
+        int playersInGame = CountPlayersInGame(playerManager.ConnectedPlayers(), args.Session.Id);
+
         // Send to all players except the disconnecting one
-        SleepStatusUpdate packet = new(sessionIdsInBed.Count, args.NewSessionTotal);
+        SleepStatusUpdate packet = new(sessionIdsInBed.Count, playersInGame);
         await packetSender.SendPacketToOthersAsync(packet, args.Session.Id);
 
         // Check if remaining players are now all sleeping (disconnected player was the only one awake)
-        if (args.NewSessionTotal > 0 && sessionIdsInBed.Count >= args.NewSessionTotal)
+        if (AreAllInBed(sessionIdsInBed.Count, playersInGame))
         {
             await StartSleep();
         }
