@@ -1,4 +1,3 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Nitrox.Model.DataStructures;
 using NitroxClient.GameLogic;
 using UnityEngine;

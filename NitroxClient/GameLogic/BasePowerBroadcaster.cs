@@ -9,15 +9,15 @@ namespace NitroxClient.GameLogic;
 
 public static class BasePowerBroadcaster
 {
-    internal const float BROADCAST_THROTTLE_SECONDS = 1f;
-    internal const float UNCHANGED_HEARTBEAT_SECONDS = 30f;
+    private const float BROADCAST_THROTTLE_SECONDS = 1f;
+    private const float UNCHANGED_HEARTBEAT_SECONDS = 30f;
 
     /// <summary>
     ///     Share of a source's capacity its level or fuel progress has to move before the new state is worth a packet.
     ///     A source that is charging changes every frame; sending each second of that for every source adds up to one
     ///     packet per source per second for every player, for a difference nobody can see.
     /// </summary>
-    internal const float CHANGE_FRACTION_OF_CAPACITY = 0.01f;
+    private const float CHANGE_FRACTION_OF_CAPACITY = 0.01f;
 
     private const float MIN_CHANGE = 0.001f;
 

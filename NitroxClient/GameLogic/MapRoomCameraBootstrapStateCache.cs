@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Nitrox.Model.DataStructures;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.Packets;
 
 namespace NitroxClient.GameLogic;
@@ -54,7 +55,7 @@ internal sealed class MapRoomCameraBootstrapStateCache
     public IReadOnlyList<MapRoomCameraDock> GetDocks(NitroxId mapRoomId)
     {
         List<MapRoomCameraDock> packets = [];
-        for (int dockingIndex = 0; dockingIndex < 2; dockingIndex++)
+        for (int dockingIndex = 0; dockingIndex < MapRoomEntity.DOCK_COUNT; dockingIndex++)
         {
             if (TryGetDock(mapRoomId, dockingIndex, out MapRoomCameraDock packet))
             {

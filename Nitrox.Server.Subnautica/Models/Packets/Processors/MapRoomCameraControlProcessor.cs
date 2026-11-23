@@ -1,6 +1,3 @@
-using System.Threading.Tasks;
-using Nitrox.Model.Packets.Core;
-using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
@@ -15,11 +12,6 @@ namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 internal sealed class MapRoomCameraControlProcessor(SimulationOwnershipData simulationOwnershipData, EntityRegistry entityRegistry,
     MapRoomCameraControlLifecycle controlLifecycle, ScannerRoomDiagnostics diagnostics) : IAuthPacketProcessor<MapRoomCameraControl>
 {
-    private readonly SimulationOwnershipData simulationOwnershipData = simulationOwnershipData;
-    private readonly EntityRegistry entityRegistry = entityRegistry;
-    private readonly MapRoomCameraControlLifecycle controlLifecycle = controlLifecycle;
-    private readonly ScannerRoomDiagnostics diagnostics = diagnostics;
-
     public async Task Process(AuthProcessorContext context, MapRoomCameraControl packet)
     {
         if (packet.IsServerResponse || !IsValidAssociation(packet))

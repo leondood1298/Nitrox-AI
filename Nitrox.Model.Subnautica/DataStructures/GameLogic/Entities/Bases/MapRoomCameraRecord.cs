@@ -48,4 +48,18 @@ public class MapRoomCameraRecord
         Health = health;
         ComponentRevision = componentRevision;
     }
+
+    /// <summary>
+    ///     Coarse percentage band (0, 10, 25, 50, 75 or 100) of a camera's energy or health relative to its maximum.
+    ///     Server and client report a component change only when it crosses into another band.
+    /// </summary>
+    public static int GetComponentBand(float value, float maximum) => value switch
+    {
+        <= 0f => 0,
+        _ when value <= maximum * 0.1f => 10,
+        _ when value <= maximum * 0.25f => 25,
+        _ when value <= maximum * 0.5f => 50,
+        _ when value <= maximum * 0.75f => 75,
+        _ => 100
+    };
 }

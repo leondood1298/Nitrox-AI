@@ -1,8 +1,7 @@
 using Nitrox.Model.DataStructures;
-using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
-using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
@@ -154,17 +153,7 @@ internal sealed class MapRoomCameraComponentStateProcessor(SimulationOwnershipDa
         float.IsFinite(energy) && energy is >= 0f and <= MapRoomCameraRecord.MAX_ENERGY &&
         float.IsFinite(health) && health is >= 0f and <= MapRoomCameraRecord.MAX_HEALTH;
 
-    internal static int GetEnergyBand(float energy) => GetComponentBand(energy, MapRoomCameraRecord.MAX_ENERGY);
+    internal static int GetEnergyBand(float energy) => MapRoomCameraRecord.GetComponentBand(energy, MapRoomCameraRecord.MAX_ENERGY);
 
-    internal static int GetHealthBand(float health) => GetComponentBand(health, MapRoomCameraRecord.MAX_HEALTH);
-
-    private static int GetComponentBand(float value, float maximum) => value switch
-    {
-        <= 0f => 0,
-        _ when value <= maximum * 0.1f => 10,
-        _ when value <= maximum * 0.25f => 25,
-        _ when value <= maximum * 0.5f => 50,
-        _ when value <= maximum * 0.75f => 75,
-        _ => 100
-    };
+    internal static int GetHealthBand(float health) => MapRoomCameraRecord.GetComponentBand(health, MapRoomCameraRecord.MAX_HEALTH);
 }

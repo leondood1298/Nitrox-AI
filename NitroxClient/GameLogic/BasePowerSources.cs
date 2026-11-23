@@ -8,10 +8,11 @@ public static class BasePowerSources
 {
     /// <summary>
     ///     Whether an addition to a source's level has to be applied although the game would ignore it.
-    ///     <p />
+    ///     <para>
     ///     PowerSource.ModifyPower leaves the level alone when the local player's game mode needs no power (Creative).
     ///     A source's level is shared: when a Creative player simulates it, the players who do need power still depend
     ///     on what it generates. Draws the Creative player's own game makes are left to the game, which makes them free.
+    ///     </para>
     /// </summary>
     public static bool MustGenerateWithoutPowerRequirement(bool localModeRequiresPower, bool simulatedLocally, float amount) =>
         !localModeRequiresPower && simulatedLocally && amount > 0f;
@@ -24,11 +25,12 @@ public static class BasePowerSources
 
     /// <summary>
     ///     Whether this client runs a source's simulation right now.
-    ///     <p />
+    ///     <para>
     ///     Not while it rebuilds its bases from a resync: a reactor is then back before its fuel is. A nuclear reactor
     ///     without rods zeroes its fuel progress and takes that progress off its stored power
     ///     (BaseNuclearReactor.ProducePower), and both would be broadcast as the source's state before the resync has
     ///     put the real values back.
+    ///     </para>
     /// </summary>
     public static bool CanSimulate(bool hasId, bool simulatedLocally, bool rebuildingBases)
     {

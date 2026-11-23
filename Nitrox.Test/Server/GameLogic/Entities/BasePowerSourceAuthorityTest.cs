@@ -21,7 +21,7 @@ public sealed class BasePowerSourceAuthorityTest
     public void UsesCanonicalCapacityAndIncrementsPersistentRevision(BasePowerSourceType sourceType, float expectedCapacity)
     {
         BasePowerSourceAuthority authority = new();
-        var entity = CreateCompatibleEntity(sourceType);
+        Entity entity = CreateCompatibleEntity(sourceType);
         entity.Metadata = new PowerSourceMetadata(1f, expectedCapacity, sourceType, 8);
 
         Assert.IsTrue(authority.TryApply(entity, firstOwner, Request(entity.Id, sourceType, expectedCapacity / 2, 1), out PowerSourceMetadata accepted, out _));

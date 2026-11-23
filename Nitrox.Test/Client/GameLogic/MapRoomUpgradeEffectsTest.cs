@@ -1,4 +1,3 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NitroxClient.GameLogic;
 
 namespace Nitrox.Test.Client.GameLogic;

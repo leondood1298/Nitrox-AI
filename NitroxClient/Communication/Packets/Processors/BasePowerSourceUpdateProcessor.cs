@@ -1,3 +1,4 @@
+using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication.Packets.Processors.Core;
@@ -34,7 +35,7 @@ internal sealed class BasePowerSourceUpdateProcessor(BasePowerState state, BaseP
         return Task.CompletedTask;
     }
 
-    private void RecordReconciliationApply(Nitrox.Model.DataStructures.NitroxId sourceId, PowerSourceMetadata metadata,
+    private void RecordReconciliationApply(NitroxId sourceId, PowerSourceMetadata metadata,
         bool objectFound, string reason)
     {
         bool initialSyncCompleted = Multiplayer.Main && Multiplayer.Main.InitialSyncCompleted;
