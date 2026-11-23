@@ -19,70 +19,122 @@ internal sealed class PlayerCinematicControllerCallProcessor(PlayerManager playe
 
 	public Task Process(ClientProcessorContext context, PlayerCinematicControllerCall packet)
 	{
+		if (!playerManager.TryFind(packet.SessionId, out RemotePlayer remotePlayer))
+		{
+			return Task.CompletedTask;
+		}
+
+		// While a remote player is marked as in a cinematic, movement packets no longer restore their normal
+		// animations. Every path that cannot play or finish the cinematic must therefore leave that mark cleared, or
+		// the player stays frozen until they disconnect.
+		if (!TryPlay(packet, remotePlayer) && !packet.StartPlaying)
+		{
+			EndCinematicState(remotePlayer);
+		}
+		return Task.CompletedTask;
+	}
+
+	/// <returns>False when the cinematic could not be started or ended on its controller.</returns>
+	private static bool TryPlay(PlayerCinematicControllerCall packet, RemotePlayer remotePlayer)
+	{
 		if (!NitroxEntity.TryGetObjectFrom(packet.ControllerID, out GameObject gameObject))
 		{
 			Log.Warn($"Could not find entity with ID {packet.ControllerID} for cinematic");
-			return Task.CompletedTask;
+			return false;
 		}
-		if (gameObject.TryGetComponent<RemoteBedController>(out var component))
+		if (!remotePlayer.Body || !remotePlayer.Body.activeInHierarchy)
 		{
-			if (!playerManager.TryFind(packet.SessionId, out RemotePlayer remotePlayer))
-			{
-				return Task.CompletedTask;
-			}
-			if (!remotePlayer.Body || !remotePlayer.Body.activeInHierarchy)
-			{
-				return Task.CompletedTask;
-			}
+			return false;
+		}
+
+		if (gameObject.TryGetComponent<RemoteBedController>(out var bedController))
+		{
 			if (packet.StartPlaying)
 			{
-				remotePlayer.InCinematic = true;
-				if ((bool)remotePlayer.AnimationController)
+				BeginCinematicState(remotePlayer);
+				try
 				{
-					remotePlayer.AnimationController.UpdatePlayerAnimations = false;
+					bedController.StartBedAnimation(remotePlayer, packet.Key);
 				}
-				component.StartBedAnimation(remotePlayer, packet.Key);
+				catch
+				{
+					EndCinematicState(remotePlayer);
+					throw;
+				}
+				return true;
 			}
-			else
+			try
 			{
-				component.EndBedAnimation(remotePlayer, packet.Key);
-				remotePlayer.InCinematic = false;
-				if ((bool)remotePlayer.AnimationController)
-				{
-					remotePlayer.AnimationController.UpdatePlayerAnimations = true;
-				}
+				bedController.EndBedAnimation(remotePlayer, packet.Key);
 			}
-			return Task.CompletedTask;
+			finally
+			{
+				EndCinematicState(remotePlayer);
+			}
+			return true;
 		}
-		if (!gameObject.TryGetComponent<MultiplayerCinematicReference>(out var component2))
+
+		if (!gameObject.TryGetComponent<MultiplayerCinematicReference>(out var reference) || !remotePlayer.AnimationController)
 		{
-			return Task.CompletedTask;
-		}
-		if (!playerManager.TryFind(packet.SessionId, out RemotePlayer remotePlayer2))
-		{
-			return Task.CompletedTask;
-		}
-		if (!remotePlayer2.Body || !remotePlayer2.Body.activeInHierarchy || !remotePlayer2.AnimationController)
-		{
-			return Task.CompletedTask;
+			return false;
 		}
 		if (packet.StartPlaying)
 		{
 			if (packet.AnimationParameters != null && packet.AnimationParameters.Count > 0)
 			{
-				ApplyAnimationParameters(component2, packet.Key, packet.ControllerNameHash, remotePlayer2, packet.AnimationParameters);
+				ApplyAnimationParameters(reference, packet.Key, packet.ControllerNameHash, remotePlayer, packet.AnimationParameters);
 			}
-			remotePlayer2.InCinematic = true;
-			remotePlayer2.AnimationController.UpdatePlayerAnimations = false;
-			component2.CallStartCinematicMode(packet.Key, packet.ControllerNameHash, remotePlayer2);
+			BeginCinematicState(remotePlayer);
+			try
+			{
+				reference.CallStartCinematicMode(packet.Key, packet.ControllerNameHash, remotePlayer);
+			}
+			catch (KeyNotFoundException ex)
+			{
+				// The controller is not registered on this client (e.g. its object has not finished loading).
+				EndCinematicState(remotePlayer);
+				Log.WarnOnce($"Skipped a remote cinematic that is not registered here: {ex.Message}");
+				return false;
+			}
+			catch
+			{
+				EndCinematicState(remotePlayer);
+				throw;
+			}
+			return true;
 		}
-		else
+
+		try
 		{
-			component2.CallCinematicModeEnd(packet.Key, packet.ControllerNameHash, remotePlayer2);
-			remotePlayer2.InCinematic = false;
-			remotePlayer2.AnimationController.UpdatePlayerAnimations = true;
+			reference.CallCinematicModeEnd(packet.Key, packet.ControllerNameHash, remotePlayer);
 		}
-		return Task.CompletedTask;
+		catch (KeyNotFoundException ex)
+		{
+			Log.WarnOnce($"Could not end a remote cinematic that is not registered here: {ex.Message}");
+		}
+		finally
+		{
+			EndCinematicState(remotePlayer);
+		}
+		return true;
+	}
+
+	private static void BeginCinematicState(RemotePlayer remotePlayer)
+	{
+		remotePlayer.InCinematic = true;
+		if ((bool)remotePlayer.AnimationController)
+		{
+			remotePlayer.AnimationController.UpdatePlayerAnimations = false;
+		}
+	}
+
+	private static void EndCinematicState(RemotePlayer remotePlayer)
+	{
+		remotePlayer.InCinematic = false;
+		if ((bool)remotePlayer.AnimationController)
+		{
+			remotePlayer.AnimationController.UpdatePlayerAnimations = true;
+		}
 	}
 
 	private static void ApplyAnimationParameters(MultiplayerCinematicReference reference, string key, int controllerNameHash, RemotePlayer remotePlayer, Dictionary<string, bool> animationParameters)

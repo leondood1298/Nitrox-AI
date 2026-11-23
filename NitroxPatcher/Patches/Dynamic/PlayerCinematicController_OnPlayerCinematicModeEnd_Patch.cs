@@ -20,6 +20,8 @@ public sealed class PlayerCinematicController_OnPlayerCinematicModeEnd_Patch : N
 		{
 			int hashCode = __instance.gameObject.GetHierarchyPath(component.gameObject).GetHashCode();
 			NitroxPatch.Resolve<PlayerCinematics>().EndCinematicMode(NitroxPatch.Resolve<LocalPlayer>().SessionId.Value, component.Id, hashCode, __instance.playerViewAnimationName);
+			// The game calls EndCinematicMode after this; that call must not announce the same end again.
+			PlayerCinematicController_EndCinematicMode_Patch.MarkEndAnnounced(__instance);
 		}
 	}
 
