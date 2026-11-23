@@ -14,7 +14,7 @@ public sealed partial class SwimBehaviour_GoToInternal_Patch : NitroxPatch, IDyn
 
     public static void Prefix(SwimBehaviour __instance, Vector3 targetPosition, Vector3 targetDirection, float velocity)
     {
-        if (__instance.TryGetIdOrWarn(out NitroxId entityId))
+        if (__instance.TryGetNitroxId(out NitroxId entityId))
         {
             EntityPositionBroadcaster.Instance.RegisterSplineMovementChange(entityId, __instance.gameObject, targetPosition, targetDirection, velocity);
         }
