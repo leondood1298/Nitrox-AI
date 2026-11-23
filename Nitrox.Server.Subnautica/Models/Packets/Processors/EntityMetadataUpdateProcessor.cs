@@ -39,7 +39,8 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
         if ((GateEscapePodMetadata(context.Sender, entity, packet.NewValue) ??
              GatePowerMetadata(context.Sender, entity, packet.NewValue) ??
              GateScannerRoomMetadata(context.Sender, entity, packet.NewValue) ??
-             GateCreatureMetadata(context.Sender, entity, packet.NewValue)) is { } result)
+             GateCreatureMetadata(context.Sender, entity, packet.NewValue) ??
+             GateFiltrationMachineMetadata(context.Sender, entity, packet.NewValue)) is { } result)
         {
             await SendResultAsync(context, entity, result);
             return;
@@ -115,6 +116,32 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
         }
         entity.Metadata = accepted;
         return MetadataUpdateResult.Accept(requested);
+    }
+
+    /// <summary>
+    ///     A water filtration machine's timers come from the player simulating it (see
+    ///     <see cref="FiltrationMachineMetadataAuthority" />). They are the machine's only metadata: another kind would
+    ///     take their place, and the machine would start from zero for the next player who joins and after a restart.
+    /// </summary>
+    /// <returns>Null when the update has nothing to do with a filtration machine.</returns>
+    private MetadataUpdateResult? GateFiltrationMachineMetadata(Player sender, Entity entity, EntityMetadata metadata)
+    {
+        if (metadata is FiltrationMachineMetadata requested)
+        {
+            bool fromSimulatingPlayer = simulationOwnershipData.GetPlayerForLock(entity.Id) == sender;
+            if (!FiltrationMachineMetadataAuthority.TryAccept(entity, requested, fromSimulatingPlayer, out FiltrationMachineMetadata? accepted))
+            {
+                return MetadataUpdateResult.Reject;
+            }
+            entity.Metadata = accepted;
+            return MetadataUpdateResult.Accept(accepted);
+        }
+        if (entity.Metadata is FiltrationMachineMetadata)
+        {
+            logger.ZLogWarning($"Player {sender.Name} tried replacing the timers of filtration machine {entity.Id} with {metadata.GetType().Name}");
+            return MetadataUpdateResult.Reject;
+        }
+        return null;
     }
 
     /// <summary>

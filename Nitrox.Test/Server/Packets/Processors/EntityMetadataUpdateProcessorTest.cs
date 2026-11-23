@@ -22,7 +22,8 @@ namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 ///     sees the room may choose while scan progress belongs to the room's simulating player. A room's fabricator is a
 ///     child entity whose state any player may set, like any other fabricator's. A Lifepod's repair state can only be
 ///     merged with another repair state, never replaced. A medical cabinet's state comes from any player and is only kept
-///     for a cabinet, and so is the text of a rocket's time capsule for the capsule.
+///     for a cabinet, and so is the text of a rocket's time capsule for the capsule. A water filtration machine's timers
+///     come from its simulating player only and are not replaced by another kind of metadata.
 /// </summary>
 [TestClass]
 public sealed class EntityMetadataUpdateProcessorTest
@@ -578,6 +579,59 @@ public sealed class EntityMetadataUpdateProcessorTest
 
         Assert.AreSame(rocketState, rocket.Metadata);
         Assert.AreEqual(0, packetSender.ReceivedCalls().Count());
+    }
+
+    [TestMethod]
+    public async Task FiltrationMachineTimersFromItsSimulatingPlayerAreStoredAndSentToTheOthers()
+    {
+        InteriorPieceEntity machine = AddFiltrationMachine(simulator);
+        FiltrationMachineMetadata timers = new(600f, FiltrationMachineMetadata.IDLE);
+
+        await Send(simulator, machine, timers);
+
+        Assert.AreEqual(600f, ((FiltrationMachineMetadata)machine.Metadata).TimeRemainingWater);
+        foreach (Player receiver in new[] { otherPlayer, thirdPlayer })
+        {
+            Assert.AreEqual(600f, ((FiltrationMachineMetadata)ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, receiver).Single().NewValue).TimeRemainingWater);
+        }
+        Assert.AreEqual(0, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, simulator).Count);
+    }
+
+    [TestMethod]
+    public async Task FiltrationMachineTimersFromAPlayerWhoDoesNotSimulateItAreNotStored()
+    {
+        // For example the previous simulating player's last update, which arrives after the machine was handed on
+        InteriorPieceEntity machine = AddFiltrationMachine(simulator);
+        await Send(simulator, machine, new FiltrationMachineMetadata(300f, 100f));
+        packetSender.ClearReceivedCalls();
+
+        await Send(otherPlayer, machine, new FiltrationMachineMetadata(800f, 400f));
+
+        Assert.AreEqual(300f, ((FiltrationMachineMetadata)machine.Metadata).TimeRemainingWater);
+        Assert.AreEqual(0, packetSender.ReceivedCalls().Count());
+    }
+
+    [TestMethod]
+    public async Task FiltrationMachineTimersAreNotReplacedByAnotherKindOfMetadata()
+    {
+        InteriorPieceEntity machine = AddFiltrationMachine(simulator);
+        await Send(simulator, machine, new FiltrationMachineMetadata(300f, 100f));
+        packetSender.ClearReceivedCalls();
+
+        await Send(simulator, machine, new BatteryMetadata(100f));
+
+        Assert.IsInstanceOfType<FiltrationMachineMetadata>(machine.Metadata);
+        Assert.AreEqual(0, packetSender.ReceivedCalls().Count());
+    }
+
+    private InteriorPieceEntity AddFiltrationMachine(Player simulatedBy)
+    {
+        InteriorPieceEntity machine = InteriorPieceEntity.MakeEmpty();
+        machine.Id = new NitroxId();
+        machine.TechType = new NitroxTechType("BaseFiltrationMachine");
+        entityRegistry.AddEntity(machine);
+        Assert.IsTrue(simulationOwnershipData.TryAcquire(machine.Id, simulatedBy, SimulationLockType.TRANSIENT));
+        return machine;
     }
 
     private VehicleEntity AddRocket(out PlayerTimeCapsuleEntity capsule)

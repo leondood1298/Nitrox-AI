@@ -7,13 +7,18 @@ using NitroxClient.GameLogic;
 namespace NitroxPatcher.Patches.Dynamic;
 
 /// <summary>
-///     A water filtration machine's update runs on every client. Only the player simulating the machine draws base
-///     power for it (see <see cref="BasePowerConsumptionForwarder.ConsumeEnergy" />). Its filtering progress is still
-///     kept by each client on its own.
+///     A water filtration machine's update runs its timers and makes its water and salt. It only runs in the game of
+///     the player simulating the machine (see <see cref="FiltrationMachines" />), who then tells everyone the timers.
+///     That player draws base power for it as well (see <see cref="BasePowerConsumptionForwarder.ConsumeEnergy" />).
 /// </summary>
 public sealed partial class FiltrationMachine_UpdateFiltering_Patch : NitroxPatch, IDynamicPatch
 {
     private static readonly MethodInfo TARGET_METHOD = Reflect.Method((FiltrationMachine t) => t.UpdateFiltering());
+
+    public static bool Prefix(FiltrationMachine __instance)
+    {
+        return Resolve<FiltrationMachines>().FiltersHere(__instance);
+    }
 
     /*
      * PowerSystem.ConsumeEnergy(powerRelay, 0.85f * dayNightSpeed, out float _);
@@ -32,5 +37,10 @@ public sealed partial class FiltrationMachine_UpdateFiltering_Patch : NitroxPatc
     public static bool ConsumeEnergy(IPowerInterface powerInterface, float amount, out float amountConsumed, FiltrationMachine filtrationMachine)
     {
         return Resolve<BasePowerConsumptionForwarder>().ConsumeEnergy(filtrationMachine, powerInterface, amount, out amountConsumed);
+    }
+
+    public static void Postfix(FiltrationMachine __instance)
+    {
+        Resolve<FiltrationMachines>().BroadcastIfSimulated(__instance);
     }
 }
