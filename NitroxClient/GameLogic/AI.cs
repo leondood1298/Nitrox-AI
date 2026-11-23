@@ -32,8 +32,19 @@ public sealed class AI
     /// </summary>
     private readonly HashSet<Type> syncedCreatureWhitelist =
     [
-        typeof(ReaperLeviathan), typeof(SeaDragon), typeof(SeaTreader), typeof(GhostLeviathan)
+        typeof(ReaperLeviathan), typeof(SeaDragon), typeof(SeaTreader), typeof(GhostLeviathan),
+        // Predators whose only behaviour beyond swimming is to attack what they see. Judged from their classes, not yet
+        // confirmed in game: without this they can never bite a player who is not simulating them.
+        typeof(BoneShark), typeof(Biter), typeof(SpineEel), typeof(Shocker)
     ];
+
+    /// <summary>
+    ///     A creature's action is repeated this often even if it did not change, for players who loaded the creature
+    ///     after it was last sent.
+    /// </summary>
+    private const float ACTION_RESEND_SECONDS = 5f;
+
+    private readonly CreatureActionBroadcastFilter actionBroadcastFilter = new(ACTION_RESEND_SECONDS);
 
     public AI(IPacketSender packetSender)
     {
@@ -46,12 +57,17 @@ public sealed class AI
 
     public void BroadcastNewAction(NitroxId creatureId, Creature creature, CreatureAction newAction)
     {
-        if (!syncedCreatureWhitelist.Contains(creature.GetType()))
+        // ChooseBestAction returns nothing while none of the creature's actions wants to run.
+        if (!newAction || !syncedCreatureWhitelist.Contains(creature.GetType()))
         {
             return;
         }
 
-        packetSender.Send(new CreatureActionChanged(creatureId, newAction.GetType().FullName));
+        string actionTypeName = newAction.GetType().FullName;
+        if (actionBroadcastFilter.ShouldSend(creatureId, actionTypeName, Time.realtimeSinceStartup))
+        {
+            packetSender.Send(new CreatureActionChanged(creatureId, actionTypeName));
+        }
     }
 
     public void CreatureActionChanged(NitroxId id, string creatureActionTypeName)
