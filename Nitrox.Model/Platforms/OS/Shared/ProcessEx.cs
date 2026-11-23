@@ -399,16 +399,10 @@ public sealed class WindowsProcessEx : ProcessExBase
         {
             using WindowsIdentity identity = WindowsIdentity.GetCurrent();
 
-            WindowsPrincipal principal = new(identity);
-            // If process has explicit admin privileges
-            if (principal.IsInRole(WindowsBuiltInRole.Administrator))
-            {
-                return true;
-            }
-
-            // Otherwise check if user is in admin group (https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/understand-security-identifiers)
-            string admininistratorSid = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null).Value;
-            return principal.Claims.Any(claim => claim.Value == admininistratorSid);
+            // Under UAC an administrator's normal token lists the Administrators group only as deny-only, which IsInRole
+            // does not count; it is true only for an elevated process. The group's mere presence among the claims, which
+            // this used to accept, is true for every administrator account, elevated or not.
+            return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
         }
         catch (Exception)
         {
