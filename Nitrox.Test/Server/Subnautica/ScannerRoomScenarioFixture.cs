@@ -67,7 +67,7 @@ internal sealed class ScannerRoomScenarioFixture
         controlProcessor = new(Ownership, EntityRegistry, ControlLifecycle, Diagnostics);
         PlayerManager playerManager = new(null!, null!, NullLogger<PlayerManager>.Instance);
         deconstructionCleanup = new(EntityRegistry, Ownership, ControlReleaseFactory,
-            new MapRoomScanResultSubscriptions(), ControlLifecycle, playerManager, Diagnostics);
+            new MapRoomScanResultSubscriptions(), ControlLifecycle, playerManager, Diagnostics, worldEntityManager);
         EntitySimulation = new(worldPacketSender, EntityRegistry, worldEntityManager, Ownership,
             playerManager, ControlReleaseFactory, ControlLifecycle, NullLogger<EntitySimulation>.Instance);
         ownershipRequestProcessor = new(Ownership, EntitySimulation, ControlReleaseFactory, ControlLifecycle, Diagnostics);

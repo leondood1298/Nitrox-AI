@@ -45,8 +45,22 @@ public sealed class Bed_OnHandClick_Patch : NitroxPatch, IDynamicPatch, INitroxP
 		if (lockAcquired)
 		{
 			skipPrefix = true;
-			target.OnHandClick(context.GuiHand);
-			skipPrefix = false;
+			try
+			{
+				target.OnHandClick(context.GuiHand);
+			}
+			finally
+			{
+				skipPrefix = false;
+			}
+			// The game ignores the click when the player cannot sleep yet or stands on neither side of the bed.
+			// Announcing the lie-down or keeping the exclusive lock then would show the player in bed to others
+			// and block the bed until this player disconnects, because the lock is only released on waking up.
+			if (!target.cinematicController || !target.cinematicController.cinematicModeActive)
+			{
+				NitroxPatch.Resolve<SimulationOwnership>().RequestSimulationLock(bedId, SimulationLockType.TRANSIENT);
+				return;
+			}
 			string animationKey = ((target.cinematicController == target.leftLieDownCinematicController) ? "bed_down_left" : "bed_down_right");
 			NitroxPatch.Resolve<IPacketSender>().Send(new BedEnterAnimation(NitroxPatch.Resolve<LocalPlayer>().SessionId.Value, bedId, animationKey));
 		}

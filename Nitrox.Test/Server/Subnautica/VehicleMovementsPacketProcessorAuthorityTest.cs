@@ -474,20 +474,35 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
     }
 
     [TestMethod]
-    public async Task DrivenMovementRequiresCanonicalVehicleAndRetainsPlayerPositionBehavior()
+    public async Task DrivenMovementFromLockOwnerIsRelayedBeforePilotModeIsRegistered()
+    {
+        // A client reports driven movement as soon as it is piloting locally, which can be a moment before the
+        // server has processed its pilot-mode packet. The vehicle must keep moving for everyone else meanwhile.
+        MovementScenario test = new();
+        NitroxId cameraId = ScannerRoomScenarioFixture.CameraAId;
+        Assert.IsTrue(test.Scenario.Ownership.TryToAcquire(cameraId, test.Scenario.PlayerA, SimulationLockType.EXCLUSIVE));
+        DrivenVehicleMovementData movement = new(cameraId, new NitroxVector3(8f, 9f, 10f), NitroxQuaternion.Identity, 0, 0, true);
+        NitroxVector3 playerPositionBefore = test.Scenario.PlayerA.Position;
+
+        await test.Processor.Process(
+            new AuthProcessorContext(test.Scenario.PlayerA, test.Sender),
+            new VehicleMovements([movement], 1d));
+
+        Assert.AreEqual(1, test.Sender.OthersPackets);
+        AssertCanonicalTransform(test.Entity(cameraId), movement.Position, movement.Rotation);
+        Assert.AreEqual(playerPositionBefore, test.Scenario.PlayerA.Position,
+            "Only a registered pilot's own position follows the vehicle.");
+    }
+
+    [TestMethod]
+    public async Task DrivenMovementFromRegisteredPilotAlsoMovesThePlayer()
     {
         MovementScenario test = new();
         NitroxId cameraId = ScannerRoomScenarioFixture.CameraAId;
         Assert.IsTrue(test.Scenario.Ownership.TryToAcquire(cameraId, test.Scenario.PlayerA, SimulationLockType.EXCLUSIVE));
         DrivenVehicleMovementData movement = new(cameraId, new NitroxVector3(8f, 9f, 10f), NitroxQuaternion.Identity, 0, 0, true);
-
-        await test.Processor.Process(
-            new AuthProcessorContext(test.Scenario.PlayerA, test.Sender),
-            new VehicleMovements([movement], 1d));
-        Assert.AreEqual(0, test.Sender.OthersPackets);
-        AssertCanonicalTransform(test.Entity(cameraId), NitroxVector3.Zero, NitroxQuaternion.Identity);
-
         test.Scenario.PlayerA.PlayerContext = CreatePlayerContext(test.Scenario.PlayerA, cameraId);
+
         await test.Processor.Process(
             new AuthProcessorContext(test.Scenario.PlayerA, test.Sender),
             new VehicleMovements([movement], 2d));

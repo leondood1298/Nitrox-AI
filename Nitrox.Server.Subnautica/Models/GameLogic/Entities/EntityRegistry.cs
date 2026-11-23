@@ -5,6 +5,7 @@ using System.Linq;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 
 namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities
 {
@@ -12,6 +13,12 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities
     {
         private readonly ILogger<EntityRegistry> logger = logger;
         private readonly ConcurrentDictionary<NitroxId, Entity> entitiesById = new();
+
+        /// <summary>
+        ///     Scanner Rooms are looked up on every pickup, entity destroy and ownership request. Filtering the whole
+        ///     registry (hundreds of thousands of entities) for a handful of rooms is too slow for those paths.
+        /// </summary>
+        private readonly ConcurrentDictionary<NitroxId, MapRoomEntity> mapRoomsById = new();
 
         public Optional<T> GetEntityById<T>(NitroxId id) where T : Entity
         {
@@ -56,7 +63,23 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities
 
         public List<T> GetEntities<T>()
         {
+            if (typeof(T) == typeof(MapRoomEntity))
+            {
+                return mapRoomsById.Values.Cast<T>().ToList();
+            }
             return entitiesById.Values.OfType<T>().ToList();
+        }
+
+        private void SyncMapRoomIndex(NitroxId id)
+        {
+            if (entitiesById.TryGetValue(id, out Entity current) && current is MapRoomEntity mapRoom)
+            {
+                mapRoomsById[id] = mapRoom;
+            }
+            else
+            {
+                mapRoomsById.TryRemove(id, out _);
+            }
         }
 
         public void AddEntity(Entity entity)
@@ -66,6 +89,7 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities
                 // Log an error to show stack trace but don't halt execution.
                 logger.ZLogError(new InvalidOperationException(), $"Trying to add duplicate entity {entity.Id}");
             }
+            SyncMapRoomIndex(entity.Id);
         }
 
         /// <summary>
@@ -81,6 +105,7 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities
 
                 entitiesById.TryUpdate(entity.Id, entity, current);
             }
+            SyncMapRoomIndex(entity.Id);
 
             AddToParent(entity);
             AddEntitiesIgnoringDuplicate(entity.ChildEntities);
@@ -114,6 +139,7 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities
                 {
                     entitiesById.TryAdd(entity.Id, entity);
                 }
+                SyncMapRoomIndex(entity.Id);
                 AddEntitiesIgnoringDuplicate(entity.ChildEntities);
             }
         }
@@ -122,6 +148,7 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities
         {
             if (entitiesById.TryRemove(id, out Entity entity))
             {
+                SyncMapRoomIndex(id);
                 RemoveFromParent(entity);
 
                 foreach (Entity child in entity.ChildEntities)

@@ -33,4 +33,20 @@ public sealed class CrafterPowerAccountingTest
         Assert.IsFalse(CrafterPowerAccounting.TryAccount(crafterId, 30f, false));
         Assert.IsFalse(CrafterPowerAccounting.TryAccount(crafterId, 30f, true));
     }
+
+    [TestMethod]
+    public void PickupByAnotherPlayerDoesNotChargeTheCraftAgain()
+    {
+        // Player A crafts four titanium. Player B takes the first one, which broadcasts a crafter update carrying
+        // B's own local start time and no duration. A third client must not pay for the craft a second time.
+        NitroxId crafterId = new();
+        const float crafterStartTime = 100f;
+        const float pickerLocalStartTime = 100.4f;
+
+        Assert.IsTrue(CrafterPowerAccounting.ShouldConsume(crafterId, crafterStartTime, 3f, true));
+        Assert.IsFalse(CrafterPowerAccounting.ShouldConsume(crafterId, pickerLocalStartTime, 0f, true));
+        Assert.IsFalse(CrafterPowerAccounting.ShouldConsume(crafterId, pickerLocalStartTime, 0f, true));
+
+        Assert.IsTrue(CrafterPowerAccounting.ShouldConsume(crafterId, 200f, 3f, true), "The next real craft still costs power.");
+    }
 }

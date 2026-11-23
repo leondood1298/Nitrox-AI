@@ -207,9 +207,20 @@ public class MapRoomCameras
 			return;
 		}
 		camera.enabled = true;
+		ExitCameraModeLocally(camera);
+	}
+
+	/// <summary>
+	///     Leaves camera mode without telling the server. The game always pairs FreeCamera (stops the drone's sounds and
+	///     screen effect) with ExitLockedMode (returns the player and resets the view); doing only the second leaves the
+	///     connecting/idle loops playing and the screen effect on.
+	/// </summary>
+	private static void ExitCameraModeLocally(MapRoomCamera camera)
+	{
 		using (PacketSuppressor<MapRoomCameraControl>.Suppress())
 		{
-			camera.ExitLockedMode(resetPlayerPosition: false);
+			camera.FreeCamera(resetPlayerPosition: true);
+			camera.ExitLockedMode(resetPlayerPosition: true);
 		}
 	}
 
@@ -273,10 +284,7 @@ public class MapRoomCameras
 			if (pendingControl.Remove(packet.CameraId) && NitroxEntity.TryGetObjectFrom(packet.CameraId, out GameObject deniedObject) && deniedObject.TryGetComponent(out MapRoomCamera deniedCamera))
 			{
 				deniedCamera.enabled = true;
-				using (PacketSuppressor<MapRoomCameraControl>.Suppress())
-				{
-					deniedCamera.ExitLockedMode(resetPlayerPosition: false);
-				}
+				ExitCameraModeLocally(deniedCamera);
 			}
 			return;
 		}
@@ -341,7 +349,15 @@ public class MapRoomCameras
 		if (!packet.IsControlling && isLocalController)
 		{
 			pendingControl.Remove(packet.CameraId);
-			locallyControlled.Remove(packet.CameraId);
+			// A release this client did not ask for (it still counts the camera as granted) means the server revoked
+			// control. A release that merely echoes a local exit finds the camera already removed here, which also
+			// keeps a quick re-take of the same camera from being kicked out by the old echo.
+			bool revokedByServer = locallyControlled.Remove(packet.CameraId);
+			if (revokedByServer && NitroxEntity.TryGetObjectFrom(packet.CameraId, out GameObject revokedObject) &&
+				revokedObject.TryGetComponent(out MapRoomCamera revokedCamera) && revokedCamera.IsControlled())
+			{
+				ExitCameraModeLocally(revokedCamera);
+			}
 			stalkerCameraLockPurposeTracker.Forget(packet.CameraId);
 			MovementBroadcaster.UnregisterWatched(packet.CameraId);
 		}
@@ -1511,12 +1527,38 @@ public class MapRoomCameras
 		return list;
 	}
 
+	private const float DOCK_ROOM_CACHE_SECONDS = 2f;
+	private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<MapRoomCameraDocking, DockRoomCacheEntry> dockRoomCache = new();
+
+	private sealed class DockRoomCacheEntry
+	{
+		public MapRoomFunctionality Room;
+		public float ExpiresAt;
+	}
+
+	/// <summary>
+	///     Resolving a dock's room walks the whole base hierarchy, and this is asked for every docked camera every
+	///     frame. The answer only changes when rooms are built or removed, so it is reused for a short time.
+	/// </summary>
 	private static MapRoomFunctionality GetMapRoomForDock(MapRoomCameraDocking dockingPoint)
 	{
 		if (!dockingPoint)
 		{
 			return null;
 		}
+		float now = Time.realtimeSinceStartup;
+		DockRoomCacheEntry entry = dockRoomCache.GetOrCreateValue(dockingPoint);
+		if (entry.Room && now < entry.ExpiresAt)
+		{
+			return entry.Room;
+		}
+		entry.Room = ResolveMapRoomForDock(dockingPoint);
+		entry.ExpiresAt = now + DOCK_ROOM_CACHE_SECONDS;
+		return entry.Room;
+	}
+
+	private static MapRoomFunctionality ResolveMapRoomForDock(MapRoomCameraDocking dockingPoint)
+	{
 		Base componentInParent = dockingPoint.GetComponentInParent<Base>();
 		if ((bool)componentInParent)
 		{

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.Unity;
@@ -9,7 +10,8 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 
 internal sealed class MapRoomDeconstructionCleanup(EntityRegistry entityRegistry, SimulationOwnershipData simulationOwnershipData,
     MapRoomCameraControlReleaseFactory cameraControlReleaseFactory, MapRoomScanResultSubscriptions subscriptions,
-    MapRoomCameraControlLifecycle controlLifecycle, PlayerManager playerManager, ScannerRoomDiagnostics diagnostics)
+    MapRoomCameraControlLifecycle controlLifecycle, PlayerManager playerManager, ScannerRoomDiagnostics diagnostics,
+    WorldEntityManager worldEntityManager)
 {
     public async Task CleanupAsync(MapRoomEntity mapRoom, AuthProcessorContext context)
     {
@@ -29,9 +31,11 @@ internal sealed class MapRoomDeconstructionCleanup(EntityRegistry entityRegistry
         simulationOwnershipData.RevokeOwnerOfId(mapRoom.Id);
         await context.SendToAllAsync(new DropSimulationOwnership(mapRoom.Id));
         MapRoomCameraRecord[] cameras;
+        HashSet<NitroxId> dockedCameraIds;
         lock (mapRoom)
         {
             cameras = mapRoom.CameraRegistry.ToArray();
+            dockedCameraIds = cameras.Select(camera => camera.CameraId).Where(mapRoom.IsCameraDocked).ToHashSet();
         }
         foreach (MapRoomCameraRecord camera in cameras)
         {
@@ -46,6 +50,12 @@ internal sealed class MapRoomDeconstructionCleanup(EntityRegistry entityRegistry
                 await context.SendToAllAsync(release);
             }
             await context.SendToAllAsync(new DropSimulationOwnership(camera.CameraId));
+            // The game destroys a docked camera together with its dock. Without removing the server's copy, a camera
+            // that had ever been undocked would come back for later joiners as a loose camera at a stale position.
+            if (dockedCameraIds.Contains(camera.CameraId) && worldEntityManager.TryDestroyEntity(camera.CameraId, out _))
+            {
+                await context.SendToAllAsync(new EntityDestroyed(camera.CameraId));
+            }
         }
         diagnostics.RecordAccepted("deconstruct", mapRoom, sessionId: context.Sender.SessionId, reason: "locks_reconciled");
     }

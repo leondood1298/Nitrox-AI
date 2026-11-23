@@ -104,7 +104,6 @@ internal sealed class VehicleMovementsPacketProcessor(EntityRegistry entityRegis
 
         int unauthorizedCount = 0;
         int nonExclusiveScannerCount = 0;
-        int nonPilotCount = 0;
         Task sendTask = simulationOwnershipData.ExecuteForOwner(context.Sender,
             candidates.Select(candidate => candidate.Movement.Id), ownedIds =>
             {
@@ -127,11 +126,6 @@ internal sealed class VehicleMovementsPacketProcessor(EntityRegistry entityRegis
                         nonExclusiveScannerCount++;
                         continue;
                     }
-                    if (movementData is DrivenVehicleMovementData && context.Sender.PlayerContext?.DrivingVehicle != movementData.Id)
-                    {
-                        nonPilotCount++;
-                        continue;
-                    }
 
                     if (worldEntity != null)
                     {
@@ -139,7 +133,11 @@ internal sealed class VehicleMovementsPacketProcessor(EntityRegistry entityRegis
                         worldEntity.Transform.Rotation = movementData.Rotation;
                     }
 
-                    if (movementData is DrivenVehicleMovementData)
+                    // The sender owns this entity's simulation, so its movement is relayed either way. Only the player's own
+                    // server position depends on being the registered pilot: a client can report driven movement a moment
+                    // before its pilot-mode packet arrives (e.g. while sitting down in the Cyclops), and dropping those
+                    // entries froze the vehicle for everyone else.
+                    if (movementData is DrivenVehicleMovementData && context.Sender.PlayerContext?.DrivingVehicle == movementData.Id)
                     {
                         // Cyclops' driving wheel is at a known position so we need to adapt the position of the player accordingly
                         if (string.Equals(worldEntity?.TechType?.Name, "Cyclops", StringComparison.Ordinal))
@@ -170,10 +168,6 @@ internal sealed class VehicleMovementsPacketProcessor(EntityRegistry entityRegis
         if (nonExclusiveScannerCount > 0)
         {
             logger.ZLogWarningOnce($"Rejected {nonExclusiveScannerCount} Scanner Room camera movement entr{(nonExclusiveScannerCount == 1 ? "y" : "ies")} from {context.Sender.Name} without exclusive control");
-        }
-        if (nonPilotCount > 0)
-        {
-            logger.ZLogWarningOnce($"Rejected {nonPilotCount} driven movement entr{(nonPilotCount == 1 ? "y" : "ies")} from {context.Sender.Name}: sender is not the canonical pilot");
         }
     }
 

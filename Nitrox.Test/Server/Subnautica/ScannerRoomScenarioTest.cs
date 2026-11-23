@@ -652,6 +652,28 @@ public sealed class ScannerRoomScenarioTest
     }
 
     [TestMethod]
+    public async Task DeconstructionRemovesDockedCameraEntityButKeepsLooseRegisteredCamera()
+    {
+        // The game destroys a docked camera together with its dock, while a camera flying outside survives.
+        ScannerRoomScenarioFixture scenario = new();
+        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA,
+            ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
+        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA,
+            ScannerRoomScenarioFixture.CameraBId, 1, true)).Granted);
+        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA,
+            ScannerRoomScenarioFixture.CameraBId, 1, false)).Granted);
+        Assert.IsTrue(scenario.EntityRegistry.RemoveEntity(ScannerRoomScenarioFixture.RoomId).HasValue);
+
+        IReadOnlyList<Nitrox.Model.Packets.Packet> cleanupPackets = await scenario.CleanupAsync(scenario.Room);
+
+        Assert.IsFalse(scenario.EntityRegistry.TryGetEntityById(ScannerRoomScenarioFixture.CameraAId, out Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.WorldEntity _),
+            "A docked camera must not survive on the server as a stale loose camera.");
+        Assert.AreEqual(ScannerRoomScenarioFixture.CameraAId, cleanupPackets.OfType<EntityDestroyed>().Single().Id);
+        Assert.IsTrue(scenario.EntityRegistry.TryGetEntityById(ScannerRoomScenarioFixture.CameraBId, out Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.WorldEntity _),
+            "An undocked camera is outside the room and is not destroyed with it.");
+    }
+
+    [TestMethod]
     public async Task DeconstructionCleanupPreservesCameraRegisteredWithNewLiveRoomWhileWaitingForCameraGate()
     {
         ScannerRoomScenarioFixture scenario = new();
