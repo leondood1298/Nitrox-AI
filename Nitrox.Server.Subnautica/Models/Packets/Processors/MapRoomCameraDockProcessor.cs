@@ -161,10 +161,12 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
             bool preserveControlLock = false;
             if (stateChanged && packet.IsDocked && simulationOwnershipData.TryGetLock(packet.CameraId, out SimulationOwnershipData.PlayerLock playerLock))
             {
+                // Whoever reports the dock: every client whose own physics sees the camera enter the dock does, and
+                // the room owner's report can arrive before the one of the player flying the camera in. That player
+                // keeps control while docked, as in the game.
                 preserveControlLock = ShouldPreserveControlLock(
-                    playerLock.Player == context.Sender,
                     playerLock.LockType,
-                    controlLifecycle.IsActiveController(packet.CameraId, context.Sender.SessionId));
+                    controlLifecycle.IsActiveController(packet.CameraId, playerLock.Player.SessionId));
             }
             if (stateChanged && packet.IsDocked && !preserveControlLock &&
                 simulationOwnershipData.RevokeOwnerOfId(packet.CameraId, out SimulationOwnershipData.PlayerLock revokedLock) &&
@@ -191,9 +193,8 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
     internal static bool IsKnownCamera(bool validWorldCamera, bool registeredCamera) => validWorldCamera || registeredCamera;
     internal static bool CanBootstrapRestoredCamera(bool isDocked, bool senderOwnsRoom, bool slotAvailable, int registeredCameraCount) =>
         isDocked && senderOwnsRoom && slotAvailable && registeredCameraCount is >= 0 and < 2;
-    internal static bool ShouldPreserveControlLock(bool senderOwnsLock, SimulationLockType lockType,
-        bool senderIsActiveController) =>
-        senderOwnsLock && lockType == SimulationLockType.EXCLUSIVE && senderIsActiveController;
+    internal static bool ShouldPreserveControlLock(SimulationLockType lockType, bool holderIsActiveController) =>
+        lockType == SimulationLockType.EXCLUSIVE && holderIsActiveController;
     internal static bool ShouldPersistLooseCamera(bool isDocked, bool entityExists, bool hasTransform) =>
         !isDocked && !entityExists && hasTransform;
     internal static bool IsRequestedStateCanonical(bool isDocked, NitroxId cameraId, NitroxId? slotCameraId, bool cameraDocked) =>

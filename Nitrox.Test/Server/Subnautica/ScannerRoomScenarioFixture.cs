@@ -111,6 +111,16 @@ internal sealed class ScannerRoomScenarioFixture
         return requestPacketSender.Single<MapRoomCameraDock>();
     }
 
+    /// <summary>
+    ///     Everything the server sends in answer to a dock packet, sent as is: no authority is set up for the sender.
+    /// </summary>
+    internal async Task<IReadOnlyList<Packet>> DockPacketsAsync(ServerPlayer player, MapRoomCameraDock packet)
+    {
+        RecordingPacketSender requestPacketSender = new();
+        await dockProcessor.Process(new AuthProcessorContext(player, requestPacketSender), packet);
+        return requestPacketSender.Packets;
+    }
+
     internal async Task<MapRoomCameraControl> ControlAsync(ServerPlayer player, NitroxId cameraId, int slot, bool isControlling)
     {
         RecordingPacketSender requestPacketSender = new();
