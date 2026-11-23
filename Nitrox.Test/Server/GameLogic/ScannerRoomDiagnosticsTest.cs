@@ -333,7 +333,7 @@ public sealed class ScannerRoomDiagnosticsTest
         ScannerRoomStateFingerprint.Create(first).Fingerprint.Should().NotBe(ScannerRoomStateFingerprint.Create(otherDocks).Fingerprint);
 
         MapRoomEntity oneCamera = CreateRoom();
-        oneCamera.ChildEntities.RemoveAt(1);
+        oneCamera.ChildEntities.RemoveAll(child => child.Id == secondCameraId);
         ScannerRoomStateFingerprint.Create(first).Fingerprint.Should().NotBe(ScannerRoomStateFingerprint.Create(oneCamera).Fingerprint);
         ScannerRoomStateFingerprint.Create(oneCamera).Should().Match<ScannerRoomStateSnapshot>(snapshot =>
             snapshot.CameraCount == 1 && snapshot.LeftDockCameraId == firstCameraId && snapshot.RightDockCameraId == null);
@@ -343,8 +343,13 @@ public sealed class ScannerRoomDiagnosticsTest
         ScannerRoomStateFingerprint.Create(first).Fingerprint.Should().NotBe(ScannerRoomStateFingerprint.Create(metadataChanged).Fingerprint);
 
         MapRoomEntity crafterChanged = CreateRoom();
-        crafterChanged.FabricatorMetadata = new CrafterMetadata(new NitroxTechType("MapRoomRangeUpgrade"), 12.5f, 4f, 2, 1);
+        crafterChanged.ChildEntities.OfType<PathBasedChildEntity>().Single().Metadata = new CrafterMetadata(new NitroxTechType("MapRoomRangeUpgrade"), 12.5f, 4f, 2, 1);
         ScannerRoomStateFingerprint.Create(first).Fingerprint.Should().NotBe(ScannerRoomStateFingerprint.Create(crafterChanged).Fingerprint);
+        ScannerRoomStateFingerprint.Create(first).FabricatorActive.Should().BeTrue();
+
+        MapRoomEntity crafterIdle = CreateRoom();
+        crafterIdle.ChildEntities.OfType<PathBasedChildEntity>().Single().Metadata = null;
+        ScannerRoomStateFingerprint.Create(crafterIdle).FabricatorActive.Should().BeFalse();
     }
 
     [TestMethod]
@@ -406,9 +411,10 @@ public sealed class ScannerRoomDiagnosticsTest
             ChildEntities =
             [
                 CreateCamera(firstCameraId, roomId, new MapRoomCameraMetadata(true, 80f, 90f, 1, 0)),
-                CreateCamera(secondCameraId, roomId, new MapRoomCameraMetadata(false, 70f, 85f, 2, 1))
-            ],
-            FabricatorMetadata = new CrafterMetadata(new NitroxTechType("MapRoomHUDChip"), 10f, 2f, 1, 0)
+                CreateCamera(secondCameraId, roomId, new MapRoomCameraMetadata(false, 70f, 85f, 2, 1)),
+                new PathBasedChildEntity("fabricator", new NitroxId("55555555-5555-5555-5555-555555555555"), null,
+                    new CrafterMetadata(new NitroxTechType("MapRoomHUDChip"), 10f, 2f, 1, 0), roomId, [])
+            ]
         };
     }
 
@@ -417,7 +423,7 @@ public sealed class ScannerRoomDiagnosticsTest
 
     private static void SetState(MapRoomEntity room, NitroxId cameraId, Func<MapRoomCameraMetadata, MapRoomCameraMetadata> change)
     {
-        Entity camera = room.ChildEntities.Single(child => child.Id == cameraId);
+        Entity camera = room.ChildEntities.Single(child => child.Id.Equals(cameraId));
         camera.Metadata = change((MapRoomCameraMetadata)camera.Metadata);
     }
 

@@ -12,7 +12,7 @@ using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 namespace Nitrox.Server.Subnautica.Models.GameLogic;
 
 /// <summary>
-///     What a room scans for, what it found, which types it could scan for, and its fabricator. The target and the
+///     What a room scans for, what it found and which types it could scan for. The target and the
 ///     progress are the room's metadata. What the scan found and the types are held here, in memory only, as in the
 ///     game, which saves the target and the progress and scans again when it starts. The room's simulating player runs
 ///     the scan and reports; the server adds what it knows of the world itself and tells the subscribers.
@@ -79,29 +79,6 @@ internal sealed partial class ScannerRoomManager
         }
         diagnostics.RecordAccepted("scan_target", room, sessionId: sender.SessionId, reason: accepted.TypeToScan?.Name ?? "none");
         return MetadataUpdateResult.AcceptAndEcho(accepted);
-    }
-
-    /// <summary>
-    ///     The gate for what a room's fabricator is crafting, which only the room's simulating player reports. That
-    ///     player already holds what it sent, so an accepted state only goes to the others.
-    /// </summary>
-    public MetadataUpdateResult AcceptFabricatorMetadata(Player sender, MapRoomEntity room, CrafterMetadata requested)
-    {
-        using Hold held = Enter();
-        TrackRoom(room);
-        if (simulationOwnershipData.GetPlayerForLock(room.Id) != sender)
-        {
-            logger.ZLogWarning($"Player {sender.Name} tried updating Scanner Room fabricator {room.Id} without simulation ownership");
-            return MetadataUpdateResult.Reject;
-        }
-
-        CrafterMetadata? previous = room.FabricatorMetadata;
-        room.FabricatorMetadata = requested;
-        if (previous == null || !Equals(previous.TechType, requested.TechType) || previous.StartTime != requested.StartTime)
-        {
-            diagnostics.RecordAccepted("fabricator", room, sessionId: sender.SessionId, reason: requested.TechType?.Name ?? "none");
-        }
-        return MetadataUpdateResult.Accept(requested);
     }
 
     /// <summary>

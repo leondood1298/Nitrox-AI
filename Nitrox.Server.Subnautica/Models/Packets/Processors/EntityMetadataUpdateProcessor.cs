@@ -69,7 +69,6 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
     private MetadataUpdateResult? GateScannerRoomMetadata(Player sender, Entity entity, EntityMetadata metadata) => metadata switch
     {
         MapRoomMetadata scanState => scannerRoomManager.AcceptRoomMetadata(sender, entity, scanState),
-        CrafterMetadata crafting when entity is MapRoomEntity room => scannerRoomManager.AcceptFabricatorMetadata(sender, room, crafting),
         MapRoomCameraMetadata cameraState => scannerRoomManager.TryAcceptCameraMetadata(sender, entity, cameraState),
         _ => null
     };

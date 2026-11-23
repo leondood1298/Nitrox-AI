@@ -275,6 +275,12 @@ internal sealed partial class ScannerRoomManager
             await RemoveFromScanResultsAsync(camera.Id);
             await SendToAllAsync(new EntityDestroyed(camera.Id));
         }
+        // Players take turns on the room's fabricator with a lock on it, which would outlive the fabricator.
+        NitroxId[] heldPartIds = mapRoom.ChildEntities.OfType<PathBasedChildEntity>().Where(part => simulationOwnershipData.RevokeOwnerOfId(part.Id)).Select(part => part.Id).ToArray();
+        if (heldPartIds.Length > 0)
+        {
+            await SendToAllAsync(new DropSimulationOwnership([.. heldPartIds]));
+        }
         if (roomsById.TryGetValue(mapRoom.Id, out MapRoomEntity? tracked) && ReferenceEquals(tracked, mapRoom))
         {
             roomsById.Remove(mapRoom.Id);

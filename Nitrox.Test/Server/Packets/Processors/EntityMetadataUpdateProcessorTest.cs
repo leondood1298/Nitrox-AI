@@ -2,6 +2,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Packets;
@@ -17,7 +18,8 @@ namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 /// <summary>
 ///     The gate every entity metadata update passes on the server. Covered here: the arms for base power, whose state
 ///     only the player simulating the source decides, and the arms for Scanner Rooms, whose scan target any player who
-///     sees the room may choose while scan progress and the fabricator belong to the room's simulating player.
+///     sees the room may choose while scan progress belongs to the room's simulating player. A room's fabricator is a
+///     child entity whose state any player may set, like any other fabricator's.
 /// </summary>
 [TestClass]
 public sealed class EntityMetadataUpdateProcessorTest
@@ -299,29 +301,22 @@ public sealed class EntityMetadataUpdateProcessorTest
     }
 
     [TestMethod]
-    public async Task FabricatorStateFromTheSimulatingPlayerIsStoredWithTheRoomAndSentToTheOthers()
+    public async Task FabricatorStateIsStoredOnTheRoomsFabricatorAndSentToTheOthers()
     {
+        // The fabricator is a child entity of the room, and what it crafts is its metadata like for any fabricator.
         MapRoomEntity room = AddRoom(new MapRoomMetadata(quartz, 4, 2), simulator);
+        PathBasedChildEntity fabricator = new("fabricator", new NitroxId(), null, null, room.Id, []);
+        room.ChildEntities.Add(fabricator);
+        entityRegistry.AddEntity(fabricator);
         CrafterMetadata crafting = new(new NitroxTechType("MapRoomHUDChip"), 12.5f, 4f, 1, 0);
 
-        await Send(simulator, room, crafting);
+        await Send(otherPlayer, fabricator, crafting);
 
-        Assert.AreSame(crafting, room.FabricatorMetadata);
+        Assert.AreSame(crafting, fabricator.Metadata);
         Assert.AreEqual(quartz, ((MapRoomMetadata)room.Metadata).TypeToScan, "The room's scan state is another thing and stays.");
-        Assert.AreSame(crafting, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, otherPlayer).Single().NewValue);
+        Assert.AreSame(crafting, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, simulator).Single().NewValue);
         Assert.AreSame(crafting, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, thirdPlayer).Single().NewValue);
-        Assert.AreEqual(0, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, simulator).Count);
-    }
-
-    [TestMethod]
-    public async Task FabricatorStateFromAPlayerWhoDoesNotSimulateTheRoomIsNotStoredAndNobodyIsTold()
-    {
-        MapRoomEntity room = AddRoom(new MapRoomMetadata(quartz, 4, 2), simulator);
-
-        await Send(otherPlayer, room, new CrafterMetadata(new NitroxTechType("MapRoomHUDChip"), 12.5f, 4f, 1, 0));
-
-        Assert.IsNull(room.FabricatorMetadata);
-        Assert.AreEqual(0, packetSender.ReceivedCalls().Count());
+        Assert.AreEqual(0, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, otherPlayer).Count);
     }
 
     [TestMethod]

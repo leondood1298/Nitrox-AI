@@ -236,8 +236,31 @@ public static class BuildUtils
             }
         }
         mapRoomEntity.ChildEntities.AddRange(MapRoomCameraDocks.GetCameraEntities(mapRoomFunctionality, id));
+        if (TryCreateMapRoomFabricatorEntity(mapRoomFunctionality, id, entityMetadataManager, out PathBasedChildEntity fabricator))
+        {
+            mapRoomEntity.ChildEntities.Add(fabricator);
+        }
 
         return mapRoomEntity;
+    }
+
+    /// <summary>
+    ///     The fabricator of a Scanner Room is a part of the room's object. As an entity it is a child of the room that
+    ///     is found by its path, like the fabricator of a Cyclops. With an id of its own, crafting in it is synced and
+    ///     players take turns on it like on any other fabricator.
+    /// </summary>
+    private static bool TryCreateMapRoomFabricatorEntity(MapRoomFunctionality mapRoomFunctionality, NitroxId mapRoomId, EntityMetadataManager entityMetadataManager, out PathBasedChildEntity fabricator)
+    {
+        fabricator = null;
+        CrafterLogic crafterLogic = mapRoomFunctionality.GetComponentInChildren<CrafterLogic>(true);
+        if (!crafterLogic || crafterLogic.gameObject == mapRoomFunctionality.gameObject)
+        {
+            return false;
+        }
+        string path = crafterLogic.gameObject.GetFullHierarchyPath().Replace(mapRoomFunctionality.gameObject.GetFullHierarchyPath(), string.Empty).TrimStart('/');
+        NitroxId fabricatorId = NitroxEntity.GetIdOrGenerateNew(crafterLogic.gameObject);
+        fabricator = new PathBasedChildEntity(path, fabricatorId, null, entityMetadataManager.Extract(crafterLogic.gameObject).OrNull(), mapRoomId, []);
+        return true;
     }
 
     // TODO: Use this for a latter singleplayer save converter

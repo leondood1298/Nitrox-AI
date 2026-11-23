@@ -2,7 +2,6 @@ using System.Threading.Tasks;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
-using Nitrox.Model.Subnautica.DataStructures.GameLogic.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
@@ -381,7 +380,7 @@ public sealed class ScannerRoomManagerDockingTest
             CreateBuiltCamera(builtCameraLeftId, new MapRoomCameraMetadata(true, 5f, 1f, 77, 0)),
             CreateBuiltCamera(builtCameraRightId, new MapRoomCameraMetadata(dockingIndex: 1)));
 
-        IReadOnlyList<Packet> sent = await BuildRoomAsync(scenario, scenario.PlayerA, built);
+        IReadOnlyList<Packet> sent = await scenario.BuildRoomAsync(scenario.PlayerA, built);
 
         MapRoomEntity room = scenario.EntityRegistry.GetEntityById<MapRoomEntity>(builtRoomId).Value;
         Assert.AreEqual(builtCameraLeftId, scenario.DockedCamera(0, room));
@@ -419,7 +418,7 @@ public sealed class ScannerRoomManagerDockingTest
             CreateBuiltCamera(builtCameraRightId, new MapRoomCameraMetadata(dockingIndex: 1)),
             CreateBuiltCamera(extraCameraId, new MapRoomCameraMetadata(dockingIndex: 0)));
 
-        await BuildRoomAsync(scenario, scenario.PlayerA, built);
+        await scenario.BuildRoomAsync(scenario.PlayerA, built);
 
         MapRoomEntity room = scenario.EntityRegistry.GetEntityById<MapRoomEntity>(builtRoomId).Value;
         Assert.AreEqual(builtCameraLeftId, scenario.DockedCamera(1, room));
@@ -437,7 +436,7 @@ public sealed class ScannerRoomManagerDockingTest
         Entity existing = scenario.EntityRegistry.GetEntityById(cameraA).Value;
         MapRoomEntity built = CreateBuiltRoom(CreateBuiltCamera(cameraA, new MapRoomCameraMetadata(dockingIndex: 0)), CreateBuiltCamera(builtCameraRightId, null));
 
-        await BuildRoomAsync(scenario, scenario.PlayerA, built);
+        await scenario.BuildRoomAsync(scenario.PlayerA, built);
 
         // Otherwise a builder could dock any camera without simulating it, by naming it as one their new room came with.
         MapRoomEntity room = scenario.EntityRegistry.GetEntityById<MapRoomEntity>(builtRoomId).Value;
@@ -594,24 +593,6 @@ public sealed class ScannerRoomManagerDockingTest
     /// </summary>
     private static GlobalRootEntity CreateBuiltCamera(NitroxId cameraId, MapRoomCameraMetadata? clientState) =>
         ScannerRoomScenarioFixture.CreateCamera(cameraId, builtRoomId, clientState);
-
-    /// <summary>
-    ///     Finishes a Scanner Room on an existing base, the way the builder's client reports it.
-    /// </summary>
-    private static async Task<IReadOnlyList<Packet>> BuildRoomAsync(ScannerRoomScenarioFixture scenario, ServerPlayer builder, MapRoomEntity room)
-    {
-        BuildEntity builtBase = BuildEntity.MakeEmpty();
-        builtBase.Id = baseId;
-        scenario.WorldEntityManager.AddOrUpdateGlobalRootEntity(builtBase);
-        GhostEntity ghost = GhostEntity.MakeEmpty();
-        ghost.Id = room.Id;
-        ghost.ParentId = baseId;
-        ghost.TechType = new NitroxTechType("BaseMapRoom");
-        scenario.WorldEntityManager.AddOrUpdateGlobalRootEntity(ghost);
-
-        return await scenario.UpdateBaseAsync(builder, new UpdateBase(baseId, room.Id, null, room, new Dictionary<NitroxId, NitroxBaseFace>(), new Dictionary<NitroxId, NitroxInt3>(),
-            new Dictionary<NitroxId, NitroxInt3> { [room.Id] = room.Cell }, default, 1));
-    }
 
     private static void AssertLock(ScannerRoomScenarioFixture scenario, NitroxId cameraId, ServerPlayer expectedPlayer, SimulationLockType expectedType)
     {

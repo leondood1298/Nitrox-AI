@@ -9,6 +9,7 @@ using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.GameLogic;
 using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
@@ -326,6 +327,25 @@ internal sealed class ScannerRoomScenarioFixture
     /// </summary>
     internal Task<IReadOnlyList<Packet>> UpdateBaseAsync(ServerPlayer player, UpdateBase packet) =>
         SentDuringAsync(() => updateBaseProcessor.Process(Context(player), packet));
+
+    /// <summary>
+    ///     Finishes a Scanner Room on a base that is made for it, the way the builder's client reports it. The room
+    ///     names the base as its parent and comes with whatever children the test gave it.
+    /// </summary>
+    internal async Task<IReadOnlyList<Packet>> BuildRoomAsync(ServerPlayer builder, MapRoomEntity room)
+    {
+        BuildEntity builtBase = BuildEntity.MakeEmpty();
+        builtBase.Id = room.ParentId;
+        WorldEntityManager.AddOrUpdateGlobalRootEntity(builtBase);
+        GhostEntity ghost = GhostEntity.MakeEmpty();
+        ghost.Id = room.Id;
+        ghost.ParentId = room.ParentId;
+        ghost.TechType = new NitroxTechType("BaseMapRoom");
+        WorldEntityManager.AddOrUpdateGlobalRootEntity(ghost);
+
+        return await UpdateBaseAsync(builder, new UpdateBase(room.ParentId, room.Id, null, room, new Dictionary<NitroxId, NitroxBaseFace>(), new Dictionary<NitroxId, NitroxInt3>(),
+            new Dictionary<NitroxId, NitroxInt3> { [room.Id] = room.Cell }, default, 1));
+    }
 
     /// <summary>
     ///     Reports an entity as destroyed, the way the client that saw it die does.

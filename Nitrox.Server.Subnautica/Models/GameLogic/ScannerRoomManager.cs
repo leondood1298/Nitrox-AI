@@ -202,23 +202,27 @@ internal sealed partial class ScannerRoomManager(IPacketSender packetSender, Ent
     }
 
     /// <summary>
-    ///     A copy of the room and of the cameras in its docks. The room's other children are the same objects as in
-    ///     the original; nothing in this class changes them.
+    ///     A copy of the room, of the cameras in its docks and of its fabricator, whose state changes while a copy is
+    ///     read. The room's other children (what is in its storage) are the same objects as in the original.
     /// </summary>
     private static MapRoomEntity CopyRoom(MapRoomEntity room) => new(room.Id, room.ParentId!, room.Cell)
     {
         TechType = room.TechType,
         Metadata = room.Metadata,
-        ChildEntities = [.. room.ChildEntities.Select(child => child is GlobalRootEntity camera && IsCamera(camera) ? CopyCamera(camera) : child)],
+        ChildEntities = [.. room.ChildEntities.Select(CopyChild)],
         Transform = room.Transform,
         Level = room.Level,
         ClassId = room.ClassId,
-        SpawnedByServer = room.SpawnedByServer,
-        FabricatorMetadata = room.FabricatorMetadata
+        SpawnedByServer = room.SpawnedByServer
     };
 
-    private static GlobalRootEntity CopyCamera(GlobalRootEntity camera) =>
-        new(camera.Transform, camera.Level, camera.ClassId, camera.SpawnedByServer, camera.Id, camera.TechType, camera.Metadata, camera.ParentId, [.. camera.ChildEntities]);
+    private static Entity CopyChild(Entity child) => child switch
+    {
+        GlobalRootEntity camera when IsCamera(camera) =>
+            new GlobalRootEntity(camera.Transform, camera.Level, camera.ClassId, camera.SpawnedByServer, camera.Id, camera.TechType, camera.Metadata, camera.ParentId, [.. camera.ChildEntities]),
+        PathBasedChildEntity part => new PathBasedChildEntity(part.Path, part.Id, part.TechType, part.Metadata, part.ParentId, [.. part.ChildEntities]),
+        _ => child
+    };
 
     private async ValueTask<Hold> EnterAsync()
     {
