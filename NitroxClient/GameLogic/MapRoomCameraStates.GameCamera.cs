@@ -2,8 +2,10 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using Nitrox.Model.DataStructures;
+using Nitrox.Model.GameLogic.FMOD;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using NitroxClient.Communication.Abstract;
+using NitroxClient.GameLogic.FMOD;
 using NitroxClient.GameLogic.Helper;
 using UnityEngine;
 
@@ -20,17 +22,59 @@ public sealed partial class MapRoomCameraStates
     /// </summary>
     private const float CAMERA_BATTERY_WAIT_SECONDS = 10f;
 
+    /// <summary>
+    ///     The radius LiveMixin.Kill passes with a death sound. Utils.PlayEnvSound no longer uses it.
+    /// </summary>
+    private const float DEATH_SOUND_RADIUS = 25f;
+
     private readonly LiveMixinManager liveMixinManager;
+    private readonly FMODWhitelist fmodWhitelist;
     private readonly Dictionary<NitroxId, float> pendingCameraEnergy = [];
     private readonly Dictionary<NitroxId, CameraBatteryInitialization> initializingCameraBatteries = [];
     private long nextCameraBatteryInitializationGeneration;
 
     public MapRoomCameraStates(IPacketSender packetSender, SimulationOwnership simulationOwnership, LiveMixinManager liveMixinManager,
-        BasePowerConsumptionForwarder powerConsumptionForwarder, ScannerRoomClientDiagnostics diagnostics)
+        BasePowerConsumptionForwarder powerConsumptionForwarder, FMODWhitelist fmodWhitelist, ScannerRoomClientDiagnostics diagnostics)
         : this(packetSender, simulationOwnership, diagnostics)
     {
         this.liveMixinManager = liveMixinManager;
         this.powerConsumptionForwarder = powerConsumptionForwarder;
+        this.fmodWhitelist = fmodWhitelist;
+    }
+
+    /// <summary>
+    ///     Called when the server says that a camera is gone. A camera is killed only in the game of the player who
+    ///     simulates it, where LiveMixin.Kill plays its death sound and spawns its death effect before the game
+    ///     destroys it. Everybody else would see it vanish; if it was killed, they get the sound and the effect here,
+    ///     where their copy of the camera is, as the game makes them.
+    /// </summary>
+    public void ShowDestructionIfKilled(MapRoomCamera camera)
+    {
+        LiveMixin liveMixin = camera ? camera.liveMixin : null;
+        if (!liveMixin || !WasKilled(liveMixin.health))
+        {
+            return;
+        }
+        string sound = "none";
+        if (liveMixin.deathClip)
+        {
+            // The killing game has sent the sound already if the sound whitelist syncs it (FMODUWE_PlayOneShotImpl_Patch).
+            sound = fmodWhitelist.IsWhitelisted(liveMixin.deathClip.path) ? "synced" : "played";
+        }
+        // Each game that is told plays them for itself.
+        using (FMODSystem.SuppressSendingSounds())
+        {
+            if (sound == "played")
+            {
+                Utils.PlayEnvSound(liveMixin.deathClip, liveMixin.deathClip.transform.position, DEATH_SOUND_RADIUS);
+            }
+            if (liveMixin.deathEffect)
+            {
+                UWE.Utils.InstantiateWrap(liveMixin.deathEffect, liveMixin.transform.position, Quaternion.identity);
+            }
+        }
+        camera.TryGetNitroxId(out NitroxId cameraId);
+        diagnostics.Record("death_show", "ok", cameraId, reason: $"sound_{sound}_effect_{(liveMixin.deathEffect ? "spawned" : "none")}");
     }
 
     /// <inheritdoc cref="Apply{TCamera}(TCamera, MapRoomCameraMetadata)" />

@@ -110,6 +110,17 @@ public sealed partial class MapRoomCameraStates
     internal bool ChangesHealthHere(NitroxId cameraId, bool applyingServerState) => applyingServerState || simulationOwnership.HasAnyLockType(cameraId);
 
     /// <summary>
+    ///     Whether a camera that another player's game removed was destroyed by damage, from the health that player
+    ///     reported last. Its game reports the health of zero before it says that the camera is gone (see
+    ///     LiveMixin_Kill_Patch); a camera that is taken away for any other reason, such as with its room or in a
+    ///     trash can, still has health.
+    /// </summary>
+    /// <param name="reportedHealth">The health as the simulating player last reported it.</param>
+    internal static bool WasKilled(float reportedHealth) =>
+        // The last step to zero can stay unreported when it is smaller than a report needs.
+        reportedHealth < HEALTH_REPORT_THRESHOLD;
+
+    /// <summary>
     ///     A camera of the game, as far as its light, battery and health go. Tests put a camera without the game here.
     /// </summary>
     internal interface ICamera

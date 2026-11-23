@@ -28,6 +28,13 @@ public sealed partial class LiveMixin_Kill_Patch : NitroxPatch, IDynamicPatch
             return;
         }
 
+        // A camera's health of zero has to reach the other players before its removal below: from it their games
+        // know that it was destroyed and show it (see MapRoomCameraStates.ShowDestructionIfKilled).
+        if (__instance.TryGetComponent(out MapRoomCamera camera))
+        {
+            Resolve<MapRoomCameraStates>().ReportIfChanged(camera);
+        }
+
         // We don't broadcast if we don't have objectId or if the object is whitelisted,
         // in which case kill broadcast is managed differently
         if (!__instance.TryGetNitroxId(out NitroxId objectId) ||

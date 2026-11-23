@@ -184,6 +184,17 @@ public sealed class MapRoomCameraStatesTest
     }
 
     [TestMethod]
+    [DataRow(0f, true)]
+    [DataRow(0.04f, true)]
+    [DataRow(0.05f, false)]
+    [DataRow(250f, false)]
+    [DataRow(400f, false)]
+    public void CameraRemovedByAnotherPlayerWasKilledOnlyIfItsLastReportedHealthIsZero(float reportedHealth, bool expected)
+    {
+        Assert.AreEqual(expected, MapRoomCameraStates.WasKilled(reportedHealth));
+    }
+
+    [TestMethod]
     public void NothingIsReportedWhileTheBatteryIsBeingPutIn()
     {
         states.Apply(camera, new MapRoomCameraMetadata(false, 60f, 400f, 2, 1));
