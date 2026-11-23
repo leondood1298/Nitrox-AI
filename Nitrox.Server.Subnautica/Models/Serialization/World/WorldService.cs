@@ -217,8 +217,30 @@ internal class WorldService : IHostedService
         Func<IReadOnlyList<MapRoomEntity>> scannerRoomsProvider, Action serialize,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(scannerRoomsProvider);
         ArgumentNullException.ThrowIfNull(serialize);
+
+        return RunWithScannerRoomsLocked<IReadOnlyList<SerializedScannerRoomState>>(scannerRoomsProvider, rooms =>
+        {
+            serialize();
+            return rooms.Select(room => new SerializedScannerRoomState(
+                            room,
+                            ScannerRoomStateFingerprint.Create(room),
+                            ScannerRoomStateFingerprint.Validate(room)))
+                        .ToArray();
+        }, cancellationToken);
+    }
+
+    /// <summary>
+    ///     Runs <paramref name="action" /> while no Scanner Room can change. The live room entities are serialized by a
+    ///     save and by the initial sync of a joining player, both on another thread than the packet processors that
+    ///     change them. Without this the reader can see a room half-changed (a new dock with the old revision), or fail
+    ///     on a list that changes while it is being read.
+    /// </summary>
+    internal static TResult RunWithScannerRoomsLocked<TResult>(Func<IReadOnlyList<MapRoomEntity>> scannerRoomsProvider,
+        Func<IReadOnlyList<MapRoomEntity>, TResult> action, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(scannerRoomsProvider);
+        ArgumentNullException.ThrowIfNull(action);
 
         while (true)
         {
@@ -246,12 +268,7 @@ internal class WorldService : IHostedService
 
             try
             {
-                serialize();
-                return rooms.Select(room => new SerializedScannerRoomState(
-                                room,
-                                ScannerRoomStateFingerprint.Create(room),
-                                ScannerRoomStateFingerprint.Validate(room)))
-                            .ToArray();
+                return action(rooms);
             }
             finally
             {
