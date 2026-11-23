@@ -78,7 +78,10 @@ public class InteriorPieceEntitySpawner : EntitySpawner<InteriorPieceEntity>
 
         yield return entities.SpawnBatchAsync(batch, true);
 
-        if (entity.Metadata is not PowerSourceMetadata && result.Get().Value.TryGetComponent(out PowerSource powerSource))
+        // A reactor without stored state was built a moment ago and has not been reported yet. It starts empty like any
+        // new one; filled up here, that level would become real if this player ends up simulating it.
+        if (entity.Metadata is not PowerSourceMetadata && result.Get().Value.TryGetComponent(out PowerSource powerSource) &&
+            BasePowerSources.GetSourceType(powerSource) == BasePowerSourceType.UNKNOWN)
         {
             // TODO: Have synced/restored power
             powerSource.SetPower(powerSource.maxPower);

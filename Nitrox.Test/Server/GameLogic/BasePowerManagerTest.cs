@@ -162,6 +162,8 @@ public sealed class BasePowerManagerTest
         Entity exteriorModule = AddSource(BasePowerSourceType.SOLAR, simulator);
         Entity bioreactor = AddSource(BasePowerSourceType.BIOREACTOR, simulator);
         bioreactor.Metadata = new PowerSourceMetadata(400f, 0f, BasePowerSourceType.BIOREACTOR);
+        // Without a tech type only the stored state says what the source is
+        bioreactor.TechType = NitroxTechType.None;
         Entity thermalPlant = AddSource(BasePowerSourceType.THERMAL, simulator);
         thermalPlant.TechType = new NitroxTechType("ThermalPlant");
         Entity withoutTechType = AddSource(BasePowerSourceType.SOLAR, simulator);
@@ -390,6 +392,58 @@ public sealed class BasePowerManagerTest
     }
 
     [TestMethod]
+    public void ConsumptionFromABasePieceThatIsNoPowerSourceIsNotPassedToItsSimulatingPlayer()
+    {
+        // That player would find no power source on it and give its simulation up.
+        Entity locker = AddLocker(simulator);
+
+        Assert.AreEqual(ConsumptionRoute.REJECTED, manager.RouteConsumption(otherPlayer, locker, 5f, out _, out _));
+    }
+
+    [TestMethod]
+    public void ConsumptionFromASourceThatHasNotReportedYetIsPassedToItsSimulatingPlayer()
+    {
+        Entity justBuilt = AddSource(BasePowerSourceType.NUCLEAR, simulator);
+
+        Assert.AreEqual(ConsumptionRoute.FORWARD_TO_SIMULATOR, manager.RouteConsumption(otherPlayer, justBuilt, 5f, out Player routedTo, out _));
+        Assert.AreSame(simulator, routedTo);
+    }
+
+    [TestMethod]
+    public void TemperatureReportForSomethingThatIsNoThermalPlantIsRefused()
+    {
+        // Any player may report a temperature. It must not take the place of what another entity holds.
+        Entity locker = AddLocker(simulator);
+        Entity panel = AddSource(BasePowerSourceType.SOLAR, simulator);
+        PowerSourceMetadata panelState = new(40f, 0f, BasePowerSourceType.SOLAR);
+        panel.Metadata = panelState;
+        Entity reactor = AddSource(BasePowerSourceType.NUCLEAR, simulator);
+        WorldEntity vehicle = new(NitroxVector3.Zero, NitroxQuaternion.Identity, NitroxVector3.One, new NitroxTechType("Seamoth"), 0, "seamoth-class-id", false, new NitroxId(), null);
+        CyclopsMetadata vehicleState = new(false, false, false, false, 0, 100f, false);
+        vehicle.Metadata = vehicleState;
+
+        Assert.IsFalse(manager.TryApplyTemperature(locker, new ThermalPlantMetadata(50f)));
+        Assert.IsFalse(manager.TryApplyTemperature(panel, new ThermalPlantMetadata(50f)));
+        Assert.IsFalse(manager.TryApplyTemperature(reactor, new ThermalPlantMetadata(50f)));
+        Assert.IsFalse(manager.TryApplyTemperature(vehicle, new ThermalPlantMetadata(50f)));
+
+        Assert.IsNull(locker.Metadata);
+        Assert.AreSame(panelState, panel.Metadata);
+        Assert.IsNull(reactor.Metadata);
+        Assert.AreSame(vehicleState, vehicle.Metadata);
+    }
+
+    [TestMethod]
+    public void TemperatureReportForAThermalPlantThatHasNotReportedYetIsStored()
+    {
+        Entity plant = AddSource(BasePowerSourceType.THERMAL, simulator);
+
+        Assert.IsTrue(manager.TryApplyTemperature(plant, new ThermalPlantMetadata(50f)));
+
+        Assert.AreEqual(50f, ((ThermalPlantMetadata)plant.Metadata).Temperature);
+    }
+
+    [TestMethod]
     public void AcceptedAndRefusedStatesAreRecordedForTheSource()
     {
         // The basepower command reads from these records who reported a source last and what was refused for it.
@@ -474,13 +528,32 @@ public sealed class BasePowerManagerTest
         {
             source = InteriorPieceEntity.MakeEmpty();
         }
-        source.Id = new NitroxId();
-        entityRegistry.AddEntity(source);
+        source.TechType = new NitroxTechType(sourceType switch
+        {
+            BasePowerSourceType.SOLAR => "SolarPanel",
+            BasePowerSourceType.THERMAL => "ThermalPlant",
+            BasePowerSourceType.BIOREACTOR => "BaseBioReactor",
+            _ => "BaseNuclearReactor"
+        });
+        return Add(source, simulatedBy);
+    }
+
+    private Entity Add(Entity entity, Player simulatedBy)
+    {
+        entity.Id = new NitroxId();
+        entityRegistry.AddEntity(entity);
         if (simulatedBy != null)
         {
-            Assert.IsTrue(simulationOwnershipData.TryAcquire(source.Id, simulatedBy, SimulationLockType.TRANSIENT));
+            Assert.IsTrue(simulationOwnershipData.TryAcquire(entity.Id, simulatedBy, SimulationLockType.TRANSIENT));
         }
-        return source;
+        return entity;
+    }
+
+    private Entity AddLocker(Player simulatedBy)
+    {
+        ModuleEntity locker = ModuleEntity.MakeEmpty();
+        locker.TechType = new NitroxTechType("Locker");
+        return Add(locker, simulatedBy);
     }
 
     private static Player CreatePlayer(ushort sessionId)

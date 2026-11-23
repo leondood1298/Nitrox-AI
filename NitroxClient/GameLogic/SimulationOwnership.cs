@@ -18,6 +18,14 @@ public class SimulationOwnership
 
     private readonly Dictionary<NitroxId, SimulatedEntity> newerSimulationById = [];
 
+    /// <summary>
+    ///     The entities whose simulation the server changed while this client was still loading, kept until the list
+    ///     from the initial sync has been applied. That list was made before those changes.
+    /// </summary>
+    private readonly HashSet<NitroxId> changedBeforeInitialList = [];
+
+    private bool initialListApplied;
+
     public SimulationOwnership(IMultiplayerSession multiplayerSession, IPacketSender packetSender)
     {
         this.multiplayerSession = multiplayerSession;
@@ -83,7 +91,47 @@ public class SimulationOwnership
 
     public bool IsLocalPlayer(SessionId sessionId) => multiplayerSession.Reservation.SessionId == sessionId;
 
+    /// <summary>
+    ///     Applies one entry of the list of simulating players that was made when this player began to join.
+    ///     <para>
+    ///     Loading takes long enough for the server to change an entity's simulation in the meantime: when the only
+    ///     player in the world leaves, everything is given to the one who is loading. The entry for such an entity is
+    ///     out of date. Applied, it would make this client drop what the server counts on it to simulate, and a base's
+    ///     power sources would stop generating until the player joins again.
+    ///     </para>
+    /// </summary>
+    public void TreatInitialSimulatedEntity(SimulatedEntity simulatedEntity)
+    {
+        if (!changedBeforeInitialList.Contains(simulatedEntity.Id))
+        {
+            Apply(simulatedEntity);
+        }
+    }
+
+    /// <summary>
+    ///     To be called once every entry of the initial list has been handled.
+    /// </summary>
+    public void InitialListApplied()
+    {
+        initialListApplied = true;
+        changedBeforeInitialList.Clear();
+    }
+
     public void TreatSimulatedEntity(SimulatedEntity simulatedEntity)
+    {
+        RememberChangeBeforeInitialList(simulatedEntity.Id);
+        Apply(simulatedEntity);
+    }
+
+    private void RememberChangeBeforeInitialList(NitroxId entityId)
+    {
+        if (!initialListApplied)
+        {
+            changedBeforeInitialList.Add(entityId);
+        }
+    }
+
+    private void Apply(SimulatedEntity simulatedEntity)
     {
         bool isLocalPlayerNewOwner = multiplayerSession.Reservation.SessionId == simulatedEntity.SessionId;
 
@@ -141,6 +189,7 @@ public class SimulationOwnership
 
     public void DropSimulationFrom(NitroxId entityId)
     {
+        RememberChangeBeforeInitialList(entityId);
         StopSimulatingEntity(entityId);
         // A drop can arrive before the broadcaster exists (while joining); there is nothing to stop watching then
         if (EntityPositionBroadcaster.Instance)

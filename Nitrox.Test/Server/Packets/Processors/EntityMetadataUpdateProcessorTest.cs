@@ -163,6 +163,7 @@ public sealed class EntityMetadataUpdateProcessorTest
     {
         ModuleEntity plant = AddSource(new PowerSourceMetadata(120f, 0f, BasePowerSourceType.THERMAL, 40f), simulator);
         ModuleEntity newPlant = AddSource(null, simulator);
+        newPlant.TechType = new NitroxTechType("ThermalPlant");
 
         await Send(otherPlayer, plant, new ThermalPlantMetadata(1e9f));
         await Send(otherPlayer, newPlant, new ThermalPlantMetadata(1e9f));
@@ -175,6 +176,18 @@ public sealed class EntityMetadataUpdateProcessorTest
             Assert.AreEqual(BasePowerManager.MAX_THERMAL_TEMPERATURE, ((ThermalPlantMetadata)relayed.NewValue).Temperature);
         }
         Assert.AreEqual(2, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, thirdPlayer).Count);
+    }
+
+    [TestMethod]
+    public async Task TemperatureSentForSomethingThatIsNoThermalPlantChangesNothing()
+    {
+        ModuleEntity locker = AddSource(null, simulator);
+        locker.TechType = new NitroxTechType("Locker");
+
+        await Send(otherPlayer, locker, new ThermalPlantMetadata(50f));
+
+        Assert.IsNull(locker.Metadata);
+        Assert.AreEqual(0, packetSender.ReceivedCalls().Count());
     }
 
     [TestMethod]

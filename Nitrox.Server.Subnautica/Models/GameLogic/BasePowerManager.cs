@@ -123,10 +123,12 @@ internal sealed class BasePowerManager(EntityRegistry entityRegistry, Simulation
     ///     Stores a thermal plant temperature report: inside the power state when the source has one, so that the report
     ///     does not take the place of that state, otherwise as the entity's metadata.
     /// </summary>
-    /// <returns>False when the report is not a number or not higher than what is stored.</returns>
+    /// <returns>False when the report is not a number, not higher than what is stored, or not for a thermal plant.</returns>
     public bool TryApplyTemperature(Entity source, ThermalPlantMetadata report)
     {
-        if (!float.IsFinite(report.Temperature))
+        // Any player may report a temperature, so without the second check a report could take the place of the
+        // metadata of anything: a vehicle, a Scanner Room camera, another kind of power source
+        if (!float.IsFinite(report.Temperature) || !IsThermalPlant(source))
         {
             return false;
         }
@@ -165,9 +167,11 @@ internal sealed class BasePowerManager(EntityRegistry entityRegistry, Simulation
         {
             simulator = simulationOwnershipData.GetPlayerForLock(source.Id);
             accepted = null;
-            if (source is not (ModuleEntity or InteriorPieceEntity))
+            if (!IsPowerSource(source))
             {
-                reason = $"{source.GetType().Name} is not a base power source";
+                // Passing this on would make the player simulating the entity look for a power source that is not
+                // there and give the entity's simulation up
+                reason = $"{source.GetType().Name} {source.TechType?.Name ?? "None"} is not a base power source";
             }
             else if (!float.IsFinite(amount) || amount <= 0f || amount > MAX_CONSUMPTION_PER_REQUEST)
             {
@@ -283,15 +287,33 @@ internal sealed class BasePowerManager(EntityRegistry entityRegistry, Simulation
             // The entity carries no tech type to check against
             return true;
         }
-        return sourceType switch
-        {
-            BasePowerSourceType.SOLAR => techType == "SolarPanel",
-            BasePowerSourceType.THERMAL => techType == "ThermalPlant",
-            BasePowerSourceType.BIOREACTOR => techType is "Bioreactor" or "BaseBioReactor",
-            BasePowerSourceType.NUCLEAR => techType is "NuclearReactor" or "BaseNuclearReactor",
-            _ => false
-        };
+        return GetSourceType(entity) == sourceType;
     }
+
+    /// <summary>
+    ///     The kind of power source an entity's tech type says it is.
+    /// </summary>
+    private static BasePowerSourceType GetSourceType(Entity entity) => entity.TechType?.Name switch
+    {
+        "SolarPanel" => BasePowerSourceType.SOLAR,
+        "ThermalPlant" => BasePowerSourceType.THERMAL,
+        "Bioreactor" or "BaseBioReactor" => BasePowerSourceType.BIOREACTOR,
+        "NuclearReactor" or "BaseNuclearReactor" => BasePowerSourceType.NUCLEAR,
+        _ => BasePowerSourceType.UNKNOWN
+    };
+
+    /// <summary>
+    ///     A source that has reported its state holds it as metadata. One that was just built is known by its tech type.
+    /// </summary>
+    private static bool IsPowerSource(Entity entity) =>
+        entity.Metadata is PowerSourceMetadata || (entity is ModuleEntity or InteriorPieceEntity && GetSourceType(entity) != BasePowerSourceType.UNKNOWN);
+
+    private static bool IsThermalPlant(Entity entity) => entity is ModuleEntity && entity.Metadata switch
+    {
+        PowerSourceMetadata state => state.SourceType == BasePowerSourceType.THERMAL,
+        ThermalPlantMetadata => true,
+        _ => GetSourceType(entity) == BasePowerSourceType.THERMAL
+    };
 
     internal readonly record struct SourceSnapshot(Entity Source, PowerSourceMetadata State, Player? Simulator);
 }

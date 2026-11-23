@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Packets;
@@ -239,6 +240,7 @@ public sealed class BasePowerDiagnosticsTest
     {
         ModuleEntity source = ModuleEntity.MakeEmpty();
         source.Id = new NitroxId();
+        source.TechType = new NitroxTechType("SolarPanel");
         scenario.EntityRegistry.AddEntity(source);
         return source;
     }
