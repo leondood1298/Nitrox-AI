@@ -5,7 +5,7 @@ using Nitrox.Server.Subnautica.Services;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
-internal class PlayerSyncFinishedProcessor(SessionManager sessionManager, JoiningManager joiningManager, HibernateService hibernateService, BedOccupancy bedOccupancy)
+internal class PlayerSyncFinishedProcessor(SessionManager sessionManager, JoiningManager joiningManager, HibernateService hibernateService, BedOccupancy bedOccupancy, PlayerAnimationStates animationStates)
     : IAuthPacketProcessor<PlayerSyncFinished>
 {
     private readonly SessionManager sessionManager = sessionManager;
@@ -25,6 +25,11 @@ internal class PlayerSyncFinishedProcessor(SessionManager sessionManager, Joinin
         foreach (BedEnterAnimation lyingDown in bedOccupancy.GetAnnouncementsFor(context.Sender.SessionId))
         {
             await context.ReplyAsync(lyingDown);
+        }
+        // And who is holding up their PDA or using a tool.
+        foreach (AnimationChangeEvent switchedOn in animationStates.GetAnnouncementsFor(context.Sender.SessionId))
+        {
+            await context.ReplyAsync(switchedOn);
         }
     }
 }

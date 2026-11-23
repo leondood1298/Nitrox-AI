@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures.GameLogic;
@@ -28,6 +29,14 @@ public class RemotePlayer : INitroxPlayer
     public const EcoTargetType PLAYER_ECO_TARGET_TYPE = (EcoTargetType)5050;
 
     private static readonly int animatorPlayerIn = Animator.StringToHash("player_in");
+
+    /// <summary>
+    ///     How long the game waits after closing the PDA before it removes it from the player's hand (see <c>PDA.Close</c>).
+    /// </summary>
+    private const float PDA_LOWERING_SECONDS = 0.3f;
+
+    private GameObject pdaModel;
+    private int pdaVisibilityChange;
 
     private readonly PlayerModelManager playerModelManager;
     private readonly PlayerVitalsManager playerVitalsManager;
@@ -108,6 +117,7 @@ public class RemotePlayer : INitroxPlayer
         SetupSkyAppliers();
         SetupPlayerSounds();
         SetupMixins();
+        SetupPda();
 
         PlayerAnimation animation = PlayerContext.Animation;
         UpdateAnimationAndCollider((AnimChangeType)animation.Type, (AnimChangeState)animation.State);
@@ -368,6 +378,11 @@ public class RemotePlayer : INitroxPlayer
         AnimationController.UpdatePlayerAnimations = true;
         AnimationController.Reset();
         ArmsController.SetWorldIKTarget(null, null);
+        if (pdaModel)
+        {
+            pdaVisibilityChange++;
+            pdaModel.SetActive(false);
+        }
     }
 
     public void Destroy()
@@ -389,6 +404,21 @@ public class RemotePlayer : INitroxPlayer
             case AnimChangeType.INFECTION_REVEAL:
                 AnimationController["player_infected"] = state != AnimChangeState.UNSET;
                 break;
+            case AnimChangeType.USING_PDA:
+                AnimationController.SetSwitch(PlayerAnimationParameters.Switches[type], state == AnimChangeState.ON);
+                SetPdaVisible(state == AnimChangeState.ON);
+                break;
+            default:
+                if (PlayerAnimationParameters.Switches.TryGetValue(type, out string switchName))
+                {
+                    AnimationController.SetSwitch(switchName, state == AnimChangeState.ON);
+                }
+                else if (PlayerAnimationParameters.Triggers.TryGetValue(type, out string triggerName))
+                {
+                    // The animator is put back by ResetStates when this player respawns.
+                    AnimationController.SetTrigger(triggerName);
+                }
+                break;
         }
 
         // Rough estimation for different collider boxes in different animation stages
@@ -401,6 +431,48 @@ public class RemotePlayer : INitroxPlayer
         {
             Collider.center = new Vector3(0f, -0.8f, 0f);
             Collider.height = 1.5f;
+        }
+    }
+
+    /// <summary>
+    ///     The body is a copy of the local player's and so includes the PDA they hold, switched off. Its script only acts
+    ///     when the local player's own code calls it, which never happens for a copy, so it can be shown as a plain model.
+    /// </summary>
+    private void SetupPda()
+    {
+        PDA pda = Body.GetComponentInChildren<PDA>(true);
+        if (!pda)
+        {
+            Log.Warn($"[{nameof(RemotePlayer)}] No PDA model found on the body of {PlayerName}; their PDA will not be shown");
+            return;
+        }
+        pdaModel = pda.gameObject;
+        pdaModel.SetActive(false);
+    }
+
+    private void SetPdaVisible(bool visible)
+    {
+        if (!pdaModel)
+        {
+            return;
+        }
+
+        pdaVisibilityChange++;
+        if (visible)
+        {
+            pdaModel.SetActive(true);
+            return;
+        }
+        // The game also keeps the PDA in the hand until the arm has gone down (PDA.Close and PDA.Deactivated).
+        CoroutineHost.StartCoroutine(HidePdaAfterLowering(pdaVisibilityChange));
+    }
+
+    private IEnumerator HidePdaAfterLowering(int change)
+    {
+        yield return new WaitForSeconds(PDA_LOWERING_SECONDS);
+        if (change == pdaVisibilityChange && pdaModel)
+        {
+            pdaModel.SetActive(false);
         }
     }
 

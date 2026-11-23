@@ -168,6 +168,7 @@ namespace NitroxClient.MonoBehaviours
         {
             // Gameplay.
             gameObject.AddComponent<UnderwaterStateTracker>();
+            gameObject.AddComponent<PlayerAnimatorStateTracker>();
             gameObject.AddComponent<PrecursorTracker>();
             gameObject.AddComponent<PlayerMovementBroadcaster>();
             gameObject.AddComponent<PlayerDeathBroadcaster>();
