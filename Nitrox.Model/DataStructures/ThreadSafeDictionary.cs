@@ -153,6 +153,20 @@ namespace Nitrox.Model.DataStructures
             }
         }
 
+        /// <returns>False and leaves the dictionary unchanged if the key is already in it.</returns>
+        public bool TryAdd(TKey key, TValue value)
+        {
+            lock (locker)
+            {
+                if (dictionary.ContainsKey(key))
+                {
+                    return false;
+                }
+                dictionary.Add(key, value);
+                return true;
+            }
+        }
+
         public bool Remove(TKey key)
         {
             lock (locker)
