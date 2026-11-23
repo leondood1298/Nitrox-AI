@@ -118,6 +118,26 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
             : Record(ScannerRoomDiagnosticOutcome.InvariantFailure, $"{eventName}_invalid", room,
                 reason: invariantFailure, capturedSnapshot: snapshot);
 
+    /// <summary>
+    ///     Writes a line a tester asked for, to bracket a test step in the log. It is not an event: it has no number
+    ///     and does not enter the history, so it also works when there is no Scanner Room to checkpoint.
+    /// </summary>
+    public void RecordMark(string label)
+    {
+        try
+        {
+            lock (sync)
+            {
+                AnnounceEpoch();
+                Write(LogLevel.Information, FormatMarker("mark", null, label));
+            }
+        }
+        catch (Exception)
+        {
+            Interlocked.Increment(ref ownFailures);
+        }
+    }
+
     public IReadOnlyList<ScannerRoomDiagnosticEntry> GetHistory()
     {
         lock (sync)
@@ -262,7 +282,8 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
                 snapshot?.Fingerprint,
                 DiagnosticLineFormat.Token(reason, 64),
                 roomLock,
-                cameraLock);
+                cameraLock,
+                Time: timeProvider.GetUtcNow());
             bool writeRejection = false;
             if (outcome == ScannerRoomDiagnosticOutcome.Rejected)
             {
@@ -439,7 +460,8 @@ internal readonly record struct ScannerRoomDiagnosticEntry(
     string Reason,
     string RoomLock = DiagnosticLineFormat.NOT_APPLICABLE,
     string CameraLock = DiagnosticLineFormat.NOT_APPLICABLE,
-    long Repeat = 1)
+    long Repeat = 1,
+    DateTimeOffset Time = default)
 {
     /// <summary>
     ///     <c>rep=</c> is only printed for a repeated rejection: it counts how often the same request was rejected

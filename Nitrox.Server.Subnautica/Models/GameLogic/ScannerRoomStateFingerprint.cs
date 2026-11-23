@@ -134,7 +134,8 @@ internal static class ScannerRoomStateFingerprint
         string fingerprint = Convert.ToHexString(hash.AsSpan(0, 8)).ToLowerInvariant();
         return new ScannerRoomStateSnapshot(fingerprint, canonicalState, cameras.Length, scanResults.Length, scanTypes.Length,
             room.DockingRevision, metadata?.TypeToScan?.Name ?? "", metadata?.NumNodesScanned ?? 0,
-            metadata?.Generation ?? 0, metadata?.Revision ?? 0, room.FabricatorMetadata != null);
+            metadata?.Generation ?? 0, metadata?.Revision ?? 0, room.FabricatorMetadata != null,
+            room.LeftDockCameraId, room.RightDockCameraId, room.ScanResultGeneration, room.ScanResultRevision, room.AvailableScanTypesRevision);
     }
 
     private static string CanonicalCamera(MapRoomCameraRecord? camera)
@@ -217,4 +218,9 @@ internal readonly record struct ScannerRoomStateSnapshot(
     int NodesScanned,
     long MetadataGeneration,
     long MetadataRevision,
-    bool FabricatorActive);
+    bool FabricatorActive,
+    NitroxId? LeftDockCameraId = null,
+    NitroxId? RightDockCameraId = null,
+    long ScanResultGeneration = 0,
+    long ScanResultRevision = 0,
+    long ScanTypesRevision = 0);
