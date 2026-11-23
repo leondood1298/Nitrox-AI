@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
@@ -23,8 +24,14 @@ internal sealed class EntitySpawnedByClientProcessor(PlayerManager playerManager
 
         // If the entity already exists in the registry, it is fine to update.  This is a normal case as the player
         // may have an item in their inventory (that the registry knows about) then wants to spawn it into the world.
-        scannerRoomManager.KeepCameraStateOnReplacement(entity);
+        MapRoomCameraMetadata? cameraState = scannerRoomManager.KeepCameraStateOnReplacement(entity);
         entityRegistry.AddOrUpdate(entity);
+        if (cameraState != null)
+        {
+            // The others are sent the entity with this state. The client that made the entity has to be told as well:
+            // the number of a new camera is the server's to give.
+            await context.ReplyAsync(new EntityMetadataUpdate(entity.Id, cameraState));
+        }
 
         List<SimulatedEntity> simulatedEntities = null;
         if (entity is WorldEntity worldEntity)

@@ -168,13 +168,8 @@ internal sealed class EntitySimulation : ISessionCleaner
     public List<SimulatedEntity> AssignGlobalRootEntitiesAndGetData(Player player)
     {
         List<SimulatedEntity> simulatedEntities = [];
-        HashSet<NitroxId> dockedCameraIds = scannerRoomManager.GetDockedCameraIds();
         foreach (GlobalRootEntity entity in worldEntityManager.GetGlobalRootEntities())
         {
-            if (dockedCameraIds.Contains(entity.Id))
-            {
-                continue;
-            }
             simulationOwnershipData.TryAcquirePreservingExistingExclusive(entity.Id, player, SimulationLockType.TRANSIENT, out _);
             if (!simulationOwnershipData.TryGetLock(entity.Id, out SimulationOwnershipData.PlayerLock playerLock))
             {
@@ -278,8 +273,7 @@ internal sealed class EntitySimulation : ISessionCleaner
         AssignEntitiesToOtherPlayers(args.Session.Id, revokedEntities, ownershipChanges, false);
         await BroadcastSimulationChanges(ownershipChanges);
 
-        // Locks on ids that are not registered entities (a docked Scanner Room camera, for example) cannot be
-        // reassigned; players are told to forget them.
+        // Locks on ids that are not registered entities cannot be reassigned; players are told to forget them.
         if (unregisteredRevokedIds.Count > 0)
         {
             logger.ZLogInformation($"Dropping {unregisteredRevokedIds.Count} unregistered simulation lock(s) after session {args.Session.Id} disconnected");

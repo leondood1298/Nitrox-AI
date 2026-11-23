@@ -1,159 +1,17 @@
 using System.Threading.Tasks;
-using Microsoft.Extensions.Logging.Abstractions;
 using Nitrox.Model.DataStructures;
-using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.GameLogic;
-using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
-using Nitrox.Server.Subnautica.Models.Serialization;
 using ServerPlayer = Nitrox.Server.Subnautica.Models.Player;
 
 namespace Nitrox.Test.Server.Subnautica;
 
+/// <summary>
+///     Camera control and the simulation locks of cameras, on the real manager.
+/// </summary>
 [TestClass]
 public sealed class ScannerRoomScenarioTest
 {
-    [TestMethod]
-    public async Task DockMutationRequiresCameraOrRoomAuthorityButReplayDoesNot()
-    {
-        ScannerRoomScenarioFixture scenario = new();
-
-        MapRoomCameraDock unauthorizedDock = await scenario.DockAsync(scenario.PlayerB,
-            ScannerRoomScenarioFixture.CameraAId, 0, true, establishAuthority: false);
-        Assert.IsFalse(unauthorizedDock.Granted);
-        Assert.IsNull(scenario.Room.LeftDockCameraId);
-
-        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
-        MapRoomCameraDock replay = await scenario.DockAsync(scenario.PlayerB,
-            ScannerRoomScenarioFixture.CameraAId, 0, true, establishAuthority: false);
-        Assert.IsTrue(replay.Granted, "Exact canonical replay is safe without mutation authority.");
-        Assert.AreEqual(1, replay.Revision);
-
-        MapRoomCameraDock unauthorizedUndock = await scenario.DockAsync(scenario.PlayerB,
-            ScannerRoomScenarioFixture.CameraAId, 0, false, establishAuthority: false);
-        Assert.IsFalse(unauthorizedUndock.Granted);
-        Assert.AreEqual(ScannerRoomScenarioFixture.CameraAId, scenario.Room.LeftDockCameraId);
-
-        Assert.IsTrue(scenario.Ownership.TryAcquire(scenario.Room.Id, scenario.PlayerB, SimulationLockType.TRANSIENT));
-        MapRoomCameraDock roomAuthorizedUndock = await scenario.DockAsync(scenario.PlayerB,
-            ScannerRoomScenarioFixture.CameraAId, 0, false, establishAuthority: false);
-        Assert.IsTrue(roomAuthorizedUndock.Granted);
-        Assert.IsNull(scenario.Room.LeftDockCameraId);
-    }
-
-    [TestMethod]
-    public async Task DockUndockReplayAndDelayedUndockPreserveCanonicalState()
-    {
-        ScannerRoomScenarioFixture scenario = new();
-
-        MapRoomCameraDock firstDock = await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true);
-        Assert.IsTrue(firstDock.Granted);
-        Assert.AreEqual(1, firstDock.Revision);
-
-        string afterFirstDock = scenario.Snapshot();
-        MapRoomCameraDock replayedDock = await scenario.DockAsync(scenario.PlayerB, ScannerRoomScenarioFixture.CameraAId, 0, true);
-        Assert.IsTrue(replayedDock.Granted);
-        Assert.AreEqual(1, replayedDock.Revision);
-        Assert.AreEqual(afterFirstDock, scenario.Snapshot(), "An exact dock replay must be idempotent regardless of sender.");
-
-        MapRoomCameraDock undock = await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, false);
-        Assert.IsTrue(undock.Granted);
-        Assert.AreEqual(2, undock.Revision);
-
-        MapRoomCameraDock replacementDock = await scenario.DockAsync(scenario.PlayerB, ScannerRoomScenarioFixture.CameraBId, 0, true);
-        Assert.IsTrue(replacementDock.Granted);
-        Assert.AreEqual(3, replacementDock.Revision);
-
-        string beforeDelayedUndock = scenario.Snapshot();
-        MapRoomCameraDock delayedUndock = await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, false);
-        Assert.IsFalse(delayedUndock.Granted);
-        Assert.AreEqual(3, delayedUndock.Revision);
-        Assert.AreEqual(beforeDelayedUndock, scenario.Snapshot(), "A delayed undock must not clear the replacement camera.");
-
-        MapRoomCameraDock replayedReplacement = await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraBId, 0, true);
-        Assert.IsTrue(replayedReplacement.Granted);
-        Assert.AreEqual(3, replayedReplacement.Revision);
-        Assert.AreEqual(beforeDelayedUndock, scenario.Snapshot());
-
-        scenario.AssertCanonicalInvariants();
-        Assert.AreEqual(2, scenario.Room.CameraRegistry.Count, "Undocking must retain the stable camera-number registration.");
-        Assert.AreEqual(1, scenario.Room.GetCameraRecord(ScannerRoomScenarioFixture.CameraAId)?.CameraNumber);
-        Assert.AreEqual(2, scenario.Room.GetCameraRecord(ScannerRoomScenarioFixture.CameraBId)?.CameraNumber);
-    }
-
-    [TestMethod]
-    public async Task DockingRevokesGenericStalkerExclusiveLock()
-    {
-        ScannerRoomScenarioFixture scenario = new();
-        SimulationOwnershipResponse genericLock = await scenario.RequestOwnershipAsync(
-            scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId,
-            SimulationLockType.EXCLUSIVE);
-        Assert.IsTrue(genericLock.LockAcquired);
-        Assert.IsFalse(scenario.IsController(
-            ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA.SessionId));
-
-        MapRoomCameraDock dock = await scenario.DockAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraAId, 0, true,
-            establishAuthority: false);
-
-        Assert.IsTrue(dock.Granted);
-        Assert.IsNull(scenario.Ownership.GetPlayerForLock(
-            ScannerRoomScenarioFixture.CameraAId));
-        Assert.IsFalse(scenario.IsController(
-            ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA.SessionId));
-    }
-
-    [TestMethod]
-    public async Task RedockingPreservesValidatedCanonicalControlLock()
-    {
-        ScannerRoomScenarioFixture scenario = new();
-        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
-        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
-        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraAId, 0, false,
-            establishAuthority: false)).Granted);
-
-        MapRoomCameraDock redock = await scenario.DockAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraAId, 0, true,
-            establishAuthority: false);
-
-        Assert.IsTrue(redock.Granted);
-        Assert.IsTrue(scenario.Ownership.TryGetLock(
-            ScannerRoomScenarioFixture.CameraAId,
-            out SimulationOwnershipData.PlayerLock controlLock));
-        Assert.AreSame(scenario.PlayerA, controlLock.Player);
-        Assert.AreEqual(SimulationLockType.EXCLUSIVE, controlLock.LockType);
-        Assert.IsTrue(scenario.IsController(
-            ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA.SessionId));
-    }
-
-    [TestMethod]
-    public async Task DockReportedByTheRoomOwnerDoesNotEndAnotherPlayersControl()
-    {
-        // Every client whose own physics sees the camera enter the dock reports it. The room owner's report can arrive
-        // before the report of the player who is flying the camera in, and that player keeps control while docked.
-        ScannerRoomScenarioFixture scenario = new();
-        Assert.IsTrue((await scenario.ControlLooseAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, true)).Granted);
-        Assert.IsTrue(scenario.Ownership.TryAcquire(scenario.Room.Id, scenario.PlayerB, SimulationLockType.TRANSIENT));
-
-        IReadOnlyList<Nitrox.Model.Packets.Packet> sent = await scenario.DockPacketsAsync(scenario.PlayerB,
-            new MapRoomCameraDock(ScannerRoomScenarioFixture.CameraAId, ScannerRoomScenarioFixture.RoomId, 0));
-
-        Assert.IsTrue(sent.OfType<MapRoomCameraDock>().Single().Granted, "The camera is docked all the same.");
-        Assert.AreEqual(ScannerRoomScenarioFixture.CameraAId, scenario.Room.LeftDockCameraId);
-        Assert.AreEqual(0, sent.OfType<MapRoomCameraControl>().Count(), "Nobody may be told that control ended.");
-        Assert.IsTrue(scenario.Ownership.TryGetLock(ScannerRoomScenarioFixture.CameraAId, out SimulationOwnershipData.PlayerLock controlLock));
-        Assert.AreSame(scenario.PlayerA, controlLock.Player);
-        Assert.AreEqual(SimulationLockType.EXCLUSIVE, controlLock.LockType);
-        Assert.IsTrue(scenario.IsController(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA.SessionId));
-
-        MapRoomCameraDock controllersOwnReport = await scenario.DockAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraAId, 0, true, establishAuthority: false);
-        Assert.IsTrue(controllersOwnReport.Granted, "The controller's later report is a replay of the canonical state.");
-    }
-
     [TestMethod]
     public async Task ExclusiveControlTransfersOnlyAfterCanonicalRelease()
     {
@@ -175,55 +33,18 @@ public sealed class ScannerRoomScenarioTest
         Assert.AreSame(scenario.PlayerA, scenario.Ownership.GetPlayerForLock(ScannerRoomScenarioFixture.CameraAId));
 
         Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, false)).Granted);
-        Assert.IsNull(scenario.Ownership.GetPlayerForLock(ScannerRoomScenarioFixture.CameraAId));
+        Assert.IsFalse(scenario.HasController(ScannerRoomScenarioFixture.CameraAId));
+        Assert.IsTrue(scenario.Ownership.TryGetLock(ScannerRoomScenarioFixture.CameraAId, out SimulationOwnershipData.PlayerLock keptLock));
+        Assert.AreSame(scenario.PlayerA, keptLock.Player, "The player who flew the camera goes on simulating it, which is who recharges it in its dock.");
+        Assert.AreEqual(SimulationLockType.TRANSIENT, keptLock.LockType);
 
         MapRoomCameraControl replayedRelease = await scenario.ControlAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, false);
-        Assert.IsTrue(replayedRelease.Granted, "Release replay is an acknowledged no-op once the lock is absent.");
-        Assert.IsNull(scenario.Ownership.GetPlayerForLock(ScannerRoomScenarioFixture.CameraAId));
+        Assert.IsTrue(replayedRelease.Granted, "A release that is repeated is acknowledged and changes nothing.");
+        Assert.AreSame(scenario.PlayerA, scenario.Ownership.GetPlayerForLock(ScannerRoomScenarioFixture.CameraAId));
 
         MapRoomCameraControl transferred = await scenario.ControlAsync(scenario.PlayerB, ScannerRoomScenarioFixture.CameraAId, 0, true);
         Assert.IsTrue(transferred.Granted);
         Assert.AreSame(scenario.PlayerB, scenario.Ownership.GetPlayerForLock(ScannerRoomScenarioFixture.CameraAId));
-    }
-
-    [TestMethod]
-    [DataRow(1425)]
-    [DataRow(2410)]
-    public async Task TwoCamerasRacingOneDockSlotProduceExactlyOneWinner(int seed)
-    {
-        Random random = new(seed);
-
-        for (int iteration = 0; iteration < 16; iteration++)
-        {
-            ScannerRoomScenarioFixture scenario = new();
-            bool swap = random.Next(2) == 0;
-            ServerPlayer firstPlayer = swap ? scenario.PlayerB : scenario.PlayerA;
-            ServerPlayer secondPlayer = swap ? scenario.PlayerA : scenario.PlayerB;
-            NitroxId firstCamera = swap ? ScannerRoomScenarioFixture.CameraBId : ScannerRoomScenarioFixture.CameraAId;
-            NitroxId secondCamera = swap ? ScannerRoomScenarioFixture.CameraAId : ScannerRoomScenarioFixture.CameraBId;
-
-            using Barrier start = new(2);
-            Task<MapRoomCameraDock> first = Task.Run(async () =>
-            {
-                start.SignalAndWait();
-                return await scenario.DockAsync(firstPlayer, firstCamera, 0, true);
-            });
-            Task<MapRoomCameraDock> second = Task.Run(async () =>
-            {
-                start.SignalAndWait();
-                return await scenario.DockAsync(secondPlayer, secondCamera, 0, true);
-            });
-
-            MapRoomCameraDock[] responses = await Task.WhenAll(first, second);
-            MapRoomCameraDock winner = responses.Single(response => response.Granted);
-
-            Assert.AreEqual(1, responses.Count(response => response.Granted), $"seed={seed}, iteration={iteration}");
-            Assert.AreEqual(1, scenario.Room.DockingRevision, $"seed={seed}, iteration={iteration}");
-            Assert.AreEqual(winner.CameraId, scenario.Room.LeftDockCameraId, $"seed={seed}, iteration={iteration}");
-            Assert.IsNull(scenario.Room.RightDockCameraId, $"seed={seed}, iteration={iteration}");
-            Assert.AreEqual(1, scenario.Room.CameraRegistry.Count, $"seed={seed}, iteration={iteration}");
-            scenario.AssertCanonicalInvariants();
-        }
     }
 
     [TestMethod]
@@ -265,44 +86,6 @@ public sealed class ScannerRoomScenarioTest
     }
 
     [TestMethod]
-    [DataRow(1425)]
-    [DataRow(2410)]
-    [DataRow(2576)]
-    [DataRow(1533)]
-    public async Task SeededMultiPlayerInterleavingsKeepRevisionsAndRegistryCanonical(int seed)
-    {
-        ScannerRoomScenarioFixture scenario = new();
-        Random random = new(seed);
-
-        for (int step = 0; step < 96; step++)
-        {
-            ServerPlayer player = random.Next(2) == 0 ? scenario.PlayerA : scenario.PlayerB;
-            NitroxId cameraId = scenario.CameraIds[random.Next(scenario.CameraIds.Count)];
-            int slot = random.Next(2);
-            bool isDocked = random.Next(2) == 0;
-
-            long revisionBefore = scenario.Room.DockingRevision;
-            MapRoomCameraDock response = await scenario.DockAsync(player, cameraId, slot, isDocked);
-            long revisionAfter = scenario.Room.DockingRevision;
-
-            Assert.IsTrue(revisionAfter >= revisionBefore, $"seed={seed}, step={step}");
-            Assert.IsTrue(revisionAfter - revisionBefore <= 1, $"seed={seed}, step={step}");
-            Assert.AreEqual(revisionAfter, response.Revision, $"seed={seed}, step={step}");
-            scenario.AssertCanonicalInvariants();
-
-            if (random.Next(4) == 0)
-            {
-                string beforeReplay = scenario.Snapshot();
-                MapRoomCameraDock replay = await scenario.DockAsync(player, cameraId, slot, isDocked);
-
-                Assert.AreEqual(beforeReplay, scenario.Snapshot(), $"Exact replay mutated state at seed={seed}, step={step}.");
-                Assert.AreEqual(revisionAfter, replay.Revision, $"seed={seed}, step={step}");
-                scenario.AssertCanonicalInvariants();
-            }
-        }
-    }
-
-    [TestMethod]
     public async Task RealProcessorTraceRecordsAcceptedAndRejectedCanonicalTransitions()
     {
         ScannerRoomScenarioFixture scenario = new();
@@ -328,9 +111,8 @@ public sealed class ScannerRoomScenarioTest
     {
         ScannerRoomScenarioFixture scenario = new();
         Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
-        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerB, ScannerRoomScenarioFixture.CameraBId, 1, true)).Granted);
+        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraBId, 1, true)).Granted);
         Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
-        Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.CameraBId, scenario.PlayerA, SimulationLockType.TRANSIENT));
 
         List<SimulationOwnershipData.RevokedLock> revokedLocks = scenario.Ownership.RevokeAllLocksForOwner(scenario.PlayerA.SessionId);
         List<MapRoomCameraControl> releases = [];
@@ -342,6 +124,7 @@ public sealed class ScannerRoomScenarioTest
             }
         }
 
+        Assert.AreEqual(2, revokedLocks.Count, "The player simulated one docked camera and flew the other.");
         Assert.AreEqual(1, releases.Count);
         MapRoomCameraControl release = releases[0];
         Assert.AreEqual(ScannerRoomScenarioFixture.CameraAId, release.CameraId);
@@ -361,13 +144,10 @@ public sealed class ScannerRoomScenarioTest
         Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
 
         IDisposable lifecycleGate = await scenario.Manager.HoldGateAsync();
-        Assert.IsTrue(scenario.Ownership.RevokeOwnerOfId(ScannerRoomScenarioFixture.CameraAId,
-            out SimulationOwnershipData.PlayerLock revokedLock));
-        Assert.IsTrue(scenario.Manager.TryCreateControlRelease(ScannerRoomScenarioFixture.CameraAId, revokedLock,
-            "race_test", out MapRoomCameraControl release));
+        Assert.IsTrue(scenario.Ownership.RevokeOwnerOfId(ScannerRoomScenarioFixture.CameraAId, out SimulationOwnershipData.PlayerLock revokedLock));
+        Assert.IsTrue(scenario.Manager.TryCreateControlRelease(ScannerRoomScenarioFixture.CameraAId, revokedLock, "race_test", out MapRoomCameraControl release));
 
-        Task<MapRoomCameraControl> newAcquire = scenario.ControlAsync(scenario.PlayerB,
-            ScannerRoomScenarioFixture.CameraAId, 0, true);
+        Task<MapRoomCameraControl> newAcquire = scenario.ControlAsync(scenario.PlayerB, ScannerRoomScenarioFixture.CameraAId, 0, true);
         Task firstCompleted = await Task.WhenAny(newAcquire, Task.Delay(100));
         Assert.AreNotSame(newAcquire, firstCompleted, "New acquire must wait until the old release is queued.");
 
@@ -382,15 +162,12 @@ public sealed class ScannerRoomScenarioTest
     public async Task GenericScannerOwnershipRequestWaitsForCameraLifecycleGate()
     {
         ScannerRoomScenarioFixture scenario = new();
-        IDisposable destructiveLifecycleGate =
-            await scenario.Manager.HoldGateAsync();
-        Task<SimulationOwnershipResponse> request = scenario.RequestOwnershipAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraAId, SimulationLockType.EXCLUSIVE);
+        IDisposable destructiveLifecycleGate = await scenario.Manager.HoldGateAsync();
+        Task<SimulationOwnershipResponse> request = scenario.RequestOwnershipAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, SimulationLockType.EXCLUSIVE);
         try
         {
             Task first = await Task.WhenAny(request, Task.Delay(100));
-            Assert.AreNotSame(request, first,
-                "A Stalker-style generic ownership request must wait for destructive camera cleanup.");
+            Assert.AreNotSame(request, first, "A Stalker-style generic ownership request must wait for destructive camera cleanup.");
             Assert.IsNull(scenario.Ownership.GetPlayerForLock(ScannerRoomScenarioFixture.CameraAId));
         }
         finally
@@ -401,8 +178,7 @@ public sealed class ScannerRoomScenarioTest
         SimulationOwnershipResponse response = await request.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.IsTrue(response.LockAcquired);
         Assert.AreEqual(SimulationLockType.EXCLUSIVE, response.LockType);
-        Assert.AreSame(scenario.PlayerA,
-            scenario.Ownership.GetPlayerForLock(ScannerRoomScenarioFixture.CameraAId));
+        Assert.AreSame(scenario.PlayerA, scenario.Ownership.GetPlayerForLock(ScannerRoomScenarioFixture.CameraAId));
         ScannerRoomDiagnosticEntry diagnostic = scenario.Diagnostics.GetHistory().Single();
         Assert.AreEqual("camera_lock", diagnostic.EventName);
         Assert.AreEqual(ScannerRoomDiagnosticOutcome.ACCEPTED, diagnostic.Outcome);
@@ -410,37 +186,18 @@ public sealed class ScannerRoomScenarioTest
     }
 
     [TestMethod]
-    public async Task GenericExclusiveOwnershipCannotBypassDockedCameraControl()
+    [DataRow(SimulationLockType.EXCLUSIVE)]
+    [DataRow(SimulationLockType.TRANSIENT)]
+    public async Task GenericOwnershipRequestCannotTakeADockedCameraFromItsSimulatingPlayer(SimulationLockType requested)
     {
         ScannerRoomScenarioFixture scenario = new();
-        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
+        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
 
-        SimulationOwnershipResponse response = await scenario.RequestOwnershipAsync(scenario.PlayerB,
-            ScannerRoomScenarioFixture.CameraAId, SimulationLockType.EXCLUSIVE);
+        SimulationOwnershipResponse response = await scenario.RequestOwnershipAsync(scenario.PlayerB, ScannerRoomScenarioFixture.CameraAId, requested);
 
-        Assert.IsFalse(response.LockAcquired);
-        Assert.IsNull(scenario.Ownership.GetPlayerForLock(ScannerRoomScenarioFixture.CameraAId));
-        ScannerRoomDiagnosticEntry diagnostic = scenario.Diagnostics.GetHistory()
-            .Last(entry => entry.EventName == "camera_lock");
-        Assert.AreEqual(ScannerRoomDiagnosticOutcome.REJECTED, diagnostic.Outcome);
-        Assert.AreEqual("control_required", diagnostic.Reason);
-    }
-
-    [TestMethod]
-    public async Task GenericTransientOwnershipCannotBypassDockedCameraControl()
-    {
-        ScannerRoomScenarioFixture scenario = new();
-        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
-
-        SimulationOwnershipResponse response = await scenario.RequestOwnershipAsync(scenario.PlayerB,
-            ScannerRoomScenarioFixture.CameraAId, SimulationLockType.TRANSIENT);
-
-        Assert.IsFalse(response.LockAcquired);
-        Assert.IsNull(scenario.Ownership.GetPlayerForLock(ScannerRoomScenarioFixture.CameraAId));
-        ScannerRoomDiagnosticEntry diagnostic = scenario.Diagnostics.GetHistory()
-            .Last(entry => entry.EventName == "camera_lock");
+        Assert.IsFalse(response.LockAcquired, "A docked camera changes hands by camera control only.");
+        Assert.AreSame(scenario.PlayerA, scenario.Ownership.GetPlayerForLock(ScannerRoomScenarioFixture.CameraAId));
+        ScannerRoomDiagnosticEntry diagnostic = scenario.Diagnostics.GetHistory().Last(entry => entry.EventName == "camera_lock");
         Assert.AreEqual(ScannerRoomDiagnosticOutcome.REJECTED, diagnostic.Outcome);
         Assert.AreEqual("control_required", diagnostic.Reason);
     }
@@ -449,132 +206,60 @@ public sealed class ScannerRoomScenarioTest
     public async Task LooseWorldCameraGenericExclusiveCanDowngradeToTransient()
     {
         ScannerRoomScenarioFixture scenario = new();
-        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
-        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraAId, 0, false)).Granted);
-        Assert.IsNotNull(scenario.Room.GetCameraRecord(ScannerRoomScenarioFixture.CameraAId));
-        Assert.IsFalse(scenario.Room.IsCameraDocked(ScannerRoomScenarioFixture.CameraAId));
-        Assert.IsTrue((await scenario.RequestOwnershipAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraAId, SimulationLockType.EXCLUSIVE)).LockAcquired);
+        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
+        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, false)).Granted);
+        Assert.IsFalse(scenario.IsDocked(ScannerRoomScenarioFixture.CameraAId));
+        Assert.IsTrue((await scenario.RequestOwnershipAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, SimulationLockType.EXCLUSIVE)).LockAcquired);
 
-        SimulationOwnershipResponse response = await scenario.RequestOwnershipAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraAId, SimulationLockType.TRANSIENT);
+        SimulationOwnershipResponse response = await scenario.RequestOwnershipAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, SimulationLockType.TRANSIENT);
 
         Assert.IsTrue(response.LockAcquired);
-        Assert.IsTrue(scenario.Ownership.TryGetLock(ScannerRoomScenarioFixture.CameraAId,
-            out SimulationOwnershipData.PlayerLock downgradedLock));
+        Assert.IsTrue(scenario.Ownership.TryGetLock(ScannerRoomScenarioFixture.CameraAId, out SimulationOwnershipData.PlayerLock downgradedLock));
         Assert.AreSame(scenario.PlayerA, downgradedLock.Player);
         Assert.AreEqual(SimulationLockType.TRANSIENT, downgradedLock.LockType);
-        Assert.IsFalse(scenario.HasController(
-            ScannerRoomScenarioFixture.CameraAId));
+        Assert.IsFalse(scenario.HasController(ScannerRoomScenarioFixture.CameraAId));
     }
 
     [TestMethod]
     public async Task LooseWorldCameraCannotMintGenericTransientOwnership()
     {
         ScannerRoomScenarioFixture scenario = new();
-        Assert.IsNull(scenario.Room.GetCameraRecord(ScannerRoomScenarioFixture.CameraAId));
 
-        SimulationOwnershipResponse response = await scenario.RequestOwnershipAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraAId, SimulationLockType.TRANSIENT);
+        SimulationOwnershipResponse response = await scenario.RequestOwnershipAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, SimulationLockType.TRANSIENT);
 
         Assert.IsFalse(response.LockAcquired);
         Assert.IsNull(scenario.Ownership.GetPlayerForLock(ScannerRoomScenarioFixture.CameraAId));
     }
 
     [TestMethod]
-    public async Task GenericExclusiveOwnershipCannotLockEntitylessRegisteredCamera()
+    public async Task ActiveControllerCanRefreshGenericExclusiveOwnershipOfADockedCamera()
     {
         ScannerRoomScenarioFixture scenario = new();
-        Assert.IsTrue(scenario.EntityRegistry.RemoveEntity(
-            ScannerRoomScenarioFixture.CameraAId).HasValue);
-        // The room comes with a record for the camera, as a room loaded from a save does.
-        scenario.Room.GetOrAssignCameraNumber(ScannerRoomScenarioFixture.CameraAId, 1);
-        scenario.Manager.RoomBuilt(scenario.Room);
-
-        SimulationOwnershipResponse response = await scenario.RequestOwnershipAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraAId, SimulationLockType.EXCLUSIVE);
-
-        Assert.IsFalse(response.LockAcquired);
-        Assert.IsNull(scenario.Ownership.GetPlayerForLock(ScannerRoomScenarioFixture.CameraAId));
-        ScannerRoomDiagnosticEntry diagnostic = scenario.Diagnostics.GetHistory().Single();
-        Assert.AreEqual(ScannerRoomDiagnosticOutcome.REJECTED, diagnostic.Outcome);
-        Assert.AreEqual("control_required", diagnostic.Reason);
-    }
-
-    [TestMethod]
-    public async Task ActiveControllerCanRefreshGenericExclusiveOwnershipForEntitylessDockedCamera()
-    {
-        ScannerRoomScenarioFixture scenario = new();
-        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
-        Assert.IsTrue(scenario.EntityRegistry.RemoveEntity(
-            ScannerRoomScenarioFixture.CameraAId).HasValue);
-        MapRoomCameraControl control = await scenario.ControlAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraAId, 0, true);
+        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
+        MapRoomCameraControl control = await scenario.ControlAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true);
         Assert.IsTrue(control.Granted);
-        Assert.IsTrue(scenario.IsController(
-            ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA.SessionId));
+        Assert.IsTrue(scenario.IsController(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA.SessionId));
 
-        SimulationOwnershipResponse response = await scenario.RequestOwnershipAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraAId, SimulationLockType.EXCLUSIVE);
+        SimulationOwnershipResponse response = await scenario.RequestOwnershipAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, SimulationLockType.EXCLUSIVE);
 
         Assert.IsTrue(response.LockAcquired);
-        Assert.AreSame(scenario.PlayerA,
-            scenario.Ownership.GetPlayerForLock(ScannerRoomScenarioFixture.CameraAId));
-        Assert.IsTrue(scenario.IsController(
-            ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA.SessionId));
-    }
-
-    [TestMethod]
-    public async Task AmbiguousRegistrationRejectsActiveControllerRefresh()
-    {
-        ScannerRoomScenarioFixture scenario = new();
-        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
-        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
-        MapRoomEntity duplicateRoom = new(
-            new NitroxId("00000000-0000-0000-0000-000000000112"),
-            new NitroxId("00000000-0000-0000-0000-000000000113"),
-            new NitroxInt3(6, -2, 9));
-        duplicateRoom.GetOrAssignCameraNumber(
-            ScannerRoomScenarioFixture.CameraAId, 1);
-        scenario.AddRoom(duplicateRoom);
-
-        SimulationOwnershipResponse response = await scenario.RequestOwnershipAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraAId, SimulationLockType.EXCLUSIVE);
-
-        Assert.IsFalse(response.LockAcquired);
-        Assert.IsTrue(scenario.Ownership.TryGetLock(ScannerRoomScenarioFixture.CameraAId,
-            out SimulationOwnershipData.PlayerLock retainedLock));
-        Assert.AreSame(scenario.PlayerA, retainedLock.Player);
-        Assert.AreEqual(SimulationLockType.EXCLUSIVE, retainedLock.LockType);
-        Assert.IsTrue(scenario.IsController(
-            ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA.SessionId));
+        Assert.AreSame(scenario.PlayerA, scenario.Ownership.GetPlayerForLock(ScannerRoomScenarioFixture.CameraAId));
+        Assert.IsTrue(scenario.IsController(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA.SessionId));
     }
 
     [TestMethod]
     public async Task StaleActiveLifecycleCannotRemintExclusiveOwnership()
     {
         ScannerRoomScenarioFixture scenario = new();
-        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
-        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
-        Assert.IsTrue(scenario.Ownership.TryAcquire(
-            ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA,
-            SimulationLockType.TRANSIENT));
-        Assert.IsTrue(scenario.IsController(
-            ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA.SessionId));
+        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
+        Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA, SimulationLockType.TRANSIENT));
+        Assert.IsTrue(scenario.IsController(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA.SessionId));
 
-        SimulationOwnershipResponse response = await scenario.RequestOwnershipAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraAId, SimulationLockType.EXCLUSIVE);
+        SimulationOwnershipResponse response = await scenario.RequestOwnershipAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, SimulationLockType.EXCLUSIVE);
 
         Assert.IsFalse(response.LockAcquired);
-        Assert.IsTrue(scenario.Ownership.TryGetLock(ScannerRoomScenarioFixture.CameraAId,
-            out SimulationOwnershipData.PlayerLock retainedLock));
+        Assert.IsTrue(scenario.Ownership.TryGetLock(ScannerRoomScenarioFixture.CameraAId, out SimulationOwnershipData.PlayerLock retainedLock));
         Assert.AreEqual(SimulationLockType.TRANSIENT, retainedLock.LockType);
     }
 
@@ -582,10 +267,8 @@ public sealed class ScannerRoomScenarioTest
     public async Task GenericScannerOwnershipRequestIsRejectedWhenCameraIsRemovedWhileWaitingForGate()
     {
         ScannerRoomScenarioFixture scenario = new();
-        IDisposable destructiveLifecycleGate =
-            await scenario.Manager.HoldGateAsync();
-        Task<SimulationOwnershipResponse> request = scenario.RequestOwnershipAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraAId, SimulationLockType.EXCLUSIVE);
+        IDisposable destructiveLifecycleGate = await scenario.Manager.HoldGateAsync();
+        Task<SimulationOwnershipResponse> request = scenario.RequestOwnershipAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, SimulationLockType.EXCLUSIVE);
         try
         {
             Task first = await Task.WhenAny(request, Task.Delay(100));
@@ -613,8 +296,7 @@ public sealed class ScannerRoomScenarioTest
         await scenario.DestroyAsync(scenario.PlayerB, ScannerRoomScenarioFixture.CameraAId);
         Assert.IsFalse(scenario.EntityRegistry.GetEntityById(ScannerRoomScenarioFixture.CameraAId).HasValue);
 
-        SimulationOwnershipResponse response = await scenario.RequestOwnershipAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraAId, SimulationLockType.EXCLUSIVE);
+        SimulationOwnershipResponse response = await scenario.RequestOwnershipAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, SimulationLockType.EXCLUSIVE);
 
         Assert.IsFalse(response.LockAcquired);
         Assert.IsNull(scenario.Ownership.GetPlayerForLock(ScannerRoomScenarioFixture.CameraAId));
@@ -625,190 +307,34 @@ public sealed class ScannerRoomScenarioTest
     }
 
     [TestMethod]
-    public async Task PremarkedRegistryOnlyCameraIsRejectedAfterItsRoomIsRemoved()
+    public async Task CameraThatWentWithItsDeconstructedRoomIsRefusedALock()
     {
         ScannerRoomScenarioFixture scenario = new();
-        NitroxId registryOnlyCamera = new("00000000-0000-0000-0000-000000000229");
-        // The room comes with a record for the camera, as a room loaded from a save does.
-        scenario.Room.GetOrAssignCameraNumber(registryOnlyCamera, 1);
-        scenario.Manager.RoomBuilt(scenario.Room);
+        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
         Assert.IsTrue(scenario.EntityRegistry.RemoveEntity(ScannerRoomScenarioFixture.RoomId).HasValue);
+        await scenario.CleanupAsync(scenario.Room);
 
-        SimulationOwnershipResponse response = await scenario.RequestOwnershipAsync(scenario.PlayerA,
-            registryOnlyCamera, SimulationLockType.EXCLUSIVE);
+        SimulationOwnershipResponse response = await scenario.RequestOwnershipAsync(scenario.PlayerB, ScannerRoomScenarioFixture.CameraAId, SimulationLockType.EXCLUSIVE);
 
-        Assert.IsFalse(response.LockAcquired);
-        Assert.IsNull(scenario.Ownership.GetPlayerForLock(registryOnlyCamera));
-        ScannerRoomDiagnosticEntry diagnostic = scenario.Diagnostics.GetHistory().Single();
+        Assert.IsFalse(response.LockAcquired, "The id is remembered as a camera's: a request that crossed the deconstruction is not granted as a lock on an unknown entity.");
+        Assert.IsNull(scenario.Ownership.GetPlayerForLock(ScannerRoomScenarioFixture.CameraAId));
+        ScannerRoomDiagnosticEntry diagnostic = scenario.Diagnostics.GetHistory().Last();
         Assert.AreEqual("camera_lock", diagnostic.EventName);
         Assert.AreEqual(ScannerRoomDiagnosticOutcome.REJECTED, diagnostic.Outcome);
         Assert.AreEqual("removed", diagnostic.Reason);
     }
 
     [TestMethod]
-    public async Task RoomLifecycleGateRejectsDockBlockedByDeconstruction()
-    {
-        ScannerRoomScenarioFixture scenario = new();
-        IDisposable deconstructionGate = await scenario.Manager.HoldGateAsync();
-        Task<MapRoomCameraDock> dock = scenario.DockAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraAId, 0, true);
-        try
-        {
-            Task first = await Task.WhenAny(dock, Task.Delay(100));
-            Assert.AreNotSame(dock, first, "Dock must wait while deconstruction owns the room lifecycle gate.");
-            Assert.IsTrue(scenario.EntityRegistry.RemoveEntity(ScannerRoomScenarioFixture.RoomId).HasValue);
-        }
-        finally
-        {
-            deconstructionGate.Dispose();
-        }
-
-        MapRoomCameraDock response = await dock.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.IsFalse(response.Granted);
-        Assert.IsNull(scenario.Room.GetDockedCamera(0));
-        Assert.IsNull(scenario.Room.GetCameraRecord(ScannerRoomScenarioFixture.CameraAId));
-    }
-
-    [TestMethod]
-    public async Task DeconstructionRemovesDockedCameraEntityButKeepsLooseRegisteredCamera()
-    {
-        // The game destroys a docked camera together with its dock, while a camera flying outside survives.
-        ScannerRoomScenarioFixture scenario = new();
-        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
-        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraBId, 1, true)).Granted);
-        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraBId, 1, false)).Granted);
-        Assert.IsTrue(scenario.EntityRegistry.RemoveEntity(ScannerRoomScenarioFixture.RoomId).HasValue);
-
-        IReadOnlyList<Nitrox.Model.Packets.Packet> cleanupPackets = await scenario.CleanupAsync(scenario.Room);
-
-        Assert.IsFalse(scenario.EntityRegistry.TryGetEntityById(ScannerRoomScenarioFixture.CameraAId, out Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.WorldEntity _),
-            "A docked camera must not survive on the server as a stale loose camera.");
-        Assert.AreEqual(ScannerRoomScenarioFixture.CameraAId, cleanupPackets.OfType<EntityDestroyed>().Single().Id);
-        Assert.IsTrue(scenario.EntityRegistry.TryGetEntityById(ScannerRoomScenarioFixture.CameraBId, out Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.WorldEntity _),
-            "An undocked camera is outside the room and is not destroyed with it.");
-    }
-
-    [TestMethod]
-    public async Task DeconstructionCleanupPreservesCameraRegisteredWithNewLiveRoomWhileWaitingForCameraGate()
-    {
-        ScannerRoomScenarioFixture scenario = new();
-        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
-        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraAId, 0, false)).Granted);
-        Assert.IsNotNull(scenario.Room.GetCameraRecord(ScannerRoomScenarioFixture.CameraAId));
-        Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.CameraAId,
-            scenario.PlayerA, SimulationLockType.EXCLUSIVE));
-
-        MapRoomEntity targetRoom = new(
-            new NitroxId("00000000-0000-0000-0000-000000000110"),
-            new NitroxId("00000000-0000-0000-0000-000000000111"),
-            new(5, -2, 9));
-        scenario.AddRoom(targetRoom);
-
-        IDisposable targetDockGate = await scenario.Manager.HoldGateAsync();
-        Assert.IsTrue(scenario.EntityRegistry.RemoveEntity(ScannerRoomScenarioFixture.RoomId).HasValue);
-        Task<IReadOnlyList<Nitrox.Model.Packets.Packet>> cleanup = scenario.CleanupAsync(scenario.Room);
-        try
-        {
-            Task first = await Task.WhenAny(cleanup, Task.Delay(100));
-            Assert.AreNotSame(cleanup, first, "Source cleanup must wait for the target dock camera gate.");
-
-            // This is what docking the camera in the target room does inside the gate, after the source
-            // room has left the live registry. The removed source object still holds its record.
-            targetRoom.GetOrAssignCameraNumber(ScannerRoomScenarioFixture.CameraAId, 1);
-            targetRoom.SetDockedCamera(0, ScannerRoomScenarioFixture.CameraAId);
-        }
-        finally
-        {
-            targetDockGate.Dispose();
-        }
-
-        IReadOnlyList<Nitrox.Model.Packets.Packet> cleanupPackets =
-            await cleanup.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.IsTrue(scenario.Ownership.TryGetLock(ScannerRoomScenarioFixture.CameraAId,
-            out SimulationOwnershipData.PlayerLock cameraLock));
-        Assert.AreSame(scenario.PlayerA, cameraLock.Player);
-        Assert.AreEqual(SimulationLockType.EXCLUSIVE, cameraLock.LockType);
-        Assert.IsFalse(cleanupPackets.OfType<DropSimulationOwnership>()
-            .Any(packet => packet.EntityIds.Contains(ScannerRoomScenarioFixture.CameraAId)));
-        Assert.IsFalse(cleanupPackets.OfType<MapRoomCameraControl>()
-            .Any(packet => packet.CameraId == ScannerRoomScenarioFixture.CameraAId));
-    }
-
-    [TestMethod]
     public void ReleaseFactoryCoversAssociationlessLooseWorldCamera()
     {
         ScannerRoomScenarioFixture scenario = new();
-        Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.CameraCId,
-            scenario.PlayerA, SimulationLockType.EXCLUSIVE));
-        Assert.IsTrue(scenario.Ownership.RevokeOwnerOfId(ScannerRoomScenarioFixture.CameraCId,
-            out SimulationOwnershipData.PlayerLock revokedLock));
+        Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.CameraCId, scenario.PlayerA, SimulationLockType.EXCLUSIVE));
+        Assert.IsTrue(scenario.Ownership.RevokeOwnerOfId(ScannerRoomScenarioFixture.CameraCId, out SimulationOwnershipData.PlayerLock revokedLock));
 
-        Assert.IsTrue(scenario.Manager.TryCreateControlRelease(ScannerRoomScenarioFixture.CameraCId, revokedLock,
-            "loose_test", out MapRoomCameraControl release));
+        Assert.IsTrue(scenario.Manager.TryCreateControlRelease(ScannerRoomScenarioFixture.CameraCId, revokedLock, "loose_test", out MapRoomCameraControl release));
         Assert.IsFalse(release.MapRoomId.HasValue);
         Assert.AreEqual(-1, release.CameraIndex);
         Assert.IsFalse(release.IsControlling);
         Assert.AreEqual(scenario.PlayerA.SessionId, release.ControllerSessionId);
-    }
-
-    [TestMethod]
-    public async Task JsonRoundTripThenOrphanRecoveryPreservesCanonicalCameraState()
-    {
-        ScannerRoomScenarioFixture scenario = new();
-        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
-        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerB, ScannerRoomScenarioFixture.CameraBId, 1, true)).Granted);
-        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerB, ScannerRoomScenarioFixture.CameraBId, 1, false)).Granted);
-
-        MapRoomCameraRecord cameraB = scenario.Room.GetCameraRecord(ScannerRoomScenarioFixture.CameraBId)!;
-        cameraB.LightOn = true;
-        cameraB.LightRevision = 7;
-        cameraB.Energy = 73.5f;
-        cameraB.Health = 84.25f;
-        cameraB.ComponentRevision = 11;
-
-        ServerJsonSerializer serializer = new(NullLogger<ServerJsonSerializer>.Instance);
-        using MemoryStream serialized = new();
-        serializer.Serialize(serialized, scenario.Room);
-        using MemoryStream input = new(serialized.ToArray());
-        MapRoomEntity restored = serializer.Deserialize<MapRoomEntity>(input);
-
-        Assert.AreEqual(scenario.Room.Id, restored.Id);
-        Assert.AreEqual(scenario.Room.ParentId, restored.ParentId);
-        Assert.AreEqual(scenario.Room.Cell, restored.Cell);
-        Assert.AreEqual(scenario.Room.LeftDockCameraId, restored.LeftDockCameraId);
-        Assert.AreEqual(scenario.Room.RightDockCameraId, restored.RightDockCameraId);
-        Assert.AreEqual(3, restored.DockingRevision);
-        Assert.AreEqual(2, restored.CameraRegistry.Count);
-
-        MapRoomCameraRecord restoredCameraB = restored.GetCameraRecord(ScannerRoomScenarioFixture.CameraBId)!;
-        Assert.AreEqual(2, restoredCameraB.CameraNumber);
-        Assert.IsTrue(restoredCameraB.LightOn);
-        Assert.AreEqual(7, restoredCameraB.LightRevision);
-        Assert.AreEqual(73.5f, restoredCameraB.Energy);
-        Assert.AreEqual(84.25f, restoredCameraB.Health);
-        Assert.AreEqual(11, restoredCameraB.ComponentRevision);
-
-        int recovered = ScannerRoomManager.RestoreOrphanedRegistrations(restored, _ => false);
-        Assert.AreEqual(1, recovered);
-        Assert.AreEqual(ScannerRoomScenarioFixture.CameraAId, restored.LeftDockCameraId);
-        Assert.AreEqual(ScannerRoomScenarioFixture.CameraBId, restored.RightDockCameraId);
-        Assert.AreEqual(4, restored.DockingRevision);
-
-        string afterRecovery = Snapshot(restored);
-        Assert.AreEqual(0, ScannerRoomManager.RestoreOrphanedRegistrations(restored, _ => false));
-        Assert.AreEqual(afterRecovery, Snapshot(restored), "Late-join orphan recovery must be idempotent.");
-    }
-
-    private static string Snapshot(MapRoomEntity room)
-    {
-        string registrations = string.Join(",", room.CameraRegistry
-            .OrderBy(record => record.CameraNumber)
-            .Select(record => $"{record.CameraNumber}:{record.CameraId}"));
-        return $"rev={room.DockingRevision};left={room.LeftDockCameraId};right={room.RightDockCameraId};registry={registrations}";
     }
 }

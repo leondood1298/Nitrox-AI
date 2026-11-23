@@ -22,10 +22,50 @@ internal sealed partial class ScannerRoomManager
     public void RoomBuilt(MapRoomEntity room)
     {
         using Hold held = Enter();
-        // The room keeps the id it had if it was deconstructed and is built again.
-        RaiseAboveFloor(room);
         roomsById[room.Id] = room;
+        // The builder's client made the cameras that come with the room. It cannot know which numbers are free, and
+        // what else it says about them does not count: a new camera is full, intact, dark and in the next free dock.
+        // A camera that comes with a room is new. One with the id of an entity that exists would take that entity's
+        // place in the registry: a way to dock any camera without simulating it, or to replace something else.
+        bool[] taken = new bool[MapRoomCameraMetadata.DOCK_COUNT];
+        foreach (WorldEntity camera in room.ChildEntities.OfType<WorldEntity>().Where(IsCamera).ToArray())
+        {
+            int requested = ReadState(camera).DockingIndex;
+            int dockingIndex = requested is >= 0 and < MapRoomCameraMetadata.DOCK_COUNT && !taken[requested] ? requested : Array.IndexOf(taken, false);
+            if (dockingIndex < 0 || entityRegistry.TryGetEntityById(camera.Id, out Entity? _))
+            {
+                room.ChildEntities.Remove(camera);
+                continue;
+            }
+            taken[dockingIndex] = true;
+            camera.ParentId = room.Id;
+            SetState(camera, EnsureCameraNumber(new MapRoomCameraMetadata(dockingIndex: dockingIndex)));
+            if (camera is GlobalRootEntity globalRootCamera)
+            {
+                // Tracked like every camera of a loaded world, so that it is given a simulating player.
+                worldEntityManager.AddOrUpdateGlobalRootEntity(globalRootCamera, false);
+            }
+        }
         RememberCameras(room);
+    }
+
+    /// <summary>
+    ///     Called once a new room is stored. The cameras that came with it need a simulating player, who recharges
+    ///     them: that is the builder, like for the room. The builder is told the numbers the cameras were given;
+    ///     everyone else is sent the room after the numbers were set.
+    /// </summary>
+    public async Task CamerasBuiltAsync(Player builder, MapRoomEntity room)
+    {
+        using Hold held = await EnterAsync();
+        foreach (WorldEntity camera in GetDockedCameras(room))
+        {
+            if (simulationOwnershipData.GetPlayerForLock(camera.Id) == null && simulationOwnershipData.TryAcquire(camera.Id, builder, SimulationLockType.TRANSIENT))
+            {
+                await SendToAllAsync(new SimulationOwnershipChange(camera.Id, builder.SessionId, SimulationLockType.TRANSIENT,
+                    SimulationWhitelist.ShouldSimulateEntityMovement(camera)));
+            }
+            await ReplyAsync(builder, new EntityMetadataUpdate(camera.Id, ReadState(camera)));
+        }
     }
 
     /// <summary>
@@ -67,13 +107,14 @@ internal sealed partial class ScannerRoomManager
     }
 
     /// <summary>
-    ///     Called before an entity is destroyed. A camera loses its controller, its dock and its room record, in that
-    ///     order for clients; any entity leaves the scan results of the rooms that had found it.
+    ///     Called before an entity is destroyed. A camera loses its controller; any entity leaves the scan results of
+    ///     the rooms that had found it. A docked camera leaves its room when its entity is removed.
     /// </summary>
     public async Task EntityRemovedAsync(Player sender, NitroxId id)
     {
         using Hold held = await EnterAsync();
-        if (IsScannerCamera(id) && GetTopology(id).IsScannerCamera)
+        CameraView camera = GetCamera(id);
+        if (camera.Exists)
         {
             // Remembered beyond its removal: a request for it that is still on its way is then refused as one for a
             // camera that is gone, instead of being granted as a lock on an unknown id.
@@ -83,21 +124,9 @@ internal sealed partial class ScannerRoomManager
             {
                 await SendToAllAsync(release);
             }
-        }
-
-        foreach (MapRoomEntity room in GetRooms())
-        {
-            MapRoomCameraRecord? record = room.GetCameraRecord(id);
-            if (record != null)
+            if (camera.DockedRoom != null)
             {
-                // The id of a room's default camera is derived from the room and comes back if the room is rebuilt.
-                RememberFloor(record);
-            }
-            if (room.RemoveCamera(id, out int dockingIndex) && dockingIndex >= 0)
-            {
-                diagnostics.RecordAccepted("destroy", room, id, sender.SessionId, dockingIndex, "registry_removed");
-                await SendToAllAsync(new MapRoomCameraDock(id, room.Id, dockingIndex, room.DockingRevision, true, true, false,
-                    record?.CameraNumber ?? 0, false, record?.LightRevision ?? 0, record?.Energy ?? 0f, 0f, record?.ComponentRevision ?? 0));
+                diagnostics.RecordAccepted("destroy", camera.DockedRoom, id, sender.SessionId, camera.DockedSlot, "docked_camera_removed");
             }
         }
 
@@ -107,14 +136,15 @@ internal sealed partial class ScannerRoomManager
     /// <summary>
     ///     Handles what picking an item up means for Scanner Rooms. Any item leaves the scan results of the rooms that
     ///     had found it. A camera also leaves its dock, its controller and its light behind, in an order clients rely
-    ///     on, so its whole pickup is done here.
+    ///     on, so its whole pickup is done here. Its state goes with it into the inventory.
     /// </summary>
     /// <returns>True if the item is a camera and nothing is left for the caller to do.</returns>
     public async Task<bool> EntityPickedUpAsync(Player sender, Entity item)
     {
         NitroxId id = item.Id;
         using Hold held = await EnterAsync();
-        if (!IsScannerCamera(id) && !mapRoomCameraTechType.Equals(item.TechType))
+        CameraView camera = GetCamera(id);
+        if (!camera.Exists && !IsCamera(item))
         {
             await RemoveFromScanResultsAsync(id);
             return false;
@@ -130,42 +160,30 @@ internal sealed partial class ScannerRoomManager
             await SendToAllAsync(new SimulationOwnershipChange(id, SessionId.SERVER_ID, SimulationLockType.TRANSIENT));
         }
 
-        if (entityRegistry.TryGetEntityById(id, out WorldEntity? worldEntity))
+        if (camera.WorldCamera is { } worldCamera)
         {
+            if (camera.DockedRoom is { } room)
+            {
+                // The game takes a docked camera out of its dock before it goes into an inventory
+                // (MapRoomCamera.OnPickedUp), and the player's report of that can still be on its way.
+                diagnostics.RecordAccepted("pickup", room, id, sender.SessionId, camera.DockedSlot, "undocked");
+                Undock(worldCamera, camera.State);
+                await SendToAllAsync(new MapRoomCameraUndocked(id, room.Id));
+            }
             // Do not track this entity in the open world anymore.
-            worldEntityManager.StopTrackingEntity(worldEntity);
+            worldEntityManager.StopTrackingEntity(worldCamera);
         }
         await RemoveFromScanResultsAsync(id);
 
-        KeepCameraStateOnReplacementInGate(item);
+        MapRoomCameraMetadata state = KeepCameraStateOnReplacementInGate(item);
         // The game switches a camera's light off when it is picked up (MapRoomCamera.OnPickedUp). The stored state
         // follows, or everyone but the player holding the camera would be shown a lit camera when it is dropped again.
         MapRoomCameraLight? lightOff = null;
-        if (item.Metadata is MapRoomCameraMetadata { LightOn: true })
+        if (state.LightOn)
         {
-            lightOff = new MapRoomCameraLight(id, false, SetLooseLight(item, false, out _).LightRevision, true, true);
+            lightOff = new MapRoomCameraLight(id, false, SetLight(item, false, out _).LightRevision, true, true);
         }
         entityRegistry.AddOrUpdate(item);
-
-        foreach (MapRoomEntity room in GetRooms())
-        {
-            if (room.GetCameraRecord(id) is { LightOn: true } litRecord)
-            {
-                litRecord.LightOn = false;
-                litRecord.LightRevision++;
-                lightOff = new MapRoomCameraLight(id, false, litRecord.LightRevision, true, true);
-            }
-            if (room.TryClearDockedCamera(id, out int dockingIndex))
-            {
-                MapRoomCameraRecord? record = room.GetCameraRecord(id);
-                diagnostics.RecordAccepted("pickup", room, id, sender.SessionId, dockingIndex, "undocked");
-                await SendToAllAsync(new MapRoomCameraDock(id, room.Id, dockingIndex, room.DockingRevision, true, true, false,
-                    record?.CameraNumber ?? 0, record?.LightOn ?? false, record?.LightRevision ?? 0,
-                    record?.Energy ?? MapRoomCameraRecord.MAX_ENERGY,
-                    record?.Health ?? MapRoomCameraRecord.MAX_HEALTH, record?.ComponentRevision ?? 0));
-            }
-        }
-
         if (lightOff != null)
         {
             await SendToAllAsync(lightOff);
@@ -174,42 +192,6 @@ internal sealed partial class ScannerRoomManager
         // Have other players respawn the item inside the inventory.
         await SendToOthersAsync(sender, new SpawnEntities(item, forceRespawn: true));
         return true;
-    }
-
-    /// <summary>
-    ///     How each of the given ids is on record as a camera, read at one moment, for checking a batch of movement
-    ///     reports against.
-    /// </summary>
-    public IReadOnlyDictionary<NitroxId, CameraRegistrationState> GetCameraRegistrationStates(IEnumerable<NitroxId?> ids)
-    {
-        Dictionary<NitroxId, CameraRegistrationState> states = [];
-        foreach (NitroxId? id in ids)
-        {
-            if (id != null)
-            {
-                states[id] = default;
-            }
-        }
-
-        using Hold held = Enter();
-        foreach (MapRoomEntity room in GetRooms())
-        {
-            foreach (MapRoomCameraRecord? record in room.CameraRegistry)
-            {
-                if (record?.CameraId != null && states.TryGetValue(record.CameraId, out CameraRegistrationState state))
-                {
-                    states[record.CameraId] = state with { Registrations = state.Registrations + 1 };
-                }
-            }
-            foreach (NitroxId? dockedCameraId in new[] { room.LeftDockCameraId, room.RightDockCameraId })
-            {
-                if (dockedCameraId != null && states.TryGetValue(dockedCameraId, out CameraRegistrationState state))
-                {
-                    states[dockedCameraId] = state with { DockedAssociations = state.DockedAssociations + 1 };
-                }
-            }
-        }
-        return states;
     }
 
     /// <summary>
@@ -258,38 +240,6 @@ internal sealed partial class ScannerRoomManager
     internal static bool IsAllowedRoomParent(NitroxId? roomParentId, NitroxId baseId, (NitroxId From, NitroxId To) transfer) =>
         roomParentId == baseId || (transfer.To == baseId && transfer.From != null && roomParentId == transfer.From);
 
-    /// <summary>
-    ///     Puts every camera the room has a record for, but that exists nowhere (in no dock and as no entity), back
-    ///     into a free dock of the room, preferring the dock its camera number names.
-    /// </summary>
-    /// <returns>How many cameras were put back.</returns>
-    internal static int RestoreOrphanedRegistrations(MapRoomEntity mapRoom, Func<NitroxId, bool> entityExists)
-    {
-        int restored = 0;
-        foreach (MapRoomCameraRecord record in mapRoom.CameraRegistry.OrderBy(record => record.CameraNumber).ToList())
-        {
-            if (entityExists(record.CameraId) || mapRoom.IsCameraDocked(record.CameraId))
-            {
-                continue;
-            }
-
-            int preferredSlot = record.CameraNumber - 1;
-            int slot = preferredSlot is >= 0 and < MapRoomEntity.DOCK_COUNT && mapRoom.GetDockedCamera(preferredSlot) == null
-                ? preferredSlot
-                : mapRoom.LeftDockCameraId == null ? 0
-                : mapRoom.RightDockCameraId == null ? 1
-                : -1;
-            if (slot < 0)
-            {
-                break;
-            }
-
-            mapRoom.SetDockedCamera(slot, record.CameraId);
-            restored++;
-        }
-        return restored;
-    }
-
     private static bool IsPendingRoomGhost(EntityRegistry entityRegistry, UpdateBase update) =>
         entityRegistry.TryGetEntityById(update.FormerGhostId, out GhostEntity ghost) &&
         ghost.TechType?.Name == "BaseMapRoom" &&
@@ -298,8 +248,6 @@ internal sealed partial class ScannerRoomManager
     private async Task RemoveRoomInGateAsync(Player sender, MapRoomEntity mapRoom)
     {
         RememberCameras(mapRoom);
-        // The room keeps its id if it is built again.
-        RememberFloor(mapRoom);
         // Nobody is told that the results are gone: every client drops them together with its own copy of the room.
         scansByRoomId.Remove(mapRoom.Id);
         subscribers.RemoveWhere(subscriber => subscriber.RoomId == mapRoom.Id);
@@ -309,72 +257,32 @@ internal sealed partial class ScannerRoomManager
         worldEntityManager.RemoveGlobalRootEntity(mapRoom.Id, false);
         simulationOwnershipData.RevokeOwnerOfId(mapRoom.Id);
         await SendToAllAsync(new DropSimulationOwnership([mapRoom.Id]));
-        MapRoomCameraRecord[] cameras = mapRoom.CameraRegistry.ToArray();
-        HashSet<NitroxId> dockedCameraIds = cameras.Select(camera => camera.CameraId).Where(mapRoom.IsCameraDocked).ToHashSet();
-        foreach (MapRoomCameraRecord camera in cameras)
+
+        // The room took its children out of the entity registry with it, the cameras in its docks among them. That is
+        // what the game does (MapRoomCameraDocking.OnDestroy), and a room that is built again comes with two new
+        // cameras. What is left of them here is who simulated and who flew them. A camera that was out of its dock
+        // is an entity of the world and stays.
+        WorldEntity[] cameras = GetDockedCameras(mapRoom);
+        foreach (WorldEntity camera in cameras)
         {
-            if (IsRegisteredWithAnotherLiveRoom(mapRoom, camera.CameraId))
+            if (camera is GlobalRootEntity)
             {
-                continue;
+                worldEntityManager.RemoveGlobalRootEntity(camera.Id, false);
             }
-            bool isDocked = dockedCameraIds.Contains(camera.CameraId);
-            bool hadLock = simulationOwnershipData.RevokeOwnerOfId(camera.CameraId, out SimulationOwnershipData.PlayerLock revokedLock);
-            if (hadLock && TryCreateControlRelease(camera.CameraId, revokedLock, "deconstruct", out MapRoomCameraControl? release))
+            if (simulationOwnershipData.RevokeOwnerOfId(camera.Id, out SimulationOwnershipData.PlayerLock revokedLock) &&
+                TryCreateControlRelease(camera.Id, revokedLock, "deconstruct", new CameraView(camera, ReadState(camera), mapRoom), out MapRoomCameraControl? release))
             {
                 await SendToAllAsync(release);
             }
-            // A camera out in the world outlives the room and still needs a simulating player. Control has ended above;
-            // whoever held the lock keeps simulating the camera, because a plain transient lock cannot be requested
-            // for a Scanner Room camera afterwards.
-            if (hadLock && !isDocked && GetTopology(camera.CameraId).IsLooseWorldCamera && TryGetWorldCamera(camera.CameraId, out WorldEntity? looseCamera) &&
-                simulationOwnershipData.TryAcquire(camera.CameraId, revokedLock.Player, SimulationLockType.TRANSIENT))
-            {
-                await SendToAllAsync(new SimulationOwnershipChange(camera.CameraId, revokedLock.Player.SessionId,
-                    SimulationLockType.TRANSIENT, SimulationWhitelist.ShouldSimulateEntityMovement(looseCamera)));
-            }
-            else
-            {
-                await SendToAllAsync(new DropSimulationOwnership([camera.CameraId]));
-            }
-            if (!isDocked)
-            {
-                // Its light, battery and health were only in the room's record, which is about to be gone, so they
-                // move onto the camera itself.
-                MoveStateOutOfRecord(camera);
-                continue;
-            }
-            // A default camera of the room built again gets the same id.
-            RememberFloor(camera);
-            // The game destroys a docked camera together with its dock. Without removing the server's copy, a camera
-            // that had ever been undocked would come back for later joiners as a loose camera at a stale position.
-            if (worldEntityManager.TryDestroyEntity(camera.CameraId, out _))
-            {
-                await RemoveFromScanResultsAsync(camera.CameraId);
-                await SendToAllAsync(new EntityDestroyed(camera.CameraId));
-            }
+            await SendToAllAsync(new DropSimulationOwnership([camera.Id]));
+            await RemoveFromScanResultsAsync(camera.Id);
+            await SendToAllAsync(new EntityDestroyed(camera.Id));
         }
         if (roomsById.TryGetValue(mapRoom.Id, out MapRoomEntity? tracked) && ReferenceEquals(tracked, mapRoom))
         {
             roomsById.Remove(mapRoom.Id);
         }
         diagnostics.RecordAccepted("deconstruct", mapRoom, sessionId: sender.SessionId, reason: "locks_reconciled");
-        logger.ZLogInformation($"Cleared results, subscriptions, room lock, and {cameras.Length} camera registration(s) while deconstructing Scanner Room {mapRoom.Id}");
-    }
-
-    private bool IsRegisteredWithAnotherLiveRoom(MapRoomEntity deconstructingRoom, NitroxId cameraId) =>
-        GetRooms().Exists(room => !ReferenceEquals(room, deconstructingRoom) && room.Id != deconstructingRoom.Id && room.GetCameraRecord(cameraId) != null);
-
-    /// <summary>
-    ///     In how many rooms an id has a camera record and in how many docks it sits.
-    /// </summary>
-    internal readonly record struct CameraRegistrationState(int Registrations, int DockedAssociations)
-    {
-        internal bool HasAssociation => Registrations > 0 || DockedAssociations > 0;
-
-        internal bool IsAmbiguous => Registrations > 1 || DockedAssociations > 1 || DockedAssociations == 1 && Registrations != 1;
-
-        internal bool IsDocked => !IsAmbiguous && DockedAssociations == 1;
-
-        internal bool IsExactlyOneRegistration => !IsAmbiguous && Registrations == 1;
+        logger.ZLogInformation($"Cleared results, subscriptions, room lock and {cameras.Length} docked camera(s) while deconstructing Scanner Room {mapRoom.Id}");
     }
 }

@@ -27,15 +27,17 @@ public sealed class DiagnosticsCommandsTest
     public async Task ScannerRoomCommandOnlyReads()
     {
         ScannerRoomScenarioFixture scenario = new();
-        scenario.Room.LeftDockCameraId = ScannerRoomScenarioFixture.CameraAId;
-        scenario.Room.RightDockCameraId = ScannerRoomScenarioFixture.CameraAId;
+        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
+        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraBId, 1, true)).Granted);
+        // Two cameras in one dock, which the server never stores: the command has to say so and still only read.
+        scenario.SetCameraState(ScannerRoomScenarioFixture.CameraBId, scenario.CameraState(ScannerRoomScenarioFixture.CameraBId).WithDockingIndex(0));
         ScannerRoomCommand command = CreateScannerRoomCommand(scenario, scenario.Diagnostics);
+        ScannerRoomDiagnosticCounters countersBefore = scenario.Diagnostics.GetCounters();
 
         string first = await RunAsync(command);
         string second = await RunAsync(command);
 
-        scenario.Diagnostics.GetCounters().Should().Be(new ScannerRoomDiagnosticCounters(0, 0, 0, 0, 0),
-            "a command that lists state must not change what it lists");
+        scenario.Diagnostics.GetCounters().Should().Be(countersBefore, "a command that lists state must not change what it lists");
         second.Should().Be(first);
         first.Should().Contain(" ! room 00000000 breaks an invariant: duplicate_dock");
     }
@@ -44,24 +46,23 @@ public sealed class DiagnosticsCommandsTest
     public async Task ScannerRoomCommandStatesTotalsAndAnomaliesBeforeTheListing()
     {
         ScannerRoomScenarioFixture scenario = new();
-        scenario.Room.SetDockedCamera(0, ScannerRoomScenarioFixture.CameraAId);
-        scenario.Room.GetOrAssignCameraNumber(ScannerRoomScenarioFixture.CameraAId, 1);
+        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
         // Camera B is held exclusively without anyone piloting it, as after a Stalker grab that never ended.
         Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.CameraBId, scenario.PlayerB, SimulationLockType.EXCLUSIVE));
         ScannerRoomDiagnostics diagnostics = new(NullLogger<ScannerRoomDiagnostics>.Instance, scenario.Ownership);
 
         string[] lines = (await RunAsync(CreateScannerRoomCommand(scenario, diagnostics))).Split(Environment.NewLine);
 
-        lines[0].Should().StartWith($"Scanner Room diagnostics ep={diagnostics.Epoch}: rooms=1, cameras=3 (registered=1, loose=2), events=0 ");
+        lines[0].Should().StartWith($"Scanner Room diagnostics ep={diagnostics.Epoch}: rooms=1, cameras=3 (docked=1, loose=2), events=0 ");
         lines[1].Should().Be("Anomalies (3):");
         lines[2].Should().StartWith(" ! room 00000000 has no simulating player");
         lines.Should().Contain(line => line.StartsWith(" ! camera ") && line.Contains("is locked exclusively by B #2 who is not piloting it"));
         lines.Should().Contain(line => line.StartsWith(" ! camera ") && line.Contains("is out in the world and nobody simulates it"));
         Array.FindIndex(lines, line => line.StartsWith("Rooms and their cameras")).Should().Be(5, "the listing comes after every anomaly");
-        lines[6].Should().StartWith($"[SRD1] snapshot ep={diagnostics.Epoch} side=S room={ScannerRoomScenarioFixture.RoomId} roomLock=none left=00000000.0000 right=- dockRev=1 cams=1 ");
-        lines[7].Should().StartWith("  cam=00000000.0000 number=1 where=slot0 camLock=none control=- light=off lightRev=0 energy=100.0 health=400.0 compRev=0 ")
+        lines[6].Should().StartWith($"[SRD1] snapshot ep={diagnostics.Epoch} side=S room={ScannerRoomScenarioFixture.RoomId} roomLock=none left=00000000.0000 right=- cams=1 ");
+        lines[7].Should().StartWith("  cam=00000000.0000 number=1 where=slot0 camLock=1t control=- light=off lightRev=0 energy=100.0 health=400.0 compRev=0 ")
                 .And.EndWith($" id={ScannerRoomScenarioFixture.CameraAId}");
-        lines[8].Should().Be("Cameras no room has a record for (2):");
+        lines[8].Should().Be("Cameras in no dock (2):");
         lines[9].Should().Contain(" where=world camLock=2x control=- ").And.EndWith($" id={ScannerRoomScenarioFixture.CameraBId}");
         lines[10].Should().Contain(" where=world camLock=none control=- ").And.EndWith($" id={ScannerRoomScenarioFixture.CameraCId}");
     }

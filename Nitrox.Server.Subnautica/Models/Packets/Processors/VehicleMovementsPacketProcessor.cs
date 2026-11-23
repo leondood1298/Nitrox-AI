@@ -31,13 +31,7 @@ internal sealed class VehicleMovementsPacketProcessor(EntityRegistry entityRegis
             return;
         }
 
-        // Scanner Room topology is relevant only to known camera entries. Capture it at most once,
-        // on first use, so every camera in this packet observes one consistent snapshot without
-        // making ordinary vehicle/creature movement ask about every Scanner Room.
-        Lazy<IReadOnlyDictionary<NitroxId, ScannerRoomManager.CameraRegistrationState>> registrationStates =
-            new(() => scannerRoomManager.GetCameraRegistrationStates(packet.Data.Select(movement => movement?.Id)));
-        List<(MovementData Movement, WorldEntity? Entity, bool RequiresCanonicalControl)> candidates =
-            new(packet.Data.Count);
+        List<(MovementData Movement, WorldEntity Entity, bool RequiresCanonicalControl)> candidates = new(packet.Data.Count);
         foreach (MovementData movementData in packet.Data)
         {
             if (!IsFiniteMovement(movementData))
@@ -48,53 +42,8 @@ internal sealed class VehicleMovementsPacketProcessor(EntityRegistry entityRegis
 
             if (entityRegistry.TryGetEntityById(movementData.Id, out WorldEntity worldEntity) && worldEntity.Transform != null)
             {
-                bool validWorldCamera = string.Equals(
-                    worldEntity.TechType?.Name, "MapRoomCamera", StringComparison.Ordinal);
-                ScannerRoomManager.CameraRegistrationState registrationState = default;
-                if (scannerRoomManager.IsScannerCamera(movementData.Id))
-                {
-                    registrationStates.Value.TryGetValue(movementData.Id,
-                        out registrationState);
-                }
-                if (registrationState.HasAssociation && !validWorldCamera)
-                {
-                    logger.ZLogWarningOnce(
-                        $"Rejected Scanner Room camera ID collision for {movementData.Id}");
-                    continue;
-                }
-
-                bool requiresCanonicalControl = false;
-                if (validWorldCamera)
-                {
-                    if (registrationState.IsAmbiguous)
-                    {
-                        logger.ZLogWarningOnce(
-                            $"Rejected ambiguously registered Scanner Room camera movement for {movementData.Id}");
-                        continue;
-                    }
-                    requiresCanonicalControl = registrationState.IsDocked;
-                }
-                candidates.Add((movementData, worldEntity, requiresCanonicalControl));
-                continue;
-            }
-
-            // A newly built Scanner Room can register its canonical cameras before those cameras
-            // exist as server-side world entities. Relay finite simple movement for that bounded
-            // bootstrap gap, but never synthesize an entity or use the exception for an existing
-            // non-world/transform-less entity, a different movement shape, or an ambiguous ID.
-            // The lock lookup is only a cheap prefilter before the room scan; ExecuteForOwner
-            // rechecks the owner and lock type below while ownership is synchronized.
-            if (!entityRegistry.GetEntityById(movementData.Id).HasValue &&
-                movementData is SimpleMovementData &&
-                simulationOwnershipData.TryGetLock(movementData.Id, out SimulationOwnershipData.PlayerLock candidateLock) &&
-                candidateLock.Player == context.Sender &&
-                candidateLock.LockType == SimulationLockType.EXCLUSIVE &&
-                IsController(movementData.Id, context.Sender) &&
-                registrationStates.Value.TryGetValue(movementData.Id,
-                    out ScannerRoomManager.CameraRegistrationState fallbackRegistrationState) &&
-                fallbackRegistrationState.IsExactlyOneRegistration)
-            {
-                candidates.Add((movementData, null, true));
+                // A camera in a dock only moves when a player flies it out, whoever simulates it otherwise.
+                candidates.Add((movementData, worldEntity, scannerRoomManager.IsDockedCamera(worldEntity)));
                 continue;
             }
 
@@ -107,8 +56,7 @@ internal sealed class VehicleMovementsPacketProcessor(EntityRegistry entityRegis
             candidates.Select(candidate => candidate.Movement.Id), ownedIds =>
             {
                 List<MovementData> acceptedMovements = new(candidates.Count);
-                foreach ((MovementData movementData, WorldEntity? worldEntity,
-                             bool requiresCanonicalControl) in candidates)
+                foreach ((MovementData movementData, WorldEntity worldEntity, bool requiresCanonicalControl) in candidates)
                 {
                     if (!ownedIds.Contains(movementData.Id))
                     {
@@ -125,11 +73,8 @@ internal sealed class VehicleMovementsPacketProcessor(EntityRegistry entityRegis
                         continue;
                     }
 
-                    if (worldEntity != null)
-                    {
-                        worldEntity.Transform.Position = movementData.Position;
-                        worldEntity.Transform.Rotation = movementData.Rotation;
-                    }
+                    worldEntity.Transform.Position = movementData.Position;
+                    worldEntity.Transform.Rotation = movementData.Rotation;
 
                     // The sender owns this entity's simulation, so its movement is relayed either way. Only the player's own
                     // server position depends on being the registered pilot: a client can report driven movement a moment

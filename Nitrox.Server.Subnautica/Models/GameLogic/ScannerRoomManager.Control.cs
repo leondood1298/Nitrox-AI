@@ -5,7 +5,6 @@ using System.Linq;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.GameLogic;
-using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
@@ -130,9 +129,8 @@ internal sealed partial class ScannerRoomManager
     }
 
     /// <summary>
-    ///     Handles a generic simulation lock request if it is for a Scanner Room camera. A camera is locked through its
-    ///     control lifecycle, and a docked camera is a record of its room, not a registered entity, so such a request
-    ///     cannot take the path of other entities.
+    ///     Handles a generic simulation lock request if it is for a Scanner Room camera. An exclusive lock on a camera
+    ///     is camera control, which has its own lifecycle, so such a request cannot take the path of other entities.
     /// </summary>
     /// <returns>False if the id is not a Scanner Room camera's and the request is still to be handled.</returns>
     public async Task<bool> TryHandleLockRequestAsync(Player sender, SimulationOwnershipRequest request)
@@ -143,8 +141,8 @@ internal sealed partial class ScannerRoomManager
         }
         using Hold held = await EnterAsync();
         knownCameraIds.TryAdd(request.Id, 0);
-        CameraTopology topology = GetTopology(request.Id);
-        if (!topology.IsScannerCamera)
+        CameraView camera = GetCamera(request.Id);
+        if (!camera.Exists)
         {
             await ReplyAsync(sender, new SimulationOwnershipResponse(request.Id, false, request.LockType));
             diagnostics.RecordRejected("camera_lock", cameraId: request.Id, sessionId: sender.SessionId, reason: "removed");
@@ -152,7 +150,7 @@ internal sealed partial class ScannerRoomManager
         }
         bool requesterOwnsExclusive = simulationOwnershipData.TryGetLock(request.Id, out SimulationOwnershipData.PlayerLock currentLock) &&
                                       currentLock.Player == sender && currentLock.LockType == SimulationLockType.EXCLUSIVE;
-        if (!CanGrantGenericOwnership(topology, IsController(request.Id, sender.SessionId), controllers.ContainsKey(request.Id), request.LockType, requesterOwnsExclusive))
+        if (!CanGrantGenericOwnership(camera, IsController(request.Id, sender.SessionId), controllers.ContainsKey(request.Id), request.LockType, requesterOwnsExclusive))
         {
             await ReplyAsync(sender, new SimulationOwnershipResponse(request.Id, false, request.LockType));
             diagnostics.RecordRejected("camera_lock", cameraId: request.Id, sessionId: sender.SessionId, reason: "control_required");
@@ -203,7 +201,7 @@ internal sealed partial class ScannerRoomManager
         }
 
         using Hold held = await EnterAsync();
-        bool validAssociation = TryResolveCameraNumber(packet.CameraId, packet.CameraNumber, out MapRoomEntity? room, out int cameraNumber);
+        bool validAssociation = TryResolveCameraNumber(packet.CameraId, out MapRoomEntity? room, out int cameraNumber);
         bool accepted = false;
         int width = 0;
         int height = 0;
@@ -324,15 +322,16 @@ internal sealed partial class ScannerRoomManager
         return energy <= 0f && requiresPower ? "empty" : null;
     }
 
-    internal static bool IsValidLooseAssociation(bool validWorldCamera, int registrations, bool isDocked) =>
-        registrations == 0 ? validWorldCamera : registrations == 1 && !isDocked;
-
     /// <summary>
     ///     Creates the packet that must accompany the end of an exclusive lock on a camera, and forgets the holder as
     ///     its controller. A generic simulation ownership packet cannot stand in for it, because it says nothing about
     ///     control. Call inside the gate.
     /// </summary>
     internal bool TryCreateControlRelease(NitroxId cameraId, SimulationOwnershipData.PlayerLock revokedLock, string reason,
+        [NotNullWhen(true)] out MapRoomCameraControl? release) => TryCreateControlRelease(cameraId, revokedLock, reason, null, out release);
+
+    /// <param name="removedCamera">The camera, if it has left the entity registry already and cannot be looked up.</param>
+    private bool TryCreateControlRelease(NitroxId cameraId, SimulationOwnershipData.PlayerLock revokedLock, string reason, CameraView? removedCamera,
         [NotNullWhen(true)] out MapRoomCameraControl? release)
     {
         release = null;
@@ -344,19 +343,15 @@ internal sealed partial class ScannerRoomManager
             return false;
         }
 
-        CameraTopology topology = GetTopology(cameraId);
-        if (topology.Registrations == 0 && !topology.IsWorldCamera)
+        CameraView camera = removedCamera ?? GetCamera(cameraId);
+        if (!camera.Exists)
         {
             return false;
         }
-        if (topology.Registrations > 1)
-        {
-            diagnostics.RecordInvariantFailure("control_revoke", topology.FirstRoom, cameraId, revokedLock.Player.SessionId, reason: "duplicate_registration");
-        }
 
-        Optional<NitroxId> roomId = topology.DockedRoom == null ? Optional.Empty : Optional.Of(topology.DockedRoom.Id);
-        release = new MapRoomCameraControl(cameraId, roomId, topology.DockedSlot, false, topology.LastRecord?.LightOn ?? false, true, true, revokedLock.Player.SessionId);
-        diagnostics.RecordAccepted("control_revoke", topology.DockedRoom ?? topology.FirstRoom, cameraId, revokedLock.Player.SessionId, topology.DockedSlot, reason);
+        Optional<NitroxId> roomId = camera.DockedRoom == null ? Optional.Empty : Optional.Of(camera.DockedRoom.Id);
+        release = new MapRoomCameraControl(cameraId, roomId, camera.DockedSlot, false, camera.State.LightOn, true, true, revokedLock.Player.SessionId);
+        diagnostics.RecordAccepted("control_revoke", camera.DockedRoom, cameraId, revokedLock.Player.SessionId, camera.DockedSlot, reason);
         return true;
     }
 
@@ -365,18 +360,18 @@ internal sealed partial class ScannerRoomManager
     ///     idempotent exclusive refresh by the controller. A generic transient request may give back a Stalker-purpose
     ///     exclusive lock, but it cannot stand in for giving up control.
     /// </summary>
-    private static bool CanGrantGenericOwnership(CameraTopology topology, bool requesterIsController, bool hasController,
+    private static bool CanGrantGenericOwnership(CameraView camera, bool requesterIsController, bool hasController,
         SimulationLockType requestedLock, bool requesterOwnsExclusive)
     {
-        if (topology.IsAmbiguous || !topology.IsKnownScannerCamera)
+        if (!camera.Exists)
         {
             return false;
         }
         return requestedLock switch
         {
             SimulationLockType.EXCLUSIVE when hasController => requesterIsController && requesterOwnsExclusive,
-            SimulationLockType.EXCLUSIVE => topology.IsLooseWorldCamera,
-            SimulationLockType.TRANSIENT => !hasController && requesterOwnsExclusive && topology.IsLooseWorldCamera,
+            SimulationLockType.EXCLUSIVE => camera.IsLooseWorldCamera,
+            SimulationLockType.TRANSIENT => !hasController && requesterOwnsExclusive && camera.IsLooseWorldCamera,
             _ => false
         };
     }
@@ -388,33 +383,27 @@ internal sealed partial class ScannerRoomManager
     private bool TryCreateCurrentGrant(NitroxId cameraId, SessionId controllerSessionId, [NotNullWhen(true)] out MapRoomCameraControl? grant)
     {
         grant = null;
-        CameraTopology topology = GetTopology(cameraId);
-        bool lightOn = topology.LastRecord?.LightOn ?? false;
-        if (topology.Registrations == 0)
+        CameraView camera = GetCamera(cameraId);
+        if (camera.WorldCamera == null)
         {
-            if (!TryGetWorldCamera(cameraId, out WorldEntity? worldCamera))
-            {
-                return false;
-            }
-            lightOn = worldCamera.Metadata is MapRoomCameraMetadata { LightOn: true };
+            return false;
         }
 
-        Optional<NitroxId> roomId = topology.DockedRoom == null ? Optional.Empty : Optional.Of(topology.DockedRoom.Id);
-        grant = new MapRoomCameraControl(cameraId, roomId, topology.DockedSlot, true, lightOn, true, true, controllerSessionId);
-        diagnostics.RecordAccepted("control_sync", topology.DockedRoom, cameraId, controllerSessionId, topology.DockedSlot, "current_pilot_sent_to_joined_player");
+        Optional<NitroxId> roomId = camera.DockedRoom == null ? Optional.Empty : Optional.Of(camera.DockedRoom.Id);
+        grant = new MapRoomCameraControl(cameraId, roomId, camera.DockedSlot, true, camera.State.LightOn, true, true, controllerSessionId);
+        diagnostics.RecordAccepted("control_sync", camera.DockedRoom, cameraId, controllerSessionId, camera.DockedSlot, "current_pilot_sent_to_joined_player");
         return true;
     }
 
     /// <summary>
-    ///     Ends the control lock of <paramref name="sender" />. A camera out in the world keeps them as its simulating
-    ///     player: battery and health reports are only accepted from that player, and a plain transient lock cannot be
-    ///     requested for a Scanner Room camera afterwards. A docked camera is a record of its room and is left without
-    ///     a lock.
+    ///     Ends the control lock of <paramref name="sender" />. A camera in a dock or out in the world keeps them as
+    ///     its simulating player: battery and health reports are only accepted from that player, who also recharges a
+    ///     docked camera, and a plain transient lock cannot be requested for a Scanner Room camera afterwards.
     /// </summary>
     /// <returns>The lock to announce, if the control lock became an ordinary simulation lock.</returns>
     private SimulationOwnershipChange? EndControlLock(NitroxId cameraId, Player sender)
     {
-        if (!GetTopology(cameraId).IsLooseWorldCamera || !TryGetWorldCamera(cameraId, out WorldEntity? looseCamera))
+        if (GetCamera(cameraId).WorldCamera is not { } worldCamera)
         {
             simulationOwnershipData.RevokeIfOwner(cameraId, sender);
             return null;
@@ -430,7 +419,7 @@ internal sealed partial class ScannerRoomManager
             return null;
         }
         return new SimulationOwnershipChange(cameraId, sender.SessionId, SimulationLockType.TRANSIENT,
-            SimulationWhitelist.ShouldSimulateEntityMovement(looseCamera));
+            SimulationWhitelist.ShouldSimulateEntityMovement(worldCamera));
     }
 
     /// <summary>
@@ -467,70 +456,39 @@ internal sealed partial class ScannerRoomManager
     /// </summary>
     private string? GetUnusableReason(NitroxId cameraId, SubnauticaGameMode gameMode)
     {
-        float energy = MapRoomCameraRecord.MAX_ENERGY;
-        float health = MapRoomCameraRecord.MAX_HEALTH;
-        if (GetTopology(cameraId).FirstRecord is { } record)
-        {
-            energy = record.Energy;
-            health = record.Health;
-        }
-        else if (entityRegistry.TryGetEntityById(cameraId, out Entity? camera) && camera.Metadata is MapRoomCameraMetadata ownState)
-        {
-            energy = ownState.Energy;
-            health = ownState.Health;
-        }
-        return GetUnusableReason(energy, health, gameMode);
+        MapRoomCameraMetadata state = GetCamera(cameraId).State;
+        return GetUnusableReason(state.Energy, state.Health, gameMode);
     }
 
     private bool IsValidAssociation(MapRoomCameraControl packet)
     {
-        if (packet.CameraId == null)
-        {
-            return false;
-        }
+        CameraView camera = GetCamera(packet.CameraId);
         if (!packet.IsControlling)
         {
-            return GetTopology(packet.CameraId).IsScannerCamera;
+            return camera.Exists;
         }
-        // A camera in an inventory keeps its room record, and an id can belong to something that is no camera at all.
-        // Only a camera out in the world, or one that exists as a record alone, can be controlled.
-        if (entityRegistry.TryGetEntityById(packet.CameraId, out Entity? existingEntity) &&
-            !(existingEntity is WorldEntity && mapRoomCameraTechType.Equals(existingEntity.TechType)))
+        // Only a camera in a dock or out in the world can be controlled, not one in an inventory; and an id can belong
+        // to something that is no camera at all.
+        if (camera.WorldCamera == null)
         {
             return false;
         }
-        if (packet.MapRoomId.HasValue)
-        {
-            return packet.CameraIndex is >= 0 and < MapRoomEntity.DOCK_COUNT && TryGetRoom(packet.MapRoomId.Value, out MapRoomEntity? mapRoom) &&
-                   mapRoom.GetCameraRecord(packet.CameraId) != null && mapRoom.GetDockedCamera(packet.CameraIndex) == packet.CameraId;
-        }
-
-        CameraTopology topology = GetTopology(packet.CameraId);
-        return IsValidLooseAssociation(topology.IsWorldCamera, topology.Registrations, topology.DockedRoom != null);
+        // The request says where the player's game has the camera. If the camera is somewhere else by now, the
+        // player acts on something that has changed.
+        return packet.MapRoomId.HasValue
+            ? camera.DockedRoom != null && camera.DockedRoom.Id == packet.MapRoomId.Value && camera.State.DockingIndex == packet.CameraIndex
+            : camera.DockedRoom == null;
     }
 
-    private bool TryResolveCameraNumber(NitroxId cameraId, int requestedCameraNumber, out MapRoomEntity? room, out int cameraNumber)
+    /// <summary>
+    ///     The number a camera's preview is shown under, which is the number the server gave the camera.
+    /// </summary>
+    private bool TryResolveCameraNumber(NitroxId cameraId, out MapRoomEntity? room, out int cameraNumber)
     {
-        room = null;
-        cameraNumber = 0;
-        CameraTopology topology = GetTopology(cameraId);
-        if (topology.Registrations > 1)
-        {
-            return false;
-        }
-        if (topology.Registrations == 1)
-        {
-            room = topology.LastRoom;
-            cameraNumber = topology.LastRecord!.CameraNumber;
-            return cameraNumber > 0;
-        }
-
-        if (topology.IsWorldCamera && MapRoomCameraPreview.IsValidLooseCameraNumber(requestedCameraNumber))
-        {
-            cameraNumber = requestedCameraNumber;
-            return true;
-        }
-        return false;
+        CameraView camera = GetCamera(cameraId);
+        room = camera.DockedRoom;
+        cameraNumber = camera.State.CameraNumber;
+        return camera.WorldCamera != null && cameraNumber > 0;
     }
 
     private static MapRoomCameraControl CreateControlResponse(MapRoomCameraControl packet, bool granted, SessionId controller) =>

@@ -26,7 +26,6 @@ internal sealed class ScannerRoomCommand(EntityRegistry entityRegistry, ScannerR
     ScannerRoomManager scannerRoomManager) : ICommandHandler
 {
     private const int RECENT_ENTRY_LIMIT = 25;
-    private static readonly NitroxTechType mapRoomCameraTechType = new("MapRoomCamera");
 
     [Description("Lists Scanner Room totals and anomalies, then every room and camera with its locks, then the recent transitions")]
     public async Task Execute(ICommandContext context)
@@ -35,7 +34,6 @@ internal sealed class ScannerRoomCommand(EntityRegistry entityRegistry, ScannerR
         IReadOnlyList<ScannerRoomSnapshot> rooms = scannerRoomManager.GetSnapshots();
         List<string> anomalies = [];
         List<RoomView> roomViews = [];
-        Dictionary<NitroxId, int> registrations = [];
         Dictionary<NitroxId, int> dockings = [];
         foreach (ScannerRoomSnapshot captured in rooms)
         {
@@ -48,28 +46,20 @@ internal sealed class ScannerRoomCommand(EntityRegistry entityRegistry, ScannerR
             }
             if (!simulationOwnershipData.TryGetLock(room.Id, out _))
             {
-                anomalies.Add($"room {ShortRoom(room.Id)} has no simulating player: scan results, scan types and docked camera recharge are only accepted from that player");
+                anomalies.Add($"room {ShortRoom(room.Id)} has no simulating player: scan results and scan types are only accepted from that player");
             }
             foreach (CameraView camera in view.Cameras)
             {
-                registrations[camera.Id] = registrations.GetValueOrDefault(camera.Id) + 1;
-                if (camera.Slot >= 0)
-                {
-                    dockings[camera.Id] = dockings.GetValueOrDefault(camera.Id) + 1;
-                }
+                dockings[camera.Id] = dockings.GetValueOrDefault(camera.Id) + 1;
             }
         }
 
-        // Cameras no room has a record for keep their state on their own entity.
+        // The cameras that are out in the world and in no dock.
         CameraView[] looseCameras = entityRegistry.GetEntities<WorldEntity>()
-                                                  .Where(entity => mapRoomCameraTechType.Equals(entity.TechType) && !registrations.ContainsKey(entity.Id))
+                                                  .Where(entity => ScannerRoomManager.IsCamera(entity) && !dockings.ContainsKey(entity.Id))
                                                   .OrderBy(entity => entity.Id.ToString(), StringComparer.Ordinal)
-                                                  .Select(ReadLooseCamera)
+                                                  .Select(camera => ReadCamera(camera, MapRoomCameraMetadata.NOT_DOCKED))
                                                   .ToArray();
-        foreach (KeyValuePair<NitroxId, int> registration in registrations.Where(pair => pair.Value > 1))
-        {
-            anomalies.Add($"camera {ShortCamera(registration.Key)} is registered with {registration.Value} rooms");
-        }
         foreach (KeyValuePair<NitroxId, int> docking in dockings.Where(pair => pair.Value > 1))
         {
             anomalies.Add($"camera {ShortCamera(docking.Key)} is docked in {docking.Value} rooms");
@@ -85,11 +75,11 @@ internal sealed class ScannerRoomCommand(EntityRegistry entityRegistry, ScannerR
 
         ScannerRoomDiagnosticCounters counters = diagnostics.GetCounters();
         IReadOnlyList<ScannerRoomDiagnosticEntry> history = diagnostics.GetHistory();
-        int registeredCameras = registrations.Count;
+        int dockedCameras = dockings.Count;
 
         StringBuilder output = new();
         output.AppendLine(string.Create(CultureInfo.InvariantCulture,
-            $"Scanner Room diagnostics ep={diagnostics.Epoch}: rooms={rooms.Count}, cameras={registeredCameras + looseCameras.Length} (registered={registeredCameras}, loose={looseCameras.Length}), events={counters.Recorded} (accepted={counters.Accepted}, rejected={counters.Rejected}, invariant={counters.InvariantFailures}, checkpoints={counters.Checkpoints}), rejections without a log line={counters.SuppressedWarnings}, unchanged repeats skipped={diagnostics.UnchangedRepeats}, diagnostics failures={diagnostics.OwnFailures}"));
+            $"Scanner Room diagnostics ep={diagnostics.Epoch}: rooms={rooms.Count}, cameras={dockedCameras + looseCameras.Length} (docked={dockedCameras}, loose={looseCameras.Length}), events={counters.Recorded} (accepted={counters.Accepted}, rejected={counters.Rejected}, invariant={counters.InvariantFailures}, checkpoints={counters.Checkpoints}), rejections without a log line={counters.SuppressedWarnings}, unchanged repeats skipped={diagnostics.UnchangedRepeats}, diagnostics failures={diagnostics.OwnFailures}"));
         output.AppendLine(string.Create(CultureInfo.InvariantCulture, $"Anomalies ({anomalies.Count}):"));
         foreach (string anomaly in anomalies)
         {
@@ -101,13 +91,13 @@ internal sealed class ScannerRoomCommand(EntityRegistry entityRegistry, ScannerR
         {
             ScannerRoomStateSnapshot snapshot = view.Snapshot;
             output.AppendLine(string.Create(CultureInfo.InvariantCulture,
-                $"{ScannerRoomDiagnostics.PREFIX} snapshot ep={diagnostics.Epoch} side=S room={view.Id} roomLock={diagnostics.DescribeLock(view.Id)} left={ShortCamera(snapshot.LeftDockCameraId)} right={ShortCamera(snapshot.RightDockCameraId)} dockRev={snapshot.DockingRevision} cams={snapshot.CameraCount} target={(string.IsNullOrEmpty(snapshot.ScanTarget) ? DiagnosticLineFormat.NOT_APPLICABLE : snapshot.ScanTarget)} nodes={snapshot.NodesScanned} metaGen={snapshot.MetadataGeneration} results={view.ScanResultCount} types={view.ScanTypeCount} crafting={(snapshot.FabricatorActive ? 1 : 0)} fp={snapshot.Fingerprint}"));
+                $"{ScannerRoomDiagnostics.PREFIX} snapshot ep={diagnostics.Epoch} side=S room={view.Id} roomLock={diagnostics.DescribeLock(view.Id)} left={ShortCamera(snapshot.LeftDockCameraId)} right={ShortCamera(snapshot.RightDockCameraId)} cams={snapshot.CameraCount} target={(string.IsNullOrEmpty(snapshot.ScanTarget) ? DiagnosticLineFormat.NOT_APPLICABLE : snapshot.ScanTarget)} nodes={snapshot.NodesScanned} metaGen={snapshot.MetadataGeneration} results={view.ScanResultCount} types={view.ScanTypeCount} crafting={(snapshot.FabricatorActive ? 1 : 0)} fp={snapshot.Fingerprint}"));
             foreach (CameraView camera in view.Cameras)
             {
                 output.AppendLine(FormatCamera(camera, locksByCamera[camera.Id]));
             }
         }
-        output.AppendLine(string.Create(CultureInfo.InvariantCulture, $"Cameras no room has a record for ({looseCameras.Length}):"));
+        output.AppendLine(string.Create(CultureInfo.InvariantCulture, $"Cameras in no dock ({looseCameras.Length}):"));
         foreach (CameraView camera in looseCameras)
         {
             output.AppendLine(FormatCamera(camera, locksByCamera[camera.Id]));
@@ -151,43 +141,33 @@ internal sealed class ScannerRoomCommand(EntityRegistry entityRegistry, ScannerR
     }
 
     /// <summary>
-    ///     Reads a room and its camera records from a copy the Scanner Room manager took inside its gate, the gate the
-    ///     packet processors change them in, so the docks, revisions, records and fingerprint of one room belong to the
-    ///     same moment.
+    ///     Reads a room and the cameras in its docks from a copy the Scanner Room manager took inside its gate, the gate
+    ///     the packet processors change them in, so the cameras, their state and the fingerprint of one room belong to
+    ///     the same moment.
     /// </summary>
     private static RoomView ReadRoom(ScannerRoomSnapshot captured)
     {
         MapRoomEntity room = captured.Room;
         ScannerRoomStateSnapshot snapshot = ScannerRoomStateFingerprint.Create(room);
-        List<CameraView> cameras = [];
-        foreach (MapRoomCameraRecord? record in room.CameraRegistry ?? [])
-        {
-            if (record?.CameraId == null)
-            {
-                continue;
-            }
-            int slot = record.CameraId == snapshot.LeftDockCameraId ? 0 : record.CameraId == snapshot.RightDockCameraId ? 1 : -1;
-            cameras.Add(new CameraView(record.CameraId, record.CameraNumber, slot, record.LightOn, record.LightRevision,
-                record.Energy, record.Health, record.ComponentRevision));
-        }
-        return new RoomView(room.Id, snapshot, ScannerRoomStateFingerprint.Validate(room), [.. cameras.OrderBy(camera => camera.Number)], captured.ScanResultCount,
-            captured.ScanTypeCount);
+        CameraView[] cameras = [.. ScannerRoomStateFingerprint.GetCameras(room).Select(camera => ReadCamera(camera, ScannerRoomStateFingerprint.ReadState(camera).DockingIndex))
+                                                                .OrderBy(camera => camera.Slot)];
+        return new RoomView(room.Id, snapshot, ScannerRoomStateFingerprint.Validate(room), cameras, captured.ScanResultCount, captured.ScanTypeCount);
     }
 
     /// <summary>
-    ///     A camera without a room record keeps its state on its entity as one object that is replaced as a whole, so
-    ///     one read of it is one moment.
+    ///     A camera keeps its state on its entity as one object that is replaced as a whole, so one read of it is one
+    ///     moment.
     /// </summary>
-    private static CameraView ReadLooseCamera(WorldEntity camera)
+    private static CameraView ReadCamera(Entity camera, int slot)
     {
-        MapRoomCameraMetadata state = camera.Metadata as MapRoomCameraMetadata ?? new MapRoomCameraMetadata();
-        return new CameraView(camera.Id, 0, -1, state.LightOn, state.LightRevision, state.Energy, state.Health, state.ComponentRevision);
+        MapRoomCameraMetadata state = ScannerRoomStateFingerprint.ReadState(camera);
+        return new CameraView(camera.Id, state.CameraNumber, slot, state.LightOn, state.LightRevision, state.Energy, state.Health, state.ComponentRevision);
     }
 
     private CameraLocks ReadCameraLocks(CameraView camera, List<string> anomalies)
     {
         bool hasLock = simulationOwnershipData.TryGetLock(camera.Id, out SimulationOwnershipData.PlayerLock playerLock);
-        bool inWorld = entityRegistry.TryGetEntityById(camera.Id, out WorldEntity worldEntity) && mapRoomCameraTechType.Equals(worldEntity.TechType);
+        bool inWorld = entityRegistry.TryGetEntityById(camera.Id, out WorldEntity worldEntity) && ScannerRoomManager.IsCamera(worldEntity);
         bool hasController = scannerRoomManager.TryGetController(camera.Id, out SessionId controller);
         bool holderControls = hasLock && playerLock.LockType == SimulationLockType.EXCLUSIVE &&
                               hasController && controller == playerLock.Player.SessionId;

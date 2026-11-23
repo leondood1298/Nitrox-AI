@@ -6,6 +6,7 @@ using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Server.Subnautica.Models.AppEvents;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
@@ -14,7 +15,7 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic;
 
 /// <summary>
 ///     Everything the server knows and decides about Scanner Rooms and their cameras: which camera sits in which dock,
-///     who controls a camera, the light, battery and health of every camera, a room's scan target, scan results and
+///     who controls a camera, the light, battery, health and number of every camera, a room's scan target, scan results and
 ///     available scan types, and who is subscribed to its results. Packet processors and the other services hand a
 ///     request to one method here; it validates, changes the state and sends the answer. Scan results, available
 ///     types and subscriptions are not part of any entity: they are neither saved nor sent to a joining player.
@@ -25,11 +26,10 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic;
 ///     </para>
 ///     <list type="bullet">
 ///         <item>
-///             Every read and every change of Scanner Room state: the Scanner Room data of a <see cref="MapRoomEntity" />
-///             and its camera records, the state a camera without a record keeps on its own entity, and the private
-///             state below. <see cref="MapRoomEntity" /> and the record classes are only data: nothing outside this
-///             class changes them, and whoever needs to read them outside gets copies
-///             (<see cref="GetSnapshot" />, <see cref="DetachRooms" />).
+///             Every read and every change of Scanner Room state: the Scanner Room data of a <see cref="MapRoomEntity" />,
+///             which cameras are its children, the state every camera keeps on its own entity, and the private
+///             state below. Nothing outside this class changes them, and whoever needs to read a room outside gets
+///             a copy (<see cref="GetSnapshot" />, <see cref="DetachRooms" />).
 ///         </item>
 ///         <item>
 ///             The packets that announce a change. They are queued before the gate is left (the packet sender queues
@@ -65,8 +65,8 @@ internal sealed partial class ScannerRoomManager(IPacketSender packetSender, Ent
     private readonly Dictionary<NitroxId, MapRoomEntity> roomsById = [];
 
     /// <summary>
-    ///     Every id that has ever been handled as a Scanner Room camera, kept after the camera is gone. A request that
-    ///     is still on its way when its camera is removed is then recognised as one for a camera and refused, instead
+    ///     Every id that has ever been handled as a Scanner Room camera, kept after the camera is gone or went into an
+    ///     inventory. A request that is still on its way then is recognised as one for a camera and refused, instead
     ///     of being treated as a request for an ordinary entity. Written inside the gate, read from anywhere.
     /// </summary>
     private readonly ConcurrentDictionary<NitroxId, byte> knownCameraIds = new();
@@ -84,16 +84,21 @@ internal sealed partial class ScannerRoomManager(IPacketSender packetSender, Ent
     }
 
     /// <summary>
-    ///     Whether this id belongs to a Scanner Room camera: one out in the world, or one a room has, or ever had, a
-    ///     record for. Does not enter the gate.
+    ///     Whether this id belongs to a Scanner Room camera: one in a dock or out in the world, or one that ever was
+    ///     handled as a camera. Does not enter the gate.
     /// </summary>
     public bool IsScannerCamera(NitroxId id) => id != null && (knownCameraIds.ContainsKey(id) || IsWorldCamera(id));
 
     /// <summary>
+    ///     Whether this entity is a camera that sits in a dock. A docked camera does not move unless a player controls
+    ///     it. Does not enter the gate.
+    /// </summary>
+    public bool IsDockedCamera(WorldEntity entity) =>
+        IsCamera(entity) && entity.ParentId != null && entityRegistry.TryGetEntityById(entity.ParentId, out MapRoomEntity? _);
+
+    /// <summary>
     ///     Called once the saved world is in the entity registry and before any player can connect. Finds the rooms and
-    ///     their cameras, and puts every camera that a room still has a record for, but that exists nowhere (in no dock
-    ///     and as no entity), back into a free dock of that room. That changes dock state without a packet, which is
-    ///     only right while nobody is connected who would have to be told.
+    ///     the cameras, and how far the camera numbers have got.
     /// </summary>
     public void WorldLoaded()
     {
@@ -103,16 +108,14 @@ internal sealed partial class ScannerRoomManager(IPacketSender packetSender, Ent
             roomsById[room.Id] = room;
             RememberCameras(room);
         }
-        List<MapRoomEntity> rooms = GetRooms();
-        foreach (MapRoomEntity room in rooms)
+        List<Entity> cameras = entityRegistry.GetAllEntities().Where(IsCamera).ToList();
+        lastCameraNumber = cameras.Count == 0 ? 0 : cameras.Max(camera => ReadState(camera).CameraNumber);
+        // In a fixed order, so that a world whose cameras have no numbers yet gets the same ones every time it is loaded.
+        foreach (Entity camera in cameras.OrderBy(camera => camera.Id.ToString(), StringComparer.Ordinal))
         {
-            int restored = RestoreOrphanedRegistrations(room, id => entityRegistry.TryGetEntityById(id, out Entity? _));
-            if (restored > 0)
-            {
-                diagnostics.RecordInvariantFailure("orphan_recovery", room, reason: $"restored_{restored}");
-            }
+            SetState(camera, EnsureCameraNumber(ReadState(camera)));
         }
-        foreach (MapRoomEntity room in rooms)
+        foreach (MapRoomEntity room in GetRooms())
         {
             diagnostics.RecordCheckpoint("load", room);
         }
@@ -153,47 +156,9 @@ internal sealed partial class ScannerRoomManager(IPacketSender packetSender, Ent
     public List<GlobalRootEntity> DetachRooms(IEnumerable<GlobalRootEntity> entities) => DetachRooms(entities, out _);
 
     /// <summary>
-    ///     The global root entities a joining player is sent: without the cameras that sit in a dock (the client
-    ///     creates those from the room's record), and with every room as a copy from the same moment the docks were
-    ///     read at.
-    /// </summary>
-    public List<GlobalRootEntity> GetInitialSyncEntities(IEnumerable<GlobalRootEntity> entities)
-    {
-        using Hold held = Enter();
-        HashSet<NitroxId> dockedCameraIds = GetDockedCameraIdsInGate();
-        return DetachRoomsInGate(entities.Where(entity => !dockedCameraIds.Contains(entity.Id)), out _);
-    }
-
-    /// <summary>
-    ///     The cameras that sit in a dock right now. A docked camera is a record of its room and is simulated by nobody.
-    /// </summary>
-    public HashSet<NitroxId> GetDockedCameraIds()
-    {
-        using Hold held = Enter();
-        return GetDockedCameraIdsInGate();
-    }
-
-    /// <summary>
     ///     For tests that stand in for an operation in flight: nothing else gets into the gate until the result is disposed.
     /// </summary>
     internal async Task<IDisposable> HoldGateAsync() => await EnterAsync();
-
-    private HashSet<NitroxId> GetDockedCameraIdsInGate()
-    {
-        HashSet<NitroxId> dockedCameraIds = [];
-        foreach (MapRoomEntity room in GetRooms())
-        {
-            if (room.LeftDockCameraId != null)
-            {
-                dockedCameraIds.Add(room.LeftDockCameraId);
-            }
-            if (room.RightDockCameraId != null)
-            {
-                dockedCameraIds.Add(room.RightDockCameraId);
-            }
-        }
-        return dockedCameraIds;
-    }
 
     private List<GlobalRootEntity> DetachRoomsInGate(IEnumerable<GlobalRootEntity> entities, out IReadOnlyList<ScannerRoomSnapshot> rooms)
     {
@@ -235,25 +200,23 @@ internal sealed partial class ScannerRoomManager(IPacketSender packetSender, Ent
     }
 
     /// <summary>
-    ///     An exact copy: unlike the constructor used for loading a save, nothing is normalized, so a broken room is
-    ///     saved and reported as it is.
+    ///     A copy of the room and of the cameras in its docks. The room's other children are the same objects as in
+    ///     the original; nothing in this class changes them.
     /// </summary>
     private static MapRoomEntity CopyRoom(MapRoomEntity room) => new(room.Id, room.ParentId!, room.Cell)
     {
         TechType = room.TechType,
         Metadata = room.Metadata,
-        ChildEntities = [.. room.ChildEntities],
+        ChildEntities = [.. room.ChildEntities.Select(child => child is GlobalRootEntity camera && IsCamera(camera) ? CopyCamera(camera) : child)],
         Transform = room.Transform,
         Level = room.Level,
         ClassId = room.ClassId,
         SpawnedByServer = room.SpawnedByServer,
-        LeftDockCameraId = room.LeftDockCameraId,
-        RightDockCameraId = room.RightDockCameraId,
-        DockingRevision = room.DockingRevision,
-        CameraRegistry = [.. room.CameraRegistry.Select(record => record == null ? null! : new MapRoomCameraRecord(record.CameraId, record.CameraNumber, record.LightOn,
-            record.LightRevision, record.Energy, record.Health, record.ComponentRevision))],
         FabricatorMetadata = room.FabricatorMetadata
     };
+
+    private static GlobalRootEntity CopyCamera(GlobalRootEntity camera) =>
+        new(camera.Transform, camera.Level, camera.ClassId, camera.SpawnedByServer, camera.Id, camera.TechType, camera.Metadata, camera.ParentId, [.. camera.ChildEntities]);
 
     private async ValueTask<Hold> EnterAsync()
     {
@@ -295,20 +258,12 @@ internal sealed partial class ScannerRoomManager(IPacketSender packetSender, Ent
 
     private void RememberCameras(MapRoomEntity room)
     {
-        foreach (MapRoomCameraRecord? record in room.CameraRegistry)
+        foreach (Entity child in room.ChildEntities)
         {
-            if (record?.CameraId != null)
+            if (IsCamera(child))
             {
-                knownCameraIds.TryAdd(record.CameraId, 0);
+                knownCameraIds.TryAdd(child.Id, 0);
             }
-        }
-        if (room.LeftDockCameraId != null)
-        {
-            knownCameraIds.TryAdd(room.LeftDockCameraId, 0);
-        }
-        if (room.RightDockCameraId != null)
-        {
-            knownCameraIds.TryAdd(room.RightDockCameraId, 0);
         }
     }
 
@@ -335,50 +290,21 @@ internal sealed partial class ScannerRoomManager(IPacketSender packetSender, Ent
     private bool TryGetWorldCamera(NitroxId cameraId, [NotNullWhen(true)] out WorldEntity? camera) =>
         entityRegistry.TryGetEntityById(cameraId, out camera) && mapRoomCameraTechType.Equals(camera.TechType);
 
-    /// <summary>
-    ///     Where a camera is on record, across all rooms. A camera belongs to at most one room and sits in at most one
-    ///     dock; anything else is a broken state that the callers refuse to build on.
-    /// </summary>
-    private CameraTopology GetTopology(NitroxId cameraId)
-    {
-        int registrations = 0;
-        int dockedAssociations = 0;
-        MapRoomEntity? firstRoom = null;
-        MapRoomCameraRecord? firstRecord = null;
-        MapRoomEntity? lastRoom = null;
-        MapRoomCameraRecord? lastRecord = null;
-        MapRoomEntity? dockedRoom = null;
-        int dockedSlot = -1;
-        foreach (MapRoomEntity room in GetRooms())
-        {
-            if (room.IsCameraDocked(cameraId))
-            {
-                dockedAssociations++;
-            }
-            if (room.GetCameraRecord(cameraId) is not { } record)
-            {
-                continue;
-            }
-            registrations++;
-            firstRoom ??= room;
-            firstRecord ??= record;
-            lastRoom = room;
-            lastRecord = record;
-            int slot = GetDockingIndex(room, cameraId);
-            if (slot >= 0)
-            {
-                dockedRoom = room;
-                dockedSlot = slot;
-            }
-        }
-        return new CameraTopology(IsWorldCamera(cameraId), registrations, dockedAssociations, firstRoom, firstRecord, lastRoom, lastRecord, dockedRoom, dockedSlot);
-    }
+    internal static bool IsCamera(Entity? entity) => entity != null && mapRoomCameraTechType.Equals(entity.TechType);
 
     /// <summary>
-    ///     The dock the camera sits in, or -1.
+    ///     A camera as the entity registry has it: in a dock (a child of that room), loose in the world, or in an
+    ///     inventory. Empty if the id is not a camera's.
     /// </summary>
-    private static int GetDockingIndex(MapRoomEntity room, NitroxId cameraId) =>
-        room.LeftDockCameraId == cameraId ? 0 : room.RightDockCameraId == cameraId ? 1 : -1;
+    private CameraView GetCamera(NitroxId? cameraId)
+    {
+        if (cameraId == null || !entityRegistry.TryGetEntityById(cameraId, out Entity? entity) || !IsCamera(entity))
+        {
+            return new CameraView(null, new MapRoomCameraMetadata(), null);
+        }
+        MapRoomEntity? dockedRoom = entity is WorldEntity && entity.ParentId != null && TryGetRoom(entity.ParentId, out MapRoomEntity? room) ? room : null;
+        return new CameraView(entity, ReadState(entity), dockedRoom);
+    }
 
     private ValueTask ReplyAsync<T>(Player player, T packet) where T : Packet => packetSender.SendPacketAsync(packet, player.SessionId);
 
@@ -391,35 +317,23 @@ internal sealed partial class ScannerRoomManager(IPacketSender packetSender, Ent
         public void Dispose() => gate.Release();
     }
 
-    /// <param name="FirstRoom">The first room found with a record for the camera.</param>
-    /// <param name="LastRoom">The last room found with a record for the camera; the same room unless the state is broken.</param>
-    /// <param name="DockedRoom">The room that has both a record for the camera and the camera in a dock.</param>
-    private readonly record struct CameraTopology(
-        bool IsWorldCamera,
-        int Registrations,
-        int DockedAssociations,
-        MapRoomEntity? FirstRoom,
-        MapRoomCameraRecord? FirstRecord,
-        MapRoomEntity? LastRoom,
-        MapRoomCameraRecord? LastRecord,
-        MapRoomEntity? DockedRoom,
-        int DockedSlot)
+    /// <param name="Entity">The camera's entity, or null if there is no such camera.</param>
+    /// <param name="State">What the camera's entity holds, or the state of a new camera if it holds nothing.</param>
+    /// <param name="DockedRoom">The room the camera is a child of, if it sits in a dock.</param>
+    private readonly record struct CameraView(Entity? Entity, MapRoomCameraMetadata State, MapRoomEntity? DockedRoom)
     {
-        public bool IsAmbiguous => Registrations > 1 || DockedAssociations > 1 || DockedAssociations == 1 && Registrations != 1;
-
-        public bool IsScannerCamera => IsWorldCamera || Registrations > 0;
-
-        public bool IsKnownScannerCamera => !IsAmbiguous && (IsWorldCamera || Registrations == 1);
+        public bool Exists => Entity != null;
 
         /// <summary>
-        ///     A registered world entity that is docked nowhere. Such a camera is simulated by a player like any other
-        ///     loose entity, while a docked camera is only a record of its room and is simulated by nobody.
+        ///     The camera if it is in a dock or loose in the world, null if it is in an inventory or does not exist.
         /// </summary>
-        public bool IsLooseWorldCamera => IsKnownScannerCamera && IsWorldCamera && DockedAssociations == 0;
+        public WorldEntity? WorldCamera => Entity as WorldEntity;
 
         /// <summary>
-        ///     The room the camera belongs to, if it belongs to exactly one.
+        ///     Out in the world and in no dock. Such a camera drifts, can be picked up, and can be carried by a Stalker.
         /// </summary>
-        public MapRoomEntity? UniqueRoom => Registrations == 1 ? LastRoom : null;
+        public bool IsLooseWorldCamera => Entity is WorldEntity && DockedRoom == null;
+
+        public int DockedSlot => DockedRoom != null ? State.DockingIndex : MapRoomCameraMetadata.NOT_DOCKED;
     }
 }
