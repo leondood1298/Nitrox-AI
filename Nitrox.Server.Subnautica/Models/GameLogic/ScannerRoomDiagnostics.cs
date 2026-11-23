@@ -1,30 +1,48 @@
 using System.Collections.Generic;
-using System.Globalization;
-using System.Text;
-using System.Threading;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
+using Nitrox.Model.Subnautica.Helper;
 
 namespace Nitrox.Server.Subnautica.Models.GameLogic;
 
 /// <summary>
 ///     Compact, bounded diagnostics for canonical Scanner Room transitions.
 ///     Callers must record transition boundaries only, never per-frame movement or sampling updates.
+///     <p />
+///     Line shape (see <see cref="DiagnosticLineFormat" />):
+///     <c>[SRD1] n= ep= side=S sid= ev= out= room= cam= slot= dockRev= cams= roomLock= camLock= fp= reason=</c>.
+///     <c>sid</c> is the player the request came from. <c>roomLock</c> and <c>camLock</c> name who simulates the room
+///     and the camera at the moment of the line (<c>3x</c>: session 3 exclusively, <c>1t</c>: session 1 transiently,
+///     <c>none</c>: nobody), because most Scanner Room failures come down to the wrong player, or no player, holding
+///     one of these two locks.
 /// </summary>
-internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> logger)
+internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> logger, SimulationOwnershipData? simulationOwnershipData = null,
+    TimeProvider? timeProvider = null)
 {
-    public const string PREFIX = "[SRD1]";
+    public const string PREFIX = DiagnosticLineFormat.SCANNER_ROOM_TAG;
     public const int HISTORY_CAPACITY = 256;
+
+    /// <summary>
+    ///     Printed for a lock field when the lock exists as a concept for the line but nobody holds it.
+    /// </summary>
+    internal const string NO_LOCK = "none";
+
+    /// <summary>
+    ///     Printed for a lock field when this instance was not given the lock table (unit tests).
+    /// </summary>
+    internal const string UNKNOWN_LOCK = "?";
+
     private const int WARNING_KEY_CAPACITY = 256;
     private const int WARNING_BURST_LIMIT = 128;
-    private static int nextEpoch = BitConverter.ToInt32(Guid.NewGuid().ToByteArray(), 0);
 
     private readonly Queue<ScannerRoomDiagnosticEntry> history = new(HISTORY_CAPACITY);
     private readonly object sync = new();
     private readonly Dictionary<string, long> warningOccurrences = new(WARNING_KEY_CAPACITY);
     private readonly Queue<string> warningKeys = new(WARNING_KEY_CAPACITY);
-    private readonly string epoch = unchecked((uint)Interlocked.Increment(ref nextEpoch)).ToString("x8", CultureInfo.InvariantCulture);
+    private readonly string epoch = DiagnosticLineFormat.NewEpoch();
+    private readonly TimeProvider timeProvider = timeProvider ?? TimeProvider.System;
+    private bool epochAnnounced;
     private long nextSequence;
     private long accepted;
     private long rejected;
@@ -78,10 +96,34 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
         }
     }
 
+    /// <summary>
+    ///     Who simulates <paramref name="id" /> right now, in the form used by the <c>roomLock</c> and <c>camLock</c> fields.
+    /// </summary>
+    internal string DescribeLock(NitroxId? id)
+    {
+        if (id == null)
+        {
+            return DiagnosticLineFormat.NOT_APPLICABLE;
+        }
+        if (simulationOwnershipData == null)
+        {
+            return UNKNOWN_LOCK;
+        }
+        return simulationOwnershipData.TryGetLock(id, out SimulationOwnershipData.PlayerLock playerLock)
+            ? FormatLock(playerLock.Player.SessionId, playerLock.LockType)
+            : NO_LOCK;
+    }
+
+    internal static string FormatLock(SessionId holder, SimulationLockType lockType) =>
+        $"{DiagnosticLineFormat.Session(holder)}{(lockType == SimulationLockType.EXCLUSIVE ? 'x' : 't')}";
+
     private ScannerRoomDiagnosticEntry Record(ScannerRoomDiagnosticOutcome outcome, string eventName, MapRoomEntity? room,
         NitroxId? cameraId = null, SessionId? sessionId = null, int? slot = null, string? reason = null,
         ScannerRoomStateSnapshot? capturedSnapshot = null)
     {
+        // Read before taking any other lock: callers may hold the room's lock, never the lock table's.
+        string roomLock = DescribeLock(room?.Id);
+        string cameraLock = DescribeLock(cameraId);
         ScannerRoomStateSnapshot? snapshot = capturedSnapshot;
         long? dockingRevision = null;
         int? cameraCount = null;
@@ -105,19 +147,22 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
         ScannerRoomDiagnosticEntry entry;
         lock (sync)
         {
+            AnnounceEpoch();
             entry = new ScannerRoomDiagnosticEntry(
                 ++nextSequence,
                 epoch,
-                NormalizeToken(eventName, 32),
+                DiagnosticLineFormat.Token(eventName, 32),
                 outcome,
                 sessionId,
-                ShortId(room?.Id),
-                ShortId(cameraId, distinguishSiblingCamera: true),
+                DiagnosticLineFormat.ShortId(room?.Id, false),
+                DiagnosticLineFormat.ShortId(cameraId, true),
                 slot,
                 snapshot?.DockingRevision ?? dockingRevision,
                 snapshot?.CameraCount ?? cameraCount,
                 snapshot?.Fingerprint,
-                NormalizeToken(reason, 64));
+                DiagnosticLineFormat.Token(reason, 64),
+                roomLock,
+                cameraLock);
 
             IncrementCounter(outcome);
             if (history.Count == HISTORY_CAPACITY)
@@ -149,6 +194,24 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
         }
         return entry;
     }
+
+    /// <summary>
+    ///     Writes one marker before the first event of this server run. The UTC stamp next to the logger's own local
+    ///     time is what lets this log be lined up with the client logs, which carry the same kind of marker.
+    /// </summary>
+    private void AnnounceEpoch()
+    {
+        if (epochAnnounced)
+        {
+            return;
+        }
+        epochAnnounced = true;
+        string line = FormatMarker("epoch", null, "server_diagnostics_started");
+        logger.ZLogInformation($"{line}");
+    }
+
+    private string FormatMarker(string eventName, SessionId? sessionId, string reason) =>
+        $"{DiagnosticLineFormat.Header(PREFIX, null, epoch, DiagnosticLineFormat.SERVER_SIDE, sessionId, eventName, "info")} utc={DiagnosticLineFormat.UtcStamp(timeProvider.GetUtcNow())} reason={DiagnosticLineFormat.Token(reason, 64)}";
 
     private bool ShouldLogWarning(ScannerRoomDiagnosticEntry entry)
     {
@@ -191,45 +254,6 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
                 throw new ArgumentOutOfRangeException(nameof(outcome), outcome, null);
         }
     }
-
-    private static string NormalizeToken(string? value, int maxLength)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return "-";
-        }
-
-        StringBuilder token = new(Math.Min(value.Length, maxLength));
-        foreach (char character in value)
-        {
-            char normalized = char.ToLowerInvariant(character);
-            if (char.IsAsciiLetterOrDigit(normalized) || normalized is '-' or '_' or '.')
-            {
-                token.Append(normalized);
-            }
-            else if (token.Length > 0 && token[^1] != '_')
-            {
-                token.Append('_');
-            }
-
-            if (token.Length == maxLength)
-            {
-                break;
-            }
-        }
-        return token.ToString().Trim('_') is { Length: > 0 } result ? result : "-";
-    }
-
-    private static string ShortId(NitroxId? id, bool distinguishSiblingCamera = false)
-    {
-        string value = id?.ToString() ?? "-";
-        // Stable camera IDs created for one Scanner Room share their first GUID
-        // group. Include the first half of the fourth group so two sibling
-        // cameras remain distinguishable in compact evidence.
-        return distinguishSiblingCamera && value.Length >= 23 && value[8] == '-' && value[13] == '-' && value[18] == '-'
-            ? $"{value[..8]}.{value.Substring(19, 4)}"
-            : value.Length > 8 ? value[..8] : value;
-    }
 }
 
 internal enum ScannerRoomDiagnosticOutcome
@@ -260,12 +284,12 @@ internal readonly record struct ScannerRoomDiagnosticEntry(
     long? DockingRevision,
     int? CameraCount,
     string? StateFingerprint,
-    string Reason)
+    string Reason,
+    string RoomLock = DiagnosticLineFormat.NOT_APPLICABLE,
+    string CameraLock = DiagnosticLineFormat.NOT_APPLICABLE)
 {
-    private static readonly CultureInfo invariantCulture = CultureInfo.InvariantCulture;
-
-    public string Format() => FormattableString.Invariant(
-        $"{ScannerRoomDiagnostics.PREFIX} n={Sequence} ep={Epoch} side=S ev={EventName} out={OutcomeToken()} sid={Format(SessionId)} room={RoomId} cam={CameraId} slot={Format(Slot)} dRev={Format(DockingRevision)} cams={Format(CameraCount)} fp={StateFingerprint ?? "-"} reason={Reason}");
+    public string Format() =>
+        $"{DiagnosticLineFormat.Header(ScannerRoomDiagnostics.PREFIX, Sequence, Epoch, DiagnosticLineFormat.SERVER_SIDE, SessionId, EventName, OutcomeToken())} room={RoomId} cam={CameraId} slot={DiagnosticLineFormat.Number(Slot)} dockRev={DiagnosticLineFormat.Number(DockingRevision)} cams={DiagnosticLineFormat.Number(CameraCount)} roomLock={RoomLock} camLock={CameraLock} fp={StateFingerprint ?? DiagnosticLineFormat.NOT_APPLICABLE} reason={Reason}";
 
     public override string ToString() => Format();
 
@@ -277,8 +301,4 @@ internal readonly record struct ScannerRoomDiagnosticEntry(
         ScannerRoomDiagnosticOutcome.Checkpoint => "checkpoint",
         _ => throw new ArgumentOutOfRangeException(nameof(Outcome), Outcome, null)
     };
-
-    private static string Format(SessionId? value) => value is { } sessionId ? ((ushort)sessionId).ToString(invariantCulture) : "-";
-    private static string Format(int? value) => value?.ToString(invariantCulture) ?? "-";
-    private static string Format(long? value) => value?.ToString(invariantCulture) ?? "-";
 }

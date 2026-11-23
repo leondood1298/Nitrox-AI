@@ -1,6 +1,11 @@
+using Autofac;
+using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
+using Nitrox.Model.Subnautica.Packets;
+using NitroxClient.Communication.Abstract;
 using NitroxClient.GameLogic;
+using NSubstitute;
 
 namespace Nitrox.Test.Client.GameLogic;
 
@@ -20,10 +25,42 @@ public sealed class ScannerRoomClientDiagnosticsTest
         }
 
         StringAssert.Matches(diagnostics.Epoch, new System.Text.RegularExpressions.Regex("^[0-9a-f]{8}$"));
-        Assert.AreEqual($"[SRD1] n=1 ep={diagnostics.Epoch} side=C ev=dock_apply out=ok room=- cam=11111111.1111 slot=1 rev=4 reason=state_applied", first);
+        Assert.AreEqual($"[SRD1] n=1 ep={diagnostics.Epoch} side=C sid=- ev=dock_apply out=ok room=- cam=11111111.1111 slot=1 rev=4 reason=state_applied", first);
         Assert.AreEqual(ScannerRoomClientDiagnostics.HISTORY_CAPACITY, diagnostics.GetHistory().Count);
         Assert.IsTrue(diagnostics.GetHistory()[0].Contains(" n=24 "));
         Assert.IsFalse(diagnostics.GetHistory().Any(line => line.Contains('\r') || line.Contains('\n')));
+    }
+
+    [TestMethod]
+    public void LinesCarryTheSessionIdTheServerKnowsThisPlayerBy()
+    {
+        SessionId? sessionId = null;
+        ScannerRoomClientDiagnostics diagnostics = new(() => sessionId, static () => DateTimeOffset.UnixEpoch);
+
+        string beforeReservation = diagnostics.Record("dock_apply", "ok");
+        sessionId = 7;
+        string afterReservation = diagnostics.Record("dock_apply", "ok");
+
+        StringAssert.Contains(beforeReservation, " side=C sid=- ev=dock_apply ");
+        StringAssert.Contains(afterReservation, " side=C sid=7 ev=dock_apply ");
+    }
+
+    [TestMethod]
+    public void ServiceContainerGivesDiagnosticsTheSession()
+    {
+        IMultiplayerSession multiplayerSession = Substitute.For<IMultiplayerSession>();
+        multiplayerSession.Reservation.Returns(new MultiplayerSessionReservation((SessionId)(ushort)5));
+        ContainerBuilder builder = new();
+        builder.RegisterInstance(multiplayerSession).As<IMultiplayerSession>();
+        builder.RegisterType<ScannerRoomClientDiagnostics>().InstancePerLifetimeScope();
+        builder.RegisterType<BasePowerClientDiagnostics>().InstancePerLifetimeScope();
+        using IContainer container = builder.Build();
+
+        string scannerLine = container.Resolve<ScannerRoomClientDiagnostics>().Record("dock_apply", "ok");
+        string powerLine = container.Resolve<BasePowerClientDiagnostics>().RecordAudioTransition("audio_up", false, null, 1f, 2f, true, false, null)!;
+
+        StringAssert.Contains(scannerLine, " side=C sid=5 ");
+        StringAssert.Contains(powerLine, " side=C sid=5 ");
     }
 
     [TestMethod]

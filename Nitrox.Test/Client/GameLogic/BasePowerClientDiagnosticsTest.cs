@@ -1,4 +1,5 @@
 using System.Globalization;
+using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using NitroxClient.GameLogic;
@@ -18,9 +19,20 @@ public sealed class BasePowerClientDiagnosticsTest
             initialSyncCompleted: false, waitScreenWaiting: true, "initial sync\r\n")!;
 
         Assert.AreEqual(
-            $"[BPD1] n=1 ep={diagnostics.Epoch} side=C ev=audio_down out=suppress base=11111111.1111 source=- power=0.00/2500.00 initial=0 wait=1 reason=initial_sync",
+            $"[BPD1] n=1 ep={diagnostics.Epoch} side=C sid=- ev=audio_down out=suppress base=11111111.1111 source=- power=0.00/2500.00 initial=0 wait=1 reason=initial_sync",
             line);
         Assert.IsFalse(line.Contains('\r') || line.Contains('\n'));
+    }
+
+    [TestMethod]
+    public void LinesCarryTheSessionIdTheServerKnowsThisPlayerBy()
+    {
+        BasePowerClientDiagnostics diagnostics = new(static () => (SessionId)(ushort)4, static () => DateTimeOffset.UnixEpoch);
+
+        string line = diagnostics.RecordAudioTransition("audio_up", false, null, 1f, 2f, true, false, null)!;
+
+        StringAssert.Contains(line, " side=C sid=4 ev=audio_up ");
+        Assert.AreEqual(1, diagnostics.GetHistory().Count, "the epoch marker is written to the log, not counted as an event");
     }
 
     [TestMethod]
@@ -33,7 +45,7 @@ public sealed class BasePowerClientDiagnosticsTest
         string line = diagnostics.RecordSourceApply(sourceId, metadata, true, false, true, "metadata")!;
 
         Assert.AreEqual(
-            $"[BPD1] n=1 ep={diagnostics.Epoch} side=C ev=source_apply out=ok base=- source=22222222.2222 power=125.25/250.00 initial=0 wait=1 reason=metadata_thermal_17",
+            $"[BPD1] n=1 ep={diagnostics.Epoch} side=C sid=- ev=source_apply out=ok base=- source=22222222.2222 power=125.25/250.00 initial=0 wait=1 reason=metadata_thermal_17",
             line);
     }
 

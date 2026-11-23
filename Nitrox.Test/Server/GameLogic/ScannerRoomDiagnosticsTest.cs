@@ -12,6 +12,7 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Server.Subnautica.Extensions;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
+using Nitrox.Test.Server.Subnautica;
 
 namespace Nitrox.Test.Server.GameLogic;
 
@@ -30,17 +31,51 @@ public sealed class ScannerRoomDiagnosticsTest
         ScannerRoomDiagnosticEntry rejected = diagnostics.RecordRejected("Control\nRequest", room, cameraId, (SessionId)(ushort)3, reason: "not owner\r\nretry");
 
         diagnostics.Epoch.Should().MatchRegex("^[0-9a-f]{8}$");
-        accepted.Format().Should().StartWith($"[SRD1] n=1 ep={diagnostics.Epoch} side=S ev=dock out=ok sid=2 room=11111111 cam=33333333.3333 slot=1 dRev=7 cams=2 fp=");
-        accepted.Format().Should().EndWith(" reason=owner_transfer");
-        rejected.Format().Should().Contain($"n=2 ep={diagnostics.Epoch} side=S ev=control_request out=reject sid=3");
+        accepted.Format().Should().Be($"[SRD1] n=1 ep={diagnostics.Epoch} side=S sid=2 ev=dock out=ok room=11111111 cam=33333333.3333 slot=1 dockRev=7 cams=2 roomLock=? camLock=? fp=- reason=owner_transfer");
+        rejected.Format().Should().StartWith($"[SRD1] n=2 ep={diagnostics.Epoch} side=S sid=3 ev=control_request out=reject room=11111111 ");
         rejected.Format().Should().EndWith(" reason=not_owner_retry");
         rejected.Format().Should().NotContain("\r").And.NotContain("\n");
         accepted.StateFingerprint.Should().BeNull("transition logging must stay O(1) even with large scan result sets");
 
-        logger.Entries.Should().HaveCount(2);
-        logger.Entries[0].Should().Be((LogLevel.Information, accepted.Format()));
-        logger.Entries[1].Should().Be((LogLevel.Warning, rejected.Format()));
+        logger.Entries.Should().HaveCount(3, "the first event of a run is preceded by its epoch marker");
+        logger.Entries[1].Should().Be((LogLevel.Information, accepted.Format()));
+        logger.Entries[2].Should().Be((LogLevel.Warning, rejected.Format()));
         diagnostics.GetCounters().Should().Be(new ScannerRoomDiagnosticCounters(2, 1, 1, 0, 0));
+    }
+
+    [TestMethod]
+    public void FirstEventIsPrecededByOneEpochMarkerWithUtcTime()
+    {
+        CapturingLogger<ScannerRoomDiagnostics> logger = new();
+        ManualTimeProvider time = new(new DateTimeOffset(2026, 11, 23, 15, 4, 5, TimeSpan.FromHours(1)));
+        ScannerRoomDiagnostics diagnostics = new(logger, timeProvider: time);
+
+        diagnostics.RecordAccepted("dock");
+        diagnostics.RecordAccepted("undock");
+
+        logger.Entries.Should().HaveCount(3);
+        logger.Entries[0].Should().Be((LogLevel.Information,
+            $"[SRD1] n=- ep={diagnostics.Epoch} side=S sid=- ev=epoch out=info utc=2026-11-23T14:04:05Z reason=server_diagnostics_started"));
+        diagnostics.GetCounters().Recorded.Should().Be(2, "a marker is not an event and must not leave a gap in the numbering");
+        diagnostics.GetHistory().Should().HaveCount(2);
+    }
+
+    [TestMethod]
+    public void EveryLineNamesWhoSimulatesTheRoomAndTheCamera()
+    {
+        ScannerRoomScenarioFixture scenario = new();
+        ScannerRoomDiagnostics diagnostics = new(NullLogger<ScannerRoomDiagnostics>.Instance, scenario.Ownership);
+        NitroxId cameraId = ScannerRoomScenarioFixture.CameraAId;
+
+        string unowned = diagnostics.RecordRejected("scan_snapshot", scenario.Room, cameraId, scenario.PlayerB.SessionId, reason: "non_owner").Format();
+        scenario.Ownership.TryAcquire(scenario.Room.Id, scenario.PlayerA, SimulationLockType.TRANSIENT).Should().BeTrue();
+        scenario.Ownership.TryAcquire(cameraId, scenario.PlayerB, SimulationLockType.EXCLUSIVE).Should().BeTrue();
+        string owned = diagnostics.RecordAccepted("control_acquire", scenario.Room, cameraId, scenario.PlayerB.SessionId).Format();
+        string withoutSubject = diagnostics.RecordAccepted("camera_lock", sessionId: scenario.PlayerB.SessionId).Format();
+
+        unowned.Should().Contain(" roomLock=none camLock=none ", "a room or camera nobody simulates is the cause of most rejections");
+        owned.Should().Contain(" sid=2 ").And.Contain(" roomLock=1t camLock=2x ");
+        withoutSubject.Should().Contain(" room=- cam=- ").And.Contain(" roomLock=- camLock=- ");
     }
 
     [TestMethod]
@@ -218,6 +253,20 @@ public sealed class ScannerRoomDiagnosticsTest
         services.Single(descriptor => descriptor.ServiceType == typeof(MapRoomCameraControlReleaseFactory)).Lifetime.Should().Be(ServiceLifetime.Singleton);
     }
 
+    [TestMethod]
+    public void ServiceContainerGivesDiagnosticsTheLockTable()
+    {
+        ServiceCollection services = new();
+        services.AddLogging();
+        services.AddWorld();
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        ScannerRoomDiagnostics diagnostics = provider.GetRequiredService<ScannerRoomDiagnostics>();
+
+        diagnostics.DescribeLock(new NitroxId()).Should().Be(ScannerRoomDiagnostics.NO_LOCK,
+            "without the lock table every line would only say that the simulating player is unknown");
+    }
+
     private static MapRoomEntity CreateRoom()
     {
         NitroxId roomId = new("11111111-1111-1111-1111-111111111111");
@@ -246,6 +295,19 @@ public sealed class ScannerRoomDiagnosticsTest
             AvailableScanTypes = [new NitroxTechType("Silver"), new NitroxTechType("Gold")],
             FabricatorMetadata = new CrafterMetadata(new NitroxTechType("MapRoomHUDChip"), 10f, 2f, 1, 0)
         };
+    }
+
+    private sealed class ManualTimeProvider(DateTimeOffset start) : TimeProvider
+    {
+        private DateTimeOffset now = start;
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override DateTimeOffset GetUtcNow() => now;
+
+        public override long GetTimestamp() => now.UtcTicks;
+
+        public void Advance(TimeSpan duration) => now += duration;
     }
 
     private sealed class CapturingLogger<T> : ILogger<T>

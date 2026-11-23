@@ -1,38 +1,66 @@
 using System;
-using System.Globalization;
 using System.Collections.Generic;
-using System.Text;
-using System.Threading;
+using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
+using Nitrox.Model.Subnautica.Helper;
+using NitroxClient.Communication.Abstract;
 
 namespace NitroxClient.GameLogic;
 
 /// <summary>
 ///     Compact client-side evidence for Scanner Room requests and canonical applies.
 ///     It intentionally omits movement and unchanged component packets.
+///     <p />
+///     Line shape (see <see cref="DiagnosticLineFormat" />):
+///     <c>[SRD1] n= ep= side=C sid= ev= out= room= cam= slot= rev= reason=</c>. <c>sid</c> is this client's own
+///     session id, the same number the server prints for this player's requests. <c>rev</c> is the revision the
+///     event is about: the room's docking revision for dock events, the light or component revision for those, the
+///     preview revision for previews.
 /// </summary>
 public sealed class ScannerRoomClientDiagnostics
 {
     internal const int HISTORY_CAPACITY = 128;
-    private static int nextEpoch = BitConverter.ToInt32(Guid.NewGuid().ToByteArray(), 0);
     private readonly Queue<string> history = new(HISTORY_CAPACITY);
     private readonly Dictionary<NitroxId, (int Energy, int Health)> componentBands = [];
     private readonly object sync = new();
-    private readonly string epoch = unchecked((uint)Interlocked.Increment(ref nextEpoch)).ToString("x8", CultureInfo.InvariantCulture);
+    private readonly string epoch = DiagnosticLineFormat.NewEpoch();
+    private readonly Func<SessionId?> localSessionId;
+    private readonly Func<DateTimeOffset> utcNow;
+    private bool epochAnnounced;
     private long nextSequence;
 
     internal string Epoch => epoch;
 
+    public ScannerRoomClientDiagnostics() : this(static () => null, static () => DateTimeOffset.UtcNow)
+    {
+    }
+
+    /// <summary>
+    ///     Used by the client's service container, so every line can carry the session id the server knows this
+    ///     player by.
+    /// </summary>
+    public ScannerRoomClientDiagnostics(IMultiplayerSession multiplayerSession) : this(() => multiplayerSession.Reservation?.SessionId,
+        static () => DateTimeOffset.UtcNow)
+    {
+    }
+
+    internal ScannerRoomClientDiagnostics(Func<SessionId?> localSessionId, Func<DateTimeOffset> utcNow)
+    {
+        this.localSessionId = localSessionId;
+        this.utcNow = utcNow;
+    }
+
     internal string Record(string eventName, string outcome, NitroxId? cameraId = null, NitroxId? roomId = null,
         long? revision = null, int? slot = null, string? reason = null)
     {
+        SessionId? sessionId = localSessionId();
         string line;
         lock (sync)
         {
+            AnnounceEpoch(sessionId);
             long sequence = ++nextSequence;
-            line = FormattableString.Invariant(
-                $"[SRD1] n={sequence} ep={epoch} side=C ev={Token(eventName)} out={Token(outcome)} room={ShortId(roomId)} cam={ShortId(cameraId, distinguishSiblingCamera: true)} slot={Format(slot)} rev={Format(revision)} reason={Token(reason)}");
+            line = $"{DiagnosticLineFormat.Header(DiagnosticLineFormat.SCANNER_ROOM_TAG, sequence, epoch, DiagnosticLineFormat.CLIENT_SIDE, sessionId, eventName, outcome)} room={DiagnosticLineFormat.ShortId(roomId, false)} cam={DiagnosticLineFormat.ShortId(cameraId, true)} slot={DiagnosticLineFormat.Number(slot)} rev={DiagnosticLineFormat.Number(revision)} reason={DiagnosticLineFormat.Token(reason)}";
             if (history.Count == HISTORY_CAPACITY)
             {
                 history.Dequeue();
@@ -80,6 +108,21 @@ public sealed class ScannerRoomClientDiagnostics
 
     internal static int HealthBand(float health) => ComponentBand(health, MapRoomCameraRecord.MAX_HEALTH);
 
+    /// <summary>
+    ///     Writes one marker before the first event of a session. Its UTC stamp, next to the log's own local time,
+    ///     lines this log up with the server log and the other client's log; its <c>sid</c> says which of the server's
+    ///     players this log belongs to.
+    /// </summary>
+    private void AnnounceEpoch(SessionId? sessionId)
+    {
+        if (epochAnnounced)
+        {
+            return;
+        }
+        epochAnnounced = true;
+        Log.Info($"{DiagnosticLineFormat.Header(DiagnosticLineFormat.SCANNER_ROOM_TAG, null, epoch, DiagnosticLineFormat.CLIENT_SIDE, sessionId, "epoch", "info")} utc={DiagnosticLineFormat.UtcStamp(utcNow())} reason=client_diagnostics_started");
+    }
+
     private static int ComponentBand(float value, float maximum) => value switch
     {
         <= 0f => 0,
@@ -89,47 +132,4 @@ public sealed class ScannerRoomClientDiagnostics
         _ when value <= maximum * 0.75f => 75,
         _ => 100
     };
-
-    private static string ShortId(NitroxId? id, bool distinguishSiblingCamera = false)
-    {
-        string value = id?.ToString() ?? "-";
-        // Scanner Room sibling camera IDs intentionally share their first GUID
-        // group. Keep the log token compact while retaining the distinguishing
-        // portion of the fourth group.
-        return distinguishSiblingCamera && value.Length >= 23 && value[8] == '-' && value[13] == '-' && value[18] == '-'
-            ? $"{value[..8]}.{value.Substring(19, 4)}"
-            : value.Length > 8 ? value[..8] : value;
-    }
-
-    private static string Token(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return "-";
-        }
-        StringBuilder result = new(Math.Min(value.Length, 48));
-        foreach (char character in value)
-        {
-            char normalized = char.ToLowerInvariant(character);
-            if (IsAsciiLetterOrDigit(normalized) || normalized is '-' or '_' or '.')
-            {
-                result.Append(normalized);
-            }
-            else if (result.Length > 0 && result[^1] != '_')
-            {
-                result.Append('_');
-            }
-            if (result.Length == 48)
-            {
-                break;
-            }
-        }
-        return result.ToString().Trim('_') is { Length: > 0 } token ? token : "-";
-    }
-
-    private static string Format(int? value) => value?.ToString(CultureInfo.InvariantCulture) ?? "-";
-    private static string Format(long? value) => value?.ToString(CultureInfo.InvariantCulture) ?? "-";
-
-    private static bool IsAsciiLetterOrDigit(char value) =>
-        value is >= 'a' and <= 'z' or >= '0' and <= '9';
 }
