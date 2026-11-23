@@ -47,6 +47,7 @@ internal sealed class ScannerRoomScenarioFixture
     private readonly EntitySpawnedByClientProcessor spawnProcessor;
     private readonly UpdateBaseProcessor updateBaseProcessor;
     private readonly EntityDestroyedPacketProcessor destroyProcessor;
+    private readonly EntityMetadataUpdateProcessor metadataProcessor;
 
     internal EntityRegistry EntityRegistry { get; }
     internal SimulationOwnershipData Ownership { get; } = new();
@@ -94,6 +95,8 @@ internal sealed class ScannerRoomScenarioFixture
         placeBaseProcessor = new(buildingManager, EntitySimulation);
         updateBaseProcessor = new(buildingManager, EntitySimulation);
         destroyProcessor = new(playerManager, EntitySimulation, worldEntityManager, EntityRegistry, ControlReleaseFactory, ControlLifecycle, Diagnostics, RevisionFloors);
+        // Base power sources are not part of these scenarios.
+        metadataProcessor = new(playerManager, EntityRegistry, Ownership, Diagnostics, null!, NullLogger<EntityMetadataUpdateProcessor>.Instance);
         pickupProcessor = new(EntityRegistry, worldEntityManager, Ownership, ControlReleaseFactory, ControlLifecycle, Diagnostics, LooseCameraState);
         spawnProcessor = new(playerManager, EntityRegistry, worldEntityManager, EntitySimulation, LooseCameraState);
     }
@@ -208,6 +211,17 @@ internal sealed class ScannerRoomScenarioFixture
     {
         RecordingPacketSender requestPacketSender = new();
         await destroyProcessor.Process(new AuthProcessorContext(player, requestPacketSender), new EntityDestroyed(entityId));
+        return requestPacketSender.Packets;
+    }
+
+    /// <summary>
+    ///     Sends a metadata update for an entity. The fixture has no connected players to relay an accepted update to,
+    ///     so what comes back is only what the server replied to <paramref name="player" />.
+    /// </summary>
+    internal async Task<IReadOnlyList<Packet>> UpdateMetadataAsync(ServerPlayer player, NitroxId entityId, EntityMetadata metadata)
+    {
+        RecordingPacketSender requestPacketSender = new();
+        await metadataProcessor.Process(new AuthProcessorContext(player, requestPacketSender), new EntityMetadataUpdate(entityId, metadata));
         return requestPacketSender.Packets;
     }
 
