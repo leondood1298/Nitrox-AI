@@ -46,8 +46,11 @@ internal static class ScannerRoomStateFingerprint
             }
 
             MapRoomCameraRecord[] records = room.CameraRegistry?.Where(record => record != null).ToArray() ?? [];
-            if (records.Length != (room.CameraRegistry?.Count ?? 0) ||
-                records.Select(record => record.CameraId).Distinct().Count() != records.Length)
+            if (records.Length != (room.CameraRegistry?.Count ?? 0))
+            {
+                return "null_camera_record";
+            }
+            if (records.Select(record => record.CameraId).Distinct().Count() != records.Length)
             {
                 return "duplicate_camera_registration";
             }
@@ -84,7 +87,6 @@ internal static class ScannerRoomStateFingerprint
 
     private static ScannerRoomStateSnapshot CreateLocked(MapRoomEntity room)
     {
-
         MapRoomCameraRecord?[] cameras = room.CameraRegistry?.Select(static camera => (MapRoomCameraRecord?)camera).ToArray() ?? [];
         MapRoomScanResultRecord?[] scanResults = room.ScanResults?.Select(static result => (MapRoomScanResultRecord?)result).ToArray() ?? [];
         string?[] scanTypes = room.AvailableScanTypes?.Select(static type => type?.Name).ToArray() ?? [];

@@ -260,6 +260,20 @@ public sealed class ScannerRoomDiagnosticsTest
     }
 
     [TestMethod]
+    public void ValidationNamesAnEmptyRegistrySlotAsWhatItIs()
+    {
+        MapRoomEntity room = CreateRoom();
+        room.CameraRegistry.Add(null!);
+
+        ScannerRoomStateFingerprint.Validate(room).Should().Be("null_camera_record",
+            "the cameras that are registered are all distinct; sending a reader after a duplicate would waste their time");
+
+        MapRoomEntity duplicated = CreateRoom();
+        duplicated.CameraRegistry.Add(new MapRoomCameraRecord(duplicated.CameraRegistry[0].CameraId, 3));
+        ScannerRoomStateFingerprint.Validate(duplicated).Should().Be("duplicate_camera_registration");
+    }
+
+    [TestMethod]
     public void RetainsOnlyNewest256EntriesInSequenceOrder()
     {
         ScannerRoomDiagnostics diagnostics = new(NullLogger<ScannerRoomDiagnostics>.Instance);
