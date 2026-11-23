@@ -158,6 +158,21 @@ public sealed class CreatureInfectionRulesTest
     }
 
     [TestMethod]
+    [DataRow(0f, CreatureMetadata.NO_ENZYME)]
+    [DataRow(1f, CreatureMetadata.NO_ENZYME)]
+    [DataRow(CreatureMetadata.UNDECIDED, 1060f)]
+    public void ItemCarriesADecidedInfectionOrEnzyme(float infectedAmount, float enzymeEndTime)
+    {
+        CreatureInfectionRules.HasDecidedState(infectedAmount, enzymeEndTime).Should().BeTrue();
+    }
+
+    [TestMethod]
+    public void ItemOfACreatureNobodyDecidedCarriesNothing()
+    {
+        CreatureInfectionRules.HasDecidedState(CreatureMetadata.UNDECIDED, CreatureMetadata.NO_ENZYME).Should().BeFalse();
+    }
+
+    [TestMethod]
     [DataRow(1060f, 1000f, 60f)]
     [DataRow(1060f, 1030f, 30f)]
     [DataRow(1060f, 1100f, 0f)]

@@ -83,6 +83,14 @@ public static class CreatureInfectionRules
         return Math.Max(0f, Math.Min(enzymeDuration, enzymeEndTime - now));
     }
 
+    /// <summary>
+    ///     A creature that nobody has decided anything about needs nothing stored: it gets its rolls again wherever it appears.
+    /// </summary>
+    public static bool HasDecidedState(float infectedAmount, float enzymeEndTime)
+    {
+        return CreatureMetadata.IsDecided(infectedAmount) || enzymeEndTime > CreatureMetadata.NO_ENZYME;
+    }
+
     // FNV-1a's offset basis, and another one for an independent roll
     private const uint INFECTION_SEED = 2166136261;
     private const uint BORN_HERO_SEED = 0x9e3779b9;

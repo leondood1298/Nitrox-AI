@@ -189,6 +189,37 @@ public class CreatureInfections
     }
 
     /// <summary>
+    ///     The decided infection and enzyme of a creature that has no other creature metadata. A fish that is picked up,
+    ///     dropped or moved into a container is sent as a new entity with what is extracted from it, so without this its
+    ///     decided state was lost and it fell back to its roll.
+    /// </summary>
+    /// <returns>Null when there is nothing decided, or when other metadata carries the creature's state.</returns>
+    public CreatureInfectionMetadata? GetDecidedState(InfectedMixin infectedMixin)
+    {
+        if (infectedMixin.player || !infectedMixin.TryGetComponent(out Creature creature) || creature is SeaTreader)
+        {
+            return null;
+        }
+        // A contained fish carries its state in its growth (WaterParkCreatureMetadata), a corpse has only its decay
+        if (creature.TryGetComponent(out WaterParkCreature waterParkCreature) && waterParkCreature.age != -1)
+        {
+            return null;
+        }
+        if (creature.TryGetComponent(out LiveMixin liveMixin) && !liveMixin.IsAlive())
+        {
+            return null;
+        }
+
+        float infectedAmount = GetDecidedAmount(creature);
+        float enzymeEndTime = GetDecidedEnzymeEndTime(creature);
+        if (!CreatureInfectionRules.HasDecidedState(infectedAmount, enzymeEndTime))
+        {
+            return null;
+        }
+        return new CreatureInfectionMetadata(infectedAmount, enzymeEndTime);
+    }
+
+    /// <summary>
     ///     What the creature metadata extractors write for a hero peeper's enzyme.
     /// </summary>
     public float GetDecidedEnzymeEndTime(Component creatureComponent)
