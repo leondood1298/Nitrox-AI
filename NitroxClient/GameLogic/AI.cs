@@ -44,8 +44,9 @@ public sealed class AI
 
     /// <summary>
     ///     Synced creatures whose bites stay with their simulating player's game, which passes a bite on another player's
-    ///     body on to that player (<see cref="CreatureAttacksOnPlayers" />). Every game sees what they aim at and how they
-    ///     attack, but a bite counts where the simulating player saw it land.
+    ///     body on to that player (<see cref="CreatureAttacksOnPlayers" />) and shows the bite on every game
+    ///     (<see cref="CreatureBites" />). Every game sees what they aim at and how they attack, but a bite happens where
+    ///     the simulating player saw it land.
     /// </summary>
     private readonly HashSet<Type> reportedBiteCreatures =
     [
@@ -215,6 +216,20 @@ public sealed class AI
     internal bool IsAttackReplayedByVictim(Type creatureType)
     {
         return syncedCreatureWhitelist.Contains(creatureType) && !reportedBiteCreatures.Contains(creatureType);
+    }
+
+    /// <summary>
+    ///     True if this creature's bites are shown on every game when its simulating player's game bites
+    ///     (<see cref="CreatureBites" />), instead of by each game's copy on its own.
+    /// </summary>
+    public bool AreBitesShownFromSimulatingPlayer(Creature creature)
+    {
+        return AreBitesShownFromSimulatingPlayer(creature.GetType());
+    }
+
+    internal bool AreBitesShownFromSimulatingPlayer(Type creatureType)
+    {
+        return syncedCreatureWhitelist.Contains(creatureType) && reportedBiteCreatures.Contains(creatureType);
     }
 
     /// <summary>

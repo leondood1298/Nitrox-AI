@@ -25,6 +25,22 @@ public sealed class AITest
     }
 
     [TestMethod]
+    [DataRow(typeof(Stalker))]
+    [DataRow(typeof(SandShark))]
+    public void StalkerAndSandSharkBitesAreShownFromTheirSimulatingPlayer(Type creatureType)
+    {
+        Assert.IsTrue(ai.AreBitesShownFromSimulatingPlayer(creatureType));
+    }
+
+    [TestMethod]
+    [DataRow(typeof(ReaperLeviathan))]
+    [DataRow(typeof(CrabSnake))]
+    public void OtherCreaturesShowTheirOwnBites(Type creatureType)
+    {
+        Assert.IsFalse(ai.AreBitesShownFromSimulatingPlayer(creatureType));
+    }
+
+    [TestMethod]
     public void UnsyncedCreatureBitesAreReported()
     {
         Assert.IsFalse(ai.IsAttackReplayedByVictim(typeof(CrabSnake)));
