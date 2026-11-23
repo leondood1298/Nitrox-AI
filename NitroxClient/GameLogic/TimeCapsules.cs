@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using Nitrox.Model.DataStructures;
@@ -8,8 +9,12 @@ using Nitrox.Model.Subnautica.Extensions;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication;
 using NitroxClient.Communication.Abstract;
+using NitroxClient.GameLogic.Spawning.Metadata;
+using NitroxClient.GameLogic.Spawning.Metadata.Processor.Abstract;
 using NitroxClient.MonoBehaviours;
 using UnityEngine;
+using UWE;
+using Object = UnityEngine.Object;
 
 namespace NitroxClient.GameLogic;
 
@@ -19,7 +24,13 @@ namespace NitroxClient.GameLogic;
 ///     <para>
 ///     The game has a single PlayerTimeCapsule, a scene object outside the rocket. It is given the id of the rocket's
 ///     <see cref="PlayerTimeCapsuleEntity" />, which makes its container a container like a locker's and its text the
-///     entity's metadata. Its picture stays with the player who chose it: it is a screenshot on that player's computer.
+///     entity's metadata. Its picture stays with the player who chose it: it is a screenshot on that player's computer,
+///     one for all rockets.
+///     </para>
+///     <para>
+///     With several rockets the capsule shows one rocket's capsule at a time: the first one it is given, and from then on
+///     the one of the rocket from whose cockpit it is opened or which is launched (<see cref="Show" />). Every rocket knows
+///     its capsule entity through <see cref="RocketTimeCapsule" />.
 ///     </para>
 ///     <para>
 ///     Whether a capsule lies at a spot in the world and what it holds is what the online service answers the first game
@@ -30,22 +41,214 @@ public class TimeCapsules
 {
     private readonly IPacketSender packetSender;
     private readonly Entities entities;
+    private readonly EntityMetadataManager entityMetadataManager;
 
-    public TimeCapsules(IPacketSender packetSender, Entities entities)
+    /// <summary>
+    ///     The capsule of the rocket being launched, to be submitted once its content has arrived.
+    /// </summary>
+    private NitroxId? submitWhenShown;
+
+    public TimeCapsules(IPacketSender packetSender, Entities entities, EntityMetadataManager entityMetadataManager)
     {
         this.packetSender = packetSender;
         this.entities = entities;
+        this.entityMetadataManager = entityMetadataManager;
     }
 
     /// <summary>
     ///     Makes the time capsule of a rocket that this player builds. Nobody sends this player a spawn of it, so the
     ///     game's capsule takes its id here.
     /// </summary>
-    public static PlayerTimeCapsuleEntity CreateRocketCapsule(NitroxId rocketId)
+    public static PlayerTimeCapsuleEntity CreateRocketCapsule(GameObject rocketObject, NitroxId rocketId)
     {
         PlayerTimeCapsuleEntity capsuleEntity = new(new NitroxId(), rocketId, null);
+        RocketTimeCapsule.Attach(rocketObject, capsuleEntity.Id);
         TakeCapsule(capsuleEntity.Id);
         return capsuleEntity;
+    }
+
+    /// <summary>
+    ///     Tells a rocket which capsule entity is its own, also when the game's capsule shows another rocket's.
+    /// </summary>
+    public static void RegisterRocketCapsule(PlayerTimeCapsuleEntity capsuleEntity)
+    {
+        if (!NitroxEntity.TryGetObjectFrom(capsuleEntity.ParentId, out GameObject rocketObject))
+        {
+            Log.Error($"[{nameof(TimeCapsules)}] Could not find the rocket {capsuleEntity.ParentId} of the time capsule {capsuleEntity.Id}");
+            return;
+        }
+
+        RocketTimeCapsule rocketCapsule = RocketTimeCapsule.Attach(rocketObject, capsuleEntity.Id);
+        rocketCapsule.HasText = capsuleEntity.Metadata is PlayerTimeCapsuleMetadata { Text: { Length: > 0 } };
+        rocketCapsule.HasItems = capsuleEntity.ChildEntities.Count > 0;
+    }
+
+    /// <summary>
+    ///     Whether the game's capsule has to be given to another rocket's capsule to show it. With a single rocket it
+    ///     always shows that rocket's.
+    /// </summary>
+    internal static bool MustSwap(NitroxId? shownId, NitroxId capsuleId)
+    {
+        return !capsuleId.Equals(shownId);
+    }
+
+    /// <summary>
+    ///     The game's time capsule shows <paramref name="rocketCapsule" />'s capsule from now on. When it showed another
+    ///     rocket's, that one is put away in this game only and the server is asked for the content
+    ///     (<see cref="ShowContent" />).
+    /// </summary>
+    /// <returns>True when the capsule showed this rocket's capsule already.</returns>
+    public bool Show(RocketTimeCapsule rocketCapsule)
+    {
+        PlayerTimeCapsule capsule = PlayerTimeCapsule.main;
+        if (!capsule)
+        {
+            return false;
+        }
+
+        capsule.TryGetNitroxId(out NitroxId? shownId);
+        if (!MustSwap(shownId, rocketCapsule.CapsuleId))
+        {
+            return true;
+        }
+
+        PutAway(capsule, shownId);
+        NitroxEntity.SetNewId(capsule.gameObject, rocketCapsule.CapsuleId);
+        packetSender.Send(new PlayerTimeCapsuleContentRequest(rocketCapsule.CapsuleId));
+        return false;
+    }
+
+    /// <summary>
+    ///     To be called when the capsule is opened from a rocket's cockpit.
+    /// </summary>
+    public void ShowCapsuleOfRocket(Component cockpitPart)
+    {
+        RocketTimeCapsule rocketCapsule = cockpitPart.GetComponentInParent<RocketTimeCapsule>();
+        if (rocketCapsule)
+        {
+            Show(rocketCapsule);
+        }
+    }
+
+    /// <summary>
+    ///     Submits the capsule of the rocket being launched, which the game does at the launch. When the game's capsule
+    ///     showed another rocket's, the submit waits for the launching rocket's content.
+    /// </summary>
+    public void SubmitCapsuleOfRocket(GameObject rocketObject)
+    {
+        RocketTimeCapsule rocketCapsule = rocketObject.GetComponent<RocketTimeCapsule>();
+        if (!rocketCapsule || Show(rocketCapsule))
+        {
+            PlayerTimeCapsule.main.Submit(null);
+            return;
+        }
+        submitWhenShown = rocketCapsule.CapsuleId;
+    }
+
+    /// <summary>
+    ///     Shows the text and items the server sent for the capsule this game shows now.
+    /// </summary>
+    public void ShowContent(PlayerTimeCapsuleContent content)
+    {
+        PlayerTimeCapsule capsule = PlayerTimeCapsule.main;
+        // The player may have opened yet another rocket's capsule since asking
+        if (!capsule || !capsule.TryGetNitroxId(out NitroxId? shownId) || MustSwap(shownId, content.CapsuleId))
+        {
+            return;
+        }
+
+        // The server's answer is newer than any update for this capsule that arrived while it was put away
+        Optional<IEntityMetadataProcessor> textProcessor = entityMetadataManager.FromMetaData(content.Metadata);
+        if (textProcessor.HasValue)
+        {
+            textProcessor.Value.ProcessMetadata(capsule.gameObject, content.Metadata);
+        }
+
+        // An item can still be in this game where it was before it went into the capsule, e.g. in another player's inventory
+        entities.CleanupExistingEntities(content.Items);
+        CoroutineHost.StartCoroutine(ShowItems(content.CapsuleId, content.Items));
+    }
+
+    private IEnumerator ShowItems(NitroxId capsuleId, List<Entity> items)
+    {
+        // Objects destroyed by the cleanup are gone at the end of the frame
+        yield return null;
+        yield return entities.SpawnBatchAsync([.. items], true);
+
+        PlayerTimeCapsule capsule = PlayerTimeCapsule.main;
+        if (!capsule || !capsule.TryGetNitroxId(out NitroxId? shownId) || MustSwap(shownId, capsuleId))
+        {
+            yield break;
+        }
+        if (capsuleId.Equals(submitWhenShown))
+        {
+            submitWhenShown = null;
+            capsule.Submit(null);
+        }
+    }
+
+    /// <summary>
+    ///     Removes what the game's capsule shows of another rocket's capsule, in this game only: on the server the items
+    ///     stay that capsule's children and its text its metadata, and they come back when it is shown again.
+    /// </summary>
+    private void PutAway(PlayerTimeCapsule capsule, NitroxId? shownId)
+    {
+        if (shownId != null)
+        {
+            foreach (RocketTimeCapsule rocketCapsule in Object.FindObjectsOfType<RocketTimeCapsule>())
+            {
+                if (shownId.Equals(rocketCapsule.CapsuleId))
+                {
+                    rocketCapsule.HasText = capsule.hasText;
+                    rocketCapsule.HasItems = capsule.hasItems;
+                }
+            }
+        }
+
+        foreach (InventoryItem item in new List<InventoryItem>(capsule.container))
+        {
+            Pickupable pickupable = item.item;
+            capsule.container.RemoveItem(pickupable, true);
+            if (pickupable.TryGetNitroxId(out NitroxId? itemId))
+            {
+                entities.RemoveEntity(itemId);
+            }
+            Entities.DestroyObject(pickupable.gameObject);
+        }
+        capsule.text = "";
+        capsule.title = "";
+    }
+
+    /// <summary>
+    ///     The time capsule preflight check of a rocket whose capsule is put away in this game: what the game's capsule
+    ///     would say if it showed that rocket's. The picture is this player's own for every rocket.
+    /// </summary>
+    /// <returns>False when the game's own check applies: a single rocket, or the rocket whose capsule is shown.</returns>
+    public bool TryGetPutAwayPreflight(RocketPreflightCheckManager preflightCheckManager, out bool complete)
+    {
+        complete = false;
+        PlayerTimeCapsule capsule = PlayerTimeCapsule.main;
+        RocketTimeCapsule rocketCapsule = preflightCheckManager.GetComponentInParent<RocketTimeCapsule>();
+        if (!capsule || !rocketCapsule || preflightCheckManager.preflightChecks.Contains(PreflightCheck.TimeCapsule))
+        {
+            return false;
+        }
+
+        capsule.TryGetNitroxId(out NitroxId? shownId);
+        if (!MustSwap(shownId, rocketCapsule.CapsuleId))
+        {
+            return false;
+        }
+        complete = IsReady(rocketCapsule.HasText, capsule.hasImage, rocketCapsule.HasItems);
+        return true;
+    }
+
+    /// <summary>
+    ///     As <see cref="PlayerTimeCapsule.IsValid" />.
+    /// </summary>
+    internal static bool IsReady(bool hasText, bool hasImage, bool hasItems)
+    {
+        return hasText && hasImage && hasItems;
     }
 
     /// <summary>
@@ -73,7 +276,8 @@ public class TimeCapsules
     }
 
     /// <summary>
-    ///     The game has one time capsule for all rockets: it stays with the first rocket capsule it is given.
+    ///     The game has one time capsule for all rockets: a spawn gives it the first rocket capsule only; another rocket's
+    ///     is shown when it is opened (<see cref="Show" />).
     /// </summary>
     internal static bool CanTakeCapsule(NitroxId? boundId, NitroxId capsuleId)
     {

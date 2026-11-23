@@ -172,7 +172,7 @@ public class Vehicles
         if (techType == TechType.RocketBase)
         {
             // The rocket's time capsule is a scene object outside the rocket, so PopulateChildren does not find it
-            vehicleEntity.ChildEntities.Add(TimeCapsules.CreateRocketCapsule(constructedObjectId));
+            vehicleEntity.ChildEntities.Add(TimeCapsules.CreateRocketCapsule(constructedObject, constructedObjectId));
         }
         return vehicleEntity;
     }
