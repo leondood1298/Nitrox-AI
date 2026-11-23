@@ -21,7 +21,7 @@ internal sealed class MapRoomLooseCameraState(EntityRegistry entityRegistry)
     /// <summary>
     ///     Stores a new light state. The revision only advances when the light actually changes.
     /// </summary>
-    public MapRoomCameraMetadata SetLight(WorldEntity camera, bool lightOn, out bool changed)
+    public MapRoomCameraMetadata SetLight(Entity camera, bool lightOn, out bool changed)
     {
         lock (camera)
         {
@@ -117,5 +117,5 @@ internal sealed class MapRoomLooseCameraState(EntityRegistry entityRegistry)
         replacement.Metadata = entityRegistry.TryGetEntityById(replacement.Id, out Entity current) ? current.Metadata as MapRoomCameraMetadata : null;
     }
 
-    private static MapRoomCameraMetadata Read(WorldEntity camera) => camera.Metadata as MapRoomCameraMetadata ?? new MapRoomCameraMetadata();
+    private static MapRoomCameraMetadata Read(Entity camera) => camera.Metadata as MapRoomCameraMetadata ?? new MapRoomCameraMetadata();
 }

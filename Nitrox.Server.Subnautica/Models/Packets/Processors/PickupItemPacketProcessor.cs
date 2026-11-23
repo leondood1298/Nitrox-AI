@@ -3,6 +3,7 @@ using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
@@ -38,6 +39,14 @@ internal sealed class PickupItemPacketProcessor(EntityRegistry entityRegistry, W
         StopTrackingExistingWorldEntity(id);
 
         looseCameraState.KeepStateOnReplacement(packet.Item);
+        // The game switches a camera's light off when it is picked up (MapRoomCamera.OnPickedUp). The stored state
+        // follows, or everyone but the player holding the camera would be shown a lit camera when it is dropped again.
+        MapRoomCameraLight? lightOff = null;
+        if (packet.Item.Metadata is MapRoomCameraMetadata { LightOn: true })
+        {
+            MapRoomCameraMetadata ownState = looseCameraState.SetLight(packet.Item, false, out _);
+            lightOff = new MapRoomCameraLight(id, false, ownState.LightRevision, true, true);
+        }
         entityRegistry.AddOrUpdate(packet.Item);
 
         foreach (MapRoomEntity mapRoom in entityRegistry.GetEntities<MapRoomEntity>())
@@ -45,6 +54,18 @@ internal sealed class PickupItemPacketProcessor(EntityRegistry entityRegistry, W
             MapRoomCameraDock? undock = null;
             lock (mapRoom)
             {
+                if (mapRoom.GetCameraRecord(id) is { } litRecord)
+                {
+                    lock (litRecord)
+                    {
+                        if (litRecord.LightOn)
+                        {
+                            litRecord.LightOn = false;
+                            litRecord.LightRevision++;
+                            lightOff = new MapRoomCameraLight(id, false, litRecord.LightRevision, true, true);
+                        }
+                    }
+                }
                 if (mapRoom.TryClearDockedCamera(id, out int dockingIndex))
                 {
                     MapRoomCameraRecord? record = mapRoom.GetCameraRecord(id);
@@ -59,6 +80,11 @@ internal sealed class PickupItemPacketProcessor(EntityRegistry entityRegistry, W
                 diagnostics.RecordAccepted("pickup", mapRoom, id, context.Sender.SessionId, undock.DockingIndex, "undocked");
                 await context.SendToAllAsync(undock);
             }
+        }
+
+        if (lightOff != null)
+        {
+            await context.SendToAllAsync(lightOff);
         }
 
         // Have other players respawn the item inside the inventory.
