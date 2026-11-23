@@ -77,6 +77,7 @@ public class PatchesTranspilerTest
         [typeof(Peeper_InitializeOnce_Patch), 1],
         [typeof(PickPrefab_AddToContainerAsync_Patch), 4],
         [typeof(Player_OnKill_Patch), 0],
+        [typeof(PlayerTimeCapsule_SpawnRoutine_Patch), 2],
         [typeof(PrecursorDoorMotorModeSetter_OnTriggerEnter_Patch), 3],
         [typeof(PrecursorMoonPoolTrigger_Update_Patch), 3],
         [typeof(Respawn_Start_Patch), 3],

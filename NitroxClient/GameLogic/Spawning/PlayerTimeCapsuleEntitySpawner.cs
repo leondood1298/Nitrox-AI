@@ -20,6 +20,7 @@ public class PlayerTimeCapsuleEntitySpawner : SyncEntitySpawner<PlayerTimeCapsul
 
     protected override bool SpawnSync(PlayerTimeCapsuleEntity entity, TaskResult<Optional<GameObject>> result)
     {
+        TimeCapsules.RegisterRocketCapsule(entity);
         result.Set(Optional.OfNullable(TimeCapsules.TakeCapsule(entity.Id)));
         return true;
     }
