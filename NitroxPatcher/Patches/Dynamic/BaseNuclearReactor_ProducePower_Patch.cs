@@ -1,7 +1,4 @@
-using System;
 using System.Reflection;
-using Nitrox.Model.Helper;
-using NitroxClient.Extensions;
 using NitroxClient.GameLogic;
 
 namespace NitroxPatcher.Patches.Dynamic;
@@ -10,8 +7,5 @@ public sealed partial class BaseNuclearReactor_ProducePower_Patch : NitroxPatch,
 {
     private static readonly MethodInfo TARGET_METHOD = Reflect.Method((BaseNuclearReactor t) => t.ProducePower(0f));
 
-    public static bool Prefix(BaseNuclearReactor __instance)
-    {
-        return !__instance.TryGetNitroxId(out var id) || Resolve<SimulationOwnership>().HasAnyLockType(id);
-    }
+    public static bool Prefix(BaseNuclearReactor __instance) => Resolve<BasePowerSources>().CanSimulate(__instance);
 }

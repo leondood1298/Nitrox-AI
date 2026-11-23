@@ -1,0 +1,59 @@
+using System.Collections.Generic;
+using Nitrox.Model.DataStructures;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
+using Nitrox.Model.Subnautica.Helper;
+using Nitrox.Server.Subnautica.Models.GameLogic;
+using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
+using Nitrox.Server.Subnautica.Models.Packets.Core;
+using static Nitrox.Model.Subnautica.Packets.EntityTransformUpdates;
+
+namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
+
+internal sealed class LastEntityTransformUpdateProcessor(WorldEntityManager worldEntityManager, SimulationOwnershipData simulationOwnershipData, PlayerManager playerManager, EntitySimulation entitySimulation, ScannerRoomManager scannerRoomManager) : IAuthPacketProcessor<LastEntityTransformUpdate>
+{
+    private readonly WorldEntityManager worldEntityManager = worldEntityManager;
+    private readonly SimulationOwnershipData simulationOwnershipData = simulationOwnershipData;
+    private readonly PlayerManager playerManager = playerManager;
+    private readonly EntitySimulation entitySimulation = entitySimulation;
+
+    public async Task Process(AuthProcessorContext context, LastEntityTransformUpdate packet)
+    {
+        EntityTransformUpdate lastUpdate = packet.LastUpdate;
+        if (scannerRoomManager.IsControlledBy(lastUpdate.Id, context.Sender))
+        {
+            return;
+        }
+        if (!simulationOwnershipData.RevokeIfOwner(lastUpdate.Id, context.Sender))
+        {
+            return;
+        }
+
+        if (!worldEntityManager.TryUpdateEntityPosition(lastUpdate.Id, lastUpdate.Position, lastUpdate.Rotation, out AbsoluteEntityCell currentCell, out WorldEntity worldEntity))
+        {
+            return;
+        }
+        if (SimulationWhitelist.ShouldPropagateSimulation(worldEntity))
+        {
+            foreach (Entity childEntity in worldEntity.ChildEntities)
+            {
+                simulationOwnershipData.RevokeIfOwner(childEntity.Id, context.Sender);
+            }
+        }
+
+        EntityTransformUpdates entityTransformUpdates = new([lastUpdate]);
+
+        foreach (Player player in playerManager.GetConnectedPlayersExcept(context.Sender.SessionId))
+        {
+            if (player.CanSee(worldEntity))
+            {
+                await context.SendAsync(entityTransformUpdates, player.SessionId);
+            }
+        }
+
+        List<SimulatedEntity> simulationChanges = [];
+        entitySimulation.AssignEntitiesToOtherPlayers(context.Sender.SessionId, [worldEntity], simulationChanges, true);
+
+        await context.SendToAllAsync(new SimulationOwnershipChange(simulationChanges));
+    }
+}

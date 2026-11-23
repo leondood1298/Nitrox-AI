@@ -23,7 +23,7 @@ public sealed partial class Pickupable_Pickup_Patch : NitroxPatch, IDynamicPatch
     {
         if (__state != null)
         {
-            MapRoomScanResults.RemoveLocalResource(__state.ResourceId, __state.TechType, __state.Position);
+            Resolve<MapRoomScans>().RemoveResource(__state.ResourceId, __state.TechType, __state.Position);
         }
     }
 }

@@ -44,7 +44,7 @@ public class ModuleEntitySpawner : EntitySpawner<ModuleEntity>
             yield break;
         }
         GameObject moduleObject = result.Get().Value;
-        entityMetadataManager.ApplyMetadata(moduleObject, entity.Metadata);
+        entityMetadataManager.ApplyMetadata(moduleObject, entity.Metadata, spawnContinues: true);
         
         Optional<ItemsContainer> opContainer = InventoryContainerHelper.TryGetContainerByOwner(moduleObject);
         if (opContainer.HasValue)
@@ -58,7 +58,11 @@ public class ModuleEntitySpawner : EntitySpawner<ModuleEntity>
             yield return entities.SpawnBatchAsync(entity.ChildEntities.OfType<InstalledModuleEntity>().ToList<Entity>(), true);
         }
         
-        if (entity.Metadata is not PowerSourceMetadata && moduleObject.TryGetComponent(out PowerSource powerSource))
+        // A solar panel or thermal plant without stored state was built a moment ago and has not been reported yet. It
+        // starts empty like any new one; filled up here, that level would become real if this player ends up
+        // simulating it.
+        if (entity.Metadata is not PowerSourceMetadata && moduleObject.TryGetComponent(out PowerSource powerSource) &&
+            BasePowerSources.GetSourceType(powerSource) == BasePowerSourceType.UNKNOWN)
         {
             // TODO: Have synced/restored power
             powerSource.SetPower(powerSource.maxPower);

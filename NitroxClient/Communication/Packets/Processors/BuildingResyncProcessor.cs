@@ -72,6 +72,8 @@ internal sealed class BuildingResyncProcessor(Entities entities, EntityMetadataM
         BuildingHandler.Main.StartResync(moduleEntities);
         yield return UpdateEntities<Constructable, ModuleEntity>(moduleEntities.Keys.ToList(), OverwriteModule, IsInCloseProximity).OnYieldError(exception => Log.Error(exception, "Encountered an exception while resyncing ModuleEntities"));
         BuildingHandler.Main.StopResync();
+        // Updates received during the resync were kept for the pieces being rebuilt; none of them may outlive it
+        entityMetadataManager.ClearNewerMetadata();
 
         stopwatch.Stop();
 

@@ -78,7 +78,10 @@ public class InteriorPieceEntitySpawner : EntitySpawner<InteriorPieceEntity>
 
         yield return entities.SpawnBatchAsync(batch, true);
 
-        if (entity.Metadata is not PowerSourceMetadata && result.Get().Value.TryGetComponent(out PowerSource powerSource))
+        // A reactor without stored state was built a moment ago and has not been reported yet. It starts empty like any
+        // new one; filled up here, that level would become real if this player ends up simulating it.
+        if (entity.Metadata is not PowerSourceMetadata && result.Get().Value.TryGetComponent(out PowerSource powerSource) &&
+            BasePowerSources.GetSourceType(powerSource) == BasePowerSourceType.UNKNOWN)
         {
             // TODO: Have synced/restored power
             powerSource.SetPower(powerSource.maxPower);
@@ -112,7 +115,7 @@ public class InteriorPieceEntitySpawner : EntitySpawner<InteriorPieceEntity>
                 moduleObject.AddComponent<RemoteBedController>();
             }
             yield return BuildingPostSpawner.ApplyPostSpawner(moduleObject, interiorPiece.Id);
-            entityMetadataManager.ApplyMetadata(moduleObject, interiorPiece.Metadata);
+            entityMetadataManager.ApplyMetadata(moduleObject, interiorPiece.Metadata, spawnContinues: true);
             result.Set(moduleObject);
         }
     }
@@ -191,13 +194,18 @@ public class InteriorPieceEntitySpawner : EntitySpawner<InteriorPieceEntity>
         }
         NitroxEntity.SetNewId(mapRoomFunctionality.gameObject, mapRoomEntity.Id);
         entityMetadataManager.ApplyMetadata(mapRoomFunctionality.gameObject, mapRoomEntity.Metadata);
-        if (mapRoomEntity.FabricatorMetadata != null)
-        {
-            entityMetadataManager.ApplyMetadata(mapRoomFunctionality.gameObject, mapRoomEntity.FabricatorMetadata);
-        }
-        MapRoomScanResults.ApplySnapshot(mapRoomFunctionality, mapRoomEntity.ScanResultGeneration, mapRoomEntity.ScanResultRevision, mapRoomEntity.ScanResults);
-        MapRoomScanTypes.ApplySnapshot(mapRoomFunctionality, mapRoomEntity.AvailableScanTypesRevision, mapRoomEntity.AvailableScanTypes);
         yield return entities.SpawnBatchAsync(mapRoomEntity.ChildEntities.OfType<InventoryItemEntity>().ToList<Entity>(), true);
-        yield return MapRoomCameras.EnsureCameraIdsDeferred(mapRoomFunctionality, mapRoomEntity.LeftDockCameraId, mapRoomEntity.RightDockCameraId, mapRoomEntity.CameraRegistry);
+        yield return SpawnMapRoomParts(mapRoomEntity, entities);
+    }
+
+    /// <summary>
+    ///     Spawns what a Scanner Room comes with and no client can make up by itself: its fabricator, which gets its
+    ///     id and what it is crafting, and the cameras in its docks. The game would give every dock a new camera of its
+    ///     own (see MapRoomCameraDocking_Start_Patch); these are the ones the room really has.
+    /// </summary>
+    public static IEnumerator SpawnMapRoomParts(MapRoomEntity mapRoomEntity, Entities entities)
+    {
+        yield return entities.SpawnBatchAsync(mapRoomEntity.ChildEntities.OfType<PathBasedChildEntity>().ToList<Entity>(), true);
+        yield return entities.SpawnBatchAsync(MapRoomCameraDocks.GetCameraEntities(mapRoomEntity), true);
     }
 }

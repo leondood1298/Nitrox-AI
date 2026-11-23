@@ -30,6 +30,12 @@ public sealed partial class LiveMixin_AddHealth_Patch : NitroxPatch, IDynamicPat
             return Resolve<CreatureHealthManager>().ShouldApplyHeal(__instance, creatureId);
         }
 
+        // Only the simulating player's game repairs a Scanner Room camera (see MapRoomCameraStates)
+        if (__instance.TryGetComponent(out MapRoomCamera camera))
+        {
+            return Resolve<MapRoomCameraStates>().ChangesHealthHere(camera);
+        }
+
         if (!Resolve<LiveMixinManager>().IsWhitelistedUpdateType(__instance))
         {
             return true; // everyone should process this locally
@@ -47,7 +53,7 @@ public sealed partial class LiveMixin_AddHealth_Patch : NitroxPatch, IDynamicPat
 
         if (__instance.TryGetComponent(out MapRoomCamera camera))
         {
-            Resolve<MapRoomCameras>().BroadcastComponentStateIfChanged(camera);
+            Resolve<MapRoomCameraStates>().ReportIfChanged(camera);
             return;
         }
 

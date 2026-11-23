@@ -25,6 +25,7 @@ internal sealed class JoiningManager(
     StoryManager storyManager,
     StoryScheduler storyScheduler,
     EntitySimulation entitySimulation,
+    ScannerRoomManager scannerRoomManager,
     EscapePodManager escapePodManager,
     EntityRegistry entityRegistry,
     SessionSettings sessionSettings,
@@ -178,7 +179,9 @@ internal sealed class JoiningManager(
 
         player.Entity = wasBrandNewPlayer ? SetupNewPlayerEntity(player) : RespawnExistingEntity(player);
 
-        List<GlobalRootEntity> globalRootEntities = worldEntityManager.GetInitialSyncGlobalRootEntities(true);
+        // With every Scanner Room, and the cameras in its docks, as a copy from one moment: the packet is serialized on
+        // this thread while packet processors keep changing the live rooms on theirs.
+        List<GlobalRootEntity> globalRootEntities = scannerRoomManager.DetachRooms(worldEntityManager.GetGlobalRootEntities(true));
         bool isFirstPlayer = playerManager.GetConnectedPlayers().Count == 1;
 
         InitialPlayerSync initialPlayerSync = new(

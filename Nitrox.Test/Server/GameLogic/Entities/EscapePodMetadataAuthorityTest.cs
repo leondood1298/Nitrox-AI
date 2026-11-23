@@ -1,7 +1,6 @@
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
-using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 
-namespace Nitrox.Test.Server.GameLogic.Entities;
+namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 
 [TestClass]
 public sealed class EscapePodMetadataAuthorityTest

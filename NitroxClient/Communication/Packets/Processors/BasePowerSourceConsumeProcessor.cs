@@ -7,26 +7,38 @@ namespace NitroxClient.Communication.Packets.Processors;
 
 /// <summary>
 ///     Applies energy another player consumed from a power source this client simulates. The reduced level then
-///     reaches everyone through the normal broadcast of that source.
+///     reaches everyone as the source's next state.
 /// </summary>
-internal sealed class BasePowerSourceConsumeProcessor(SimulationOwnership simulationOwnership) : IClientPacketProcessor<BasePowerSourceConsume>
+internal sealed class BasePowerSourceConsumeProcessor(SimulationOwnership simulationOwnership, BasePowerSources basePowerSources) : IClientPacketProcessor<BasePowerSourceConsume>
 {
     public Task Process(ClientProcessorContext context, BasePowerSourceConsume packet)
     {
-        // Ownership can move while the request travels. The new owner's level came from the server's stored state,
-        // so applying here would not reach anyone; dropping a fraction of a second of draw is the smaller error.
-        if (!simulationOwnership.HasAnyLockType(packet.SourceId))
+        bool sourceObjectExists = NitroxEntity.TryGetComponentFrom(packet.SourceId, out PowerSource powerSource);
+        // During a resync the source is only gone until its base has been rebuilt, like during the initial load
+        bool finishedLoading = Multiplayer.Main && Multiplayer.Main.InitialSyncCompleted && !BasePowerSources.IsRebuildingBases();
+        switch (basePowerSources.DecideForwardedDraw(packet.SourceId, simulationOwnership.HasAnyLockType(packet.SourceId), sourceObjectExists, finishedLoading))
         {
-            return Task.CompletedTask;
+            case ForwardedDraw.APPLY:
+                // Not ModifyPower: the game ignores that in modes without power requirements, and the player who took
+                // this energy needs it accounted for even when a Creative player simulates the source. SetPower clamps
+                // at zero.
+                powerSource.SetPower(BasePowerSources.LevelAfterDraw(powerSource.power, packet.Amount));
+                break;
+            case ForwardedDraw.HAND_BACK:
+                // A source that is missing here would stay frozen for everyone for as long as this client simulates it
+                Log.Warn($"[BasePower] Power source {packet.SourceId} does not exist on this client; handing its simulation back");
+                simulationOwnership.StopSimulatingEntity(packet.SourceId);
+                context.Send(new SimulationOwnershipRelease(packet.SourceId));
+                // The request itself is dropped. Sent on, it would come from this client: if the player who drew the
+                // energy is given the source, which is certain with two players, that player would take it off a
+                // level that already includes it.
+                break;
+            default:
+                // Ownership can move while the request travels. Whoever simulates the source now started from the
+                // level everyone had, so applying here would not reach anyone; dropping a fraction of a second of draw
+                // is the smaller error.
+                break;
         }
-        if (!NitroxEntity.TryGetComponentFrom(packet.SourceId, out PowerSource powerSource))
-        {
-            Log.WarnOnce($"[BasePower] Could not find power source {packet.SourceId} to apply another player's consumption");
-            return Task.CompletedTask;
-        }
-
-        // Negative amount consumes. The game clamps at zero and ignores it in modes without power requirements.
-        powerSource.ModifyPower(-packet.Amount, out _);
         return Task.CompletedTask;
     }
 }

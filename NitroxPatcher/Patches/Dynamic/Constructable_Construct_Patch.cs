@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reflection;
 using HarmonyLib;
 using NitroxClient.Communication.Abstract;
+using NitroxClient.GameLogic;
 using NitroxClient.GameLogic.Bases;
 using NitroxClient.GameLogic.Spawning.Bases;
 using NitroxClient.GameLogic.Spawning.Metadata;
@@ -135,6 +136,12 @@ public sealed partial class Constructable_Construct_Patch : NitroxPatch, IDynami
 
         // Have a delay for baseGhost to be actually destroyed
         yield return null;
+
+        // A new Scanner Room comes with two cameras, which have to exist before the room's entity is made for the server.
+        if (moduleObject && moduleObject.TryGetComponent(out MapRoomFunctionality builtMapRoom))
+        {
+            Resolve<MapRoomCameraDocks>().CreateDefaultCameras(builtMapRoom);
+        }
 
         if (parentBase)
         {

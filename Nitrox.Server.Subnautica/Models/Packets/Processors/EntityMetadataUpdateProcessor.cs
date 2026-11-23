@@ -8,7 +8,7 @@ using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
-internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager, EntityRegistry entityRegistry, SimulationOwnershipData simulationOwnershipData, ScannerRoomDiagnostics scannerRoomDiagnostics, BasePowerSourceAuthority basePowerSourceAuthority, ILogger<EntityMetadataUpdateProcessor> logger) : IAuthPacketProcessor<EntityMetadataUpdate>
+internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager, EntityRegistry entityRegistry, SimulationOwnershipData simulationOwnershipData, ScannerRoomManager scannerRoomManager, BasePowerManager basePowerManager, ILogger<EntityMetadataUpdateProcessor> logger) : IAuthPacketProcessor<EntityMetadataUpdate>
 {
     private readonly PlayerManager playerManager = playerManager;
     private readonly EntityRegistry entityRegistry = entityRegistry;
@@ -18,44 +18,79 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
     {
         if (!entityRegistry.TryGetEntityById(packet.Id, out Entity entity))
         {
+            if (packet.NewValue is PowerSourceMetadata)
+            {
+                // A client that simulates a source the server does not have sends this up to once a second. The base
+                // power diagnostics thin out the repeats; an error per packet would not.
+                basePowerManager.RejectUnknownSource(context.Sender, packet.Id);
+                return;
+            }
+            if (packet.NewValue is MapRoomCameraMetadata)
+            {
+                // The player who simulated a camera can report its battery once more while the camera's removal is on
+                // its way to them.
+                scannerRoomManager.RejectMetadataForUnknownCamera(context.Sender, packet.Id);
+                return;
+            }
             logger.ZLogError($"Entity metadata {packet.NewValue.GetType()} updated on an entity unknown to the server {packet.Id}");
             return;
         }
 
-        MapRoomMetadata? previousMapRoomMetadata = entity is MapRoomEntity ? entity.Metadata as MapRoomMetadata : null;
-        CrafterMetadata? previousCrafterMetadata = entity is MapRoomEntity existingMapRoom ? existingMapRoom.FabricatorMetadata : null;
+        if ((GatePowerMetadata(context.Sender, entity, packet.NewValue) ?? GateScannerRoomMetadata(context.Sender, entity, packet.NewValue)) is { } result)
+        {
+            await SendResultAsync(context, entity, result);
+            return;
+        }
+
         EntityMetadata acceptedMetadata = packet.NewValue;
         if (TryProcessMetadata(context.Sender, entity, ref acceptedMetadata))
         {
-            if (entity is MapRoomEntity mapRoom && acceptedMetadata is CrafterMetadata crafterMetadata)
-            {
-                lock (mapRoom)
-                {
-                    mapRoom.FabricatorMetadata = crafterMetadata;
-                }
-            }
-            else if (acceptedMetadata is ThermalPlantMetadata && entity.Metadata is PowerSourceMetadata)
-            {
-                // Already folded into the source's power state by TryProcessMetadata; the report is only relayed.
-            }
-            else if (acceptedMetadata is not MapRoomMetadata)
-            {
-                entity.Metadata = acceptedMetadata;
-            }
-            EntityMetadataUpdate acceptedUpdate = new(packet.Id, acceptedMetadata);
-            if (entity is MapRoomEntity diagnosticRoom && acceptedMetadata is MapRoomMetadata acceptedMapRoomMetadata &&
-                (previousMapRoomMetadata == null || !Equals(previousMapRoomMetadata.TypeToScan, acceptedMapRoomMetadata.TypeToScan) || previousMapRoomMetadata.Generation != acceptedMapRoomMetadata.Generation))
-            {
-                scannerRoomDiagnostics.RecordAccepted("scan_target", diagnosticRoom, sessionId: context.Sender.SessionId,
-                    reason: acceptedMapRoomMetadata.TypeToScan?.Name ?? "none");
-            }
-            else if (entity is MapRoomEntity craftingRoom && acceptedMetadata is CrafterMetadata acceptedCrafterMetadata &&
-                     (previousCrafterMetadata == null || !Equals(previousCrafterMetadata.TechType, acceptedCrafterMetadata.TechType) || previousCrafterMetadata.StartTime != acceptedCrafterMetadata.StartTime))
-            {
-                scannerRoomDiagnostics.RecordAccepted("fabricator", craftingRoom, sessionId: context.Sender.SessionId,
-                    reason: acceptedCrafterMetadata.TechType?.Name ?? "none");
-            }
-            await SendUpdateToVisiblePlayersAsync(context, acceptedUpdate, entity, acceptedMetadata is MapRoomMetadata);
+            entity.Metadata = acceptedMetadata;
+            await SendUpdateToVisiblePlayersAsync(context, new EntityMetadataUpdate(packet.Id, acceptedMetadata), entity, false);
+        }
+    }
+
+    /// <summary>
+    ///     The arms for base power: each hands the update to <see cref="BasePowerManager" />, which stores what it accepts.
+    /// </summary>
+    /// <returns>Null when the update has nothing to do with base power.</returns>
+    private MetadataUpdateResult? GatePowerMetadata(Player sender, Entity entity, EntityMetadata metadata) => metadata switch
+    {
+        PowerSourceMetadata powerState => basePowerManager.AcceptState(sender, entity, powerState),
+        ThermalPlantMetadata temperatureReport => basePowerManager.AcceptTemperature(entity, temperatureReport),
+        _ when entity.Metadata is PowerSourceMetadata => basePowerManager.RejectReplacement(sender, entity, metadata),
+        _ => null
+    };
+
+    /// <summary>
+    ///     The arms for Scanner Rooms: each hands the update to <see cref="ScannerRoomManager" />, which stores what it accepts.
+    /// </summary>
+    /// <returns>Null when the update has nothing to do with Scanner Rooms.</returns>
+    private MetadataUpdateResult? GateScannerRoomMetadata(Player sender, Entity entity, EntityMetadata metadata) => metadata switch
+    {
+        MapRoomMetadata scanState => scannerRoomManager.AcceptRoomMetadata(sender, entity, scanState),
+        MapRoomCameraMetadata cameraState => scannerRoomManager.TryAcceptCameraMetadata(sender, entity, cameraState),
+        CrafterMetadata when entity is MapRoomEntity room => scannerRoomManager.RejectFabricatorStateForRoom(sender, room),
+        _ when ScannerRoomManager.HoldsScannerRoomState(entity) => scannerRoomManager.RejectReplacement(sender, entity, metadata),
+        _ => null
+    };
+
+    /// <summary>
+    ///     Sends what a manager decided about an update. The manager has already stored what it accepted.
+    /// </summary>
+    private async Task SendResultAsync(AuthProcessorContext context, Entity entity, MetadataUpdateResult result)
+    {
+        switch (result.Outcome)
+        {
+            case MetadataUpdateOutcome.ACCEPT:
+                await SendUpdateToVisiblePlayersAsync(context, new EntityMetadataUpdate(entity.Id, result.Metadata), entity, false);
+                break;
+            case MetadataUpdateOutcome.ACCEPT_AND_ECHO:
+                await SendUpdateToVisiblePlayersAsync(context, new EntityMetadataUpdate(entity.Id, result.Metadata), entity, true);
+                break;
+            case MetadataUpdateOutcome.REJECT_AND_CORRECT:
+                await context.ReplyAsync(new EntityMetadataUpdate(entity.Id, result.Metadata));
+                break;
         }
     }
 
@@ -73,46 +108,6 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
 
     private bool TryProcessMetadata(Player sendingPlayer, Entity entity, ref EntityMetadata metadata)
     {
-        if (metadata is MapRoomMetadata requestedMapRoomMetadata)
-        {
-            if (entity is not MapRoomEntity mapRoom)
-            {
-                logger.ZLogWarning($"Player {sendingPlayer.Name} tried applying Map Room metadata to non-Map Room entity {entity.Id}");
-                return false;
-            }
-
-            if (!sendingPlayer.CanSee(entity))
-            {
-                logger.ZLogWarning($"Player {sendingPlayer.Name} tried updating Map Room {entity.Id} while it was not visible");
-                return false;
-            }
-
-            if (MapRoomMetadataAuthority.IsProgressUpdate(entity.Metadata as MapRoomMetadata, requestedMapRoomMetadata) && simulationOwnershipData.GetPlayerForLock(entity.Id) != sendingPlayer)
-            {
-                logger.ZLogWarning($"Player {sendingPlayer.Name} tried updating scan progress for Map Room {entity.Id} without simulation ownership");
-                return false;
-            }
-
-            if (!MapRoomMetadataAuthority.TryAcceptAndApply(mapRoom, requestedMapRoomMetadata, out MapRoomMetadata acceptedMapRoomMetadata))
-            {
-                logger.ZLogDebug($"Rejected stale or duplicate Map Room metadata for {entity.Id}: requested {requestedMapRoomMetadata}, current {entity.Metadata}");
-                return false;
-            }
-
-            metadata = acceptedMapRoomMetadata;
-            return true;
-        }
-
-        if (metadata is CrafterMetadata && entity is MapRoomEntity)
-        {
-            if (simulationOwnershipData.GetPlayerForLock(entity.Id) != sendingPlayer)
-            {
-                logger.ZLogWarning($"Player {sendingPlayer.Name} tried updating Scanner Room fabricator {entity.Id} without simulation ownership");
-                return false;
-            }
-            return true;
-        }
-
         if (metadata is EscapePodMetadata requestedEscapePodMetadata)
         {
             if (entity is not EscapePodEntity)
@@ -122,19 +117,6 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
             }
             metadata = EscapePodMetadataAuthority.Merge(entity.Metadata as EscapePodMetadata, requestedEscapePodMetadata);
             return true;
-        }
-
-        if (metadata is MapRoomCameraMetadata)
-        {
-            // Only the camera light and component packets may change this, after their ownership checks.
-            logger.ZLogWarning($"Player {sendingPlayer.Name} tried updating camera {entity.Id} state through generic metadata");
-            return false;
-        }
-
-        if (metadata is PowerSourceMetadata)
-        {
-            logger.ZLogWarning($"[BasePower] Player {sendingPlayer.Name} tried updating source {entity.Id} through generic metadata");
-            return false;
         }
 
         if (metadata is CyclopsMetadata requestedCyclops)
@@ -147,11 +129,6 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
         return metadata switch
         {
             PlayerMetadata playerMetadata => ProcessPlayerMetadata(sendingPlayer, entity, playerMetadata),
-
-            // temperature is a ratchet (see ThermalPlant.QueryTemperature's Mathf.Max), so drop stale updates instead of
-            // relaying them: every client near a thermal plant reports the same rise, and only the first one is news
-            ThermalPlantMetadata thermalPlantMetadata when entity.Metadata is PowerSourceMetadata => basePowerSourceAuthority.TryApplyTemperature(entity, thermalPlantMetadata),
-            ThermalPlantMetadata thermalPlantMetadata => entity.Metadata is not ThermalPlantMetadata currentMetadata || thermalPlantMetadata.Temperature > currentMetadata.Temperature,
 
             // Allow metadata updates from any player by default
             _ => true

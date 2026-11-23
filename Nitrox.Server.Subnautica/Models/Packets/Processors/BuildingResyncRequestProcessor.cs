@@ -4,10 +4,11 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
+using Nitrox.Server.Subnautica.Models.GameLogic;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
-sealed class BuildingResyncRequestProcessor(EntityRegistry entityRegistry, WorldEntityManager worldEntityManager) : IAuthPacketProcessor<BuildingResyncRequest>
+sealed class BuildingResyncRequestProcessor(EntityRegistry entityRegistry, WorldEntityManager worldEntityManager, ScannerRoomManager scannerRoomManager) : IAuthPacketProcessor<BuildingResyncRequest>
 {
     private readonly EntityRegistry entityRegistry = entityRegistry;
     private readonly WorldEntityManager worldEntityManager = worldEntityManager;
@@ -31,14 +32,15 @@ sealed class BuildingResyncRequestProcessor(EntityRegistry entityRegistry, World
 
         if (packet.ResyncEverything)
         {
-            foreach (GlobalRootEntity globalRootEntity in worldEntityManager.GetGlobalRootEntities(true))
+            // The bases are sent with copies of their Scanner Rooms: the live ones keep changing while the reply is written.
+            foreach (GlobalRootEntity globalRootEntity in scannerRoomManager.DetachRooms(worldEntityManager.GetGlobalRootEntities(true)))
             {
                 AddEntityToResync(globalRootEntity);
             }
         }
         else if (packet.EntityId != null && entityRegistry.TryGetEntityById(packet.EntityId, out Entity entity))
         {
-            AddEntityToResync(entity);
+            AddEntityToResync(entity is GlobalRootEntity globalRootEntity ? scannerRoomManager.DetachRooms([globalRootEntity])[0] : entity);
         }
 
         await context.ReplyAsync(new BuildingResync(buildEntities, moduleEntities));

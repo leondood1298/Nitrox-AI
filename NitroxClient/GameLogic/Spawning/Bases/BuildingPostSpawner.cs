@@ -23,10 +23,6 @@ public static class BuildingPostSpawner
             SetupWaterPark(waterPark, objectId);
             return null;
         }
-        else if (gameObject.TryGetComponent(out MapRoomFunctionality mapRoomFunctionality))
-        {
-            return MapRoomCameras.EnsureCameraIdsDeferred(mapRoomFunctionality);
-        }
         else if (gameObject.TryGetComponent(out Bed bed))
         {
             SetupBed(bed.gameObject);

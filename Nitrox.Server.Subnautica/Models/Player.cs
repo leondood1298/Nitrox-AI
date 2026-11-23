@@ -61,6 +61,11 @@ namespace Nitrox.Server.Subnautica.Models
         public ThreadSafeList<int> PinnedRecipePreferences { get; set; }
         public ThreadSafeDictionary<string, NitroxId> EquippedItems { get; set; }
         public ThreadSafeSet<NitroxId> OutOfCellVisibleEntities { get; set; } = [];
+        /// <summary>
+        ///     False while the player is still loading the world. Entities handed to such a player are not simulated
+        ///     until it is done, so players who are already in the world are preferred.
+        /// </summary>
+        public bool HasFinishedInitialSync { get; set; }
         public bool InPrecursor { get; set; }
         public bool DisplaySurfaceWater { get; set; }
 

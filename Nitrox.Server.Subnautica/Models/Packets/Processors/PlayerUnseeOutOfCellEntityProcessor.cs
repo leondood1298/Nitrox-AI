@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
+using Nitrox.Model.Subnautica.Helper;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
@@ -8,7 +9,7 @@ using Nitrox.Server.Subnautica.Models.Packets.Core;
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
 internal sealed class PlayerUnseeOutOfCellEntityProcessor(SimulationOwnershipData simulationOwnershipData, PlayerManager playerManager,
-    EntitySimulation entitySimulation, EntityRegistry entityRegistry, MapRoomCameraControlReleaseFactory cameraControlReleaseFactory)
+    EntitySimulation entitySimulation, EntityRegistry entityRegistry, ScannerRoomManager scannerRoomManager)
     : IAuthPacketProcessor<PlayerUnseeOutOfCellEntity>
 {
     private readonly SimulationOwnershipData simulationOwnershipData = simulationOwnershipData;
@@ -31,9 +32,7 @@ internal sealed class PlayerUnseeOutOfCellEntityProcessor(SimulationOwnershipDat
         }
         // Visibility refreshes must not implicitly end active remote camera control. That lifecycle
         // is released explicitly by the control, pickup, docking, destruction, or disconnect path.
-        if (simulationOwnershipData.TryGetLock(packet.EntityId, out SimulationOwnershipData.PlayerLock currentLock) &&
-            currentLock.Player == context.Sender && currentLock.LockType == SimulationLockType.EXCLUSIVE &&
-            cameraControlReleaseFactory.IsScannerCamera(packet.EntityId))
+        if (scannerRoomManager.IsControlledBy(packet.EntityId, context.Sender))
         {
             return;
         }
@@ -43,16 +42,27 @@ internal sealed class PlayerUnseeOutOfCellEntityProcessor(SimulationOwnershipDat
         {
             return;
         }
+        List<NitroxId> droppedEntityIds = [packet.EntityId];
+        if (SimulationWhitelist.ShouldPropagateSimulation(entity))
+        {
+            foreach (Entity childEntity in entity.ChildEntities)
+            {
+                if (simulationOwnershipData.RevokeIfOwner(childEntity.Id, context.Sender))
+                {
+                    droppedEntityIds.Add(childEntity.Id);
+                }
+            }
+        }
 
         List<Player> otherPlayers = playerManager.GetConnectedPlayersExcept(context.Sender);
-        if (entitySimulation.TryAssignEntityToPlayers(otherPlayers, entity, out SimulatedEntity simulatedEntity))
+        if (entitySimulation.TryAssignEntityToPlayers(otherPlayers, entity, true, out List<SimulatedEntity> simulatedEntities))
         {
-            entitySimulation.BroadcastSimulationChanges([simulatedEntity]);
+            await entitySimulation.BroadcastSimulationChanges(simulatedEntities);
         }
         else
         {
             // No player has taken simulation on the entity
-            await context.SendToAllAsync(new DropSimulationOwnership(packet.EntityId));
+            await context.SendToAllAsync(new DropSimulationOwnership(droppedEntityIds));
         }
     }
 }

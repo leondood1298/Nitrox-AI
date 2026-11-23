@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
@@ -6,7 +7,6 @@ using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
-using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Helper;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities.Spawning;
@@ -27,8 +27,6 @@ internal sealed class WorldEntityManager
     private readonly BatchEntitySpawner batchEntitySpawner;
     private readonly ConcurrentDictionary<NitroxInt3, Lazy<Task<int>>> batchRegistrationTasks = new();
     private readonly EntityRegistry entityRegistry;
-    private readonly MapRoomScanResultSubscriptions mapRoomScanResultSubscriptions;
-    private readonly ScannerRoomDiagnostics scannerRoomDiagnostics;
 
     private readonly Lock globalRootEntitiesLock = new();
     private readonly ILogger<WorldEntityManager> logger;
@@ -48,14 +46,12 @@ internal sealed class WorldEntityManager
     /// </summary>
     internal Dictionary<AbsoluteEntityCell, Dictionary<NitroxId, WorldEntity>> worldEntitiesByCell = [];
 
-    public WorldEntityManager(IPacketSender packetSender, EntityRegistry entityRegistry, BatchEntitySpawner batchEntitySpawner, PlayerManager playerManager, MapRoomScanResultSubscriptions mapRoomScanResultSubscriptions, ScannerRoomDiagnostics scannerRoomDiagnostics, IProgressReporter progressReporter, ILogger<WorldEntityManager> logger)
+    public WorldEntityManager(IPacketSender packetSender, EntityRegistry entityRegistry, BatchEntitySpawner batchEntitySpawner, PlayerManager playerManager, IProgressReporter progressReporter, ILogger<WorldEntityManager> logger)
     {
         this.packetSender = packetSender;
         this.entityRegistry = entityRegistry;
         this.batchEntitySpawner = batchEntitySpawner;
         this.playerManager = playerManager;
-        this.mapRoomScanResultSubscriptions = mapRoomScanResultSubscriptions;
-        this.scannerRoomDiagnostics = scannerRoomDiagnostics;
         this.logger = logger;
         this.progressReporter = progressReporter;
     }
@@ -77,34 +73,6 @@ internal sealed class WorldEntityManager
         }
     }
 
-    public List<GlobalRootEntity> GetInitialSyncGlobalRootEntities(bool rootOnly = false)
-    {
-        HashSet<NitroxId> dockedCameraIds = [];
-        foreach (MapRoomEntity mapRoom in entityRegistry.GetEntities<MapRoomEntity>())
-        {
-            int restored = MapRoomCameraPersistence.RestoreOrphanedRegistrations(mapRoom, id => entityRegistry.TryGetEntityById(id, out Entity _));
-            if (restored > 0)
-            {
-                scannerRoomDiagnostics.RecordInvariantFailure("orphan_recovery", mapRoom, reason: $"restored_{restored}");
-            }
-            lock (mapRoom)
-            {
-                if (mapRoom.LeftDockCameraId != null)
-                {
-                    dockedCameraIds.Add(mapRoom.LeftDockCameraId);
-                }
-                if (mapRoom.RightDockCameraId != null)
-                {
-                    dockedCameraIds.Add(mapRoom.RightDockCameraId);
-                }
-            }
-        }
-        return GetGlobalRootEntities(rootOnly).Where(entity => ShouldIncludeInInitialSync(entity.Id, dockedCameraIds)).ToList();
-    }
-
-    internal static bool ShouldIncludeInInitialSync(NitroxId entityId, ISet<NitroxId> dockedCameraIds) =>
-        !dockedCameraIds.Contains(entityId);
-
     public List<GlobalRootEntity> GetPersistentGlobalRootEntities()
     {
         // TODO: refactor if there are more entities that should not be persisted
@@ -120,17 +88,49 @@ internal sealed class WorldEntityManager
         }).ToList();
     }
 
-    public List<WorldEntity> GetEntities(AbsoluteEntityCell cell)
+    public IEnumerable<WorldEntity> EnumerateCellEntities(AbsoluteEntityCell cell)
+    {
+        WorldEntity[] array = null;
+        int count = 0;
+
+        lock (worldEntitiesLock)
+        {
+            if (worldEntitiesByCell.TryGetValue(cell, out Dictionary<NitroxId, WorldEntity> batchEntities))
+            {
+                count = batchEntities.Count;
+                array = ArrayPool<WorldEntity>.Shared.Rent(count);
+                batchEntities.Values.CopyTo(array, 0);
+            }
+        }
+
+        if (array == null)
+        {
+            yield break;
+        }
+
+        // never yield while having the lock or it will never be released before the end of this method
+        try
+        {
+            for (int i = 0; i < count; i++)
+            {
+                yield return array[i];
+            }
+        }
+        finally
+        {
+            ArrayPool<WorldEntity>.Shared.Return(array, true);
+        }
+    }
+
+    public void GetCellEntitiesNonAlloc(AbsoluteEntityCell cell, List<Entity> targetList)
     {
         lock (worldEntitiesLock)
         {
             if (worldEntitiesByCell.TryGetValue(cell, out Dictionary<NitroxId, WorldEntity> batchEntities))
             {
-                return batchEntities.Values.ToList();
+                targetList.AddRange(batchEntities.Values);
             }
         }
-
-        return [];
     }
 
     public bool TryUpdateEntityPosition(NitroxId id, NitroxVector3 position, NitroxQuaternion rotation, out AbsoluteEntityCell? newCell, out WorldEntity worldEntity)
@@ -225,8 +225,15 @@ internal sealed class WorldEntityManager
         RegisterWorldEntityInCell(entity, entity.AbsoluteEntityCell);
     }
 
-    public void RegisterWorldEntityInCell(WorldEntity entity, AbsoluteEntityCell cell)
+    public bool RegisterWorldEntityInCell(WorldEntity entity, AbsoluteEntityCell cell)
     {
+        if (entity.ParentId != null)
+        {
+            // entities parented to a WorldEntity most likely have their LargeWorldEntity component disabled, which means they
+            // will only disappear once their parent disappears, thus we do not need to hold them in a cell
+            return false;
+        }
+
         lock (worldEntitiesLock)
         {
             if (!worldEntitiesByCell.TryGetValue(cell, out Dictionary<NitroxId, WorldEntity> worldEntitiesInCell))
@@ -234,6 +241,7 @@ internal sealed class WorldEntityManager
                 worldEntitiesInCell = worldEntitiesByCell[cell] = [];
             }
             worldEntitiesInCell[entity.Id] = entity;
+            return true;
         }
     }
 
@@ -295,11 +303,10 @@ internal sealed class WorldEntityManager
     {
         List<Entity> spawnedEntities = await batchEntitySpawner.LoadUnspawnedEntitiesAsync(batchId, suppressLogs);
 
-        List<WorldEntity> entitiesInCells = spawnedEntities.Where(entity => typeof(WorldEntity).IsAssignableFrom(entity.GetType()) &&
+        List<WorldEntity> entitiesInCells = [.. spawnedEntities.Where(entity => typeof(WorldEntity).IsAssignableFrom(entity.GetType()) &&
                                                                             entity.GetType() != typeof(CellRootEntity) &&
                                                                             entity.GetType() != typeof(GlobalRootEntity))
-                                                           .Cast<WorldEntity>()
-                                                           .ToList();
+                                                           .Cast<WorldEntity>()];
 
         // UWE stores entities serialized with a handful of parent cell roots.  These only represent a small fraction of all possible cell
         // roots that could exist.  There is no reason for the server to know about these and much easier to consider top-level world entities
@@ -313,12 +320,12 @@ internal sealed class WorldEntityManager
                 entitiesInCells.Add(worldEntity);
             }
 
-            cellRoot.ChildEntities = new List<Entity>();
+            cellRoot.ChildEntities.Clear();
         }
         // Specific type of entities which is not parented to a CellRootEntity
         entitiesInCells.AddRange(spawnedEntities.OfType<SerializedWorldEntity>());
 
-        entityRegistry.AddEntitiesIgnoringDuplicate(entitiesInCells.OfType<Entity>().ToList());
+        entityRegistry.AddEntitiesIgnoringDuplicate(entitiesInCells.OfType<Entity>());
 
         foreach (WorldEntity entity in entitiesInCells)
         {
@@ -330,7 +337,6 @@ internal sealed class WorldEntityManager
 
     public void StopTrackingEntity(WorldEntity entity)
     {
-        InvalidateMapRoomScanResults(entity.Id);
         if (entity is GlobalRootEntity)
         {
             RemoveGlobalRootEntity(entity.Id, false);
@@ -356,23 +362,8 @@ internal sealed class WorldEntityManager
         {
             StopTrackingEntity(worldEntity);
         }
-        else
-        {
-            InvalidateMapRoomScanResults(entityId);
-        }
 
         return true;
-    }
-
-    private void InvalidateMapRoomScanResults(NitroxId entityId)
-    {
-        foreach (MapRoomScanResultChanged removal in MapRoomScanResultAuthority.InvalidateResource(entityRegistry.GetEntities<MapRoomEntity>(), entityId))
-        {
-            foreach (Player player in playerManager.GetConnectedPlayers().Where(player => mapRoomScanResultSubscriptions.Contains(removal.MapRoomId, player.SessionId)))
-            {
-                packetSender.SendPacketAsync(removal, player.SessionId);
-            }
-        }
     }
 
     /// <summary>
@@ -406,7 +397,11 @@ internal sealed class WorldEntityManager
                 UnregisterWorldEntityFromCell(entity.Id, oldCell);
 
                 // Automatically add entity to its new cell
-                RegisterWorldEntityInCell(entity, newCell);
+                if (!RegisterWorldEntityInCell(entity, newCell))
+                {
+                    // in case it wasn't moved to a new cell (because it depends on a parent for example) we don't need to broadcast it
+                    return;
+                }
 
                 // It can happen for some players that the entity moves to a loaded cell of theirs, but that they hadn't spawned it in the first place
                 foreach (Player player in playerManager.ConnectedPlayers())

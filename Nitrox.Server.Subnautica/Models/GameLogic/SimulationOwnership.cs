@@ -23,9 +23,17 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic
 
         Dictionary<NitroxId, PlayerLock> playerLocksById = new Dictionary<NitroxId, PlayerLock>();
 
-        public bool TryToAcquire(NitroxId id, Player player, SimulationLockType requestedLock)
+        public void ForceAcquire(NitroxId entityId, Player player, SimulationLockType requestedLock)
         {
-            return TryToAcquire(id, player, requestedLock, preserveExistingExclusive: false, out _);
+            lock (playerLocksById)
+            {
+                playerLocksById[entityId] = new(player, requestedLock);
+            }
+        }
+
+        public bool TryAcquire(NitroxId id, Player player, SimulationLockType requestedLock)
+        {
+            return TryAcquire(id, player, requestedLock, preserveExistingExclusive: false, out _);
         }
 
         /// <summary>
@@ -33,13 +41,13 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic
         ///     held by the same player. Cell visibility and global-root assignment are refresh operations, not
         ///     an explicit request to stop interactive control.
         /// </summary>
-        public bool TryToAcquirePreservingExistingExclusive(NitroxId id, Player player,
+        public bool TryAcquirePreservingExistingExclusive(NitroxId id, Player player,
             SimulationLockType requestedLock, out PlayerLock acquiredLock)
         {
-            return TryToAcquire(id, player, requestedLock, preserveExistingExclusive: true, out acquiredLock);
+            return TryAcquire(id, player, requestedLock, preserveExistingExclusive: true, out acquiredLock);
         }
 
-        private bool TryToAcquire(NitroxId id, Player player, SimulationLockType requestedLock,
+        private bool TryAcquire(NitroxId id, Player player, SimulationLockType requestedLock,
             bool preserveExistingExclusive, out PlayerLock acquiredLock)
         {
             lock (playerLocksById)

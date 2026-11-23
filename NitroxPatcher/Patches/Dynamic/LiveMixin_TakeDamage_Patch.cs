@@ -31,6 +31,12 @@ public sealed partial class LiveMixin_TakeDamage_Patch : NitroxPatch, IDynamicPa
             return Resolve<CreatureHealthManager>().ShouldApplyDamage(__instance, creatureId, originalDamage, position, type, dealer);
         }
 
+        // Only the simulating player's game damages a Scanner Room camera (see MapRoomCameraStates)
+        if (__instance.TryGetComponent(out MapRoomCamera camera))
+        {
+            return Resolve<MapRoomCameraStates>().ChangesHealthHere(camera);
+        }
+
         if (!Resolve<LiveMixinManager>().IsWhitelistedUpdateType(__instance))
         {
             return true; // everyone should process this locally
@@ -48,7 +54,7 @@ public sealed partial class LiveMixin_TakeDamage_Patch : NitroxPatch, IDynamicPa
 
         if (__state != __instance.health && __instance.TryGetComponent(out MapRoomCamera camera))
         {
-            Resolve<MapRoomCameras>().BroadcastComponentStateIfChanged(camera);
+            Resolve<MapRoomCameraStates>().ReportIfChanged(camera);
             return;
         }
 

@@ -1,43 +1,18 @@
 using System.Reflection;
-using Nitrox.Model.DataStructures;
 using NitroxClient.GameLogic;
-using UnityEngine;
 
 namespace NitroxPatcher.Patches.Dynamic;
 
 /// <summary>
-/// Prevents every connected client from independently draining Scanner Room power.
-/// Visual scanning and blip updates still run locally; only the simulation owner may let the drain timer elapse.
-/// The owner's drain is reported to whoever simulates the power sources (see <see cref="BasePowerConsumptionForwarder" />).
+///     The game updates a room's scan every frame, in every player's game, and drains the room's power from here.
+///     <see cref="MapRoomScans" /> does its own work for the room at that pace, and keeps the drain to the player
+///     who simulates the room.
 /// </summary>
 public sealed partial class MapRoomFunctionality_UpdateScanning_Patch : NitroxPatch, IDynamicPatch
 {
     private static readonly MethodInfo TARGET_METHOD = Reflect.Method((MapRoomFunctionality t) => t.UpdateScanning());
 
-    public static void Prefix(MapRoomFunctionality __instance, out bool __state)
-    {
-        bool hasEntityId = __instance.TryGetNitroxId(out NitroxId roomId);
-        bool hasOwnership = hasEntityId && Resolve<SimulationOwnership>().HasAnyLockType(roomId);
-        if (ShouldSuppressPowerDrain(hasEntityId, hasOwnership))
-        {
-            __instance.timeLastPowerDrain = Time.time;
-        }
+    public static void Prefix(MapRoomFunctionality __instance, out bool __state) => __state = Resolve<MapRoomScans>().BeforeScanUpdate(__instance);
 
-        // A room without an id drains on every client, which must not be reported once per player.
-        __state = hasOwnership;
-        if (__state)
-        {
-            Resolve<BasePowerConsumptionForwarder>().EnterConsumer();
-        }
-    }
-
-    public static void Finalizer(bool __state)
-    {
-        if (__state)
-        {
-            Resolve<BasePowerConsumptionForwarder>().ExitConsumer();
-        }
-    }
-
-    public static bool ShouldSuppressPowerDrain(bool hasEntityId, bool hasOwnership) => hasEntityId && !hasOwnership;
+    public static void Finalizer(bool __state) => Resolve<MapRoomScans>().ScanUpdated(__state);
 }

@@ -12,7 +12,7 @@ internal sealed class FireDousedProcessor(EntitySimulation entitySimulation, Wor
     {
         if (packet.Health <= 0f)
         {
-            await entitySimulation.EntityDestroyedAsync(packet.Id);
+            entitySimulation.EntityDestroyed(packet.Id);
             worldEntityManager.TryDestroyEntity(packet.Id, out _);
         }
 

@@ -75,19 +75,17 @@ public class EntityMetadataManager
         return Optional.Empty;
     }
 
-    public void ApplyMetadata(GameObject gameObject, EntityMetadata metadata)
+    /// <param name="spawnContinues">
+    ///     True when the entity is still being spawned and its metadata will be applied once more at the end (a spawner
+    ///     that applies metadata before it spawns the children). What is applied now is then kept as the entity's
+    ///     newest state, so that the final application cannot put the older state from the spawn packet back.
+    /// </param>
+    public void ApplyMetadata(GameObject gameObject, EntityMetadata metadata, bool spawnContinues = false)
     {
         // In case a metadata update was received while this entity was in the spawn queue
-        if (metadata != null && gameObject.TryGetNitroxId(out NitroxId objectId) &&
-            newerMetadataById.TryGetValue(objectId, out Dictionary<Type, EntityMetadata> newerByType) &&
-            newerByType.TryGetValue(metadata.GetType(), out EntityMetadata newMetadata))
+        if (metadata != null && gameObject.TryGetNitroxId(out NitroxId objectId))
         {
-            metadata = newMetadata;
-            newerByType.Remove(newMetadata.GetType());
-            if (newerByType.Count == 0)
-            {
-                newerMetadataById.Remove(objectId);
-            }
+            metadata = TakeNewest(objectId, metadata, spawnContinues);
         }
         Optional<IEntityMetadataProcessor> metadataProcessor = FromMetaData(metadata);
 
@@ -95,6 +93,38 @@ public class EntityMetadataManager
         {
             metadataProcessor.Value.ProcessMetadata(gameObject, metadata);
         }
+    }
+
+    /// <summary>
+    ///     Returns what an entity that is being spawned should get: <paramref name="metadata" /> from its spawn packet,
+    ///     or an update of the same kind that was received after that packet.
+    /// </summary>
+    internal EntityMetadata TakeNewest(NitroxId entityId, EntityMetadata metadata, bool spawnContinues)
+    {
+        Type kind = metadata.GetType();
+        if (newerMetadataById.TryGetValue(entityId, out Dictionary<Type, EntityMetadata> newerByType) && newerByType.TryGetValue(kind, out EntityMetadata newMetadata))
+        {
+            metadata = newMetadata;
+            newerByType.Remove(kind);
+            if (newerByType.Count == 0)
+            {
+                newerMetadataById.Remove(entityId);
+            }
+        }
+        if (spawnContinues)
+        {
+            RegisterNewerMetadata(entityId, metadata);
+        }
+        return metadata;
+    }
+
+    /// <summary>
+    ///     True between a spawner's own application of metadata and the final one (see <see cref="ApplyMetadata" />).
+    ///     An update that arrives in between has to be kept for the final application as well.
+    /// </summary>
+    public bool IsAwaitingSpawnEnd(NitroxId entityId, EntityMetadata metadata)
+    {
+        return newerMetadataById.TryGetValue(entityId, out Dictionary<Type, EntityMetadata> newerByType) && newerByType.ContainsKey(metadata.GetType());
     }
 
     public void RegisterNewerMetadata(NitroxId entityId, EntityMetadata metadata)

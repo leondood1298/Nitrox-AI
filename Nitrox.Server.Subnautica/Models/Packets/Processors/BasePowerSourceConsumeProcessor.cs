@@ -1,6 +1,5 @@
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
-using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
@@ -12,32 +11,29 @@ namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 ///     as a docked vehicle, a battery charger or a Scanner Room run on the player simulating the consumer, which is
 ///     often not the player simulating the reactor it draws from.
 /// </summary>
-internal sealed class BasePowerSourceConsumeProcessor(EntityRegistry entityRegistry, SimulationOwnershipData simulationOwnershipData,
-    BasePowerSourceAuthority authority, BasePowerDiagnostics diagnostics, ILogger<BasePowerSourceConsumeProcessor> logger) : IAuthPacketProcessor<BasePowerSourceConsume>
+internal sealed class BasePowerSourceConsumeProcessor(EntityRegistry entityRegistry, BasePowerManager basePowerManager, BasePowerDiagnostics diagnostics,
+    ILogger<BasePowerSourceConsumeProcessor> logger) : IAuthPacketProcessor<BasePowerSourceConsume>
 {
     public async Task Process(AuthProcessorContext context, BasePowerSourceConsume packet)
     {
         if (!entityRegistry.TryGetEntityById(packet.SourceId, out Entity entity))
         {
-            logger.ZLogWarningOnce($"[BasePower] {context.Sender.Name} #{context.Sender.SessionId} consumed from unknown source {packet.SourceId}");
+            diagnostics.RecordConsumption(packet.SourceId, context.Sender.SessionId, null, packet.Amount, ConsumptionRoute.REJECTED, null, "unknown source");
             return;
         }
 
-        Player? owner = simulationOwnershipData.GetPlayerForLock(packet.SourceId);
-        ConsumptionRoute route = authority.RouteConsumption(entity, owner?.SessionId, context.Sender.SessionId, packet.Amount,
-            out PowerSourceMetadata accepted, out string reason);
+        // The manager records what became of the report in the diagnostics
+        ConsumptionRoute route = basePowerManager.RouteConsumption(context.Sender, entity, packet.Amount, out Player? simulator, out PowerSourceMetadata? accepted);
         switch (route)
         {
-            case ConsumptionRoute.FORWARD_TO_OWNER:
-                await context.SendAsync(packet, owner!.SessionId);
+            case ConsumptionRoute.FORWARD_TO_SIMULATOR:
+                await context.SendAsync(packet, simulator!.SessionId);
                 break;
             case ConsumptionRoute.APPLIED_BY_SERVER:
-                await context.SendToAllAsync(new BasePowerSourceUpdate(packet.SourceId, accepted.SourceType, accepted.Power, 0,
-                    accepted.MaxPower, accepted.Revision, true, true, "", accepted.FuelConsumed));
+                // Nobody simulates the source, so nobody else will tell the players its new level
+                await context.SendToAllAsync(new EntityMetadataUpdate(packet.SourceId, accepted!));
                 break;
             default:
-                diagnostics.RecordRejected();
-                logger.ZLogWarningOnce($"[BasePower] rejected consumption of {packet.Amount} from source {packet.SourceId} by {context.Sender.Name} #{context.Sender.SessionId}: {reason}");
                 return;
         }
 

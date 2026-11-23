@@ -1,7 +1,12 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Linq;
+using Nitrox.Model.DataStructures;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
+using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication;
 using NitroxClient.Communication.Abstract;
 using NitroxClient.GameLogic.Spawning;
@@ -10,12 +15,6 @@ using NitroxClient.GameLogic.Spawning.Bases;
 using NitroxClient.GameLogic.Spawning.Metadata;
 using NitroxClient.GameLogic.Spawning.WorldEntities;
 using NitroxClient.MonoBehaviours;
-using Nitrox.Model.DataStructures;
-using Nitrox.Model.Subnautica.DataStructures.GameLogic;
-using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
-using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
-using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
-using Nitrox.Model.Subnautica.Packets;
 using UnityEngine;
 using UWE;
 
@@ -28,10 +27,8 @@ namespace NitroxClient.GameLogic
         private readonly EntityMetadataManager entityMetadataManager;
         private readonly SimulationOwnership simulationOwnership;
         private readonly Terrain terrain;
-        private readonly MapRoomCameras mapRoomCameras;
 
         private readonly Dictionary<NitroxId, Type> spawnedAsType = [];
-        private readonly Dictionary<NitroxId, List<Entity>> pendingParentEntitiesByParentId = [];
 
         private readonly Dictionary<Type, IEntitySpawner> entitySpawnersByType = [];
 
@@ -41,14 +38,20 @@ namespace NitroxClient.GameLogic
 
         private readonly HashSet<NitroxId> deletedEntitiesIds = [];
 
-        public Entities(IPacketSender packetSender, ThrottledPacketSender throttledPacketSender, EntityMetadataManager entityMetadataManager, PlayerManager playerManager, LocalPlayer localPlayer, LiveMixinManager liveMixinManager, TimeManager timeManager, SimulationOwnership simulationOwnership, Terrain terrain, MapRoomCameras mapRoomCameras)
+        /// <remarks>
+        /// We divide the FPS by 2.5 because we consider (time for 1 frame + spawning time without a frame + extra computing time).
+        /// </remarks>
+        private static float allottedTimePerFrameSeconds => 0.4f / Application.targetFrameRate;
+        private float timeUntilNextYieldSeconds;
+        public bool ShouldSkipFrame => Time.realtimeSinceStartup >= timeUntilNextYieldSeconds;
+
+        public Entities(IPacketSender packetSender, ThrottledPacketSender throttledPacketSender, EntityMetadataManager entityMetadataManager, PlayerManager playerManager, LocalPlayer localPlayer, LiveMixinManager liveMixinManager, TimeManager timeManager, SimulationOwnership simulationOwnership, Terrain terrain)
         {
             this.packetSender = packetSender;
             this.throttledPacketSender = throttledPacketSender;
             this.entityMetadataManager = entityMetadataManager;
             this.simulationOwnership = simulationOwnership;
             this.terrain = terrain;
-            this.mapRoomCameras = mapRoomCameras;
 
             EntitiesToSpawn = [];
             CellsToSpawn = [];
@@ -63,7 +66,7 @@ namespace NitroxClient.GameLogic
             entitySpawnersByType[typeof(PlaceholderGroupWorldEntity)] = entitySpawnersByType[typeof(WorldEntity)];
             entitySpawnersByType[typeof(PrefabPlaceholderEntity)] = entitySpawnersByType[typeof(WorldEntity)];
             entitySpawnersByType[typeof(EscapePodEntity)] = new EscapePodEntitySpawner(localPlayer);
-            entitySpawnersByType[typeof(PlayerEntity)] = new PlayerEntitySpawner(playerManager, localPlayer);
+            entitySpawnersByType[typeof(PlayerEntity)] = new PlayerEntitySpawner(playerManager, localPlayer, this);
             entitySpawnersByType[typeof(VehicleEntity)] = new VehicleEntitySpawner();
             entitySpawnersByType[typeof(SerializedWorldEntity)] = entitySpawnersByType[typeof(WorldEntity)];
             entitySpawnersByType[typeof(GlobalRootEntity)] = new GlobalRootEntitySpawner();
@@ -147,7 +150,8 @@ namespace NitroxClient.GameLogic
             entityMetadataManager.ClearNewerMetadata();
             deletedEntitiesIds.Clear();
             simulationOwnership.ClearNewerSimulations();
-
+            EntityPositionBroadcaster.Instance.ClearNotSpawnedEntities();
+            
             foreach (AbsoluteEntityCell absoluteEntityCell in CellsToSpawn)
             {
                 terrain.AddFullySpawnedCell(absoluteEntityCell);
@@ -166,6 +170,11 @@ namespace NitroxClient.GameLogic
             }
         }
 
+        public void RefreshTimeUntilNextYield()
+        {
+            timeUntilNextYieldSeconds = Time.realtimeSinceStartup + allottedTimePerFrameSeconds;
+        }
+
         /// <remarks>
         /// Yield returning takes too much time (at least once per IEnumerator branch) and it quickly gets out of hand with long function call hierarchies so
         /// we want to reduce the amount of yield operations and only skip to the next frame when required (to maintain the FPS).
@@ -176,12 +185,10 @@ namespace NitroxClient.GameLogic
         /// <param name="skipFrames"></param>
         public IEnumerator SpawnBatchAsync(List<Entity> batch, bool forceRespawn = false, bool skipFrames = true)
         {
-            // we divide the FPS by 2.5 because we consider (time for 1 frame + spawning time without a frame + extra computing time)
-            float allottedTimePerFrame = 0.4f / Application.targetFrameRate;
-            float timeLimit = Time.realtimeSinceStartup + allottedTimePerFrame;
-
             TaskResult<Optional<GameObject>> entityResult = new();
             TaskResult<Exception> exception = new();
+
+            RefreshTimeUntilNextYield();
 
             while (batch.Count > 0)
             {
@@ -198,18 +205,14 @@ namespace NitroxClient.GameLogic
                 }
                 if (WasAlreadySpawned(entity) && !forceRespawn)
                 {
-                    UpdateEntity(entity);
+                    simulationOwnership.ApplyNewerSimulation(entity.Id);
                     continue;
                 }
                 else if (entity.ParentId != null && !IsParentReady(entity.ParentId))
                 {
-                    AddPendingParentEntity(entity);
+                    Log.ErrorOnce($"[{nameof(Entities)}] Could not find parent {entity.ParentId} when spawning {entity.Id}");
                     continue;
                 }
-
-                mapRoomCameras.CameraObjectWillSpawn(entity.Id, entity.TechType,
-                    Multiplayer.Main && Multiplayer.Main.InitialSyncCompleted);
-                MapRoomCameras.DestroyStaleLocalCamera(entity.Id);
 
                 // Executing the spawn instructions whether they're sync or async
                 IEntitySpawner entitySpawner = entitySpawnersByType[entity.GetType()];
@@ -234,34 +237,27 @@ namespace NitroxClient.GameLogic
                     continue;
                 }
 
-                entityMetadataManager.ApplyMetadata(entityResult.Get().Value, entity.Metadata);
-                simulationOwnership.ApplyNewerSimulation(entity.Id);
-                mapRoomCameras.CameraObjectSpawned(entity.Id, entityResult.Get().Value);
-
-                MarkAsSpawned(entity);
-
-                // Finding out about all children (can be hidden in the object's hierarchy or in a pending list)
+                OnEntitySpawned(entity, entityResult.Get().Value);
 
                 if (!entitySpawner.SpawnsOwnChildren(entity))
                 {
                     batch.AddRange(entity.ChildEntities);
-
-                    List<NitroxId> childrenIds = entity.ChildEntities.Select(entity => entity.Id).ToList();
-                    if (pendingParentEntitiesByParentId.TryGetValue(entity.Id, out List<Entity> pendingEntities))
-                    {
-                        IEnumerable<Entity> childrenToAdd = pendingEntities.Where(e => !childrenIds.Contains(e.Id));
-                        batch.AddRange(childrenToAdd);
-                        pendingParentEntitiesByParentId.Remove(entity.Id);
-                    }
                 }
 
                 // Skip a frame to maintain FPS
-                if (Time.realtimeSinceStartup >= timeLimit && skipFrames)
+                if (ShouldSkipFrame && skipFrames)
                 {
                     yield return new WaitForEndOfFrame();
-                    timeLimit = Time.realtimeSinceStartup + allottedTimePerFrame;
+                    RefreshTimeUntilNextYield();
                 }
             }
+        }
+
+        public void OnEntitySpawned(Entity entity, GameObject gameObject)
+        {
+            entityMetadataManager.ApplyMetadata(gameObject, entity.Metadata);
+            simulationOwnership.ApplyNewerSimulation(entity.Id);
+            MarkAsSpawned(entity);
         }
 
         public IEnumerator SpawnEntityAsync(Entity entity, bool forceRespawn = false, bool skipFrames = false)
@@ -306,29 +302,6 @@ namespace NitroxClient.GameLogic
             }
 
             UnityEngine.Object.Destroy(gameObject);
-        }
-
-        private void UpdateEntity(Entity entity)
-        {
-            if (!NitroxEntity.TryGetObjectFrom(entity.Id, out GameObject gameObject))
-            {
-#if DEBUG && ENTITY_LOG
-                Log.Error($"Entity was already spawned but not found(is it in another chunk?) NitroxId: {entity.Id} TechType: {entity.TechType} ClassId: {entity.ClassId} Transform: {entity.Transform}");
-#endif
-                return;
-            }
-            entityMetadataManager.ApplyMetadata(gameObject, entity.Metadata);
-        }
-
-        private void AddPendingParentEntity(Entity entity)
-        {
-            if (!pendingParentEntitiesByParentId.TryGetValue(entity.ParentId, out List<Entity> pendingEntities))
-            {
-                pendingEntities = new List<Entity>();
-                pendingParentEntitiesByParentId[entity.ParentId] = pendingEntities;
-            }
-
-            pendingEntities.Add(entity);
         }
 
         // Entites can sometimes be spawned as one thing but need to be respawned later as another.  For example, a flare

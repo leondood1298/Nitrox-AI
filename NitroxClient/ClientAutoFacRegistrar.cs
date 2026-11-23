@@ -90,9 +90,10 @@ namespace NitroxClient
             containerBuilder.RegisterType<Vehicles>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<AI>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<SimulationOwnership>().InstancePerLifetimeScope();
-            containerBuilder.RegisterType<BasePowerState>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<BasePowerSources>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<BasePowerConsumptionForwarder>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<BasePowerClientDiagnostics>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<BasePowerRelayAudioSuppressor>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<LiveMixinManager>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<CreatureHealthManager>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<CreatureAttacksOnPlayers>().InstancePerLifetimeScope();
@@ -112,11 +113,12 @@ namespace NitroxClient
             containerBuilder.RegisterType<Fires>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<FireExtinguishers>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<MapRoomCameras>().InstancePerLifetimeScope();
-            containerBuilder.RegisterType<StalkerCameraLockPurposeTracker>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<MapRoomCameraPreviews>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<MapRoomCameraStates>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<MapRoomCameraDocks>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<StalkerCameraGrabs>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<ScannerRoomClientDiagnostics>().InstancePerLifetimeScope();
-            containerBuilder.RegisterType<MapRoomScanResultBroadcaster>().InstancePerLifetimeScope();
-            containerBuilder.RegisterType<MapRoomScanResultSubscriber>().InstancePerLifetimeScope();
-            containerBuilder.RegisterType<MapRoomScanTypes>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<MapRoomScans>().InstancePerLifetimeScope();
             containerBuilder.Register(_ => FMODWhitelist.Load(GameInfo.Subnautica)).InstancePerLifetimeScope();
             containerBuilder.RegisterType<FMODSystem>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<NitroxSettingsManager>().InstancePerLifetimeScope();

@@ -1,6 +1,4 @@
-using System;
 using System.Reflection;
-using Nitrox.Model.Helper;
 using NitroxClient.GameLogic;
 
 namespace NitroxPatcher.Patches.Dynamic;
@@ -14,8 +12,5 @@ public sealed partial class MapRoomCameraDocking_UndockCamera_Patch : NitroxPatc
         __state = __instance.camera;
     }
 
-    public static void Postfix(MapRoomCameraDocking __instance, MapRoomCamera __state)
-    {
-        Resolve<MapRoomCameras>().BroadcastUndock(__instance, __state);
-    }
+    public static void Postfix(MapRoomCameraDocking __instance, MapRoomCamera __state) => Resolve<MapRoomCameraDocks>().CameraUndocked(__instance, __state);
 }

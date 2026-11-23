@@ -21,7 +21,7 @@ public sealed class SimulationOwnershipInitialSyncProcessor : InitialSyncProcess
         int entitiesSynced = 0;
         foreach (SimulatedEntity simulatedEntity in packet.InitialSimulationOwnerships)
         {
-            simulationOwnership.TreatSimulatedEntity(simulatedEntity);
+            simulationOwnership.TreatInitialSimulatedEntity(simulatedEntity);
 
             if (entitiesSynced++ % 5 == 0)
             {
@@ -29,7 +29,6 @@ public sealed class SimulationOwnershipInitialSyncProcessor : InitialSyncProcess
                 yield return null;
             }
         }
-
-        yield break;
+        simulationOwnership.InitialListApplied();
     }
 }

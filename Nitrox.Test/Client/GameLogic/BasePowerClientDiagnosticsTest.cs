@@ -1,4 +1,5 @@
 using System.Globalization;
+using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using NitroxClient.GameLogic;
@@ -18,22 +19,63 @@ public sealed class BasePowerClientDiagnosticsTest
             initialSyncCompleted: false, waitScreenWaiting: true, "initial sync\r\n")!;
 
         Assert.AreEqual(
-            $"[BPD1] n=1 ep={diagnostics.Epoch} side=C ev=audio_down out=suppress base=11111111.1111 source=- power=0.00/2500.00 initial=0 wait=1 reason=initial_sync",
+            $"[BPD1] n=1 ep={diagnostics.Epoch} side=C sid=- ev=audio_down out=suppress base=11111111.1111 source=- power=0.00/2500.00 initial=0 wait=1 reason=initial_sync",
             line);
         Assert.IsFalse(line.Contains('\r') || line.Contains('\n'));
     }
 
     [TestMethod]
-    public void SourceTraceIncludesCanonicalTypeAndRevision()
+    public void LinesCarryTheSessionIdTheServerKnowsThisPlayerBy()
+    {
+        BasePowerClientDiagnostics diagnostics = new(static () => (SessionId)(ushort)4, static () => DateTimeOffset.UnixEpoch);
+
+        string line = diagnostics.RecordAudioTransition("audio_up", false, null, 1f, 2f, true, false, null)!;
+
+        StringAssert.Contains(line, " side=C sid=4 ev=audio_up ");
+        Assert.AreEqual(1, diagnostics.GetHistory().Count, "the epoch marker is written to the log, not counted as an event");
+    }
+
+    [TestMethod]
+    public void FailingSessionLookupCannotBreakTheCodeBeingObserved()
+    {
+        BasePowerClientDiagnostics diagnostics = new(static () => throw new InvalidOperationException("session is gone"),
+            static () => throw new InvalidOperationException("clock is gone"));
+
+        string line = diagnostics.RecordAudioTransition("audio_up", false, null, 1f, 2f, true, false, null)!;
+
+        StringAssert.Contains(line, " side=C sid=- ev=audio_up out=pass ");
+        Assert.AreEqual(1, diagnostics.GetHistory().Count);
+    }
+
+    [TestMethod]
+    public void RefusedReportIsRecordedOncePerReason()
     {
         BasePowerClientDiagnostics diagnostics = new();
         NitroxId sourceId = new("22222222-2222-2222-2222-222222222222");
-        PowerSourceMetadata metadata = new(125.25f, 250f, BasePowerSourceType.THERMAL, 17);
+        PowerSourceMetadata canonical = new(30f, 0f, BasePowerSourceType.SOLAR);
+
+        string? first = diagnostics.RecordSourceRejected(sourceId, canonical, "power 80.5 is outside 0-75");
+        string? second = diagnostics.RecordSourceRejected(sourceId, canonical, "power 81.5 is outside 0-75");
+        string? third = diagnostics.RecordSourceRejected(sourceId, canonical, "power 82.5 is outside 0-75");
+        string? otherReason = diagnostics.RecordSourceRejected(sourceId, canonical, "sender does not own source simulation");
+
+        StringAssert.Contains(first, " ev=source_update out=reject base=- source=22222222.2222 power=30.00/75.00 initial=- wait=- reason=solar_power_80.5_is_outside_0-75");
+        StringAssert.Contains(second, " rep=2 reason=solar_power_81.5_is_outside_0-75");
+        Assert.IsNull(third, "the offending value changes with every report and must not make each one look new");
+        StringAssert.Contains(otherReason, " reason=solar_sender_does_not_own_source_simulation");
+    }
+
+    [TestMethod]
+    public void SourceTraceIncludesTheSourceTypeAndItsCapacity()
+    {
+        BasePowerClientDiagnostics diagnostics = new();
+        NitroxId sourceId = new("22222222-2222-2222-2222-222222222222");
+        PowerSourceMetadata metadata = new(125.25f, 0f, BasePowerSourceType.THERMAL);
 
         string line = diagnostics.RecordSourceApply(sourceId, metadata, true, false, true, "metadata")!;
 
         Assert.AreEqual(
-            $"[BPD1] n=1 ep={diagnostics.Epoch} side=C ev=source_apply out=ok base=- source=22222222.2222 power=125.25/250.00 initial=0 wait=1 reason=metadata_thermal_17",
+            $"[BPD1] n=1 ep={diagnostics.Epoch} side=C sid=- ev=source_apply out=ok base=- source=22222222.2222 power=125.25/250.00 initial=0 wait=1 reason=metadata_thermal",
             line);
     }
 
@@ -42,12 +84,12 @@ public sealed class BasePowerClientDiagnosticsTest
     {
         BasePowerClientDiagnostics diagnostics = new();
         NitroxId sourceId = new("33333333-3333-3333-3333-333333333333");
-        PowerSourceMetadata metadata = new(0f, 75f, BasePowerSourceType.SOLAR, 4);
+        PowerSourceMetadata metadata = new(0f, 0f, BasePowerSourceType.SOLAR);
 
         string line = diagnostics.RecordSourceApply(sourceId, metadata, false, false, true, "packet")!;
 
         StringAssert.Contains(line, " ev=source_apply out=missing ");
-        StringAssert.Contains(line, " source=33333333.3333 power=0.00/75.00 initial=0 wait=1 reason=packet_solar_4");
+        StringAssert.Contains(line, " source=33333333.3333 power=0.00/75.00 initial=0 wait=1 reason=packet_solar");
     }
 
     [TestMethod]
@@ -69,7 +111,7 @@ public sealed class BasePowerClientDiagnosticsTest
     public void SourceBudgetCannotConsumeReservedAudioEntries()
     {
         BasePowerClientDiagnostics diagnostics = new();
-        PowerSourceMetadata metadata = new(10f, 75f, BasePowerSourceType.SOLAR, 1);
+        PowerSourceMetadata metadata = new(10f, 0f, BasePowerSourceType.SOLAR);
 
         for (int i = 0; i < BasePowerClientDiagnostics.SOURCE_HISTORY_CAPACITY + 10; i++)
         {
