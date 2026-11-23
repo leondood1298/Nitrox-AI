@@ -50,6 +50,11 @@ public sealed class EntityDestroyedProcessor(Entities entities, SimulationOwners
             {
                 DestroyCyclopsDamagePoint(cyclopsDamagePoint);
             }
+            else if (gameObject.TryGetComponent(out SeaEmperorBaby seaEmperorBaby))
+            {
+                // A baby is removed when it leaves through the portal: a copy that has not got there yet leaves the same way
+                seaEmperorBaby.Teleport();
+            }
             else
             {
                 Entities.DestroyObject(gameObject);

@@ -53,6 +53,8 @@ public sealed partial class IncubatorEgg_HatchNow_Patch : NitroxPatch, IDynamicP
                 babyId,
                 null);
             Resolve<Entities>().BroadcastEntitySpawnedByClient(entity);
+            // The server gives the baby's simulation to this player but only tells the others
+            Resolve<SimulationOwnership>().SimulateEntity(babyId, SimulationLockType.TRANSIENT);
         }
         else
         {
