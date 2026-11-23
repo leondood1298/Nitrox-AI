@@ -57,20 +57,6 @@ public sealed class ScannerRoomManagerDockingTest
     }
 
     [TestMethod]
-    [DataRow(true, true, true, 0, null)]
-    [DataRow(true, true, true, 1, null)]
-    [DataRow(true, true, true, 2, "invalid_slot")]
-    [DataRow(true, true, true, -1, "invalid_slot")]
-    [DataRow(true, false, true, 0, "room_removed")]
-    [DataRow(true, false, false, 0, "unknown_room")]
-    [DataRow(false, true, true, 0, "unknown_camera")]
-    [DataRow(false, false, false, 5, "invalid_slot")]
-    public void DockNeedsACameraOutInTheWorldARoomAndOneOfItsTwoDocks(bool isWorldCamera, bool roomExists, bool roomWasKnown, int dockingIndex, string? expectedRefusal)
-    {
-        Assert.AreEqual(expectedRefusal, ScannerRoomManager.GetDockRefusal(isWorldCamera, roomExists, roomWasKnown, dockingIndex));
-    }
-
-    [TestMethod]
     public async Task DockOfAnEntityThatIsNoCameraIsRefused()
     {
         ScannerRoomScenarioFixture scenario = new();

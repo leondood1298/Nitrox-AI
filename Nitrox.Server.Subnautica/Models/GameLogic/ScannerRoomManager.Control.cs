@@ -74,9 +74,11 @@ internal sealed partial class ScannerRoomManager
             return;
         }
         using Hold held = await EnterAsync();
+        // An exclusive lock on a camera is either a player's, who controls the camera or is about to, or the lock a
+        // client takes while its Stalker carries the camera. Only the second kind gives way.
         if (pendingControllers.Contains((request.Id, requester.SessionId)) &&
             simulationOwnershipData.TryGetLock(request.Id, out SimulationOwnershipData.PlayerLock heldLock) && heldLock.Player != requester &&
-            CanPreempt(heldLock.LockType, controllers.ContainsKey(request.Id) || pendingControllers.Contains((request.Id, heldLock.Player.SessionId))) &&
+            heldLock.LockType == SimulationLockType.EXCLUSIVE && !controllers.ContainsKey(request.Id) && !pendingControllers.Contains((request.Id, heldLock.Player.SessionId)) &&
             simulationOwnershipData.RevokeIfOwner(request.Id, heldLock.Player))
         {
             CameraView camera = GetCamera(request.Id);
@@ -274,13 +276,6 @@ internal sealed partial class ScannerRoomManager
         }
         return revokedLocks;
     }
-
-    /// <summary>
-    ///     An exclusive lock on a camera is either a player's, who controls the camera or is about to, or the lock a
-    ///     client takes while its Stalker carries the camera. Only the second kind gives way.
-    /// </summary>
-    internal static bool CanPreempt(SimulationLockType heldLockType, bool holderIsOrBecomesController) =>
-        heldLockType == SimulationLockType.EXCLUSIVE && !holderIsOrBecomesController;
 
     internal static string? GetUnusableReason(float energy, float health, SubnauticaGameMode gameMode)
     {

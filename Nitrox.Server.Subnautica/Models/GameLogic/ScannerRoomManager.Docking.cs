@@ -25,7 +25,12 @@ internal sealed partial class ScannerRoomManager
         CameraView camera = GetCamera(packet.CameraId);
         bool roomWasKnown = packet.MapRoomId != null && roomsById.ContainsKey(packet.MapRoomId);
         TryGetRoom(packet.MapRoomId, out MapRoomEntity? room);
-        string? refusal = GetDockRefusal(camera.WorldCamera != null, room != null, roomWasKnown, packet.DockingIndex);
+        // Only a camera out in the world can go into a dock: a camera in an inventory is no world entity (a dock
+        // report can cross the pickup on its way to the server), and the id of any other kind of entity is never a
+        // camera, whoever reports it.
+        string? refusal = packet.DockingIndex is < 0 or >= MapRoomCameraMetadata.DOCK_COUNT ? "invalid_slot" :
+                          room == null ? roomWasKnown ? "room_removed" : "unknown_room" :
+                          camera.WorldCamera == null ? "unknown_camera" : null;
         if (refusal == null && camera.DockedRoom == room && camera.State.DockingIndex == packet.DockingIndex)
         {
             diagnostics.RecordAccepted("dock", room, packet.CameraId, sender.SessionId, packet.DockingIndex, "idempotent");
@@ -87,16 +92,6 @@ internal sealed partial class ScannerRoomManager
         await SendToOthersAsync(sender, packet);
         return true;
     }
-
-    /// <summary>
-    ///     Why a camera cannot go into a dock, as far as that can be told without looking at who asks. Only a camera
-    ///     out in the world can: a camera in an inventory is no world entity (a dock report can cross the pickup on
-    ///     its way to the server), and the id of any other kind of entity is never a camera, whoever reports it.
-    /// </summary>
-    internal static string? GetDockRefusal(bool isWorldCamera, bool roomExists, bool roomWasKnown, int dockingIndex) =>
-        dockingIndex is < 0 or >= MapRoomCameraMetadata.DOCK_COUNT ? "invalid_slot" :
-        !roomExists ? roomWasKnown ? "room_removed" : "unknown_room" :
-        !isWorldCamera ? "unknown_camera" : null;
 
     /// <summary>
     ///     The camera in one of the room's docks, or null.

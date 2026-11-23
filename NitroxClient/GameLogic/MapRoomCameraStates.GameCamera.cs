@@ -170,7 +170,7 @@ public sealed partial class MapRoomCameraStates
             bool cameraAlive = camera;
             bool batteryAvailable = cameraAlive && camera.energyMixin.battery != null;
             bool currentGeneration = IsCurrentCameraBatteryInitialization(cameraId, camera, generation);
-            if (ShouldClearCameraBatteryInitialization(currentGeneration, cameraAlive, batteryAvailable, canonicalEnergyApplied))
+            if (currentGeneration && (!cameraAlive || batteryAvailable && canonicalEnergyApplied))
             {
                 pendingCameraEnergy.Remove(cameraId);
                 initializingCameraBatteries.Remove(cameraId);
@@ -181,10 +181,6 @@ public sealed partial class MapRoomCameraStates
     private bool IsCurrentCameraBatteryInitialization(NitroxId cameraId, MapRoomCamera camera, long generation) =>
         initializingCameraBatteries.TryGetValue(cameraId, out CameraBatteryInitialization initialization) &&
         initialization.Generation == generation && ReferenceEquals(initialization.Camera, camera);
-
-    internal static bool ShouldClearCameraBatteryInitialization(bool currentGeneration, bool cameraAlive,
-        bool batteryAvailable, bool canonicalEnergyApplied) =>
-        currentGeneration && (!cameraAlive || batteryAvailable && canonicalEnergyApplied);
 
     private readonly record struct CameraBatteryInitialization(MapRoomCamera Camera, long Generation);
 
