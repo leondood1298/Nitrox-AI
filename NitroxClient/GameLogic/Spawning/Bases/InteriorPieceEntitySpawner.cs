@@ -191,13 +191,18 @@ public class InteriorPieceEntitySpawner : EntitySpawner<InteriorPieceEntity>
         }
         NitroxEntity.SetNewId(mapRoomFunctionality.gameObject, mapRoomEntity.Id);
         entityMetadataManager.ApplyMetadata(mapRoomFunctionality.gameObject, mapRoomEntity.Metadata);
-        if (mapRoomEntity.FabricatorMetadata != null)
-        {
-            entityMetadataManager.ApplyMetadata(mapRoomFunctionality.gameObject, mapRoomEntity.FabricatorMetadata);
-        }
         yield return entities.SpawnBatchAsync(mapRoomEntity.ChildEntities.OfType<InventoryItemEntity>().ToList<Entity>(), true);
-        // The cameras in the room's docks are its children. The game would give every dock a new camera of its own
-        // (see MapRoomCameraDocking_Start_Patch), these are the ones the room really has.
+        yield return SpawnMapRoomParts(mapRoomEntity, entities);
+    }
+
+    /// <summary>
+    ///     Spawns what a Scanner Room comes with and no client can make up by itself: its fabricator, which gets its
+    ///     id and what it is crafting, and the cameras in its docks. The game would give every dock a new camera of its
+    ///     own (see MapRoomCameraDocking_Start_Patch); these are the ones the room really has.
+    /// </summary>
+    public static IEnumerator SpawnMapRoomParts(MapRoomEntity mapRoomEntity, Entities entities)
+    {
+        yield return entities.SpawnBatchAsync(mapRoomEntity.ChildEntities.OfType<PathBasedChildEntity>().ToList<Entity>(), true);
         yield return entities.SpawnBatchAsync(MapRoomCameraDocks.GetCameraEntities(mapRoomEntity), true);
     }
 }

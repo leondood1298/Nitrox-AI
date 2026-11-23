@@ -9,6 +9,7 @@ using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.GameLogic;
 using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
@@ -20,6 +21,7 @@ using Nitrox.Server.Subnautica.Models.GameLogic.Bases;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
 using Nitrox.Server.Subnautica.Models.Packets.Processors;
+using Nitrox.Test.Server.Helper;
 using NSubstitute;
 using Packet = Nitrox.Model.Packets.Packet;
 using ServerPlayer = Nitrox.Server.Subnautica.Models.Player;
@@ -61,17 +63,24 @@ internal sealed class ScannerRoomScenarioFixture
     internal EntitySimulation EntitySimulation { get; }
     internal WorldEntityManager WorldEntityManager { get; }
     internal MapRoomEntity Room { get; }
-    internal ServerPlayer PlayerA { get; } = CreatePlayer(1, "A");
-    internal ServerPlayer PlayerB { get; } = CreatePlayer(2, "B");
+    internal ServerPlayer PlayerA { get; }
+    internal ServerPlayer PlayerB { get; }
     internal IReadOnlyList<NitroxId> CameraIds { get; } = [CameraAId, CameraBId, CameraCId];
 
     /// <param name="packetSender">For tests that need the sender to do more than record.</param>
     /// <param name="playerManager">For tests that need connected players; the default has none.</param>
     /// <param name="diagnosticsLog">For tests that read the lines the diagnostics write; these diagnostics also know the lock table.</param>
-    internal ScannerRoomScenarioFixture(IPacketSender? packetSender = null, PlayerManager? playerManager = null, ILogger<ScannerRoomDiagnostics>? diagnosticsLog = null)
+    /// <param name="connectedPlayers">
+    ///     For tests of what is passed on to the other players: the fixture's two players are then connected players
+    ///     of this manager, and more can be connected to it.
+    /// </param>
+    internal ScannerRoomScenarioFixture(IPacketSender? packetSender = null, PlayerManager? playerManager = null, ILogger<ScannerRoomDiagnostics>? diagnosticsLog = null,
+        ConnectedPlayers? connectedPlayers = null)
     {
         PacketSender = packetSender ?? Substitute.For<IPacketSender>();
-        PlayerManager = playerManager ?? new PlayerManager(null!, null!, null!, NullLogger<PlayerManager>.Instance);
+        PlayerManager = connectedPlayers?.PlayerManager ?? playerManager ?? new PlayerManager(null!, null!, null!, NullLogger<PlayerManager>.Instance);
+        PlayerA = connectedPlayers?.Connect("PlayerA") ?? CreatePlayer(1, "A");
+        PlayerB = connectedPlayers?.Connect("PlayerB") ?? CreatePlayer(2, "B");
         EntityRegistry = new EntityRegistry(NullLogger<EntityRegistry>.Instance);
         Room = new MapRoomEntity(RoomId, RoomParentId, new NitroxInt3(4, -2, 9));
         EntityRegistry.AddEntity(Room);
@@ -232,8 +241,7 @@ internal sealed class ScannerRoomScenarioFixture
 
     internal void SetCameraComponents(NitroxId cameraId, float energy, float health)
     {
-        MapRoomCameraMetadata state = CameraState(cameraId);
-        SetCameraState(cameraId, state.WithComponents(energy, health, state.ComponentRevision + 1));
+        SetCameraState(cameraId, CameraState(cameraId).WithComponents(energy, health));
     }
 
     /// <summary>
@@ -321,6 +329,25 @@ internal sealed class ScannerRoomScenarioFixture
         SentDuringAsync(() => updateBaseProcessor.Process(Context(player), packet));
 
     /// <summary>
+    ///     Finishes a Scanner Room on a base that is made for it, the way the builder's client reports it. The room
+    ///     names the base as its parent and comes with whatever children the test gave it.
+    /// </summary>
+    internal async Task<IReadOnlyList<Packet>> BuildRoomAsync(ServerPlayer builder, MapRoomEntity room)
+    {
+        BuildEntity builtBase = BuildEntity.MakeEmpty();
+        builtBase.Id = room.ParentId;
+        WorldEntityManager.AddOrUpdateGlobalRootEntity(builtBase);
+        GhostEntity ghost = GhostEntity.MakeEmpty();
+        ghost.Id = room.Id;
+        ghost.ParentId = room.ParentId;
+        ghost.TechType = new NitroxTechType("BaseMapRoom");
+        WorldEntityManager.AddOrUpdateGlobalRootEntity(ghost);
+
+        return await UpdateBaseAsync(builder, new UpdateBase(room.ParentId, room.Id, null, room, new Dictionary<NitroxId, NitroxBaseFace>(), new Dictionary<NitroxId, NitroxInt3>(),
+            new Dictionary<NitroxId, NitroxInt3> { [room.Id] = room.Cell }, default, 1));
+    }
+
+    /// <summary>
     ///     Reports an entity as destroyed, the way the client that saw it die does.
     /// </summary>
     internal Task<IReadOnlyList<Packet>> DestroyAsync(ServerPlayer player, NitroxId entityId) =>
@@ -359,16 +386,16 @@ internal sealed class ScannerRoomScenarioFixture
         .OfType<SimulationOwnershipResponse>().Single();
 
     /// <summary>
-    ///     Everything the server sends in answer to a camera light packet.
+    ///     Reports a camera's state the way a client does: everything it has for the camera, here what the server
+    ///     holds with the given values changed.
     /// </summary>
-    internal Task<IReadOnlyList<Packet>> LightAsync(ServerPlayer player, MapRoomCameraLight packet) =>
-        SentDuringAsync(() => Manager.SetCameraLightAsync(player, packet));
-
-    /// <summary>
-    ///     Everything the server sends in answer to a camera battery and health packet.
-    /// </summary>
-    internal Task<IReadOnlyList<Packet>> ComponentsAsync(ServerPlayer player, MapRoomCameraComponentState packet) =>
-        SentDuringAsync(() => Manager.SetCameraComponentsAsync(player, packet));
+    /// <returns>What the server sent in answer, see <see cref="UpdateMetadataAsync" />.</returns>
+    internal Task<IReadOnlyList<Packet>> ReportCameraAsync(ServerPlayer player, NitroxId cameraId, bool? lightOn = null, float? energy = null, float? health = null)
+    {
+        MapRoomCameraMetadata stored = CameraState(cameraId);
+        return UpdateMetadataAsync(player, cameraId,
+            new MapRoomCameraMetadata(lightOn ?? stored.LightOn, energy ?? stored.Energy, health ?? stored.Health, stored.CameraNumber, stored.DockingIndex));
+    }
 
     /// <summary>
     ///     Everything the server sends in answer to a camera preview packet.

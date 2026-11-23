@@ -14,9 +14,6 @@ public class MapRoomEntity : GlobalRootEntity
     [DataMember(Order = 1)]
     public NitroxInt3 Cell { get; set; }
 
-    [DataMember(Order = 2)]
-    public CrafterMetadata? FabricatorMetadata { get; set; }
-
     [IgnoreConstructor]
     protected MapRoomEntity()
     {
@@ -36,11 +33,10 @@ public class MapRoomEntity : GlobalRootEntity
     /// Used for deserialization.
     /// <see cref="WorldEntity.SpawnedByServer"/> is set to true because this entity is meant to receive simulation locks
     /// </remarks>
-    public MapRoomEntity(NitroxInt3 cell, CrafterMetadata? fabricatorMetadata, NitroxTransform transform, int level, string classId, bool spawnedByServer, NitroxId id, NitroxTechType techType, EntityMetadata metadata, NitroxId parentId, List<Entity> childEntities) :
+    public MapRoomEntity(NitroxInt3 cell, NitroxTransform transform, int level, string classId, bool spawnedByServer, NitroxId id, NitroxTechType techType, EntityMetadata metadata, NitroxId parentId, List<Entity> childEntities) :
         base(transform, level, classId, true, id, techType, metadata, parentId, childEntities)
     {
         Cell = cell;
-        FabricatorMetadata = fabricatorMetadata;
     }
 
     public override string ToString()

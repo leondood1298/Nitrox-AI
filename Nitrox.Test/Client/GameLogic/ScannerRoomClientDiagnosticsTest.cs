@@ -71,7 +71,7 @@ public sealed class ScannerRoomClientDiagnosticsTest
         NitroxId cameraId = new("11111111-1111-1111-1111-111111111111");
 
         string line = diagnostics.Record("dock_apply", "ok", cameraId);
-        diagnostics.RecordComponentApplied(cameraId, 50f, 50f, 1, true);
+        diagnostics.RecordComponentApplied(cameraId, 50f, 50f, true);
 
         StringAssert.Contains(line, " side=C sid=- ev=dock_apply out=ok ");
         Assert.AreEqual(2, diagnostics.GetHistory().Count);
@@ -97,32 +97,12 @@ public sealed class ScannerRoomClientDiagnosticsTest
     }
 
     [TestMethod]
-    public void PacketsAboutToBeIgnoredAreRecorded()
-    {
-        ScannerRoomClientDiagnostics diagnostics = new();
-        NitroxId cameraId = new("11111111-1111-1111-1111-111111111111");
-        Dictionary<NitroxId, long> appliedRevisions = new() { [cameraId] = 5 };
-
-        diagnostics.RecordIfIgnored("light_apply", cameraId, isServerResponse: true, granted: false, revision: 0, appliedRevisions);
-        diagnostics.RecordIfIgnored("light_apply", cameraId, isServerResponse: true, granted: true, revision: 3, appliedRevisions);
-        diagnostics.RecordIfIgnored("light_apply", cameraId, isServerResponse: true, granted: true, revision: 5, appliedRevisions);
-        diagnostics.RecordIfIgnored("light_apply", cameraId, isServerResponse: true, granted: true, revision: 6, appliedRevisions);
-        diagnostics.RecordIfIgnored("light_apply", new NitroxId(), isServerResponse: true, granted: true, revision: 1, appliedRevisions);
-        diagnostics.RecordIfIgnored("light_apply", cameraId, isServerResponse: false, granted: false, revision: 0, appliedRevisions);
-
-        IReadOnlyList<string> history = diagnostics.GetHistory();
-        Assert.AreEqual(2, history.Count, "packets that will be applied, and this client's own requests, are not ignored packets");
-        StringAssert.Contains(history[0], " ev=light_apply out=reject room=- cam=11111111.1111 slot=- rev=0 reason=server_reject");
-        StringAssert.Contains(history[1], " ev=light_apply out=stale room=- cam=11111111.1111 slot=- rev=3 reason=applied_5");
-    }
-
-    [TestMethod]
     public void CameraManagerNamesThePlayerWhoHoldsACamera()
     {
         IMultiplayerSession multiplayerSession = Substitute.For<IMultiplayerSession>();
         multiplayerSession.Reservation.Returns(new MultiplayerSessionReservation((SessionId)(ushort)1));
         ScannerRoomClientDiagnostics diagnostics = new();
-        MapRoomCameras cameras = new(multiplayerSession, multiplayerSession, null!, new SimulationOwnership(multiplayerSession, multiplayerSession),
+        MapRoomCameras cameras = new(multiplayerSession, multiplayerSession, new SimulationOwnership(multiplayerSession, multiplayerSession), null!,
             diagnostics, new StalkerCameraLockPurposeTracker());
         NitroxId cameraId = new("11111111-1111-1111-1111-111111111111");
 
@@ -134,26 +114,6 @@ public sealed class ScannerRoomClientDiagnosticsTest
         Assert.AreEqual(2, history.Count);
         Assert.IsTrue(history[0].Contains(" ev=control_apply out=reject ") && history[0].EndsWith(" reason=locked_by_2"));
         Assert.IsTrue(history[1].Contains(" ev=control_release_apply out=ok ") && history[1].EndsWith(" reason=remote_pilot_2"));
-    }
-
-    [TestMethod]
-    public void CameraManagerRecordsRefusedAndOutdatedCameraState()
-    {
-        IMultiplayerSession multiplayerSession = Substitute.For<IMultiplayerSession>();
-        multiplayerSession.Reservation.Returns(new MultiplayerSessionReservation((SessionId)(ushort)1));
-        ScannerRoomClientDiagnostics diagnostics = new();
-        MapRoomCameras cameras = new(multiplayerSession, multiplayerSession, null!, new SimulationOwnership(multiplayerSession, multiplayerSession),
-            diagnostics, new StalkerCameraLockPurposeTracker());
-        NitroxId cameraId = new("11111111-1111-1111-1111-111111111111");
-
-        // The server refuses what this client reported, for instance a recharge from a player who does not simulate the room.
-        cameras.ProcessComponentState(new MapRoomCameraComponentState(cameraId, 50f, 50f, 0, true, false));
-        cameras.ProcessLight(new MapRoomCameraLight(cameraId, true, 0, true, false));
-
-        IReadOnlyList<string> history = diagnostics.GetHistory();
-        Assert.AreEqual(2, history.Count);
-        StringAssert.Contains(history[0], " ev=component_apply out=reject ");
-        StringAssert.Contains(history[1], " ev=light_apply out=reject ");
     }
 
     [TestMethod]
@@ -178,10 +138,10 @@ public sealed class ScannerRoomClientDiagnosticsTest
         ScannerRoomClientDiagnostics diagnostics = new();
         NitroxId cameraId = new();
 
-        diagnostics.RecordComponentApplied(cameraId, 100f, MapRoomCameraMetadata.MAX_HEALTH, 1, true);
-        diagnostics.RecordComponentApplied(cameraId, 99f, 399f, 2, true);
-        diagnostics.RecordComponentApplied(cameraId, 75f, 399f, 3, true);
-        diagnostics.RecordComponentApplied(cameraId, 74f, 300f, 4, true);
+        diagnostics.RecordComponentApplied(cameraId, 100f, MapRoomCameraMetadata.MAX_HEALTH, true);
+        diagnostics.RecordComponentApplied(cameraId, 99f, 399f, true);
+        diagnostics.RecordComponentApplied(cameraId, 75f, 399f, true);
+        diagnostics.RecordComponentApplied(cameraId, 74f, 300f, true);
 
         Assert.AreEqual(3, diagnostics.GetHistory().Count);
         Assert.IsTrue(diagnostics.GetHistory()[0].EndsWith("reason=e100_h100"));

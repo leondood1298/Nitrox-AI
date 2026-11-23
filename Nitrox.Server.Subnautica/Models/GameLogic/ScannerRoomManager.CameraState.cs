@@ -1,13 +1,15 @@
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
+using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 
 namespace Nitrox.Server.Subnautica.Models.GameLogic;
 
 /// <summary>
 ///     Light, battery, health and number of every camera. A camera keeps them on its own entity as
 ///     <see cref="MapRoomCameraMetadata" />, whether it is docked, loose in the world or in an inventory, so they are
-///     saved and sent to joining players with it.
+///     saved and sent to joining players with it. Players change them with an entity metadata update like the state of
+///     any other entity; <see cref="TryAcceptCameraMetadata" /> decides which parts of an update count.
 /// </summary>
 internal sealed partial class ScannerRoomManager
 {
@@ -18,111 +20,68 @@ internal sealed partial class ScannerRoomManager
     private int lastCameraNumber;
 
     /// <summary>
-    ///     Handles a controlling player's report that they switched a camera's light, and tells everyone if it counts.
+    ///     The gate for a camera's state sent as entity metadata. A client sends everything it has for the camera, and
+    ///     only part of that is its to decide: the light belongs to the player who holds the camera exclusively (who
+    ///     flies it), battery and health to the player who simulates it, the number and the dock to the server. What
+    ///     the sender may set is stored and goes to the other players. If it sent something else that it may not set,
+    ///     it shows a state nobody else has, and is sent what the server holds.
     /// </summary>
-    public async Task SetCameraLightAsync(Player sender, MapRoomCameraLight packet)
+    public MetadataUpdateResult TryAcceptCameraMetadata(Player sender, Entity target, MapRoomCameraMetadata requested)
     {
-        using Hold held = await EnterAsync();
-        CameraView camera = GetCamera(packet.CameraId);
-        if (packet.IsServerResponse || camera.WorldCamera is not { } worldCamera)
+        using Hold held = Enter();
+        CameraView camera = GetCamera(target.Id);
+        if (camera.WorldCamera is not { } worldCamera)
         {
-            diagnostics.RecordRejected("light", camera.DockedRoom, packet.CameraId, sender.SessionId, reason: packet.IsServerResponse ? "server_response" : "invalid_assoc");
-            await ReplyAsync(sender, new MapRoomCameraLight(packet.CameraId, packet.On, 0, true, false));
-            return;
+            // In an inventory nothing happens to a camera, and the id may be of something that is no camera at all.
+            diagnostics.RecordRejected("component", cameraId: target.Id, sessionId: sender.SessionId, reason: "invalid_assoc");
+            return camera.Exists ? MetadataUpdateResult.RejectAndCorrect(camera.State) : MetadataUpdateResult.Reject;
         }
 
-        bool accepted = false;
-        bool changed = false;
-        string rejectionReason = "non_owner";
-        ValueTask sendTask = simulationOwnershipData.ExecuteForOwner(sender, [packet.CameraId], ownedIds =>
+        MapRoomCameraMetadata stored = camera.State;
+        // Who the sender is to the camera is read, and what it may set is stored, while the lock cannot change hands:
+        // two players' updates can then never end up as a state that is partly the one's and partly the other's.
+        (bool simulates, MapRoomCameraMetadata accepted) = simulationOwnershipData.ExecuteForOwner(sender, [worldCamera.Id], ownedIds =>
         {
-            bool hasCanonicalControl = simulationOwnershipData.TryGetLock(packet.CameraId, out SimulationOwnershipData.PlayerLock cameraLock) &&
-                                       cameraLock.Player == sender && cameraLock.LockType == SimulationLockType.EXCLUSIVE &&
-                                       IsController(packet.CameraId, sender.SessionId);
-            if (!ownedIds.Contains(packet.CameraId) || !hasCanonicalControl)
-            {
-                rejectionReason = !ownedIds.Contains(packet.CameraId) ? "non_owner" : "control_required";
-                return ValueTask.CompletedTask;
-            }
-
-            accepted = true;
-            long revision = SetLight(worldCamera, packet.On, out changed).LightRevision;
-
-            // The packet sender queues synchronously. Queued while ownership is locked, a release or reassignment
-            // packet cannot overtake this change.
-            return SendToAllAsync(new MapRoomCameraLight(packet.CameraId, packet.On, revision, true, true));
+            bool isSimulatingPlayer = ownedIds.Contains(worldCamera.Id);
+            bool holdsExclusively = isSimulatingPlayer && simulationOwnershipData.TryGetLock(worldCamera.Id, out SimulationOwnershipData.PlayerLock cameraLock) &&
+                                    cameraLock.LockType == SimulationLockType.EXCLUSIVE;
+            MapRoomCameraMetadata merged = Merge(stored, requested, holdsExclusively, isSimulatingPlayer && IsValidComponentState(requested.Energy, requested.Health));
+            SetState(worldCamera, merged);
+            return (isSimulatingPlayer, merged);
         });
-        if (!accepted)
+
+        bool lightRefused = requested.LightOn != accepted.LightOn;
+        bool componentsRefused = requested.Energy != accepted.Energy || requested.Health != accepted.Health;
+        if (lightRefused)
         {
-            diagnostics.RecordRejected("light", camera.DockedRoom, packet.CameraId, sender.SessionId, reason: rejectionReason);
-            await ReplyAsync(sender, new MapRoomCameraLight(packet.CameraId, packet.On, 0, true, false));
-            return;
+            diagnostics.RecordRejected("light", camera.DockedRoom, worldCamera.Id, sender.SessionId, reason: simulates ? "control_required" : "non_owner");
         }
-        if (changed)
+        if (componentsRefused)
         {
-            diagnostics.RecordAccepted("light", camera.DockedRoom, packet.CameraId, sender.SessionId,
-                reason: camera.DockedRoom == null ? packet.On ? "on_loose" : "off_loose" : packet.On ? "on" : "off");
+            diagnostics.RecordRejected("component", camera.DockedRoom, worldCamera.Id, sender.SessionId, reason: simulates ? "invalid_value" : "non_owner");
         }
-        await sendTask;
+        RecordStateChange(camera, stored, accepted, sender);
+
+        bool changed = !ReferenceEquals(accepted, stored);
+        if (lightRefused || componentsRefused)
+        {
+            return changed ? MetadataUpdateResult.AcceptAndEcho(accepted) : MetadataUpdateResult.RejectAndCorrect(stored);
+        }
+        return changed ? MetadataUpdateResult.Accept(accepted) : MetadataUpdateResult.Reject;
     }
 
     /// <summary>
-    ///     Handles a report of a camera's battery and health from the player who simulates it, and tells everyone if it
-    ///     counts. A docked camera is recharged by its simulating player like any other.
+    ///     Records an update for a camera the server does not have. Its simulating player can report its battery once
+    ///     more while the camera's removal is on its way to that player, which is no error.
     /// </summary>
-    public async Task SetCameraComponentsAsync(Player sender, MapRoomCameraComponentState packet)
-    {
-        using Hold held = await EnterAsync();
-        CameraView camera = GetCamera(packet.CameraId);
-        if (packet.IsServerResponse || camera.WorldCamera is not { } worldCamera || !IsValidComponentState(packet.Energy, packet.Health))
-        {
-            diagnostics.RecordRejected("component", camera.DockedRoom, packet.CameraId, sender.SessionId, reason:
-                packet.IsServerResponse ? "server_response" : camera.WorldCamera == null ? "invalid_assoc" : "invalid_value");
-            await ReplyAsync(sender, new MapRoomCameraComponentState(packet.CameraId, packet.Energy, packet.Health, 0, true, false));
-            return;
-        }
-
-        MapRoomCameraMetadata previous = camera.State;
-        MapRoomCameraMetadata stored = previous;
-        bool accepted = false;
-        ValueTask sendTask = simulationOwnershipData.ExecuteForOwner(sender, [packet.CameraId], ownedIds =>
-        {
-            if (!ownedIds.Contains(packet.CameraId))
-            {
-                return ValueTask.CompletedTask;
-            }
-            accepted = true;
-            stored = SetComponents(worldCamera, packet.Energy, packet.Health);
-
-            // The packet sender queues synchronously. Queued while ownership is locked, a release or reassignment
-            // packet cannot overtake this change.
-            return SendToAllAsync(new MapRoomCameraComponentState(packet.CameraId, stored.Energy, stored.Health, stored.ComponentRevision, true, true));
-        });
-        if (!accepted)
-        {
-            diagnostics.RecordRejected("component", camera.DockedRoom, packet.CameraId, sender.SessionId, reason: "non_owner");
-            await ReplyAsync(sender, new MapRoomCameraComponentState(packet.CameraId, packet.Energy, packet.Health, 0, true, false));
-            return;
-        }
-        // The battery of a camera that is flown drains all the time, which is not worth a line; its health is.
-        if (camera.DockedRoom != null && GetEnergyBand(previous.Energy) != GetEnergyBand(stored.Energy))
-        {
-            diagnostics.RecordAccepted("component_energy", camera.DockedRoom, packet.CameraId, sender.SessionId, reason: $"band_{GetEnergyBand(stored.Energy)}");
-        }
-        if (GetHealthBand(previous.Health) != GetHealthBand(stored.Health))
-        {
-            string reason = previous.Health > 0f && stored.Health <= 0f ? "death" : previous.Health <= 0f && stored.Health > 0f ? "repair" : $"band_{GetHealthBand(stored.Health)}";
-            diagnostics.RecordAccepted("component_health", camera.DockedRoom, packet.CameraId, sender.SessionId, reason: reason);
-        }
-        await sendTask;
-    }
+    public void RejectMetadataForUnknownCamera(Player sender, NitroxId cameraId) =>
+        diagnostics.RecordRejected("component", cameraId: cameraId, sessionId: sender.SessionId, reason: "removed");
 
     /// <summary>
     ///     Called before a camera's entity is replaced by another one with the same id (picked up into an inventory,
     ///     dropped back into the world), and before a camera a client made is stored for the first time. The entity is
-    ///     built by a client and carries no camera state, so the state the server holds moves over to it; a camera
-    ///     that is new to the server gets its number. Anything the client did put there is dropped: only the light and
-    ///     component packets may change this state.
+    ///     built by a client; whatever camera state it carries is dropped and the state the server holds moves over to
+    ///     it. A camera that is new to the server gets its number.
     /// </summary>
     /// <returns>The state the camera has now, for the client that built the entity, or null if it is no camera.</returns>
     public MapRoomCameraMetadata? KeepCameraStateOnReplacement(Entity replacement)
@@ -133,6 +92,23 @@ internal sealed partial class ScannerRoomManager
         }
         using Hold held = Enter();
         return KeepCameraStateOnReplacementInGate(replacement);
+    }
+
+    /// <summary>
+    ///     Which parts of a client's update count, like <see cref="CyclopsMetadataAuthority.Merge" /> does for a
+    ///     Cyclops. The number and the dock are never the client's to set.
+    /// </summary>
+    /// <returns>The state to store, which is <paramref name="stored" /> itself if nothing changes.</returns>
+    internal static MapRoomCameraMetadata Merge(MapRoomCameraMetadata stored, MapRoomCameraMetadata requested, bool senderMaySetLight, bool senderMaySetComponents)
+    {
+        bool lightOn = senderMaySetLight ? requested.LightOn : stored.LightOn;
+        float energy = senderMaySetComponents ? requested.Energy : stored.Energy;
+        float health = senderMaySetComponents ? requested.Health : stored.Health;
+        if (lightOn == stored.LightOn && energy == stored.Energy && health == stored.Health)
+        {
+            return stored;
+        }
+        return new MapRoomCameraMetadata(lightOn, energy, health, stored.CameraNumber, stored.DockingIndex);
     }
 
     internal static bool IsValidComponentState(float energy, float health) =>
@@ -154,40 +130,33 @@ internal sealed partial class ScannerRoomManager
     }
 
     /// <summary>
+    ///     Writes the lines for what an accepted update changed: the light, and battery and health when they cross
+    ///     into another band. The battery of a camera that is flown drains all the time, which is not worth a line.
+    /// </summary>
+    private void RecordStateChange(CameraView camera, MapRoomCameraMetadata previous, MapRoomCameraMetadata stored, Player sender)
+    {
+        NitroxId cameraId = camera.Entity!.Id;
+        if (previous.LightOn != stored.LightOn)
+        {
+            diagnostics.RecordAccepted("light", camera.DockedRoom, cameraId, sender.SessionId,
+                reason: camera.DockedRoom == null ? stored.LightOn ? "on_loose" : "off_loose" : stored.LightOn ? "on" : "off");
+        }
+        if (camera.DockedRoom != null && GetEnergyBand(previous.Energy) != GetEnergyBand(stored.Energy))
+        {
+            diagnostics.RecordAccepted("component_energy", camera.DockedRoom, cameraId, sender.SessionId, reason: $"band_{GetEnergyBand(stored.Energy)}");
+        }
+        if (GetHealthBand(previous.Health) != GetHealthBand(stored.Health))
+        {
+            string reason = previous.Health > 0f && stored.Health <= 0f ? "death" : previous.Health <= 0f && stored.Health > 0f ? "repair" : $"band_{GetHealthBand(stored.Health)}";
+            diagnostics.RecordAccepted("component_health", camera.DockedRoom, cameraId, sender.SessionId, reason: reason);
+        }
+    }
+
+    /// <summary>
     ///     Gives a camera that has none the next free number.
     /// </summary>
     private MapRoomCameraMetadata EnsureCameraNumber(MapRoomCameraMetadata state) =>
         state.CameraNumber > 0 ? state : state.WithCameraNumber(++lastCameraNumber);
-
-    /// <summary>
-    ///     Stores a new light state. The revision only advances when the light actually changes.
-    /// </summary>
-    private static MapRoomCameraMetadata SetLight(Entity camera, bool lightOn, out bool changed)
-    {
-        MapRoomCameraMetadata current = ReadState(camera);
-        changed = current.LightOn != lightOn;
-        if (changed)
-        {
-            current = current.WithLight(lightOn, current.LightRevision + 1);
-            SetState(camera, current);
-        }
-        return current;
-    }
-
-    /// <summary>
-    ///     Stores new battery and health values. The revision only advances when a value actually changes.
-    /// </summary>
-    private static MapRoomCameraMetadata SetComponents(Entity camera, float energy, float health)
-    {
-        MapRoomCameraMetadata current = ReadState(camera);
-        if (current.Energy == energy && current.Health == health)
-        {
-            return current;
-        }
-        current = current.WithComponents(energy, health, current.ComponentRevision + 1);
-        SetState(camera, current);
-        return current;
-    }
 
     private static MapRoomCameraMetadata ReadState(Entity camera) => camera.Metadata as MapRoomCameraMetadata ?? new MapRoomCameraMetadata();
 

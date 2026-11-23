@@ -1,7 +1,6 @@
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
-using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
@@ -23,6 +22,13 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
                 // A client that simulates a source the server does not have sends this up to once a second. The base
                 // power diagnostics thin out the repeats; an error per packet would not.
                 basePowerManager.RejectUnknownSource(context.Sender, packet.Id);
+                return;
+            }
+            if (packet.NewValue is MapRoomCameraMetadata)
+            {
+                // The player who simulated a camera can report its battery once more while the camera's removal is on
+                // its way to them.
+                scannerRoomManager.RejectMetadataForUnknownCamera(context.Sender, packet.Id);
                 return;
             }
             logger.ZLogError($"Entity metadata {packet.NewValue.GetType()} updated on an entity unknown to the server {packet.Id}");
@@ -62,8 +68,7 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
     private MetadataUpdateResult? GateScannerRoomMetadata(Player sender, Entity entity, EntityMetadata metadata) => metadata switch
     {
         MapRoomMetadata scanState => scannerRoomManager.AcceptRoomMetadata(sender, entity, scanState),
-        CrafterMetadata crafting when entity is MapRoomEntity room => scannerRoomManager.AcceptFabricatorMetadata(sender, room, crafting),
-        MapRoomCameraMetadata => scannerRoomManager.RejectCameraMetadata(sender, entity),
+        MapRoomCameraMetadata cameraState => scannerRoomManager.TryAcceptCameraMetadata(sender, entity, cameraState),
         _ => null
     };
 

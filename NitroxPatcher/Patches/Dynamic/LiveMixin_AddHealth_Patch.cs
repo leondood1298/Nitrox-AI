@@ -47,7 +47,7 @@ public sealed partial class LiveMixin_AddHealth_Patch : NitroxPatch, IDynamicPat
 
         if (__instance.TryGetComponent(out MapRoomCamera camera))
         {
-            Resolve<MapRoomCameras>().BroadcastComponentStateIfChanged(camera);
+            Resolve<MapRoomCameraStates>().ReportIfChanged(camera);
             return;
         }
 

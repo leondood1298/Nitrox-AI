@@ -71,12 +71,12 @@ public sealed class ScannerRoomDiagnosticsCallSiteTest
         Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, cameraId, 1, true)).Granted);
         Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, cameraId, 1, true)).Granted);
 
-        await scenario.LightAsync(scenario.PlayerA, new MapRoomCameraLight(cameraId, true));
-        await scenario.LightAsync(scenario.PlayerB, new MapRoomCameraLight(cameraId, false));
-        await scenario.ComponentsAsync(scenario.PlayerA, new MapRoomCameraComponentState(cameraId, 99f, MapRoomCameraMetadata.MAX_HEALTH));
-        await scenario.ComponentsAsync(scenario.PlayerA, new MapRoomCameraComponentState(cameraId, 20f, MapRoomCameraMetadata.MAX_HEALTH));
-        await scenario.ComponentsAsync(scenario.PlayerA, new MapRoomCameraComponentState(cameraId, 20f, 0f));
-        await scenario.ComponentsAsync(scenario.PlayerB, new MapRoomCameraComponentState(cameraId, 20f, 50f));
+        await scenario.ReportCameraAsync(scenario.PlayerA, cameraId, lightOn: true);
+        await scenario.ReportCameraAsync(scenario.PlayerB, cameraId, lightOn: false);
+        await scenario.ReportCameraAsync(scenario.PlayerA, cameraId, energy: 99f);
+        await scenario.ReportCameraAsync(scenario.PlayerA, cameraId, energy: 20f);
+        await scenario.ReportCameraAsync(scenario.PlayerA, cameraId, health: 0f);
+        await scenario.ReportCameraAsync(scenario.PlayerB, cameraId, health: 50f);
 
         scenario.Diagnostics.GetHistory().Skip(2).Select(entry => $"{entry.EventName} {entry.Outcome} sid={entry.SessionId} {entry.Reason}").Should().Equal(
             ["light ACCEPTED sid=1 on", "light REJECTED sid=2 non_owner", "component_energy ACCEPTED sid=1 band_25", "component_health ACCEPTED sid=1 death", "component REJECTED sid=2 non_owner"],

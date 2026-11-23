@@ -279,7 +279,7 @@ public sealed class ScannerRoomDiagnosticsTest
         ScannerRoomStateFingerprint.Validate(withoutNumber).Should().Be("invalid_camera_number", "the server numbers every camera before it is stored");
 
         MapRoomEntity overcharged = CreateRoom();
-        SetState(overcharged, firstCameraId, state => state.WithComponents(MapRoomCameraMetadata.MAX_ENERGY + 1f, state.Health, state.ComponentRevision));
+        SetState(overcharged, firstCameraId, state => state.WithComponents(MapRoomCameraMetadata.MAX_ENERGY + 1f, state.Health));
         ScannerRoomStateFingerprint.Validate(overcharged).Should().Be("invalid_camera_component");
     }
 
@@ -323,7 +323,7 @@ public sealed class ScannerRoomDiagnosticsTest
 
         ScannerRoomStateFingerprint.Create(first).Fingerprint.Should().Be(ScannerRoomStateFingerprint.Create(reordered).Fingerprint);
 
-        SetState(reordered, firstCameraId, state => state.WithComponents(12.5f, state.Health, state.ComponentRevision + 1));
+        SetState(reordered, firstCameraId, state => state.WithComponents(12.5f, state.Health));
 
         ScannerRoomStateFingerprint.Create(first).Fingerprint.Should().NotBe(ScannerRoomStateFingerprint.Create(reordered).Fingerprint);
 
@@ -333,7 +333,7 @@ public sealed class ScannerRoomDiagnosticsTest
         ScannerRoomStateFingerprint.Create(first).Fingerprint.Should().NotBe(ScannerRoomStateFingerprint.Create(otherDocks).Fingerprint);
 
         MapRoomEntity oneCamera = CreateRoom();
-        oneCamera.ChildEntities.RemoveAt(1);
+        oneCamera.ChildEntities.RemoveAll(child => child.Id == secondCameraId);
         ScannerRoomStateFingerprint.Create(first).Fingerprint.Should().NotBe(ScannerRoomStateFingerprint.Create(oneCamera).Fingerprint);
         ScannerRoomStateFingerprint.Create(oneCamera).Should().Match<ScannerRoomStateSnapshot>(snapshot =>
             snapshot.CameraCount == 1 && snapshot.LeftDockCameraId == firstCameraId && snapshot.RightDockCameraId == null);
@@ -343,8 +343,13 @@ public sealed class ScannerRoomDiagnosticsTest
         ScannerRoomStateFingerprint.Create(first).Fingerprint.Should().NotBe(ScannerRoomStateFingerprint.Create(metadataChanged).Fingerprint);
 
         MapRoomEntity crafterChanged = CreateRoom();
-        crafterChanged.FabricatorMetadata = new CrafterMetadata(new NitroxTechType("MapRoomRangeUpgrade"), 12.5f, 4f, 2, 1);
+        crafterChanged.ChildEntities.OfType<PathBasedChildEntity>().Single().Metadata = new CrafterMetadata(new NitroxTechType("MapRoomRangeUpgrade"), 12.5f, 4f, 2, 1);
         ScannerRoomStateFingerprint.Create(first).Fingerprint.Should().NotBe(ScannerRoomStateFingerprint.Create(crafterChanged).Fingerprint);
+        ScannerRoomStateFingerprint.Create(first).FabricatorActive.Should().BeTrue();
+
+        MapRoomEntity crafterIdle = CreateRoom();
+        crafterIdle.ChildEntities.OfType<PathBasedChildEntity>().Single().Metadata = null;
+        ScannerRoomStateFingerprint.Create(crafterIdle).FabricatorActive.Should().BeFalse();
     }
 
     [TestMethod]
@@ -355,7 +360,7 @@ public sealed class ScannerRoomDiagnosticsTest
         {
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
             MapRoomEntity room = CreateRoom();
-            SetState(room, firstCameraId, state => state.WithComponents(12.5f, 1.25f, state.ComponentRevision));
+            SetState(room, firstCameraId, state => state.WithComponents(12.5f, 1.25f));
 
             string canonical = ScannerRoomStateFingerprint.Create(room).CanonicalState;
 
@@ -405,10 +410,11 @@ public sealed class ScannerRoomDiagnosticsTest
             Metadata = new MapRoomMetadata(new NitroxTechType("Gold"), 7, 9),
             ChildEntities =
             [
-                CreateCamera(firstCameraId, roomId, new MapRoomCameraMetadata(true, 4, 80f, 90f, 6, 1, 0)),
-                CreateCamera(secondCameraId, roomId, new MapRoomCameraMetadata(false, 3, 70f, 85f, 5, 2, 1))
-            ],
-            FabricatorMetadata = new CrafterMetadata(new NitroxTechType("MapRoomHUDChip"), 10f, 2f, 1, 0)
+                CreateCamera(firstCameraId, roomId, new MapRoomCameraMetadata(true, 80f, 90f, 1, 0)),
+                CreateCamera(secondCameraId, roomId, new MapRoomCameraMetadata(false, 70f, 85f, 2, 1)),
+                new PathBasedChildEntity("fabricator", new NitroxId("55555555-5555-5555-5555-555555555555"), null,
+                    new CrafterMetadata(new NitroxTechType("MapRoomHUDChip"), 10f, 2f, 1, 0), roomId, [])
+            ]
         };
     }
 
@@ -417,7 +423,7 @@ public sealed class ScannerRoomDiagnosticsTest
 
     private static void SetState(MapRoomEntity room, NitroxId cameraId, Func<MapRoomCameraMetadata, MapRoomCameraMetadata> change)
     {
-        Entity camera = room.ChildEntities.Single(child => child.Id == cameraId);
+        Entity camera = room.ChildEntities.Single(child => child.Id.Equals(cameraId));
         camera.Metadata = change((MapRoomCameraMetadata)camera.Metadata);
     }
 

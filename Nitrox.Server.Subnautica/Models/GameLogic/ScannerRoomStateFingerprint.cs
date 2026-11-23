@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 
@@ -11,8 +12,8 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic;
 
 /// <summary>
 ///     Produces a deterministic digest of the Scanner Room state that the server saves and sends to joining players:
-///     the cameras in its docks with their state, the scan target with its progress, and the fabricator. Two rooms with the same digest
-///     are saved identically. What a scan found and the types it offers are left out on purpose: the server only holds
+///     the cameras in its docks with their state, the scan target with its progress, and what its fabricator is
+///     crafting. Two rooms with the same digest are saved identically. What a scan found and the types it offers are left out on purpose: the server only holds
 ///     them in memory, and a digest that changed with them would differ between a save and the same save loaded again.
 /// </summary>
 /// <remarks>
@@ -42,8 +43,7 @@ internal static class ScannerRoomStateFingerprint
         foreach (MapRoomCameraMetadata camera in cameras)
         {
             if (!float.IsFinite(camera.Energy) || camera.Energy is < 0f or > MapRoomCameraMetadata.MAX_ENERGY ||
-                !float.IsFinite(camera.Health) || camera.Health is < 0f or > MapRoomCameraMetadata.MAX_HEALTH ||
-                camera.LightRevision < 0 || camera.ComponentRevision < 0)
+                !float.IsFinite(camera.Health) || camera.Health is < 0f or > MapRoomCameraMetadata.MAX_HEALTH)
             {
                 return "invalid_camera_component";
             }
@@ -64,7 +64,7 @@ internal static class ScannerRoomStateFingerprint
         MapRoomMetadata? metadata = room.Metadata as MapRoomMetadata;
 
         StringBuilder canonical = new(512);
-        AppendField(canonical, "version", "3");
+        AppendField(canonical, "version", "5");
         AppendField(canonical, "room", FormatId(room.Id));
         AppendField(canonical, "parent", FormatId(room.ParentId));
         AppendField(canonical, "cellX", Format(room.Cell.X));
@@ -80,19 +80,27 @@ internal static class ScannerRoomStateFingerprint
         AppendField(canonical, "target", metadata?.TypeToScan?.Name);
         AppendField(canonical, "nodesScanned", Format(metadata?.NumNodesScanned ?? 0));
         AppendField(canonical, "metadataGeneration", Format(metadata?.Generation ?? 0));
-        AppendField(canonical, "fabricator", CanonicalCrafter(room.FabricatorMetadata));
+        CrafterMetadata? crafting = GetFabricatorState(room);
+        AppendField(canonical, "fabricator", CanonicalCrafter(crafting));
 
         string canonicalState = canonical.ToString();
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(canonicalState));
         string fingerprint = Convert.ToHexString(hash.AsSpan(0, 8)).ToLowerInvariant();
         return new ScannerRoomStateSnapshot(fingerprint, canonicalState, cameras.Length, metadata?.TypeToScan?.Name ?? "", metadata?.NumNodesScanned ?? 0,
-            metadata?.Generation ?? 0, room.FabricatorMetadata != null, GetDockedCameraId(cameras, 0), GetDockedCameraId(cameras, 1));
+            metadata?.Generation ?? 0, crafting is { Amount: > 0 }, GetDockedCameraId(cameras, 0), GetDockedCameraId(cameras, 1));
     }
 
     /// <summary>
     ///     The cameras in the room's docks: the children of the room that are cameras.
     /// </summary>
     public static Entity[] GetCameras(MapRoomEntity room) => room.ChildEntities?.Where(ScannerRoomManager.IsCamera).ToArray() ?? [];
+
+    /// <summary>
+    ///     What the room's fabricator is crafting. The fabricator is the child of the room that is found by its path
+    ///     in the room's game object.
+    /// </summary>
+    public static CrafterMetadata? GetFabricatorState(MapRoomEntity room) =>
+        room.ChildEntities?.OfType<PathBasedChildEntity>().Select(part => part.Metadata).OfType<CrafterMetadata>().FirstOrDefault();
 
     public static MapRoomCameraMetadata ReadState(Entity camera) => camera.Metadata as MapRoomCameraMetadata ?? new MapRoomCameraMetadata();
 
@@ -107,10 +115,8 @@ internal static class ScannerRoomStateFingerprint
         AppendField(canonical, "dock", Format(state.DockingIndex));
         AppendField(canonical, "number", Format(state.CameraNumber));
         AppendField(canonical, "light", state.LightOn ? "1" : "0");
-        AppendField(canonical, "lightRevision", Format(state.LightRevision));
         AppendField(canonical, "energy", Format(state.Energy));
         AppendField(canonical, "health", Format(state.Health));
-        AppendField(canonical, "componentRevision", Format(state.ComponentRevision));
         return canonical.ToString();
     }
 

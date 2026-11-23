@@ -1,6 +1,5 @@
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
-using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.GameLogic.Spawning.Metadata.Processor.Abstract;
 using UnityEngine;
 
@@ -8,9 +7,11 @@ namespace NitroxClient.GameLogic.Spawning.Metadata.Processor;
 
 /// <summary>
 ///     Applies what the server holds for a Scanner Room camera: when the camera spawns (in a dock, in the world or in an
-///     inventory), when the server gives it its number, and when the server answers a dock or undock it refused.
+///     inventory), when another player changed its light, battery or health, when the server gives it its number, and
+///     when the server answers something it refused from this client.
 /// </summary>
-public class MapRoomCameraMetadataProcessor(MapRoomCameras mapRoomCameras, MapRoomCameraDocks mapRoomCameraDocks) : EntityMetadataProcessor<MapRoomCameraMetadata>
+public class MapRoomCameraMetadataProcessor(MapRoomCameras mapRoomCameras, MapRoomCameraDocks mapRoomCameraDocks, MapRoomCameraStates mapRoomCameraStates)
+    : EntityMetadataProcessor<MapRoomCameraMetadata>
 {
     public override void ProcessMetadata(GameObject gameObject, MapRoomCameraMetadata metadata)
     {
@@ -26,10 +27,7 @@ public class MapRoomCameraMetadataProcessor(MapRoomCameras mapRoomCameras, MapRo
             mapRoomCameras.SetCameraNumber(camera, metadata.CameraNumber);
         }
         mapRoomCameraDocks.ApplyDockingIndex(camera, metadata.DockingIndex);
-        // The same paths that apply live updates: they wait until the camera's battery exists and ignore anything
-        // older than what this client already knows.
-        mapRoomCameras.ProcessComponentState(new MapRoomCameraComponentState(cameraId, metadata.Energy, metadata.Health, metadata.ComponentRevision, true, true));
-        mapRoomCameras.ProcessLight(new MapRoomCameraLight(cameraId, metadata.LightOn, metadata.LightRevision, true, true));
+        mapRoomCameraStates.Apply(camera, cameraId, metadata);
         mapRoomCameras.CameraSpawned(cameraId);
     }
 }

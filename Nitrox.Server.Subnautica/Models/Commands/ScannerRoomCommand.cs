@@ -161,7 +161,7 @@ internal sealed class ScannerRoomCommand(EntityRegistry entityRegistry, ScannerR
     private static CameraView ReadCamera(Entity camera, int slot)
     {
         MapRoomCameraMetadata state = ScannerRoomStateFingerprint.ReadState(camera);
-        return new CameraView(camera.Id, state.CameraNumber, slot, state.LightOn, state.LightRevision, state.Energy, state.Health, state.ComponentRevision);
+        return new CameraView(camera.Id, state.CameraNumber, slot, state.LightOn, state.Energy, state.Health);
     }
 
     private CameraLocks ReadCameraLocks(CameraView camera, List<string> anomalies)
@@ -191,7 +191,7 @@ internal sealed class ScannerRoomCommand(EntityRegistry entityRegistry, ScannerR
     }
 
     private static string FormatCamera(CameraView camera, CameraLocks locks) => string.Create(CultureInfo.InvariantCulture,
-        $"  cam={ShortCamera(camera.Id)} number={camera.Number} where={locks.Where} camLock={locks.Lock} control={locks.Control} light={(camera.LightOn ? "on" : "off")} lightRev={camera.LightRevision} energy={camera.Energy:F1} health={camera.Health:F1} compRev={camera.ComponentRevision} id={camera.Id}");
+        $"  cam={ShortCamera(camera.Id)} number={camera.Number} where={locks.Where} camLock={locks.Lock} control={locks.Control} light={(camera.LightOn ? "on" : "off")} energy={camera.Energy:F1} health={camera.Health:F1} id={camera.Id}");
 
     private static bool IsRepeat(ScannerRoomDiagnosticEntry previous, ScannerRoomDiagnosticEntry next) =>
         previous.EventName == next.EventName && previous.Outcome == next.Outcome && previous.SessionId == next.SessionId &&
@@ -203,8 +203,7 @@ internal sealed class ScannerRoomCommand(EntityRegistry entityRegistry, ScannerR
 
     private readonly record struct RoomView(NitroxId Id, ScannerRoomStateSnapshot Snapshot, string? Violation, CameraView[] Cameras, int ScanResultCount, int ScanTypeCount);
 
-    private readonly record struct CameraView(NitroxId Id, int Number, int Slot, bool LightOn, long LightRevision, float Energy, float Health,
-        long ComponentRevision);
+    private readonly record struct CameraView(NitroxId Id, int Number, int Slot, bool LightOn, float Energy, float Health);
 
     private readonly record struct CameraLocks(string Lock, string Control, string Where);
 }
