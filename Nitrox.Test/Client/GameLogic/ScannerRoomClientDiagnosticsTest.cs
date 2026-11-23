@@ -2,6 +2,7 @@ using Autofac;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication.Abstract;
 using NitroxClient.GameLogic;
@@ -178,7 +179,7 @@ public sealed class ScannerRoomClientDiagnosticsTest
         ScannerRoomClientDiagnostics diagnostics = new();
         NitroxId cameraId = new();
 
-        diagnostics.RecordComponentApplied(cameraId, 100f, MapRoomCameraRecord.MAX_HEALTH, 1, true);
+        diagnostics.RecordComponentApplied(cameraId, 100f, MapRoomCameraMetadata.MAX_HEALTH, 1, true);
         diagnostics.RecordComponentApplied(cameraId, 99f, 399f, 2, true);
         diagnostics.RecordComponentApplied(cameraId, 75f, 399f, 3, true);
         diagnostics.RecordComponentApplied(cameraId, 74f, 300f, 4, true);

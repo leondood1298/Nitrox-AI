@@ -35,61 +35,23 @@ public sealed class MapRoomCameraPreviewProcessorTest
     }
 
     [TestMethod]
-    public async Task ValidUnregisteredLooseCameraUsesBoundedPresentationNumber()
+    public async Task PreviewIsShownUnderTheNumberTheServerGaveTheCamera()
     {
         ScannerRoomScenarioFixture scenario = new();
-        Assert.IsNull(scenario.Room.GetCameraRecord(ScannerRoomScenarioFixture.CameraAId));
+        int cameraNumber = scenario.CameraState(ScannerRoomScenarioFixture.CameraAId).CameraNumber;
         Assert.IsTrue((await scenario.ControlLooseAsync(scenario.PlayerA,
             ScannerRoomScenarioFixture.CameraAId, true)).Granted);
         MapRoomCameraPreviewProcessor processor = new(scenario.Manager);
 
+        // Whatever number the client's own list has the camera under.
         await processor.Process(scenario.Context(scenario.PlayerA),
             new MapRoomCameraPreview(ScannerRoomScenarioFixture.CameraAId, 37,
                 MapRoomCameraPreviewImageTest.CreateJpeg(64, 64)));
 
         MapRoomCameraPreview accepted = scenario.SentToAll<MapRoomCameraPreview>().Single();
-        Assert.AreEqual(37, accepted.CameraNumber);
+        Assert.IsTrue(cameraNumber > 0);
+        Assert.AreEqual(cameraNumber, accepted.CameraNumber);
         Assert.IsTrue(accepted.Granted);
-    }
-
-    [TestMethod]
-    [DataRow(0)]
-    [DataRow(-1)]
-    [DataRow(MapRoomCameraPreview.MAX_LOOSE_CAMERA_NUMBER + 1)]
-    public async Task LooseCameraRejectsUnboundedPresentationNumberAndConsumesAttempt(int cameraNumber)
-    {
-        ScannerRoomScenarioFixture scenario = new();
-        Assert.IsTrue((await scenario.ControlLooseAsync(scenario.PlayerA,
-            ScannerRoomScenarioFixture.CameraAId, true)).Granted);
-        MapRoomCameraPreviewProcessor processor = new(scenario.Manager);
-        AuthProcessorContext context = scenario.Context(scenario.PlayerA);
-        byte[] jpeg = MapRoomCameraPreviewImageTest.CreateJpeg(64, 64);
-
-        await processor.Process(context,
-            new MapRoomCameraPreview(ScannerRoomScenarioFixture.CameraAId, cameraNumber, jpeg));
-        await processor.Process(context,
-            new MapRoomCameraPreview(ScannerRoomScenarioFixture.CameraAId, 1, jpeg));
-
-        Assert.AreEqual(0, scenario.SentToAll<MapRoomCameraPreview>().Count);
-        Assert.AreEqual(2, scenario.SentTo<MapRoomCameraPreview>(scenario.PlayerA).Count(packet => !packet.Granted));
-    }
-
-    [TestMethod]
-    public async Task DuplicateRoomRegistrationCannotFallBackToPresentationNumber()
-    {
-        ScannerRoomScenarioFixture scenario = await CreateControlledScenarioAsync();
-        MapRoomEntity duplicateRoom = new(new NitroxId("00000000-0000-0000-0000-000000000900"),
-            new NitroxId("00000000-0000-0000-0000-000000000901"), new NitroxInt3());
-        duplicateRoom.GetOrAssignCameraNumber(ScannerRoomScenarioFixture.CameraAId, 7);
-        scenario.AddRoom(duplicateRoom);
-        MapRoomCameraPreviewProcessor processor = new(scenario.Manager);
-
-        await processor.Process(scenario.Context(scenario.PlayerA),
-            new MapRoomCameraPreview(ScannerRoomScenarioFixture.CameraAId, 7,
-                MapRoomCameraPreviewImageTest.CreateJpeg(64, 64)));
-
-        Assert.AreEqual(0, scenario.SentToAll<MapRoomCameraPreview>().Count);
-        Assert.AreEqual(1, scenario.SentTo<MapRoomCameraPreview>(scenario.PlayerA).Count(packet => !packet.Granted));
     }
 
     [TestMethod]

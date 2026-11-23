@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
-using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Helper;
 using NitroxClient.Communication.Abstract;
 
@@ -168,9 +168,9 @@ public sealed class ScannerRoomClientDiagnostics
         }
     }
 
-    internal static int EnergyBand(float energy) => MapRoomCameraRecord.GetComponentBand(energy, MapRoomCameraRecord.MAX_ENERGY);
+    internal static int EnergyBand(float energy) => MapRoomCameraMetadata.GetComponentBand(energy, MapRoomCameraMetadata.MAX_ENERGY);
 
-    internal static int HealthBand(float health) => MapRoomCameraRecord.GetComponentBand(health, MapRoomCameraRecord.MAX_HEALTH);
+    internal static int HealthBand(float health) => MapRoomCameraMetadata.GetComponentBand(health, MapRoomCameraMetadata.MAX_HEALTH);
 
     /// <summary>
     ///     Writes one marker before the first event of a session. Its UTC stamp, next to the log's own local time,

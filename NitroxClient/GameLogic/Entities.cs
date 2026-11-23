@@ -27,7 +27,6 @@ namespace NitroxClient.GameLogic
         private readonly EntityMetadataManager entityMetadataManager;
         private readonly SimulationOwnership simulationOwnership;
         private readonly Terrain terrain;
-        private readonly MapRoomCameras mapRoomCameras;
 
         private readonly Dictionary<NitroxId, Type> spawnedAsType = [];
 
@@ -46,14 +45,13 @@ namespace NitroxClient.GameLogic
         private float timeUntilNextYieldSeconds;
         public bool ShouldSkipFrame => Time.realtimeSinceStartup >= timeUntilNextYieldSeconds;
 
-        public Entities(IPacketSender packetSender, ThrottledPacketSender throttledPacketSender, EntityMetadataManager entityMetadataManager, PlayerManager playerManager, LocalPlayer localPlayer, LiveMixinManager liveMixinManager, TimeManager timeManager, SimulationOwnership simulationOwnership, Terrain terrain, MapRoomCameras mapRoomCameras)
+        public Entities(IPacketSender packetSender, ThrottledPacketSender throttledPacketSender, EntityMetadataManager entityMetadataManager, PlayerManager playerManager, LocalPlayer localPlayer, LiveMixinManager liveMixinManager, TimeManager timeManager, SimulationOwnership simulationOwnership, Terrain terrain)
         {
             this.packetSender = packetSender;
             this.throttledPacketSender = throttledPacketSender;
             this.entityMetadataManager = entityMetadataManager;
             this.simulationOwnership = simulationOwnership;
             this.terrain = terrain;
-            this.mapRoomCameras = mapRoomCameras;
 
             EntitiesToSpawn = [];
             CellsToSpawn = [];
@@ -216,10 +214,6 @@ namespace NitroxClient.GameLogic
                     continue;
                 }
 
-                mapRoomCameras.CameraObjectWillSpawn(entity.Id, entity.TechType,
-                    Multiplayer.Main && Multiplayer.Main.InitialSyncCompleted);
-                MapRoomCameras.DestroyStaleLocalCamera(entity.Id);
-
                 // Executing the spawn instructions whether they're sync or async
                 IEntitySpawner entitySpawner = entitySpawnersByType[entity.GetType()];
                 if (entitySpawner is not ISyncEntitySpawner syncEntitySpawner ||
@@ -263,7 +257,6 @@ namespace NitroxClient.GameLogic
         {
             entityMetadataManager.ApplyMetadata(gameObject, entity.Metadata);
             simulationOwnership.ApplyNewerSimulation(entity.Id);
-            mapRoomCameras.CameraObjectSpawned(entity.Id, gameObject);
             MarkAsSpawned(entity);
         }
 

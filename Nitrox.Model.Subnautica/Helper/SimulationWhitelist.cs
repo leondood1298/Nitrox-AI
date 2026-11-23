@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 
 namespace Nitrox.Model.Subnautica.Helper;
 
@@ -92,6 +93,8 @@ public static class SimulationWhitelist
         // Reefbacks host creatures as children. These creatures have their LargeWorldEntity disabled, which means they only dispawn when the parent Reefback dispawns.
         // Thus they're are so connected to it that we can assume taking ownership on a Reefback is equivalent to taking it on its children.
         typeof(ReefbackEntity),
+        // A Scanner Room hosts its docked cameras, which are recharged by whoever simulates them.
+        typeof(MapRoomEntity),
     ];
 
     public static bool ShouldSimulateEntity(Entity entity)

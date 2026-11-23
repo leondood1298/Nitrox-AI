@@ -7,6 +7,7 @@ using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Server.Subnautica.Extensions;
@@ -18,19 +19,22 @@ namespace Nitrox.Test.Server.GameLogic;
 [TestClass]
 public sealed class ScannerRoomDiagnosticsTest
 {
+    private static readonly NitroxId firstCameraId = new("33333333-3333-3333-3333-333333333333");
+    private static readonly NitroxId secondCameraId = new("44444444-4444-4444-4444-444444444444");
+
     [TestMethod]
     public void EmitsStableSingleLineFormatAndTracksOutcomes()
     {
         CapturingLogger<ScannerRoomDiagnostics> logger = new();
         ScannerRoomDiagnostics diagnostics = new(logger);
         MapRoomEntity room = CreateRoom();
-        NitroxId cameraId = room.CameraRegistry[0].CameraId;
+        NitroxId cameraId = firstCameraId;
 
         ScannerRoomDiagnosticEntry accepted = diagnostics.RecordAccepted("Dock", room, cameraId, (SessionId)(ushort)2, 1, "owner transfer");
         ScannerRoomDiagnosticEntry rejected = diagnostics.RecordRejected("Control\nRequest", room, cameraId, (SessionId)(ushort)3, reason: "not owner\r\nretry");
 
         diagnostics.Epoch.Should().MatchRegex("^[0-9a-f]{8}$");
-        accepted.Format().Should().Be($"[SRD1] n=1 ep={diagnostics.Epoch} side=S sid=2 ev=dock out=ok room=11111111 cam=33333333.3333 slot=1 dockRev=7 cams=2 roomLock=? camLock=? fp=- reason=owner_transfer");
+        accepted.Format().Should().Be($"[SRD1] n=1 ep={diagnostics.Epoch} side=S sid=2 ev=dock out=ok room=11111111 cam=33333333.3333 slot=1 cams=2 roomLock=? camLock=? fp=- reason=owner_transfer");
         rejected.Format().Should().StartWith($"[SRD1] n=2 ep={diagnostics.Epoch} side=S sid=3 ev=control_request out=reject room=11111111 ");
         rejected.Format().Should().EndWith(" reason=not_owner_retry");
         rejected.Format().Should().NotContain("\r").And.NotContain("\n");
@@ -197,7 +201,7 @@ public sealed class ScannerRoomDiagnosticsTest
     {
         ScannerRoomDiagnostics diagnostics = new(NullLogger<ScannerRoomDiagnostics>.Instance);
         MapRoomEntity room = CreateRoom();
-        room.CameraRegistry = null!;
+        room.ChildEntities = null!;
 
         Action record = () =>
         {
@@ -247,7 +251,7 @@ public sealed class ScannerRoomDiagnosticsTest
     {
         ScannerRoomDiagnostics diagnostics = new(NullLogger<ScannerRoomDiagnostics>.Instance);
         MapRoomEntity room = CreateRoom();
-        room.RightDockCameraId = room.LeftDockCameraId;
+        SetState(room, secondCameraId, state => state.WithDockingIndex(0));
 
         ScannerRoomDiagnosticEntry entry = diagnostics.RecordCheckpoint("manual", room);
 
@@ -258,17 +262,25 @@ public sealed class ScannerRoomDiagnosticsTest
     }
 
     [TestMethod]
-    public void ValidationNamesAnEmptyRegistrySlotAsWhatItIs()
+    public void ValidationNamesWhatIsWrongWithTheCamerasOfARoom()
     {
-        MapRoomEntity room = CreateRoom();
-        room.CameraRegistry.Add(null!);
+        ScannerRoomStateFingerprint.Validate(CreateRoom()).Should().BeNull();
 
-        ScannerRoomStateFingerprint.Validate(room).Should().Be("null_camera_record",
-            "the cameras that are registered are all distinct; sending a reader after a duplicate would waste their time");
+        MapRoomEntity withoutDock = CreateRoom();
+        SetState(withoutDock, firstCameraId, state => state.WithDockingIndex(MapRoomCameraMetadata.NOT_DOCKED));
+        ScannerRoomStateFingerprint.Validate(withoutDock).Should().Be("child_camera_without_dock", "a camera that is a child of a room sits in one of its docks");
 
-        MapRoomEntity duplicated = CreateRoom();
-        duplicated.CameraRegistry.Add(new MapRoomCameraRecord(duplicated.CameraRegistry[0].CameraId, 3));
-        ScannerRoomStateFingerprint.Validate(duplicated).Should().Be("duplicate_camera_registration");
+        MapRoomEntity sameNumber = CreateRoom();
+        SetState(sameNumber, secondCameraId, state => state.WithCameraNumber(1));
+        ScannerRoomStateFingerprint.Validate(sameNumber).Should().Be("invalid_camera_number");
+
+        MapRoomEntity withoutNumber = CreateRoom();
+        SetState(withoutNumber, secondCameraId, state => state.WithCameraNumber(0));
+        ScannerRoomStateFingerprint.Validate(withoutNumber).Should().Be("invalid_camera_number", "the server numbers every camera before it is stored");
+
+        MapRoomEntity overcharged = CreateRoom();
+        SetState(overcharged, firstCameraId, state => state.WithComponents(MapRoomCameraMetadata.MAX_ENERGY + 1f, state.Health, state.ComponentRevision));
+        ScannerRoomStateFingerprint.Validate(overcharged).Should().Be("invalid_camera_component");
     }
 
     [TestMethod]
@@ -307,14 +319,24 @@ public sealed class ScannerRoomDiagnosticsTest
     {
         MapRoomEntity first = CreateRoom();
         MapRoomEntity reordered = CreateRoom();
-        reordered.CameraRegistry.Reverse();
+        reordered.ChildEntities.Reverse();
 
         ScannerRoomStateFingerprint.Create(first).Fingerprint.Should().Be(ScannerRoomStateFingerprint.Create(reordered).Fingerprint);
 
-        reordered.CameraRegistry.Single(camera => camera.CameraId.ToString().StartsWith("33333333", StringComparison.Ordinal)).Energy = 12.5f;
-        reordered.CameraRegistry.Single(camera => camera.CameraId.ToString().StartsWith("33333333", StringComparison.Ordinal)).ComponentRevision++;
+        SetState(reordered, firstCameraId, state => state.WithComponents(12.5f, state.Health, state.ComponentRevision + 1));
 
         ScannerRoomStateFingerprint.Create(first).Fingerprint.Should().NotBe(ScannerRoomStateFingerprint.Create(reordered).Fingerprint);
+
+        MapRoomEntity otherDocks = CreateRoom();
+        SetState(otherDocks, firstCameraId, state => state.WithDockingIndex(1));
+        SetState(otherDocks, secondCameraId, state => state.WithDockingIndex(0));
+        ScannerRoomStateFingerprint.Create(first).Fingerprint.Should().NotBe(ScannerRoomStateFingerprint.Create(otherDocks).Fingerprint);
+
+        MapRoomEntity oneCamera = CreateRoom();
+        oneCamera.ChildEntities.RemoveAt(1);
+        ScannerRoomStateFingerprint.Create(first).Fingerprint.Should().NotBe(ScannerRoomStateFingerprint.Create(oneCamera).Fingerprint);
+        ScannerRoomStateFingerprint.Create(oneCamera).Should().Match<ScannerRoomStateSnapshot>(snapshot =>
+            snapshot.CameraCount == 1 && snapshot.LeftDockCameraId == firstCameraId && snapshot.RightDockCameraId == null);
 
         MapRoomEntity metadataChanged = CreateRoom();
         metadataChanged.Metadata = new MapRoomMetadata(new NitroxTechType("Quartz"), 8, 10);
@@ -333,8 +355,7 @@ public sealed class ScannerRoomDiagnosticsTest
         {
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
             MapRoomEntity room = CreateRoom();
-            room.CameraRegistry[0].Energy = 12.5f;
-            room.CameraRegistry[0].Health = 1.25f;
+            SetState(room, firstCameraId, state => state.WithComponents(12.5f, 1.25f, state.ComponentRevision));
 
             string canonical = ScannerRoomStateFingerprint.Create(room).CanonicalState;
 
@@ -372,25 +393,32 @@ public sealed class ScannerRoomDiagnosticsTest
             "without the lock table every line would only say that the simulating player is unknown");
     }
 
+    /// <summary>
+    ///     A room with a camera in each dock: number 1 lit in the left one, number 2 in the right one.
+    /// </summary>
     private static MapRoomEntity CreateRoom()
     {
         NitroxId roomId = new("11111111-1111-1111-1111-111111111111");
         NitroxId parentId = new("22222222-2222-2222-2222-222222222222");
-        NitroxId firstCameraId = new("33333333-3333-3333-3333-333333333333");
-        NitroxId secondCameraId = new("44444444-4444-4444-4444-444444444444");
         return new MapRoomEntity(roomId, parentId, new NitroxInt3(1, 2, 3))
         {
             Metadata = new MapRoomMetadata(new NitroxTechType("Gold"), 7, 9),
-            LeftDockCameraId = firstCameraId,
-            RightDockCameraId = secondCameraId,
-            DockingRevision = 7,
-            CameraRegistry =
+            ChildEntities =
             [
-                new MapRoomCameraRecord(firstCameraId, 1, true, 4, 80f, 90f, 6),
-                new MapRoomCameraRecord(secondCameraId, 2, false, 3, 70f, 85f, 5)
+                CreateCamera(firstCameraId, roomId, new MapRoomCameraMetadata(true, 4, 80f, 90f, 6, 1, 0)),
+                CreateCamera(secondCameraId, roomId, new MapRoomCameraMetadata(false, 3, 70f, 85f, 5, 2, 1))
             ],
             FabricatorMetadata = new CrafterMetadata(new NitroxTechType("MapRoomHUDChip"), 10f, 2f, 1, 0)
         };
+    }
+
+    private static GlobalRootEntity CreateCamera(NitroxId cameraId, NitroxId roomId, MapRoomCameraMetadata state) =>
+        new(new NitroxTransform(), GlobalRootEntity.GLOBAL_ROOT_LEVEL, "733fd479-0760-4bc2-a03e-281cbf02bfa4", true, cameraId, new NitroxTechType("MapRoomCamera"), state, roomId, []);
+
+    private static void SetState(MapRoomEntity room, NitroxId cameraId, Func<MapRoomCameraMetadata, MapRoomCameraMetadata> change)
+    {
+        Entity camera = room.ChildEntities.Single(child => child.Id == cameraId);
+        camera.Metadata = change((MapRoomCameraMetadata)camera.Metadata);
     }
 
     private sealed class ManualTimeProvider(DateTimeOffset start) : TimeProvider

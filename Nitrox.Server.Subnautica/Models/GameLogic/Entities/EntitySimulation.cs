@@ -168,13 +168,8 @@ internal sealed class EntitySimulation : ISessionCleaner
     public List<SimulatedEntity> AssignGlobalRootEntitiesAndGetData(Player player)
     {
         List<SimulatedEntity> simulatedEntities = [];
-        HashSet<NitroxId> dockedCameraIds = scannerRoomManager.GetDockedCameraIds();
         foreach (GlobalRootEntity entity in worldEntityManager.GetGlobalRootEntities())
         {
-            if (dockedCameraIds.Contains(entity.Id))
-            {
-                continue;
-            }
             simulationOwnershipData.TryAcquirePreservingExistingExclusive(entity.Id, player, SimulationLockType.TRANSIENT, out _);
             if (!simulationOwnershipData.TryGetLock(entity.Id, out SimulationOwnershipData.PlayerLock playerLock))
             {

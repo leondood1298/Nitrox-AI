@@ -42,18 +42,46 @@ public sealed class ScannerRoomDiagnosticsCallSiteTest
     }
 
     [TestMethod]
-    public async Task FirstDockOfACameraTheServerDidNotKnowIsNamedAsSuch()
+    public async Task DocksUndocksAndRefusalsAreRecordedWithTheirDockAndWhatTheRoomHoldsAfterwards()
     {
         ScannerRoomScenarioFixture scenario = CreateScenarioWithOwnedRoom();
-        NitroxId restoredCameraId = new();
 
-        // A camera the game restored into a dock without the server ever having an entity or record for it.
-        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, restoredCameraId, 0, true)).Granted);
-        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraBId, 1, true)).Granted);
+        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
+        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
+        Assert.IsFalse((await scenario.DockAsync(scenario.PlayerB, ScannerRoomScenarioFixture.CameraBId, 0, true)).Granted);
+        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerB, ScannerRoomScenarioFixture.CameraBId, 1, true)).Granted);
+        Assert.IsFalse((await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraBId, 1, false, establishAuthority: false)).Granted);
+        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, false)).Granted);
 
-        scenario.Diagnostics.GetHistory().Select(entry => $"{entry.EventName} {entry.Reason}").Should().Equal(
-            ["dock bootstrap", "dock changed"],
-            "the first registration of an unknown camera is the step that goes wrong after a restart, so it must be told apart from an ordinary dock");
+        scenario.Diagnostics.GetHistory().Select(entry => $"{entry.EventName} {entry.Outcome} sid={entry.SessionId} slot={entry.Slot} cams={entry.CameraCount} {entry.Reason}").Should().Equal(
+            "dock ACCEPTED sid=1 slot=0 cams=1 changed",
+            "dock ACCEPTED sid=1 slot=0 cams=1 idempotent",
+            "dock REJECTED sid=2 slot=0 cams=1 slot_conflict",
+            "dock ACCEPTED sid=2 slot=1 cams=2 changed",
+            "undock REJECTED sid=1 slot=1 cams=2 non_owner",
+            "undock ACCEPTED sid=1 slot=0 cams=1 changed");
+        scenario.Diagnostics.GetHistory().Should().OnlyContain(entry => entry.RoomId == ScannerRoomScenarioFixture.RoomId.ToString().Substring(0, 8));
+    }
+
+    [TestMethod]
+    public async Task LightBatteryAndHealthOfADockedCameraAreRecordedAgainstItsRoom()
+    {
+        ScannerRoomScenarioFixture scenario = CreateScenarioWithOwnedRoom();
+        NitroxId cameraId = ScannerRoomScenarioFixture.CameraAId;
+        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, cameraId, 1, true)).Granted);
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, cameraId, 1, true)).Granted);
+
+        await scenario.LightAsync(scenario.PlayerA, new MapRoomCameraLight(cameraId, true));
+        await scenario.LightAsync(scenario.PlayerB, new MapRoomCameraLight(cameraId, false));
+        await scenario.ComponentsAsync(scenario.PlayerA, new MapRoomCameraComponentState(cameraId, 99f, MapRoomCameraMetadata.MAX_HEALTH));
+        await scenario.ComponentsAsync(scenario.PlayerA, new MapRoomCameraComponentState(cameraId, 20f, MapRoomCameraMetadata.MAX_HEALTH));
+        await scenario.ComponentsAsync(scenario.PlayerA, new MapRoomCameraComponentState(cameraId, 20f, 0f));
+        await scenario.ComponentsAsync(scenario.PlayerB, new MapRoomCameraComponentState(cameraId, 20f, 50f));
+
+        scenario.Diagnostics.GetHistory().Skip(2).Select(entry => $"{entry.EventName} {entry.Outcome} sid={entry.SessionId} {entry.Reason}").Should().Equal(
+            ["light ACCEPTED sid=1 on", "light REJECTED sid=2 non_owner", "component_energy ACCEPTED sid=1 band_25", "component_health ACCEPTED sid=1 death", "component REJECTED sid=2 non_owner"],
+            "a battery that drains within its band is not worth a line; a band it crosses, a death and every refusal are");
+        scenario.Diagnostics.GetHistory().Skip(2).Should().OnlyContain(entry => entry.RoomId == ScannerRoomScenarioFixture.RoomId.ToString().Substring(0, 8));
     }
 
     [TestMethod]

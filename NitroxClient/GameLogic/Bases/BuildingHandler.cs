@@ -172,6 +172,21 @@ public partial class BuildingHandler : MonoBehaviour
         constructableBase.SetState(true, true);
         NitroxEntity.SetNewId(baseGhost.targetBase.gameObject, placeBase.FormerGhostId);
 
+        // A Scanner Room built as the first piece of a base. The server sends it along for its cameras, which are
+        // made by the player who built it.
+        if (placeBase.BuildEntity != null)
+        {
+            foreach (MapRoomEntity builtRoom in placeBase.BuildEntity.ChildEntities.OfType<MapRoomEntity>())
+            {
+                MapRoomFunctionality mapRoom = baseGhost.targetBase.GetComponentInChildren<MapRoomFunctionality>(true);
+                if (mapRoom)
+                {
+                    NitroxEntity.SetNewId(mapRoom.gameObject, builtRoom.Id);
+                    yield return this.Resolve<Entities>().SpawnBatchAsync(MapRoomCameraDocks.GetCameraEntities(builtRoom), true);
+                }
+            }
+        }
+
         // Specific case : just a moonpool built as a base
         if (constructableBase.techType == TechType.BaseMoonpool)
         {
@@ -215,6 +230,12 @@ public partial class BuildingHandler : MonoBehaviour
         if (BuildUtils.TryTransferIdFromGhostToModule(baseGhost, updateBase.FormerGhostId, constructableBase, out GameObject moduleObject))
         {
             yield return BuildingPostSpawner.ApplyPostSpawner(moduleObject, updateBase.FormerGhostId);
+            if (updateBase.BuiltPieceEntity is MapRoomEntity builtRoom)
+            {
+                // The cameras that come with a Scanner Room are made by the player who built it. The server sends
+                // the room along for them.
+                yield return this.Resolve<Entities>().SpawnBatchAsync(MapRoomCameraDocks.GetCameraEntities(builtRoom), true);
+            }
         }
     }
 

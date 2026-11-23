@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
@@ -25,17 +26,18 @@ internal abstract class BuildingProcessor<T>(BuildingManager buildingManager, En
     }
 
     /// <summary>
-    ///     Attempts to acquire simulation ownership on <paramref name="entity" /> for <paramref name="player" />.
+    ///     Attempts to acquire simulation ownership on <paramref name="entity" /> for <paramref name="player" />, and
+    ///     on the children that are simulated with it (the cameras that come with a Scanner Room).
     ///     If the attempt is successful, it will be notified to all players.
     ///     Otherwise, nothing will happen.
     /// </summary>
     protected async Task TryClaimBuildPieceAsync(AuthProcessorContext context, Entity entity)
     {
         ArgumentNullException.ThrowIfNull(entitySimulation);
-        SimulatedEntity? simulatedEntity = entitySimulation.TryAcquireEntity(context.Sender, entity, false).FirstOrDefault();
-        if (simulatedEntity != null)
+        List<SimulatedEntity> simulatedEntities = [.. entitySimulation.TryAcquireEntity(context.Sender, entity, true)];
+        if (simulatedEntities.Count > 0)
         {
-            SimulationOwnershipChange ownershipChangePacket = new(simulatedEntity);
+            SimulationOwnershipChange ownershipChangePacket = new(simulatedEntities);
             await context.SendToAllAsync(ownershipChangePacket);
         }
     }

@@ -24,11 +24,11 @@ public sealed class MapRoomCameraControlRefusalTest
     [TestMethod]
     public async Task CameraInAnInventoryCannotBeControlled()
     {
-        // Picking a camera up keeps its room record, which alone used to be enough to control it.
+        // A camera in an inventory is still a camera the server knows, which alone used to be enough to control it.
         ScannerRoomScenarioFixture scenario = new();
         Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, cameraId, 0, true)).Granted);
         await scenario.PickupAsync(scenario.PlayerB, cameraId);
-        Assert.IsNotNull(scenario.Room.GetCameraRecord(cameraId));
+        Assert.IsTrue(scenario.CameraState(cameraId).CameraNumber > 0, "The camera keeps its state in the inventory.");
 
         MapRoomCameraControl response = await scenario.ControlLooseAsync(scenario.PlayerA, cameraId, true);
 
@@ -52,13 +52,13 @@ public sealed class MapRoomCameraControlRefusalTest
     {
         ScannerRoomScenarioFixture scenario = new();
         Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, cameraId, 0, true)).Granted);
-        MapRoomCameraRecord record = scenario.Room.GetCameraRecord(cameraId)!;
-        record.Health = 0f;
+        scenario.SetCameraComponents(cameraId, MapRoomCameraMetadata.MAX_ENERGY, 0f);
 
         Assert.IsFalse((await scenario.ControlAsync(scenario.PlayerA, cameraId, 0, true)).Granted);
-        Assert.IsNull(scenario.Ownership.GetPlayerForLock(cameraId));
+        Assert.IsFalse(scenario.HasController(cameraId));
+        Assert.IsFalse(scenario.Ownership.TryGetLock(cameraId, out SimulationOwnershipData.PlayerLock playerLock) && playerLock.LockType == SimulationLockType.EXCLUSIVE);
 
-        record.Health = 25f;
+        scenario.SetCameraComponents(cameraId, MapRoomCameraMetadata.MAX_ENERGY, 25f);
         Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, cameraId, 0, true)).Granted);
     }
 
@@ -67,7 +67,7 @@ public sealed class MapRoomCameraControlRefusalTest
     {
         ScannerRoomScenarioFixture scenario = new();
         Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, cameraId, 0, true)).Granted);
-        scenario.Room.GetCameraRecord(cameraId)!.Energy = 0f;
+        scenario.SetCameraComponents(cameraId, 0f, MapRoomCameraMetadata.MAX_HEALTH);
         scenario.PlayerB.GameMode = SubnauticaGameMode.CREATIVE;
 
         Assert.IsFalse((await scenario.ControlAsync(scenario.PlayerA, cameraId, 0, true)).Granted);
@@ -79,11 +79,11 @@ public sealed class MapRoomCameraControlRefusalTest
     {
         ScannerRoomScenarioFixture scenario = new();
         Assert.IsTrue(scenario.EntityRegistry.TryGetEntityById(cameraId, out WorldEntity camera));
-        camera.Metadata = new MapRoomCameraMetadata(false, 0, 0f, MapRoomCameraRecord.MAX_HEALTH, 3);
+        camera.Metadata = new MapRoomCameraMetadata(false, 0, 0f, MapRoomCameraMetadata.MAX_HEALTH, 3);
 
         Assert.IsFalse((await scenario.ControlLooseAsync(scenario.PlayerA, cameraId, true)).Granted);
 
-        camera.Metadata = new MapRoomCameraMetadata(false, 0, 1f, MapRoomCameraRecord.MAX_HEALTH, 4);
+        camera.Metadata = new MapRoomCameraMetadata(false, 0, 1f, MapRoomCameraMetadata.MAX_HEALTH, 4);
         Assert.IsTrue((await scenario.ControlLooseAsync(scenario.PlayerA, cameraId, true)).Granted);
     }
 
@@ -129,8 +129,10 @@ public sealed class MapRoomCameraControlRefusalTest
 
         Assert.IsTrue((await scenario.ControlLooseAsync(scenario.PlayerA, otherCameraId, true)).Granted);
 
-        Assert.IsNull(scenario.Ownership.GetPlayerForLock(cameraId));
         Assert.IsFalse(scenario.HasController(cameraId));
+        Assert.IsTrue(scenario.Ownership.TryGetLock(cameraId, out SimulationOwnershipData.PlayerLock keptLock));
+        Assert.AreSame(scenario.PlayerA, keptLock.Player, "They go on simulating the camera they left in its dock, which is who recharges it.");
+        Assert.AreEqual(SimulationLockType.TRANSIENT, keptLock.LockType);
     }
 
     [TestMethod]

@@ -196,6 +196,8 @@ public class InteriorPieceEntitySpawner : EntitySpawner<InteriorPieceEntity>
             entityMetadataManager.ApplyMetadata(mapRoomFunctionality.gameObject, mapRoomEntity.FabricatorMetadata);
         }
         yield return entities.SpawnBatchAsync(mapRoomEntity.ChildEntities.OfType<InventoryItemEntity>().ToList<Entity>(), true);
-        yield return MapRoomCameras.EnsureCameraIdsDeferred(mapRoomFunctionality, mapRoomEntity.LeftDockCameraId, mapRoomEntity.RightDockCameraId, mapRoomEntity.CameraRegistry);
+        // The cameras in the room's docks are its children. The game would give every dock a new camera of its own
+        // (see MapRoomCameraDocking_Start_Patch), these are the ones the room really has.
+        yield return entities.SpawnBatchAsync(MapRoomCameraDocks.GetCameraEntities(mapRoomEntity), true);
     }
 }

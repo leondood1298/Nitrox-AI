@@ -13,7 +13,7 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic;
 ///     The history holds the same events as the log: a repeated rejection that got no line is counted only.
 ///     <p />
 ///     Line shape (see <see cref="DiagnosticLineFormat" />):
-///     <c>[SRD1] n= ep= side=S sid= ev= out= room= cam= slot= dockRev= cams= roomLock= camLock= fp= reason=</c>.
+///     <c>[SRD1] n= ep= side=S sid= ev= out= room= cam= slot= cams= roomLock= camLock= fp= reason=</c>.
 ///     <c>sid</c> is the player the request came from. <c>roomLock</c> and <c>camLock</c> name who simulates the room
 ///     and the camera at the moment of the line (<c>3x</c>: session 3 exclusively, <c>1t</c>: session 1 transiently,
 ///     <c>none</c>: nobody), because most Scanner Room failures come down to the wrong player, or no player, holding
@@ -213,7 +213,7 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
             {
                 Interlocked.Increment(ref unchangedRepeats);
                 return new ScannerRoomDiagnosticEntry(0, epoch, DiagnosticLineFormat.Token(eventName, 32), outcome, sessionId,
-                    DiagnosticLineFormat.ShortId(room?.Id, false), DiagnosticLineFormat.NOT_APPLICABLE, slot, null, null, null, "unchanged");
+                    DiagnosticLineFormat.ShortId(room?.Id, false), DiagnosticLineFormat.NOT_APPLICABLE, slot, null, null, "unchanged");
             }
             return RecordCore(outcome, eventName, room, cameraId, sessionId, slot, reason, capturedSnapshot);
         }
@@ -262,7 +262,7 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
             }
         }
         return new ScannerRoomDiagnosticEntry(0, epoch, DiagnosticLineFormat.Token(eventName, 32), outcome, sessionId,
-            DiagnosticLineFormat.NOT_APPLICABLE, DiagnosticLineFormat.NOT_APPLICABLE, null, null, null, null, "diagnostics_failed");
+            DiagnosticLineFormat.NOT_APPLICABLE, DiagnosticLineFormat.NOT_APPLICABLE, null, null, null, "diagnostics_failed");
     }
 
     private ScannerRoomDiagnosticEntry RecordCore(ScannerRoomDiagnosticOutcome outcome, string eventName, MapRoomEntity? room,
@@ -273,17 +273,14 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
         string roomLock = DescribeLock(room?.Id);
         string cameraLock = DescribeLock(cameraId);
         ScannerRoomStateSnapshot? snapshot = capturedSnapshot;
-        long? dockingRevision = null;
         int? cameraCount = null;
         if (snapshot is { } captured)
         {
-            dockingRevision = captured.DockingRevision;
             cameraCount = captured.CameraCount;
         }
         else if (room != null)
         {
-            dockingRevision = room.DockingRevision;
-            cameraCount = room.CameraRegistry?.Count ?? 0;
+            cameraCount = ScannerRoomStateFingerprint.GetCameras(room).Length;
             if (outcome is ScannerRoomDiagnosticOutcome.CHECKPOINT or ScannerRoomDiagnosticOutcome.INVARIANT_FAILURE)
             {
                 snapshot = ScannerRoomStateFingerprint.Create(room);
@@ -303,7 +300,6 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
                 DiagnosticLineFormat.ShortId(room?.Id, false),
                 DiagnosticLineFormat.ShortId(cameraId, true),
                 slot,
-                snapshot?.DockingRevision ?? dockingRevision,
                 snapshot?.CameraCount ?? cameraCount,
                 snapshot?.Fingerprint,
                 DiagnosticLineFormat.Token(reason, 64),
@@ -471,7 +467,6 @@ internal readonly record struct ScannerRoomDiagnosticEntry(
     string RoomId,
     string CameraId,
     int? Slot,
-    long? DockingRevision,
     int? CameraCount,
     string? StateFingerprint,
     string Reason,
@@ -485,7 +480,7 @@ internal readonly record struct ScannerRoomDiagnosticEntry(
     ///     for the same reason, including the repeats that did not get a line of their own.
     /// </summary>
     public string Format() =>
-        $"{DiagnosticLineFormat.Header(ScannerRoomDiagnostics.PREFIX, Sequence, Epoch, DiagnosticLineFormat.SERVER_SIDE, SessionId, EventName, OutcomeToken())} room={RoomId} cam={CameraId} slot={DiagnosticLineFormat.Number(Slot)} dockRev={DiagnosticLineFormat.Number(DockingRevision)} cams={DiagnosticLineFormat.Number(CameraCount)} roomLock={RoomLock} camLock={CameraLock} fp={StateFingerprint ?? DiagnosticLineFormat.NOT_APPLICABLE}{(Repeat > 1 ? $" rep={DiagnosticLineFormat.Number(Repeat)}" : "")} reason={Reason}";
+        $"{DiagnosticLineFormat.Header(ScannerRoomDiagnostics.PREFIX, Sequence, Epoch, DiagnosticLineFormat.SERVER_SIDE, SessionId, EventName, OutcomeToken())} room={RoomId} cam={CameraId} slot={DiagnosticLineFormat.Number(Slot)} cams={DiagnosticLineFormat.Number(CameraCount)} roomLock={RoomLock} camLock={CameraLock} fp={StateFingerprint ?? DiagnosticLineFormat.NOT_APPLICABLE}{(Repeat > 1 ? $" rep={DiagnosticLineFormat.Number(Repeat)}" : "")} reason={Reason}";
 
     public override string ToString() => Format();
 

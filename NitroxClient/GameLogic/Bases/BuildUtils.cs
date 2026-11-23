@@ -235,6 +235,7 @@ public static class BuildUtils
                 mapRoomEntity.ChildEntities.Add(Items.ConvertToInventoryItemEntity(item.item.gameObject, id, entityMetadataManager));
             }
         }
+        mapRoomEntity.ChildEntities.AddRange(MapRoomCameraDocks.GetCameraEntities(mapRoomFunctionality, id));
 
         return mapRoomEntity;
     }

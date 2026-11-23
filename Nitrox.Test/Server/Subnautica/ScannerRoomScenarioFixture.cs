@@ -75,22 +75,25 @@ internal sealed class ScannerRoomScenarioFixture
         EntityRegistry = new EntityRegistry(NullLogger<EntityRegistry>.Instance);
         Room = new MapRoomEntity(RoomId, RoomParentId, new NitroxInt3(4, -2, 9));
         EntityRegistry.AddEntity(Room);
-        foreach (NitroxId cameraId in CameraIds)
-        {
-            EntityRegistry.AddEntity(CreateCamera(cameraId));
-        }
 
         Diagnostics = diagnosticsLog != null ? new ScannerRoomDiagnostics(diagnosticsLog, Ownership) : new ScannerRoomDiagnostics(NullLogger<ScannerRoomDiagnostics>.Instance);
         // Batch spawning and progress reporting are not part of these scenarios.
         WorldEntityManager = new WorldEntityManager(PacketSender, EntityRegistry, null!, PlayerManager, null!, NullLogger<WorldEntityManager>.Instance);
         Manager = CreateManager(EntityRegistry, Ownership, Diagnostics, PacketSender, PlayerManager, WorldEntityManager);
         Manager.RoomBuilt(Room);
+        foreach (NitroxId cameraId in CameraIds)
+        {
+            // Stored the way a camera a player crafted is: the server numbers it first, here 1, 2 and 3.
+            GlobalRootEntity camera = CreateCamera(cameraId);
+            Manager.KeepCameraStateOnReplacement(camera);
+            WorldEntityManager.AddOrUpdateGlobalRootEntity(camera);
+        }
         EntitySimulation = new EntitySimulation(PacketSender, EntityRegistry, WorldEntityManager, Ownership, PlayerManager, Manager, NullLogger<EntitySimulation>.Instance);
         ownershipRequestProcessor = new(Ownership, EntitySimulation, EntityRegistry, Manager);
         BuildingManager buildingManager = new(PacketSender, EntityRegistry, WorldEntityManager,
             Options.Create(new SubnauticaServerOptions()), Manager, NullLogger<BuildingManager>.Instance);
-        placeBaseProcessor = new(buildingManager, EntitySimulation);
-        updateBaseProcessor = new(buildingManager, EntitySimulation);
+        placeBaseProcessor = new(buildingManager, EntitySimulation, Manager);
+        updateBaseProcessor = new(buildingManager, EntitySimulation, Manager);
         destroyProcessor = new(PlayerManager, EntitySimulation, WorldEntityManager, Manager);
         // Base power sources are not part of these scenarios.
         metadataProcessor = new(PlayerManager, EntityRegistry, Ownership, Manager, null!, NullLogger<EntityMetadataUpdateProcessor>.Instance);
@@ -190,28 +193,60 @@ internal sealed class ScannerRoomScenarioFixture
         return SentPackets().Skip(alreadySent).ToList();
     }
 
-    internal async Task<MapRoomCameraDock> DockAsync(ServerPlayer player, NitroxId cameraId, int slot, bool isDocked,
-        bool establishAuthority = true)
+    /// <summary>
+    ///     Reports a camera as docked in, or undocked from, a room: the fixture's room unless another one is given.
+    /// </summary>
+    /// <param name="establishAuthority">
+    ///     Makes the player the camera's simulating player first, which is who reports a dock. False to send the
+    ///     report as whoever the player is to the camera right now.
+    /// </param>
+    internal async Task<DockResult> DockAsync(ServerPlayer player, NitroxId cameraId, int slot, bool isDocked, bool establishAuthority = true, NitroxId? roomId = null)
     {
-        bool alreadyCanonical = ScannerRoomManager.IsRequestedStateCanonical(isDocked, cameraId, Room.GetDockedCamera(slot), Room.IsCameraDocked(cameraId));
-        if (establishAuthority && !alreadyCanonical)
+        roomId ??= RoomId;
+        if (establishAuthority && Ownership.GetPlayerForLock(cameraId) != player)
         {
-            // Docking assumes normal simulation assignment already made the actor the camera authority. Establish
-            // that production precondition here.
             Ownership.RevokeOwnerOfId(cameraId);
             Assert.IsTrue(Ownership.TryAcquire(cameraId, player, SimulationLockType.TRANSIENT));
         }
-        int alreadySent = PacketSender.ReceivedCalls().Count();
-        MapRoomCameraDock request = new(cameraId, RoomId, slot, isDocked: isDocked);
-        await (isDocked ? Manager.DockCameraAsync(player, request) : Manager.UndockCameraAsync(player, request));
-        return Answer<MapRoomCameraDock>(alreadySent, player, packet => packet.CameraId == cameraId && packet.DockingIndex == slot && packet.IsDocked == isDocked);
+        int alreadySent = SentPackets().Count;
+        bool granted = isDocked
+            ? await Manager.DockCameraAsync(player, new MapRoomCameraDocked(cameraId, roomId, slot))
+            : await Manager.UndockCameraAsync(player, new MapRoomCameraUndocked(cameraId, roomId));
+        return new DockResult(granted, CameraState(cameraId), SentPackets().Skip(alreadySent).ToList());
     }
 
     /// <summary>
-    ///     Everything the server sends in answer to a dock packet, sent as is: no authority is set up for the sender.
+    ///     What the server holds for a camera, wherever the camera is. The state of a new camera if there is none.
     /// </summary>
-    internal Task<IReadOnlyList<Packet>> DockPacketsAsync(ServerPlayer player, MapRoomCameraDock packet) =>
-        SentDuringAsync(() => packet.IsDocked ? Manager.DockCameraAsync(player, packet) : Manager.UndockCameraAsync(player, packet));
+    internal MapRoomCameraMetadata CameraState(NitroxId cameraId) =>
+        EntityRegistry.TryGetEntityById(cameraId, out Entity camera) && camera.Metadata is MapRoomCameraMetadata state ? state : new MapRoomCameraMetadata();
+
+    /// <summary>
+    ///     Replaces what the server holds for a camera, for tests that start from a camera in a certain state.
+    /// </summary>
+    internal void SetCameraState(NitroxId cameraId, MapRoomCameraMetadata state)
+    {
+        Assert.IsTrue(EntityRegistry.TryGetEntityById(cameraId, out Entity camera));
+        camera.Metadata = state;
+    }
+
+    internal void SetCameraComponents(NitroxId cameraId, float energy, float health)
+    {
+        MapRoomCameraMetadata state = CameraState(cameraId);
+        SetCameraState(cameraId, state.WithComponents(energy, health, state.ComponentRevision + 1));
+    }
+
+    /// <summary>
+    ///     The camera in a dock of a room: the child of the room that is a camera with that docking index.
+    /// </summary>
+    internal NitroxId? DockedCamera(int slot, MapRoomEntity? room = null) =>
+        (room ?? Room).ChildEntities.FirstOrDefault(child => ScannerRoomManager.IsCamera(child) && child.Metadata is MapRoomCameraMetadata state && state.DockingIndex == slot)?.Id;
+
+    /// <summary>
+    ///     Whether the camera is a child of a room.
+    /// </summary>
+    internal bool IsDocked(NitroxId cameraId) =>
+        EntityRegistry.TryGetEntityById(cameraId, out Entity camera) && camera.ParentId != null && EntityRegistry.TryGetEntityById(camera.ParentId, out MapRoomEntity _);
 
     internal Task<MapRoomCameraControl> ControlAsync(ServerPlayer player, NitroxId cameraId, int slot, bool isControlling) =>
         ControlAnswerAsync(player, new MapRoomCameraControl(cameraId, RoomId, slot, isControlling, false));
@@ -351,37 +386,39 @@ internal sealed class ScannerRoomScenarioFixture
 
     internal AuthProcessorContext Context(ServerPlayer player) => new(player, PacketSender);
 
-    internal string Snapshot()
-    {
-        string registrations = string.Join(",", Room.CameraRegistry
-            .OrderBy(record => record.CameraNumber)
-            .Select(record => $"{record.CameraNumber}:{record.CameraId}"));
-        return $"rev={Room.DockingRevision};left={Room.LeftDockCameraId};right={Room.RightDockCameraId};registry={registrations}";
-    }
+    internal string Snapshot() =>
+        $"left={DockedCamera(0)};right={DockedCamera(1)};cameras={string.Join(",", CameraIds.Select(id => $"{CameraState(id).CameraNumber}:{id}:{CameraState(id).DockingIndex}"))}";
 
     internal void AssertCanonicalInvariants()
     {
-        NitroxId[] dockedIds = new[] { Room.LeftDockCameraId, Room.RightDockCameraId }
-            .Where(id => id != null)
-            .Select(id => id!)
-            .ToArray();
-
-        Assert.AreEqual(dockedIds.Length, dockedIds.Distinct().Count(), Snapshot());
-        Assert.AreEqual(Room.CameraRegistry.Count, Room.CameraRegistry.Select(record => record.CameraId).Distinct().Count(), Snapshot());
-        Assert.AreEqual(Room.CameraRegistry.Count, Room.CameraRegistry.Select(record => record.CameraNumber).Distinct().Count(), Snapshot());
-        Assert.IsTrue(Room.CameraRegistry.All(record => record.CameraNumber > 0), Snapshot());
-        Assert.IsTrue(dockedIds.All(id => Room.GetCameraRecord(id) != null), Snapshot());
+        Assert.IsNull(ScannerRoomStateFingerprint.Validate(Room), Snapshot());
+        foreach (Entity camera in ScannerRoomStateFingerprint.GetCameras(Room))
+        {
+            Assert.AreEqual(Room.Id, camera.ParentId, Snapshot());
+            Assert.IsTrue(EntityRegistry.TryGetEntityById(camera.Id, out Entity registered) && ReferenceEquals(registered, camera), Snapshot());
+        }
     }
 
-    private static GlobalRootEntity CreateCamera(NitroxId cameraId) => new(
+    /// <param name="Granted">Whether the server took the report over.</param>
+    /// <param name="State">What the server holds for the camera after the report.</param>
+    /// <param name="Sent">Everything the server sent in answer, to whomever.</param>
+    internal readonly record struct DockResult(bool Granted, MapRoomCameraMetadata State, IReadOnlyList<Packet> Sent)
+    {
+        public int CameraNumber => State.CameraNumber;
+    }
+
+    /// <summary>
+    ///     A camera entity as a client builds it: out in the world, or the child of a room if given one.
+    /// </summary>
+    internal static GlobalRootEntity CreateCamera(NitroxId cameraId, NitroxId? roomId = null, MapRoomCameraMetadata? state = null) => new(
         new NitroxTransform(),
         GlobalRootEntity.GLOBAL_ROOT_LEVEL,
         CAMERA_CLASS_ID,
         true,
         cameraId,
         new NitroxTechType("MapRoomCamera"),
-        null,
-        null,
+        state,
+        roomId,
         []);
 
     private static ServerPlayer CreatePlayer(ushort sessionId, string name) => new(

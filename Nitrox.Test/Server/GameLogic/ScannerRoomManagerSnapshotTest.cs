@@ -24,27 +24,26 @@ public sealed class ScannerRoomManagerSnapshotTest
     private static readonly NitroxTechType quartz = new("Quartz");
 
     [TestMethod]
-    public void RoomsOfALoadedWorldAreKnownWithTheirRegisteredAndDockOnlyCameras()
+    public void RoomsOfALoadedWorldAreKnownWithTheCamerasInTheirDocks()
     {
         ScannerRoomScenarioFixture scenario = new();
-        NitroxId registeredCameraId = new("00000000-0000-0000-0000-000000000298");
-        NitroxId dockOnlyCameraId = new("00000000-0000-0000-0000-000000000299");
-        MapRoomEntity loaded = new(new NitroxId("00000000-0000-0000-0000-000000000110"), ScannerRoomScenarioFixture.RoomParentId, new NitroxInt3(5, -2, 9))
-        {
-            LeftDockCameraId = registeredCameraId,
-            RightDockCameraId = dockOnlyCameraId
-        };
-        loaded.GetOrAssignCameraNumber(registeredCameraId, 1);
-        scenario.EntityRegistry.AddEntity(loaded);
-        Assert.IsFalse(scenario.Manager.IsScannerCamera(registeredCameraId));
-        Assert.IsFalse(scenario.Manager.IsScannerCamera(dockOnlyCameraId));
+        NitroxId numberedCameraId = new("00000000-0000-0000-0000-000000000298");
+        NitroxId unnumberedCameraId = new("00000000-0000-0000-0000-000000000299");
+        MapRoomEntity loaded = new(new NitroxId("00000000-0000-0000-0000-000000000110"), ScannerRoomScenarioFixture.RoomParentId, new NitroxInt3(5, -2, 9));
+        loaded.ChildEntities.Add(ScannerRoomScenarioFixture.CreateCamera(numberedCameraId, loaded.Id, new MapRoomCameraMetadata(cameraNumber: 7, dockingIndex: 0)));
+        loaded.ChildEntities.Add(ScannerRoomScenarioFixture.CreateCamera(unnumberedCameraId, loaded.Id, new MapRoomCameraMetadata(dockingIndex: 1)));
+        scenario.EntityRegistry.AddOrUpdate(loaded);
 
         scenario.Manager.WorldLoaded();
 
-        Assert.IsTrue(scenario.Manager.IsScannerCamera(registeredCameraId));
-        Assert.IsTrue(scenario.Manager.IsScannerCamera(dockOnlyCameraId));
         CollectionAssert.AreEquivalent(new[] { ScannerRoomScenarioFixture.RoomId, loaded.Id },
             scenario.Manager.GetSnapshots().Select(snapshot => snapshot.Room.Id).ToArray());
+        Assert.AreEqual(7, scenario.CameraState(numberedCameraId).CameraNumber, "A camera keeps the number it was saved with.");
+        Assert.AreEqual(8, scenario.CameraState(unnumberedCameraId).CameraNumber, "A camera without a number gets the next one after the highest in the world.");
+        Assert.AreEqual(1, scenario.CameraState(ScannerRoomScenarioFixture.CameraAId).CameraNumber, "The numbers the cameras had before are kept.");
+        Assert.AreEqual(numberedCameraId, scenario.DockedCamera(0, loaded));
+        Assert.AreEqual(unnumberedCameraId, scenario.DockedCamera(1, loaded));
+        Assert.IsNull(ScannerRoomStateFingerprint.Validate(scenario.Manager.GetSnapshot(loaded.Id)!.Room));
     }
 
     [TestMethod]
@@ -98,13 +97,14 @@ public sealed class ScannerRoomManagerSnapshotTest
 
         ScannerRoomSnapshot before = scenario.Manager.GetSnapshot(ScannerRoomScenarioFixture.RoomId)!;
         Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraBId, 1, true)).Granted);
-        scenario.Room.GetCameraRecord(ScannerRoomScenarioFixture.CameraAId)!.Energy = 5f;
+        scenario.SetCameraComponents(ScannerRoomScenarioFixture.CameraAId, 5f, MapRoomCameraMetadata.MAX_HEALTH);
 
         Assert.AreNotSame(scenario.Room, before.Room);
-        Assert.IsNull(before.Room.RightDockCameraId);
-        Assert.AreEqual(1, before.Room.DockingRevision);
-        Assert.AreEqual(MapRoomCameraRecord.MAX_ENERGY, before.Room.CameraRegistry.Single().Energy);
-        Assert.AreEqual(2, scenario.Room.DockingRevision);
+        Entity copiedCamera = ScannerRoomStateFingerprint.GetCameras(before.Room).Single();
+        Assert.AreEqual(ScannerRoomScenarioFixture.CameraAId, copiedCamera.Id);
+        Assert.AreNotSame(scenario.EntityRegistry.GetEntityById(ScannerRoomScenarioFixture.CameraAId).Value, copiedCamera, "The cameras in the docks are copied with the room.");
+        Assert.AreEqual(MapRoomCameraMetadata.MAX_ENERGY, ScannerRoomStateFingerprint.ReadState(copiedCamera).Energy);
+        Assert.AreEqual(2, ScannerRoomStateFingerprint.GetCameras(scenario.Room).Length);
     }
 
     [TestMethod]
@@ -117,7 +117,7 @@ public sealed class ScannerRoomManagerSnapshotTest
 
         List<GlobalRootEntity> detached = scenario.Manager.DetachRooms([baseEntity], out IReadOnlyList<ScannerRoomSnapshot> savedRooms);
         // The save is still being written. Nothing holds the room still for it, so this request goes through at once.
-        Task<MapRoomCameraDock> dockDuringSave = scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraBId, 1, true);
+        Task<ScannerRoomScenarioFixture.DockResult> dockDuringSave = scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraBId, 1, true);
         Assert.IsTrue(dockDuringSave.Wait(TimeSpan.FromSeconds(5)), "A save must not hold up Scanner Room requests.");
         Assert.IsTrue(dockDuringSave.Result.Granted);
         using MemoryStream payload = new();
@@ -131,6 +131,12 @@ public sealed class ScannerRoomManagerSnapshotTest
         Assert.AreSame(scenario.Room, baseEntity.ChildEntities.Single(), "The live base keeps its live room.");
         Assert.IsNull(ScannerRoomStateFingerprint.Validate(saved.Room));
         Assert.AreEqual(savedFingerprint.CanonicalState, ScannerRoomStateFingerprint.Create(savedRoom).CanonicalState);
+        // The camera in the dock is saved as a child of the room, with its state, and comes back as one.
+        GlobalRootEntity savedCamera = savedRoom.ChildEntities.OfType<GlobalRootEntity>().Single();
+        Assert.AreEqual(ScannerRoomScenarioFixture.CameraAId, savedCamera.Id);
+        Assert.AreEqual(savedRoom.Id, savedCamera.ParentId);
+        Assert.AreEqual(scenario.CameraState(ScannerRoomScenarioFixture.CameraAId).CameraNumber, ((MapRoomCameraMetadata)savedCamera.Metadata).CameraNumber);
+        Assert.AreEqual(0, ((MapRoomCameraMetadata)savedCamera.Metadata).DockingIndex);
         Assert.AreNotEqual(savedFingerprint.Fingerprint, ScannerRoomStateFingerprint.Create(scenario.Room).Fingerprint,
             "The dock made while the save was written is live state only, not part of the save.");
 
@@ -146,20 +152,23 @@ public sealed class ScannerRoomManagerSnapshotTest
         ScannerRoomScenarioFixture scenario = new(new NopPacketSender());
         BuildEntity baseEntity = AddBase(scenario);
         Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.RoomId, scenario.PlayerA, SimulationLockType.TRANSIENT));
+        Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA, SimulationLockType.TRANSIENT));
         scenario.Room.Metadata = new MapRoomMetadata(quartz, 0, 1);
-        long dockingRevisionAtStart = scenario.Room.DockingRevision;
+        long dockReports = 0;
         long scanReports = 0;
         using CancellationTokenSource stop = new();
 
-        // Every dock or undock moves the dock, the revision and the camera record together. A copy taken in the middle
-        // of one would show them apart. The scan results change all the while; they are counted with the copy, at the
-        // same moment, and are no part of it.
+        // Every dock or undock moves the camera into or out of the room's children and changes the camera's parent
+        // and docking index. A copy taken in the middle of one would show them apart. The scan results change all
+        // the while; they are counted with the copy, at the same moment, and are no part of it.
         Task docking = Task.Run(async () =>
         {
             for (bool dock = true; !stop.IsCancellationRequested; dock = !dock)
             {
-                MapRoomCameraDock request = new(ScannerRoomScenarioFixture.CameraAId, ScannerRoomScenarioFixture.RoomId, 0, isDocked: dock);
-                Assert.IsTrue(dock ? await scenario.Manager.DockCameraAsync(scenario.PlayerA, request) : await scenario.Manager.UndockCameraAsync(scenario.PlayerA, request));
+                Assert.IsTrue(dock
+                    ? await scenario.Manager.DockCameraAsync(scenario.PlayerA, new MapRoomCameraDocked(ScannerRoomScenarioFixture.CameraAId, ScannerRoomScenarioFixture.RoomId, 0))
+                    : await scenario.Manager.UndockCameraAsync(scenario.PlayerA, new MapRoomCameraUndocked(ScannerRoomScenarioFixture.CameraAId, ScannerRoomScenarioFixture.RoomId)));
+                Interlocked.Increment(ref dockReports);
             }
         });
         Task scanning = Task.Run(async () =>
@@ -182,20 +191,16 @@ public sealed class ScannerRoomManagerSnapshotTest
             scenario.Manager.DetachRooms([baseEntity], out IReadOnlyList<ScannerRoomSnapshot> savedRooms);
             ScannerRoomSnapshot saved = savedRooms.Single();
             MapRoomEntity copy = saved.Room;
-            dockChangesSeen = copy.DockingRevision - dockingRevisionAtStart;
+            dockChangesSeen = Interlocked.Read(ref dockReports);
             scanChangesSeen = Interlocked.Read(ref scanReports);
-            bool docked = copy.LeftDockCameraId == ScannerRoomScenarioFixture.CameraAId;
+            Entity[] cameras = ScannerRoomStateFingerprint.GetCameras(copy);
             if (ScannerRoomStateFingerprint.Validate(copy) is { } violation)
             {
                 inconsistencies.Add(violation);
             }
-            if (docked != ((copy.DockingRevision - dockingRevisionAtStart) % 2 == 1))
+            if (cameras.Length > 1 || cameras.Any(camera => camera.ParentId != copy.Id || ScannerRoomStateFingerprint.ReadState(camera).DockingIndex != 0))
             {
-                inconsistencies.Add($"dock {copy.LeftDockCameraId} at docking revision {copy.DockingRevision}");
-            }
-            if (docked && copy.GetCameraRecord(ScannerRoomScenarioFixture.CameraAId) == null)
-            {
-                inconsistencies.Add("docked camera without record");
+                inconsistencies.Add($"{cameras.Length} camera(s) in the room, parent {cameras.FirstOrDefault()?.ParentId}, dock {cameras.Select(camera => ScannerRoomStateFingerprint.ReadState(camera).DockingIndex).FirstOrDefault()}");
             }
             if (saved.ScanResultCount is not (0 or 1))
             {
@@ -217,13 +222,13 @@ public sealed class ScannerRoomManagerSnapshotTest
         ScannerRoomScenarioFixture scenario = new(new NopPacketSender());
         MapRoomEntity otherRoom = scenario.AddRoom(new MapRoomEntity(new NitroxId("00000000-0000-0000-0000-000000000110"), ScannerRoomScenarioFixture.RoomParentId,
             new NitroxInt3(5, -2, 9)));
-        Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.RoomId, scenario.PlayerA, SimulationLockType.TRANSIENT));
-        Assert.IsTrue(scenario.Ownership.TryAcquire(otherRoom.Id, scenario.PlayerB, SimulationLockType.TRANSIENT));
+        Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA, SimulationLockType.TRANSIENT));
+        Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.CameraBId, scenario.PlayerB, SimulationLockType.TRANSIENT));
 
-        // Each camera goes back and forth between the two rooms, which moves its record from one room to the other:
-        // the two tasks need the rooms in opposite order. A third one keeps taking copies of both.
-        Task aToB = Task.Run(() => MoveBetweenRoomsAsync(scenario, ScannerRoomScenarioFixture.CameraAId, scenario.Room, scenario.PlayerA, otherRoom, scenario.PlayerB, 0));
-        Task bToA = Task.Run(() => MoveBetweenRoomsAsync(scenario, ScannerRoomScenarioFixture.CameraBId, otherRoom, scenario.PlayerB, scenario.Room, scenario.PlayerA, 1));
+        // Each camera goes back and forth between the two rooms, which makes it the child of one and then of the
+        // other: the two tasks need the rooms in opposite order. A third one keeps taking copies of both.
+        Task aToB = Task.Run(() => MoveBetweenRoomsAsync(scenario, ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA, scenario.Room, otherRoom, 0));
+        Task bToA = Task.Run(() => MoveBetweenRoomsAsync(scenario, ScannerRoomScenarioFixture.CameraBId, scenario.PlayerB, otherRoom, scenario.Room, 1));
         Task saving = Task.Run(() =>
         {
             while (!aToB.IsCompleted || !bToA.IsCompleted)
@@ -238,42 +243,47 @@ public sealed class ScannerRoomManagerSnapshotTest
         Task all = Task.WhenAll(aToB, bToA, saving);
         Assert.AreSame(all, await Task.WhenAny(all, Task.Delay(TimeSpan.FromSeconds(20))), "Requests for two rooms are waiting for each other.");
         await all;
-        Assert.AreEqual(1, scenario.Manager.GetSnapshots().Count(snapshot => snapshot.Room.GetCameraRecord(ScannerRoomScenarioFixture.CameraAId) != null),
-            "A camera belongs to one room at a time.");
+        Assert.IsTrue(scenario.Manager.GetSnapshots().Count(snapshot => ScannerRoomStateFingerprint.GetCameras(snapshot.Room).Any(camera => camera.Id == ScannerRoomScenarioFixture.CameraAId)) <= 1,
+            "A camera is in one room at a time.");
     }
 
     [TestMethod]
-    public async Task JoiningPlayerIsSentCopiesOfTheRoomsWithoutTheDockedCameras()
+    public async Task JoiningPlayerIsSentTheRoomsAsCopiesWithTheCamerasInTheirDocks()
     {
         ScannerRoomScenarioFixture scenario = new();
         BuildEntity baseEntity = AddBase(scenario);
         Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
-        List<GlobalRootEntity> globalRoots = [baseEntity, .. scenario.CameraIds.Select(cameraId => scenario.EntityRegistry.GetEntityById<GlobalRootEntity>(cameraId).Value)];
+        // What a joining player is sent: the entities at the root of the world. A docked camera is not one of them.
+        List<GlobalRootEntity> globalRoots = [baseEntity, .. new[] { ScannerRoomScenarioFixture.CameraBId, ScannerRoomScenarioFixture.CameraCId }
+            .Select(cameraId => scenario.EntityRegistry.GetEntityById<GlobalRootEntity>(cameraId).Value)];
 
-        List<GlobalRootEntity> sync = scenario.Manager.GetInitialSyncEntities(globalRoots);
+        List<GlobalRootEntity> sync = scenario.Manager.DetachRooms(globalRoots);
         // The sync is written after it was put together. A dock that arrives meanwhile is not half in it.
         Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraBId, 1, true)).Granted);
 
-        CollectionAssert.AreEquivalent(new[] { baseEntity.Id, ScannerRoomScenarioFixture.CameraBId, ScannerRoomScenarioFixture.CameraCId }, sync.Select(entity => entity.Id).ToArray(),
-            "A docked camera is created by the client from the room's record; a loose one is sent as an entity.");
         MapRoomEntity syncedRoom = sync.Single(entity => entity.Id == baseEntity.Id).ChildEntities.OfType<MapRoomEntity>().Single();
         Assert.AreNotSame(scenario.Room, syncedRoom);
-        Assert.AreEqual(ScannerRoomScenarioFixture.CameraAId, syncedRoom.LeftDockCameraId);
-        Assert.IsNull(syncedRoom.RightDockCameraId);
-        Assert.AreEqual(1, syncedRoom.DockingRevision, "The docks and their revision are read as one state, here the one before the second dock.");
-        Assert.AreEqual(2, scenario.Room.DockingRevision);
+        GlobalRootEntity syncedCamera = (GlobalRootEntity)ScannerRoomStateFingerprint.GetCameras(syncedRoom).Single();
+        Assert.AreEqual(ScannerRoomScenarioFixture.CameraAId, syncedCamera.Id, "The camera in the dock comes with its room, as its child.");
+        Assert.AreEqual(syncedRoom.Id, syncedCamera.ParentId);
+        Assert.AreEqual(0, ScannerRoomStateFingerprint.ReadState(syncedCamera).DockingIndex);
+        Assert.IsTrue(ScannerRoomStateFingerprint.ReadState(syncedCamera).CameraNumber > 0);
+        Assert.AreEqual(2, ScannerRoomStateFingerprint.GetCameras(scenario.Room).Length);
     }
 
     [TestMethod]
     public void CapturedCheckpointRetainsCapturedInvariantAfterLiveRepair()
     {
         ScannerRoomScenarioFixture scenario = new();
-        scenario.Room.LeftDockCameraId = ScannerRoomScenarioFixture.CameraAId;
-        scenario.Room.RightDockCameraId = ScannerRoomScenarioFixture.CameraAId;
+        GlobalRootEntity first = scenario.EntityRegistry.GetEntityById<GlobalRootEntity>(ScannerRoomScenarioFixture.CameraAId).Value;
+        GlobalRootEntity second = scenario.EntityRegistry.GetEntityById<GlobalRootEntity>(ScannerRoomScenarioFixture.CameraBId).Value;
+        first.Metadata = scenario.CameraState(first.Id).WithDockingIndex(0);
+        second.Metadata = scenario.CameraState(second.Id).WithDockingIndex(0);
+        scenario.Room.ChildEntities.AddRange([first, second]);
         ScannerRoomSnapshot captured = scenario.Manager.GetSnapshot(ScannerRoomScenarioFixture.RoomId)!;
         ScannerRoomStateSnapshot fingerprint = ScannerRoomStateFingerprint.Create(captured.Room);
         string? invariantFailure = ScannerRoomStateFingerprint.Validate(captured.Room);
-        scenario.Room.RightDockCameraId = null;
+        scenario.Room.ChildEntities.Remove(second);
 
         ScannerRoomDiagnosticEntry checkpoint = scenario.Diagnostics.RecordCapturedCheckpoint("save", captured.Room, fingerprint, invariantFailure, "serialized_snapshot");
 
@@ -284,16 +294,16 @@ public sealed class ScannerRoomManagerSnapshotTest
     }
 
     /// <summary>
-    ///     Docks a camera in one room and then in the other, a number of times. Each player simulates one of the rooms.
+    ///     Docks a camera in one room and then in the other, a number of times, as the player who simulates it.
     /// </summary>
-    private static async Task MoveBetweenRoomsAsync(ScannerRoomScenarioFixture scenario, NitroxId cameraId, MapRoomEntity firstRoom, Player firstRoomSimulator,
-        MapRoomEntity secondRoom, Player secondRoomSimulator, int dockingIndex)
+    private static async Task MoveBetweenRoomsAsync(ScannerRoomScenarioFixture scenario, NitroxId cameraId, Player simulator, MapRoomEntity firstRoom, MapRoomEntity secondRoom,
+        int dockingIndex)
     {
         for (int round = 0; round < 200; round++)
         {
-            (MapRoomEntity room, Player simulator) = round % 2 == 0 ? (firstRoom, firstRoomSimulator) : (secondRoom, secondRoomSimulator);
-            Assert.IsTrue(await scenario.Manager.DockCameraAsync(simulator, new MapRoomCameraDock(cameraId, room.Id, dockingIndex)));
-            Assert.IsTrue(await scenario.Manager.UndockCameraAsync(simulator, new MapRoomCameraDock(cameraId, room.Id, dockingIndex, isDocked: false)));
+            MapRoomEntity room = round % 2 == 0 ? firstRoom : secondRoom;
+            Assert.IsTrue(await scenario.Manager.DockCameraAsync(simulator, new MapRoomCameraDocked(cameraId, room.Id, dockingIndex)));
+            Assert.IsTrue(await scenario.Manager.UndockCameraAsync(simulator, new MapRoomCameraUndocked(cameraId, room.Id)));
         }
     }
 
