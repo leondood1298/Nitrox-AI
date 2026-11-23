@@ -21,7 +21,8 @@ namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 ///     only the player simulating the source decides, and the arms for Scanner Rooms, whose scan target any player who
 ///     sees the room may choose while scan progress belongs to the room's simulating player. A room's fabricator is a
 ///     child entity whose state any player may set, like any other fabricator's. A Lifepod's repair state can only be
-///     merged with another repair state, never replaced.
+///     merged with another repair state, never replaced. A medical cabinet's state comes from any player and is only kept
+///     for a cabinet.
 /// </summary>
 [TestClass]
 public sealed class EntityMetadataUpdateProcessorTest
@@ -495,6 +496,41 @@ public sealed class EntityMetadataUpdateProcessorTest
         Assert.IsTrue(stored.RadioRepaired);
         Assert.IsTrue(((EscapePodMetadata)ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, simulator).Single().NewValue).PodRepaired);
         Assert.AreEqual(0, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, otherPlayer).Count);
+    }
+
+    [TestMethod]
+    public async Task CabinetStateFromAnyPlayerIsStoredForThePodsCabinetAndABuiltOne()
+    {
+        // The Lifepod's cabinet is a child of the pod; one built in a base is a module of it.
+        EscapePodEntity pod = new(NitroxVector3.Zero, new NitroxId(), new EscapePodMetadata(false, false));
+        PrefabChildEntity podCabinet = new(new NitroxId(), "c0175cf7-0b6a-4a1d-938f-dad0dbb6fa06", new NitroxTechType("MedicalCabinet"), 0, null, pod.Id);
+        pod.ChildEntities.Add(podCabinet);
+        entityRegistry.AddOrUpdate(pod);
+        ModuleEntity builtCabinet = AddSource(null, simulator);
+        builtCabinet.TechType = new NitroxTechType("MedicalCabinet");
+        MedicalCabinetMetadata taken = new(false, false, 1200f);
+        MedicalCabinetMetadata opened = new(true, true, 900f);
+
+        await Send(otherPlayer, podCabinet, taken);
+        await Send(thirdPlayer, builtCabinet, opened);
+
+        Assert.AreSame(taken, podCabinet.Metadata);
+        Assert.AreSame(opened, builtCabinet.Metadata);
+        Assert.IsInstanceOfType<EscapePodMetadata>(pod.Metadata, "The cabinet's state is its own, not the pod's.");
+        Assert.AreSame(taken, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, simulator).First().NewValue);
+        Assert.AreEqual(0, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, otherPlayer).Count(update => update.Id.Equals(podCabinet.Id)));
+    }
+
+    [TestMethod]
+    public async Task CabinetStateForSomethingThatIsNoCabinetIsNotStored()
+    {
+        ModuleEntity locker = AddSource(null, simulator);
+        locker.TechType = new NitroxTechType("Locker");
+
+        await Send(otherPlayer, locker, new MedicalCabinetMetadata(true, true, 900f));
+
+        Assert.IsNull(locker.Metadata);
+        Assert.AreEqual(0, packetSender.ReceivedCalls().Count());
     }
 
     private Task Send(Player sender, Entity entity, EntityMetadata metadata)

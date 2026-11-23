@@ -146,10 +146,26 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
         return metadata switch
         {
             PlayerMetadata playerMetadata => ProcessPlayerMetadata(sendingPlayer, entity, playerMetadata),
+            MedicalCabinetMetadata => ProcessMedicalCabinetMetadata(sendingPlayer, entity),
 
             // Allow metadata updates from any player by default
             _ => true
         };
+    }
+
+    /// <summary>
+    ///     Any player may click a cabinet or see its medkit appear. Two players who take the medkit at the same moment may
+    ///     both get one; the server does not decide between them.
+    /// </summary>
+    private bool ProcessMedicalCabinetMetadata(Player sendingPlayer, Entity entity)
+    {
+        // The Lifepod's cabinet and a cabinet built in a base both carry the cabinet's tech type.
+        if (entity.TechType?.Name == "MedicalCabinet")
+        {
+            return true;
+        }
+        logger.ZLogWarningOnce($"Player {sendingPlayer.Name} tried applying medical cabinet metadata to {entity.TechType?.Name ?? "None"} entity {entity.Id}");
+        return false;
     }
 
     private bool ProcessPlayerMetadata(Player sendingPlayer, Entity entity, PlayerMetadata metadata)
