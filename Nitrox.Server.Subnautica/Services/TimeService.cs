@@ -46,6 +46,13 @@ internal sealed class TimeService(IPacketSender packetSender, NtpSyncer ntpSynce
     public TimeSkippedEventHandler? TimeSkipped;
 
     /// <summary>
+    ///     Builds the packet sent after a time skip, a <see cref="TimeChange" /> if not set. <see cref="StoryManager" /> sets
+    ///     it because a skip moves the Aurora's real explosion time (on <see cref="TimeSkipped" />), which the connected
+    ///     players need along with the new time.
+    /// </summary>
+    public Func<Packet>? MakeTimeSkipPacket;
+
+    /// <summary>
     ///     Gets the total game time. Includes time skips but excludes time during <see cref="HibernateService.IsSleeping" />.
     /// </summary>
     /// <remarks>
@@ -108,7 +115,7 @@ internal sealed class TimeService(IPacketSender packetSender, NtpSyncer ntpSynce
             GameTime += skippedTime;
             TimeSkipped?.Invoke(skippedTime);
 
-            await packetSender.SendPacketToAllAsync(MakeTimePacket());
+            await SendTimeSkipPacketAsync();
         }
     }
 
@@ -129,7 +136,13 @@ internal sealed class TimeService(IPacketSender packetSender, NtpSyncer ntpSynce
 
         GameTime += skipAmount;
         TimeSkipped?.Invoke(skipAmount);
-        await packetSender.SendPacketToAllAsync(MakeTimePacket());
+        await SendTimeSkipPacketAsync();
+    }
+
+    private async Task SendTimeSkipPacketAsync()
+    {
+        Packet packet = MakeTimeSkipPacket != null ? MakeTimeSkipPacket() : MakeTimePacket();
+        await packetSender.SendPacketToAllAsync(packet);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

@@ -1,9 +1,12 @@
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Nitrox.Model.Configuration;
 using Nitrox.Model.Networking;
+using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
 using Nitrox.Server.Subnautica.Services;
+using Nitrox.Test.Server.Helper;
 using NSubstitute;
 
 namespace Nitrox.Server.Subnautica.Models.GameLogic;
@@ -11,13 +14,15 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic;
 [TestClass]
 public sealed class StoryManagerTest
 {
+    private IPacketSender packetSender;
+    private TimeService timeService;
     private StoryManager storyManager;
 
     [TestInitialize]
     public void Init()
     {
-        IPacketSender packetSender = Substitute.For<IPacketSender>();
-        TimeService timeService = new(packetSender, new NtpSyncer(), NullLoggerFactory.Instance, NullLogger<TimeService>.Instance);
+        packetSender = Substitute.For<IPacketSender>();
+        timeService = new(packetSender, new NtpSyncer(), NullLoggerFactory.Instance, NullLogger<TimeService>.Instance);
         storyManager = new StoryManager(packetSender, new PdaManager(NullLogger<PdaManager>.Instance), timeService, Options.Create(new SubnauticaServerOptions()), NullLogger<StoryManager>.Instance);
     }
 
@@ -64,5 +69,19 @@ public sealed class StoryManagerTest
         storyManager.OnGoalCompleted("Goal_Something");
 
         storyManager.StoryGoalData.RadioQueue.Should().Equal(StoryManager.SUNBEAM_LAST_RADIO_MESSAGE);
+    }
+
+    [TestMethod]
+    public async Task TimeSkip_SendsTheMovedAuroraExplosionTimeWithTheNewTime()
+    {
+        storyManager.AuroraRealExplosionTime = timeService.ActiveTime + TimeSpan.FromSeconds(600);
+
+        await timeService.SkipTimeAsync(TimeSpan.FromSeconds(100));
+
+        AuroraAndTimeUpdate update = ConnectedPlayers.SentToAll<AuroraAndTimeUpdate>(packetSender).Should().ContainSingle().Subject;
+        update.Restore.Should().BeFalse();
+        update.TimeData.AuroraEventData.AuroraRealExplosionTime.Should().BeApproximately((float)(timeService.ActiveTime.TotalSeconds + 500), 0.1f);
+        update.TimeData.TimePacket.CurrentTime.Should().BeApproximately(timeService.GameTime.TotalSeconds, 1);
+        ConnectedPlayers.SentToAll<TimeChange>(packetSender).Should().BeEmpty();
     }
 }

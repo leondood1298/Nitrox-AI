@@ -56,6 +56,8 @@ internal sealed class StoryManager : ISummarize
         this.logger = logger;
 
         timeService.TimeSkipped += ReadjustAuroraRealExplosionTime;
+        // A skip moves AuroraRealExplosionTime, which only AuroraAndTimeUpdate carries to the connected players
+        timeService.MakeTimeSkipPacket = () => new AuroraAndTimeUpdate(GetTimeData(), false);
     }
 
     public void ReadjustAuroraRealExplosionTime(TimeSpan skippedTime)

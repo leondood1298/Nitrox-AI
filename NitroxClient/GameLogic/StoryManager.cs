@@ -69,6 +69,11 @@ public static class StoryManager
 
     public static void UpdateAuroraData(AuroraEventData auroraEventData)
     {
+        // A time skip sends this to players still in the loading screen too; initial sync applies the Aurora data later
+        if (!CrashedShipExploder.main)
+        {
+            return;
+        }
         CrashedShipExploder.main.timeToStartCountdown = auroraEventData.TimeToStartCountdown;
         CrashedShipExploder.main.timeToStartWarning = auroraEventData.TimeToStartWarning;
     }
