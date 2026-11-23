@@ -52,6 +52,6 @@ public class WaterParkCreatureMetadataProcessor : EntityMetadataProcessor<WaterP
 
         waterParkCreature.OnProtoDeserialize(null);
 
-        Resolve<CreatureInfections>().ApplyReceived(gameObject, metadata.InfectedAmount);
+        Resolve<CreatureInfections>().ApplyReceived(gameObject, metadata);
     }
 }

@@ -1,4 +1,5 @@
 using Nitrox.Model.DataStructures;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using NitroxClient.GameLogic;
 
 namespace Nitrox.Test.Client.GameLogic;
@@ -79,5 +80,90 @@ public sealed class CreatureInfectionRulesTest
     public void HealingByAHeroPeeperEveryFrameIsThrottled()
     {
         CreatureInfectionRules.IsImmediateChange(0.8f, 0.79f).Should().BeFalse();
+    }
+
+    [TestMethod]
+    public void SamePeeperAlwaysGetsTheSameBornHeroRoll()
+    {
+        NitroxId id = new("0f8a3c52-9d1e-4b7a-8e33-5c2b1a7d9e04");
+
+        CreatureInfectionRules.BornHeroRoll(id).Should().Be(CreatureInfectionRules.BornHeroRoll(new NitroxId("0f8a3c52-9d1e-4b7a-8e33-5c2b1a7d9e04")));
+    }
+
+    [TestMethod]
+    public void AboutOnePeeperInTwentyIsBornAHeroIndependentlyOfItsInfection()
+    {
+        const int COUNT = 20000;
+        int heroes = 0;
+        int infectedHeroes = 0;
+        NitroxId id = new("6b1f0e2a-0000-4000-8000-000000000000");
+        for (int i = 0; i < COUNT; i++)
+        {
+            float heroRoll = CreatureInfectionRules.BornHeroRoll(id);
+            heroRoll.Should().BeGreaterThanOrEqualTo(0f).And.BeLessThan(1f);
+            if (heroRoll < CreatureInfectionRules.BORN_HERO_CHANCE)
+            {
+                heroes++;
+                if (CreatureInfectionRules.Roll(id) < GAME_INFECTION_CHANCE)
+                {
+                    infectedHeroes++;
+                }
+            }
+            id = id.Increment();
+        }
+
+        ((float)heroes / COUNT).Should().BeApproximately(CreatureInfectionRules.BORN_HERO_CHANCE, 0.005f);
+        // The same roll for both would make every infected peeper a hero, and BecomeHero cures it
+        ((float)infectedHeroes / heroes).Should().BeLessThan(0.15f);
+    }
+
+    [TestMethod]
+    public void RollThatNeverInfectsNeverMakesAHero()
+    {
+        CreatureInfectionRules.NEVER_INFECTS.Should().BeGreaterThanOrEqualTo(CreatureInfectionRules.BORN_HERO_CHANCE);
+    }
+
+    [TestMethod]
+    public void PeeperNobodyMadeAHeroMayBeBornAHero()
+    {
+        CreatureInfectionRules.MayBornHeroRecharge(CreatureMetadata.NO_ENZYME, 1000f, 120f).Should().BeTrue();
+    }
+
+    [TestMethod]
+    public void BornHeroRechargesOnlyLongAfterItsEnzymeRanOut()
+    {
+        CreatureInfectionRules.MayBornHeroRecharge(1060f, 1000f, 120f).Should().BeFalse();
+        CreatureInfectionRules.MayBornHeroRecharge(1060f, 1100f, 120f).Should().BeFalse();
+        CreatureInfectionRules.MayBornHeroRecharge(1060f, 1180f, 120f).Should().BeTrue();
+    }
+
+    [TestMethod]
+    public void PeeperWithLastingEnzymeIsNotRecharged()
+    {
+        CreatureInfectionRules.MayBornHeroRecharge(CreatureMetadata.LASTING_ENZYME, 1000f, 120f).Should().BeFalse();
+    }
+
+    [TestMethod]
+    public void EnzymeRunsOutAfterWhatIsLeft()
+    {
+        CreatureInfectionRules.GetEnzymeEndTime(1000f, 60f, false).Should().Be(1060f);
+        CreatureInfectionRules.GetEnzymeEndTime(1000f, 0f, false).Should().Be(CreatureMetadata.NO_ENZYME);
+    }
+
+    [TestMethod]
+    public void EnzymeInThePrisonAquariumLasts()
+    {
+        CreatureInfectionRules.GetEnzymeEndTime(1000f, 60f, true).Should().Be(CreatureMetadata.LASTING_ENZYME);
+        CreatureInfectionRules.GetEnzymeLeft(CreatureMetadata.LASTING_ENZYME, 1000f, 60f).Should().Be(60f);
+    }
+
+    [TestMethod]
+    [DataRow(1060f, 1000f, 60f)]
+    [DataRow(1060f, 1030f, 30f)]
+    [DataRow(1060f, 1100f, 0f)]
+    [DataRow(5000f, 1000f, 60f)]
+    public void PlayerWhoGetsAHeroPeeperGivesItTheEnzymeThatIsLeft(float enzymeEndTime, float now, float expectedLeft)
+    {
+        CreatureInfectionRules.GetEnzymeLeft(enzymeEndTime, now, 60f).Should().Be(expectedLeft);
     }
 }
