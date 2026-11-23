@@ -24,7 +24,7 @@ public class SeaTreaderMetadata : CreatureMetadata
         // Constructor for serialization. Has to be "protected" for json serialization.
     }
 
-    public SeaTreaderMetadata(bool reverseDirection, float grazingEndTime, NitroxVector3 leashPosition, float infectedAmount) : base(infectedAmount)
+    public SeaTreaderMetadata(bool reverseDirection, float grazingEndTime, NitroxVector3 leashPosition, float infectedAmount, float enzymeEndTime = NO_ENZYME) : base(infectedAmount, enzymeEndTime)
     {
         ReverseDirection = reverseDirection;
         GrazingEndTime = grazingEndTime;

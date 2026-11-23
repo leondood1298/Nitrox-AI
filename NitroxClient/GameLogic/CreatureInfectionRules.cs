@@ -1,5 +1,6 @@
 using System;
 using Nitrox.Model.DataStructures;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 
 namespace NitroxClient.GameLogic;
 
@@ -26,11 +27,81 @@ public static class CreatureInfectionRules
     /// <returns>A value from 0 (included) to 1 (excluded).</returns>
     public static float Roll(NitroxId creatureId)
     {
+        return Roll(creatureId, INFECTION_SEED);
+    }
+
+    /// <summary>
+    ///     Stands in for Random.value in Peeper.InitializeOnce, which makes a peeper a hero from birth below
+    ///     <see cref="BORN_HERO_CHANCE" />. Fixed per peeper like <see cref="Roll(NitroxId)" />, and independent of it, as
+    ///     the game rolls the two separately.
+    /// </summary>
+    public static float BornHeroRoll(NitroxId peeperId)
+    {
+        return Roll(peeperId, BORN_HERO_SEED);
+    }
+
+    /// <summary>
+    ///     Peeper.InitializeOnce makes a peeper outside the Safe Shallows a hero from birth below this roll.
+    /// </summary>
+    public const float BORN_HERO_CHANCE = 0.05f;
+
+    /// <summary>
+    ///     The game gives a peeper that was a hero from birth its enzyme again when the world is loaded and its last enzyme ran
+    ///     out at least Peeper.rechargeInterval before. Here this happens when its simulating player gets it in the world.
+    /// </summary>
+    /// <param name="enzymeEndTime">When its last enzyme ran out or runs out, or <see cref="CreatureMetadata.NO_ENZYME" />.</param>
+    public static bool MayBornHeroRecharge(float enzymeEndTime, float now, float rechargeInterval)
+    {
+        if (enzymeEndTime >= CreatureMetadata.LASTING_ENZYME)
+        {
+            return false;
+        }
+        return enzymeEndTime <= CreatureMetadata.NO_ENZYME || now >= enzymeEndTime + rechargeInterval;
+    }
+
+    /// <summary>
+    ///     When the enzyme a peeper has now runs out. A peeper in the prison's aquarium never loses it.
+    /// </summary>
+    public static float GetEnzymeEndTime(float now, float enzymeAmount, bool inPrisonAquarium)
+    {
+        if (enzymeAmount <= 0f)
+        {
+            return CreatureMetadata.NO_ENZYME;
+        }
+        return inPrisonAquarium ? CreatureMetadata.LASTING_ENZYME : now + enzymeAmount;
+    }
+
+    /// <summary>
+    ///     The Peeper.enzymeAmount a peeper whose enzyme runs out at <paramref name="enzymeEndTime" /> has now.
+    /// </summary>
+    public static float GetEnzymeLeft(float enzymeEndTime, float now, float enzymeDuration)
+    {
+        if (enzymeEndTime >= CreatureMetadata.LASTING_ENZYME)
+        {
+            return enzymeDuration;
+        }
+        return Math.Max(0f, Math.Min(enzymeDuration, enzymeEndTime - now));
+    }
+
+    /// <summary>
+    ///     A creature that nobody has decided anything about needs nothing stored: it gets its rolls again wherever it appears.
+    /// </summary>
+    public static bool HasDecidedState(float infectedAmount, float enzymeEndTime)
+    {
+        return CreatureMetadata.IsDecided(infectedAmount) || enzymeEndTime > CreatureMetadata.NO_ENZYME;
+    }
+
+    // FNV-1a's offset basis, and another one for an independent roll
+    private const uint INFECTION_SEED = 2166136261;
+    private const uint BORN_HERO_SEED = 0x9e3779b9;
+
+    private static float Roll(NitroxId creatureId, uint seed)
+    {
         // GetHashCode is not guaranteed to be the same across runtimes and processes
         byte[] bytes = new Guid(creatureId.ToString()).ToByteArray();
         unchecked
         {
-            uint hash = 2166136261;
+            uint hash = seed;
             foreach (byte b in bytes)
             {
                 hash = (hash ^ b) * 16777619;

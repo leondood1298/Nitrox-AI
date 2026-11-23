@@ -89,6 +89,47 @@ public sealed class CreatureMetadataAuthorityTest
     }
 
     [TestMethod]
+    public void HeroPeeperKeepsItsDecidedInfectionWhenItsEnzymeIsSentWithoutOne()
+    {
+        CreatureInfectionMetadata stored = new(0.5f);
+
+        CreatureMetadata? accepted = CreatureMetadataAuthority.Merge(stored, new CreatureInfectionMetadata(CreatureMetadata.UNDECIDED, 1060f));
+
+        accepted!.InfectedAmount.Should().Be(0.5f);
+        accepted.EnzymeEndTime.Should().Be(1060f);
+    }
+
+    [TestMethod]
+    public void InfectionUpdateDoesNotTakeAwayAHeroPeepersEnzyme()
+    {
+        CreatureInfectionMetadata stored = new(1f, 1060f);
+
+        CreatureMetadata? accepted = CreatureMetadataAuthority.Merge(stored, new CreatureInfectionMetadata(0f));
+
+        accepted!.InfectedAmount.Should().Be(0f);
+        accepted.EnzymeEndTime.Should().Be(1060f);
+    }
+
+    [TestMethod]
+    public void NewerEnzymeOfAHeroPeeperIsKept()
+    {
+        CreatureMetadataAuthority.Merge(new CreatureInfectionMetadata(0f, 1060f), new CreatureInfectionMetadata(0f, 2000f))!.EnzymeEndTime.Should().Be(2000f);
+    }
+
+    [TestMethod]
+    public void ContainedHeroPeeperKeepsItsEnzymeWhenItGrows()
+    {
+        WaterParkCreatureMetadata stored = new(0.5f, 300d, 200f, true, 0f, CreatureMetadata.LASTING_ENZYME);
+        WaterParkCreatureMetadata grown = new(0.6f, 300d, 200f, true, CreatureMetadata.UNDECIDED);
+
+        CreatureMetadata? accepted = CreatureMetadataAuthority.Merge(stored, grown);
+
+        accepted.Should().BeSameAs(grown);
+        accepted!.EnzymeEndTime.Should().Be(CreatureMetadata.LASTING_ENZYME);
+        accepted.InfectedAmount.Should().Be(0f);
+    }
+
+    [TestMethod]
     public void SimulatingPlayerDecidesInfection()
     {
         Player sender = CreatePlayer(1, 1);

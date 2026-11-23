@@ -26,7 +26,12 @@ internal static class CreatureMetadataAuthority
             switch (stored)
             {
                 case CreatureMetadata storedCreature:
-                    storedCreature.InfectedAmount = infection.InfectedAmount;
+                    // A hero peeper's enzyme is sent with an infection nobody has decided yet
+                    if (CreatureMetadata.IsDecided(infection.InfectedAmount))
+                    {
+                        storedCreature.InfectedAmount = infection.InfectedAmount;
+                    }
+                    storedCreature.EnzymeEndTime = Math.Max(storedCreature.EnzymeEndTime, infection.EnzymeEndTime);
                     return storedCreature;
                 case null:
                     return infection;
@@ -38,9 +43,13 @@ internal static class CreatureMetadataAuthority
 
         // Infection only changes through CreatureInfectionMetadata, which keeps the stored value up to date. The value in
         // other creature metadata comes from the sender's copy and only counts when nothing has been decided yet.
-        if (stored is CreatureMetadata storedMetadata && CreatureMetadata.IsDecided(storedMetadata.InfectedAmount))
+        if (stored is CreatureMetadata storedMetadata)
         {
-            requested.InfectedAmount = storedMetadata.InfectedAmount;
+            if (CreatureMetadata.IsDecided(storedMetadata.InfectedAmount))
+            {
+                requested.InfectedAmount = storedMetadata.InfectedAmount;
+            }
+            requested.EnzymeEndTime = Math.Max(requested.EnzymeEndTime, storedMetadata.EnzymeEndTime);
         }
         return requested;
     }
