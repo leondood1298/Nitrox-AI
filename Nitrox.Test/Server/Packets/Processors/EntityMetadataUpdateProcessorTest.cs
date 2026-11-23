@@ -377,6 +377,69 @@ public sealed class EntityMetadataUpdateProcessorTest
     }
 
     [TestMethod]
+    public async Task OtherMetadataCannotTakeThePlaceOfWhatARoomScansFor()
+    {
+        // An entity has one metadata slot. With something else in it the room would scan for nothing for the next
+        // player who joins and after a restart.
+        MapRoomEntity room = AddRoom(new MapRoomMetadata(quartz, 4, 2), simulator);
+        MapRoomMetadata scanState = (MapRoomMetadata)room.Metadata;
+        MapRoomEntity newRoom = AddRoom(null, simulator);
+
+        foreach (Player sender in new[] { simulator, otherPlayer })
+        {
+            await Send(sender, room, new BatteryMetadata(100f));
+            await Send(sender, room, new PowerSourceMetadata(40f, 0f, BasePowerSourceType.SOLAR));
+            await Send(sender, room, new ThermalPlantMetadata(60f));
+            await Send(sender, newRoom, new BatteryMetadata(100f));
+        }
+
+        Assert.AreSame(scanState, room.Metadata);
+        Assert.IsNull(newRoom.Metadata, "A room that never scanned is a room all the same.");
+        Assert.AreEqual(0, packetSender.ReceivedCalls().Count());
+        Assert.IsTrue(scannerDiagnostics.GetHistory().Any(entry => entry is { EventName: "metadata", Outcome: ScannerRoomDiagnosticOutcome.REJECTED, Reason: "replaced_by_batterymetadata" }));
+    }
+
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public async Task OtherMetadataCannotTakeThePlaceOfACamerasState(bool docked)
+    {
+        // The dock, the number, the light, the battery and the health of a camera are one piece of metadata, in a
+        // dock as out in the world.
+        MapRoomEntity room = AddRoom(new MapRoomMetadata(quartz, 4, 2), simulator);
+        MapRoomCameraMetadata cameraState = new(true, 60f, 80f, 3, docked ? 1 : MapRoomCameraMetadata.NOT_DOCKED);
+        GlobalRootEntity camera = AddCamera(cameraState, docked ? room : null, simulator);
+        Assert.IsTrue(simulationOwnershipData.TryAcquire(camera.Id, simulator, SimulationLockType.EXCLUSIVE), "Not even the player who controls it.");
+
+        foreach (Player sender in new[] { simulator, otherPlayer })
+        {
+            await Send(sender, camera, new BatteryMetadata(100f));
+            await Send(sender, camera, new MapRoomMetadata(titanium, 0));
+            await Send(sender, camera, new CrafterMetadata(new NitroxTechType("MapRoomHUDChip"), 12.5f, 4f, 1, 0));
+            await Send(sender, camera, new PowerSourceMetadata(40f, 0f, BasePowerSourceType.SOLAR));
+        }
+
+        Assert.AreSame(cameraState, camera.Metadata);
+        Assert.AreEqual(0, packetSender.ReceivedCalls().Count());
+    }
+
+    [TestMethod]
+    public async Task OtherMetadataCannotTakeThePlaceOfTheStateOfACameraThatHoldsNoneYetOrLiesInAnInventory()
+    {
+        GlobalRootEntity newCamera = AddCamera(null, null, simulator);
+        InventoryItemEntity carried = new(new NitroxId(), "camera-class-id", new NitroxTechType("MapRoomCamera"), new MapRoomCameraMetadata(false, 60f, 80f, 3), simulator.GameObjectId, []);
+        EntityMetadata carriedState = carried.Metadata;
+        entityRegistry.AddEntity(carried);
+
+        await Send(otherPlayer, newCamera, new BatteryMetadata(100f));
+        await Send(simulator, carried, new BatteryMetadata(100f));
+
+        Assert.IsNull(newCamera.Metadata, "Known as a camera by what it is.");
+        Assert.AreSame(carriedState, carried.Metadata);
+        Assert.AreEqual(0, packetSender.ReceivedCalls().Count());
+    }
+
+    [TestMethod]
     public async Task CameraStateForSomethingThatIsNoCameraIsNotStoredAndNobodyIsTold()
     {
         ModuleEntity locker = AddSource(null, simulator);
@@ -407,6 +470,15 @@ public sealed class EntityMetadataUpdateProcessorTest
         entityRegistry.AddEntity(room);
         Assert.IsTrue(simulationOwnershipData.TryAcquire(room.Id, simulatedBy, SimulationLockType.TRANSIENT));
         return room;
+    }
+
+    private GlobalRootEntity AddCamera(MapRoomCameraMetadata cameraState, MapRoomEntity dockedIn, Player simulatedBy)
+    {
+        GlobalRootEntity camera = ScannerRoomScenarioFixture.CreateCamera(new NitroxId(), dockedIn?.Id, cameraState);
+        dockedIn?.ChildEntities.Add(camera);
+        entityRegistry.AddEntity(camera);
+        Assert.IsTrue(simulationOwnershipData.TryAcquire(camera.Id, simulatedBy, SimulationLockType.TRANSIENT));
+        return camera;
     }
 
     private ModuleEntity AddSource(EntityMetadata metadata, Player simulatedBy)

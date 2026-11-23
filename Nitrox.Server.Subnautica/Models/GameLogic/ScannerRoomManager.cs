@@ -99,6 +99,25 @@ internal sealed partial class ScannerRoomManager(IPacketSender packetSender, Ent
         IsCamera(entity) && entity.ParentId != null && entityRegistry.TryGetEntityById(entity.ParentId, out MapRoomEntity? _);
 
     /// <summary>
+    ///     Whether the one metadata slot of this entity is a Scanner Room's: the entity is a room, or a camera wherever
+    ///     it is (a camera is known by what it is, also while it holds no state yet). Does not enter the gate.
+    /// </summary>
+    internal static bool HoldsScannerRoomState(Entity entity) => entity is MapRoomEntity || IsCamera(entity) || entity.Metadata is MapRoomCameraMetadata;
+
+    /// <summary>
+    ///     The gate for metadata of any other kind sent for a room or a camera: always shut. An entity has one metadata
+    ///     slot. Taken by something else, what the room scans for, or the camera's dock, number, light, battery and
+    ///     health, would be gone for every player who joins later and after a restart.
+    /// </summary>
+    public MetadataUpdateResult RejectReplacement(Player sender, Entity target, EntityMetadata metadata)
+    {
+        using Hold held = Enter();
+        CameraView camera = GetCamera(target.Id);
+        diagnostics.RecordRejected("metadata", target as MapRoomEntity ?? camera.DockedRoom, camera.Exists ? target.Id : null, sender.SessionId, reason: $"replaced_by_{metadata.GetType().Name}");
+        return MetadataUpdateResult.Reject;
+    }
+
+    /// <summary>
     ///     Called once the saved world is in the entity registry and before any player can connect. Finds the rooms and
     ///     the cameras, and how far the camera numbers have got.
     /// </summary>
