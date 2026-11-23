@@ -153,9 +153,20 @@ internal sealed partial class ScannerRoomManager(IPacketSender packetSender, Ent
     /// <summary>
     ///     Copies of all rooms, taken at one moment and ordered by id.
     /// </summary>
-    public IReadOnlyList<ScannerRoomSnapshot> GetSnapshots()
+    public IReadOnlyList<ScannerRoomSnapshot> GetSnapshots() => GetSnapshots(out _);
+
+    /// <inheritdoc cref="GetSnapshots()" />
+    /// <param name="worldCameras">
+    ///     Every camera that was in the world at that same moment, in a dock or not, ordered by id. A camera in an
+    ///     inventory is not among them.
+    /// </param>
+    public IReadOnlyList<ScannerRoomSnapshot> GetSnapshots(out IReadOnlyList<ScannerCameraSnapshot> worldCameras)
     {
         using Hold held = Enter();
+        worldCameras = [.. entityRegistry.GetEntities<WorldEntity>()
+                                         .Where(IsCamera)
+                                         .OrderBy(camera => camera.Id.ToString(), StringComparer.Ordinal)
+                                         .Select(camera => new ScannerCameraSnapshot(camera.Id, ReadState(camera)))];
         return [.. GetRooms().OrderBy(room => room.Id.ToString(), StringComparer.Ordinal).Select(Capture)];
     }
 

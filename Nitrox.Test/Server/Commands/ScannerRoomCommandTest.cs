@@ -94,5 +94,5 @@ public sealed class ScannerRoomCommandTest
     }
 
     private static ScannerRoomCommand CreateScannerRoomCommand(ScannerRoomScenarioFixture scenario, ScannerRoomDiagnostics diagnostics) =>
-        new(scenario.EntityRegistry, diagnostics, scenario.Ownership, scenario.Manager);
+        new(diagnostics, scenario.Ownership, scenario.Manager);
 }
