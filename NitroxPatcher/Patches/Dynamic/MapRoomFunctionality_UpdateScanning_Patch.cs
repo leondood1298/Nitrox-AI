@@ -1,9 +1,5 @@
-using System;
-using System.CodeDom.Compiler;
 using System.Reflection;
-using HarmonyLib;
 using Nitrox.Model.DataStructures;
-using Nitrox.Model.Helper;
 using NitroxClient.GameLogic;
 using UnityEngine;
 
@@ -12,12 +8,13 @@ namespace NitroxPatcher.Patches.Dynamic;
 /// <summary>
 /// Prevents every connected client from independently draining Scanner Room power.
 /// Visual scanning and blip updates still run locally; only the simulation owner may let the drain timer elapse.
+/// The owner's drain is reported to whoever simulates the power sources (see <see cref="BasePowerConsumptionForwarder" />).
 /// </summary>
-public sealed class MapRoomFunctionality_UpdateScanning_Patch : NitroxPatch, IDynamicPatch, INitroxPatch
+public sealed partial class MapRoomFunctionality_UpdateScanning_Patch : NitroxPatch, IDynamicPatch
 {
     private static readonly MethodInfo TARGET_METHOD = Reflect.Method((MapRoomFunctionality t) => t.UpdateScanning());
 
-    public static void Prefix(MapRoomFunctionality __instance)
+    public static void Prefix(MapRoomFunctionality __instance, out bool __state)
     {
         bool hasEntityId = __instance.TryGetNitroxId(out NitroxId roomId);
         bool hasOwnership = hasEntityId && Resolve<SimulationOwnership>().HasAnyLockType(roomId);
@@ -25,13 +22,22 @@ public sealed class MapRoomFunctionality_UpdateScanning_Patch : NitroxPatch, IDy
         {
             __instance.timeLastPowerDrain = Time.time;
         }
+
+        // A room without an id drains on every client, which must not be reported once per player.
+        __state = hasOwnership;
+        if (__state)
+        {
+            Resolve<BasePowerConsumptionForwarder>().EnterConsumer();
+        }
+    }
+
+    public static void Finalizer(bool __state)
+    {
+        if (__state)
+        {
+            Resolve<BasePowerConsumptionForwarder>().ExitConsumer();
+        }
     }
 
     public static bool ShouldSuppressPowerDrain(bool hasEntityId, bool hasOwnership) => hasEntityId && !hasOwnership;
-
-    [GeneratedCode("Nitrox.Analyzers", "1.0.13.0")]
-    public override void Patch(Harmony harmony)
-    {
-        PatchMultiple(harmony, TARGET_METHOD, new Action<MapRoomFunctionality>(Prefix).Method);
-    }
 }

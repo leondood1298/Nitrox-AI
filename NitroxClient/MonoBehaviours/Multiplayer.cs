@@ -33,6 +33,7 @@ namespace NitroxClient.MonoBehaviours
         private PacketReceiver packetReceiver;
         private IPacketSender packetSender;
         private ThrottledPacketSender throttledPacketSender;
+        private BasePowerConsumptionForwarder basePowerConsumptionForwarder;
         private GameLogic.Terrain terrain;
 
         public bool InitialSyncCompleted { get; set; }
@@ -54,6 +55,7 @@ namespace NitroxClient.MonoBehaviours
             packetReceiver = NitroxServiceLocator.LocateService<PacketReceiver>();
             packetSender = NitroxServiceLocator.LocateService<IPacketSender>();
             throttledPacketSender = NitroxServiceLocator.LocateService<ThrottledPacketSender>();
+            basePowerConsumptionForwarder = NitroxServiceLocator.LocateService<BasePowerConsumptionForwarder>();
             terrain = NitroxServiceLocator.LocateService<GameLogic.Terrain>();
             packetProcessorContext = new ClientProcessorContext(packetSender);
             processorInvoker = NitroxServiceLocator.LocateService<PacketProcessorsInvoker>();
@@ -73,6 +75,7 @@ namespace NitroxClient.MonoBehaviours
             {
                 ProcessPackets();
                 throttledPacketSender.Update();
+                basePowerConsumptionForwarder.Flush(Time.realtimeSinceStartup);
 
                 // Loading up shouldn't be bothered by entities spawning in the surroundings
                 if (multiplayerSession.CurrentState.CurrentStage == MultiplayerSessionConnectionStage.SESSION_JOINED &&

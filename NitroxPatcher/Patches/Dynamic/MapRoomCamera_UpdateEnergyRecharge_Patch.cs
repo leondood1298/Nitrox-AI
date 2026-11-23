@@ -16,7 +16,18 @@ public sealed class MapRoomCamera_UpdateEnergyRecharge_Patch : NitroxPatch, IDyn
 
 	public static bool Prefix(MapRoomCamera __instance)
 	{
-		NitroxPatch.Resolve<MapRoomCameras>().UpdateEnergyRecharge(__instance);
+		// Only the room's simulator charges a docked camera, so the base power it draws is reported to whoever
+		// simulates the power sources.
+		BasePowerConsumptionForwarder forwarder = NitroxPatch.Resolve<BasePowerConsumptionForwarder>();
+		forwarder.EnterConsumer();
+		try
+		{
+			NitroxPatch.Resolve<MapRoomCameras>().UpdateEnergyRecharge(__instance);
+		}
+		finally
+		{
+			forwarder.ExitConsumer();
+		}
 		return false;
 	}
 
