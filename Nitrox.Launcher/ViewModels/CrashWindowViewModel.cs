@@ -37,9 +37,6 @@ internal partial class CrashWindowViewModel : ViewModelBase
         {
             // ignored
         }
-        // TODO: Fill in more issue details (is latest release or commit, last view, last clicked button, etc).
-        string issueTitle = $"Launcher v{NitroxEnvironment.Version} crashed with {errorTitle}";
-        string whatHappened = $"```\n{Message}\n```";
         string storeType = NitroxUser.GamePlatform?.Platform switch
         {
             Platform.STEAM => "Steam",
@@ -47,25 +44,29 @@ internal partial class CrashWindowViewModel : ViewModelBase
             Platform.MICROSOFT => "MS-Store",
             _ => "Other"
         };
-        string createGithubIssueUrl = $"https://github.com/SubnauticaNitrox/Nitrox/issues/new?assignees=&labels=Type%3A+bug%2CStatus%3A+to+verify&projects=&template=bug_report.yaml&title={HttpUtility.UrlEncode(issueTitle)}&what_happened={HttpUtility.UrlEncode(whatHappened)}&os_type={HttpUtility.UrlEncode(GetOsType())}&store_type={HttpUtility.UrlEncode(storeType)}";
-        OpenUri(createGithubIssueUrl);
+        OpenUri(CreateIssueUrl(errorTitle, Message ?? "", $"{NitroxEnvironment.Version} ({NitroxEnvironment.GitShortHash})", storeType));
+    }
 
-        static string GetOsType()
-        {
-            if (OperatingSystem.IsWindows())
-            {
-                return "Windows";
-            }
-            if (OperatingSystem.IsMacOS())
-            {
-                return "MacOS";
-            }
-            if (OperatingSystem.IsLinux())
-            {
-                return "Linux";
-            }
-            return "Windows"; // No "Other" option in issue template so "Windows" is default.
-        }
+    /// <summary>
+    ///     This fork's own issue tracker. The report used to open a pre-filled issue on upstream Nitrox, which has neither
+    ///     this fork's code nor any business with its bugs.
+    /// </summary>
+    internal const string ISSUE_FORM_URL = "https://github.com/leondood1298/Nitrox-AI/issues/new";
+
+    /// <summary>
+    ///     Longest crash text put in the address; browsers and GitHub refuse much longer ones, and the rest is in the log.
+    /// </summary>
+    private const int MAX_REPORTED_MESSAGE_LENGTH = 4000;
+
+    /// <summary>
+    ///     A pre-filled issue the user still reads and submits themselves.
+    /// </summary>
+    internal static string CreateIssueUrl(string errorTitle, string message, string version, string storeType)
+    {
+        string reported = message.Length > MAX_REPORTED_MESSAGE_LENGTH ? $"{message[..MAX_REPORTED_MESSAGE_LENGTH]}\n(cut short; the full text is in the launcher log)" : message;
+        string title = $"Launcher {version} crashed with {errorTitle}";
+        string body = $"Game store: {storeType}\nOperating system: {Environment.OSVersion}\n\n```\n{reported}\n```";
+        return $"{ISSUE_FORM_URL}?title={HttpUtility.UrlEncode(title)}&body={HttpUtility.UrlEncode(body)}";
     }
 
     private bool CanRestart() => !string.IsNullOrWhiteSpace(NitroxUser.ExecutableFilePath ?? Environment.ProcessPath);
