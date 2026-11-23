@@ -10,13 +10,14 @@ namespace Nitrox.Server.Subnautica.Models.Commands;
 /// </summary>
 [RequiresPermission(Perms.ADMIN)]
 [RequiresOrigin(CommandOrigin.PLAYER)]
-internal sealed class SunbeamCommand(StoryManager storyManager) : ICommandHandler<PlaySunbeamEvent.SunbeamEvent>
+internal sealed class SunbeamCommand(StoryManager storyManager, StoryScheduler storyScheduler) : ICommandHandler<PlaySunbeamEvent.SunbeamEvent>
 {
     private readonly StoryManager storyManager = storyManager;
+    private readonly StoryScheduler storyScheduler = storyScheduler;
 
     [Description("Start sunbeam events")]
     public async Task Execute(ICommandContext context, [Description("Which Sunbeam event to start")] PlaySunbeamEvent.SunbeamEvent sunbeamEvent)
     {
-        await storyManager.StartSunbeamEvent(sunbeamEvent.ToStoryKey());
+        await storyManager.StartSunbeamEvent(sunbeamEvent.ToStoryKey(), storyScheduler);
     }
 }

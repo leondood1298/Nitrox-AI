@@ -104,7 +104,8 @@ internal sealed class StoryManager : ISummarize
         await packetSender.SendPacketToAllAsync(new AuroraAndTimeUpdate(GetTimeData(), false));
     }
 
-    public async Task BroadcastRestoreAurora()
+    /// <param name="storyScheduler">Passed in because the scheduler depends on this class.</param>
+    public async Task BroadcastRestoreAurora(StoryScheduler storyScheduler)
     {
         AuroraWarningTimeMs = timeService.GameTime.TotalMilliseconds;
         AuroraCountdownTimeMs = GenerateDeterministicAuroraTime(options.Value.Seed);
@@ -116,6 +117,8 @@ internal sealed class StoryManager : ISummarize
         {
             pdaManager.RemovePdaLogsByKey(eventKey);
             StoryGoalData.CompletedGoals.Remove(eventKey);
+            // A warning of the previous run still waiting would play right away
+            await storyScheduler.UnscheduleStory(eventKey);
         }
 
         await packetSender.SendPacketToAllAsync(new AuroraAndTimeUpdate(GetTimeData(), true));
@@ -139,7 +142,8 @@ internal sealed class StoryManager : ISummarize
     ///     Clears the already completed sunbeam events to come and broadcasts it to all players along with the rescheduling of
     ///     the specified sunbeam event.
     /// </summary>
-    public async Task StartSunbeamEvent(string sunbeamEventKey)
+    /// <param name="storyScheduler">Passed in because the scheduler depends on this class.</param>
+    public async Task StartSunbeamEvent(string sunbeamEventKey, StoryScheduler storyScheduler)
     {
         int beginIndex = PlaySunbeamEvent.SunbeamGoals.GetIndex(sunbeamEventKey);
         if (beginIndex == -1)
@@ -149,7 +153,11 @@ internal sealed class StoryManager : ISummarize
         }
         for (int i = beginIndex; i < PlaySunbeamEvent.SunbeamGoals.Length; i++)
         {
-            StoryGoalData.CompletedGoals.Remove(PlaySunbeamEvent.SunbeamGoals[i]);
+            string goalKey = PlaySunbeamEvent.SunbeamGoals[i];
+            StoryGoalData.CompletedGoals.Remove(goalKey);
+            // Goals and radio messages of the previous run would otherwise play in the middle of the new one
+            await storyScheduler.UnscheduleStory(goalKey);
+            RemoveQueuedRadioMessage(goalKey);
         }
         await packetSender.SendPacketToAllAsync(new PlaySunbeamEvent(sunbeamEventKey));
     }

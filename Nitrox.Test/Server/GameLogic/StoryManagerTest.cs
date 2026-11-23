@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Nitrox.Model.Configuration;
 using Nitrox.Model.Networking;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
 using Nitrox.Server.Subnautica.Services;
@@ -16,14 +17,16 @@ public sealed class StoryManagerTest
 {
     private IPacketSender packetSender;
     private TimeService timeService;
+    private PdaManager pdaManager;
     private StoryManager storyManager;
 
     [TestInitialize]
     public void Init()
     {
         packetSender = Substitute.For<IPacketSender>();
+        pdaManager = new PdaManager(NullLogger<PdaManager>.Instance);
         timeService = new(packetSender, new NtpSyncer(), NullLoggerFactory.Instance, NullLogger<TimeService>.Instance);
-        storyManager = new StoryManager(packetSender, new PdaManager(NullLogger<PdaManager>.Instance), timeService, Options.Create(new SubnauticaServerOptions()), NullLogger<StoryManager>.Instance);
+        storyManager = new StoryManager(packetSender, pdaManager, timeService, Options.Create(new SubnauticaServerOptions()), NullLogger<StoryManager>.Instance);
     }
 
     [TestMethod]
@@ -83,5 +86,18 @@ public sealed class StoryManagerTest
         update.TimeData.AuroraEventData.AuroraRealExplosionTime.Should().BeApproximately((float)(timeService.ActiveTime.TotalSeconds + 500), 0.1f);
         update.TimeData.TimePacket.CurrentTime.Should().BeApproximately(timeService.GameTime.TotalSeconds, 1);
         ConnectedPlayers.SentToAll<TimeChange>(packetSender).Should().BeEmpty();
+    }
+
+    [TestMethod]
+    public async Task StartSunbeamEvent_DropsQueuedMessagesAndScheduledGoalsOfThePreviousRun()
+    {
+        StoryScheduler storyScheduler = new(packetSender, pdaManager, storyManager, timeService);
+        storyManager.QueueRadioStory("RadioSunbeam2");
+        storyScheduler.ScheduleStory(NitroxScheduledGoal.From(10000f, "PrecursorGunAimCheck", 0)).Should().BeTrue();
+
+        await storyManager.StartSunbeamEvent(PlaySunbeamEvent.SunbeamEvent.STORYSTART.ToStoryKey(), storyScheduler);
+
+        storyManager.StoryGoalData.RadioQueue.Should().BeEmpty();
+        storyScheduler.ContainsScheduledStory("PrecursorGunAimCheck").Should().BeFalse();
     }
 }

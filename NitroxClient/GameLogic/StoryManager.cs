@@ -96,6 +96,8 @@ public static class StoryManager
         {
             StoryGoalManager.main.completedGoals.Remove(eventKey);
             PDALog.Remove(eventKey);
+            // A warning of the previous run still waiting would play right away
+            StoryGoalScheduler.main.schedule.RemoveAll(goal => goal.goalKey == eventKey);
         }
     }
 }

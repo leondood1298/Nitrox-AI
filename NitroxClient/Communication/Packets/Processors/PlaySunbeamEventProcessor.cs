@@ -17,7 +17,11 @@ internal sealed class PlaySunbeamEventProcessor : IClientPacketProcessor<PlaySun
         }
         for (int i = beginIndex; i < PlaySunbeamEvent.SunbeamGoals.Length; i++)
         {
-            StoryGoalManager.main.completedGoals.Remove(PlaySunbeamEvent.SunbeamGoals[i]);
+            string goalKey = PlaySunbeamEvent.SunbeamGoals[i];
+            StoryGoalManager.main.completedGoals.Remove(goalKey);
+            // Goals and radio messages of the previous run would otherwise play in the middle of the new one
+            StoryGoalScheduler.main.schedule.RemoveAll(goal => goal.goalKey == goalKey);
+            StoryGoalManager.main.pendingRadioMessages.Remove(goalKey);
         }
         // Same execution as for StoryGoalCustomEventHandler commands
         StoryGoalManager.main.OnGoalComplete(packet.EventKey);
