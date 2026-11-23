@@ -44,7 +44,7 @@ public class ModuleEntitySpawner : EntitySpawner<ModuleEntity>
             yield break;
         }
         GameObject moduleObject = result.Get().Value;
-        entityMetadataManager.ApplyMetadata(moduleObject, entity.Metadata);
+        entityMetadataManager.ApplyMetadata(moduleObject, entity.Metadata, spawnContinues: true);
         
         Optional<ItemsContainer> opContainer = InventoryContainerHelper.TryGetContainerByOwner(moduleObject);
         if (opContainer.HasValue)
