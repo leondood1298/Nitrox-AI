@@ -83,5 +83,35 @@ public sealed class SimulationOwnershipTest
         Assert.IsFalse(simulationOwnership.HasAnyLockType(sourceId));
     }
 
-    private SimulatedEntity Simulated(SessionId by) => new(sourceId, by, false, SimulationLockType.TRANSIENT);
+    [TestMethod]
+    public void ItemAnotherPlayerHoldsExclusivelyIsKnownAsHeldUntilTheyLetGoOfIt()
+    {
+        // In their propulsion cannon, or in the mouth of a Stalker they simulate
+        simulationOwnership.TreatSimulatedEntity(Simulated(otherSession, SimulationLockType.EXCLUSIVE));
+        Assert.IsTrue(simulationOwnership.IsHeldExclusivelyByAnotherPlayer(sourceId));
+
+        simulationOwnership.TreatSimulatedEntity(Simulated(otherSession, SimulationLockType.TRANSIENT));
+        Assert.IsFalse(simulationOwnership.IsHeldExclusivelyByAnotherPlayer(sourceId), "Dropped: anybody may take it again.");
+    }
+
+    [TestMethod]
+    public void ItemThisClientHoldsExclusivelyIsNotHeldByAnotherPlayer()
+    {
+        simulationOwnership.TreatSimulatedEntity(Simulated(otherSession, SimulationLockType.EXCLUSIVE));
+
+        simulationOwnership.ReceivedSimulationLockResponse(sourceId, true, SimulationLockType.EXCLUSIVE);
+
+        Assert.IsFalse(simulationOwnership.IsHeldExclusivelyByAnotherPlayer(sourceId));
+    }
+
+    [TestMethod]
+    public void ItemHeldExclusivelyWhenThisPlayerJoinsIsKnownAsHeld()
+    {
+        simulationOwnership.TreatInitialSimulatedEntity(Simulated(otherSession, SimulationLockType.EXCLUSIVE));
+        simulationOwnership.InitialListApplied();
+
+        Assert.IsTrue(simulationOwnership.IsHeldExclusivelyByAnotherPlayer(sourceId));
+    }
+
+    private SimulatedEntity Simulated(SessionId by, SimulationLockType lockType = SimulationLockType.TRANSIENT) => new(sourceId, by, false, lockType);
 }
