@@ -83,12 +83,12 @@ internal sealed class MapRoomLooseCameraState(EntityRegistry entityRegistry)
     }
 
     /// <summary>
-    ///     Called when a room is removed while one of its cameras is still out in the world. The camera keeps the
-    ///     state its record held.
+    ///     Called when a room is removed while one of its cameras still exists, out in the world or in an inventory.
+    ///     The camera keeps the state its record held.
     /// </summary>
     public void MoveOutOfRecord(MapRoomCameraRecord record)
     {
-        if (!TryGetCamera(record.CameraId, out WorldEntity camera))
+        if (!entityRegistry.TryGetEntityById(record.CameraId, out Entity camera) || !mapRoomCameraTechType.Equals(camera.TechType))
         {
             return;
         }
@@ -99,6 +99,22 @@ internal sealed class MapRoomLooseCameraState(EntityRegistry entityRegistry)
                 camera.Metadata = new MapRoomCameraMetadata(record.LightOn, record.LightRevision, record.Energy, record.Health, record.ComponentRevision);
             }
         }
+    }
+
+    /// <summary>
+    ///     Called before a camera's entity is replaced by another one with the same id: picked up into an inventory, or
+    ///     dropped back into the world. The replacement is built by a client and carries no camera state, so the state
+    ///     held here moves over to it. Without this the camera would come back with a full battery and revisions that
+    ///     start again at zero, which clients that saw the earlier ones discard as stale. Anything the client did put
+    ///     there is dropped: only the light and component packets may change this state.
+    /// </summary>
+    public void KeepStateOnReplacement(Entity replacement)
+    {
+        if (!mapRoomCameraTechType.Equals(replacement.TechType))
+        {
+            return;
+        }
+        replacement.Metadata = entityRegistry.TryGetEntityById(replacement.Id, out Entity current) ? current.Metadata as MapRoomCameraMetadata : null;
     }
 
     private static MapRoomCameraMetadata Read(WorldEntity camera) => camera.Metadata as MapRoomCameraMetadata ?? new MapRoomCameraMetadata();

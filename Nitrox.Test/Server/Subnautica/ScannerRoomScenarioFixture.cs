@@ -9,6 +9,7 @@ using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Bases;
@@ -31,12 +32,15 @@ internal sealed class ScannerRoomScenarioFixture
     internal static readonly NitroxId CameraAId = new("00000000-0000-0000-0000-000000000201");
     internal static readonly NitroxId CameraBId = new("00000000-0000-0000-0000-000000000202");
     internal static readonly NitroxId CameraCId = new("00000000-0000-0000-0000-000000000203");
+    private const string CAMERA_CLASS_ID = "733fd479-0760-4bc2-a03e-281cbf02bfa4";
 
     private readonly MapRoomCameraDockProcessor dockProcessor;
     private readonly MapRoomCameraControlProcessor controlProcessor;
     private readonly MapRoomDeconstructionCleanup deconstructionCleanup;
     private readonly SimulationOwnershipRequestProcessor ownershipRequestProcessor;
     private readonly PlaceBaseProcessor placeBaseProcessor;
+    private readonly PickupItemPacketProcessor pickupProcessor;
+    private readonly EntitySpawnedByClientProcessor spawnProcessor;
 
     internal EntityRegistry EntityRegistry { get; }
     internal SimulationOwnershipData Ownership { get; } = new();
@@ -82,6 +86,8 @@ internal sealed class ScannerRoomScenarioFixture
         BuildingManager buildingManager = new(worldPacketSender, EntityRegistry, worldEntityManager,
             Options.Create(new SubnauticaServerOptions()), NullLogger<BuildingManager>.Instance);
         placeBaseProcessor = new(buildingManager, EntitySimulation);
+        pickupProcessor = new(EntityRegistry, worldEntityManager, Ownership, ControlReleaseFactory, ControlLifecycle, Diagnostics, LooseCameraState);
+        spawnProcessor = new(playerManager, EntityRegistry, worldEntityManager, EntitySimulation, LooseCameraState);
     }
 
     internal async Task<MapRoomCameraDock> DockAsync(ServerPlayer player, NitroxId cameraId, int slot, bool isDocked,
@@ -138,6 +144,30 @@ internal sealed class ScannerRoomScenarioFixture
     }
 
     /// <summary>
+    ///     Picks a camera up into the inventory of <paramref name="player" />. A client never sends camera state with
+    ///     the inventory item; <paramref name="clientMetadata" /> is for tests of a client that does.
+    /// </summary>
+    internal async Task<IReadOnlyList<Packet>> PickupAsync(ServerPlayer player, NitroxId cameraId, EntityMetadata? clientMetadata = null)
+    {
+        RecordingPacketSender requestPacketSender = new();
+        InventoryItemEntity item = new(cameraId, CAMERA_CLASS_ID, new NitroxTechType("MapRoomCamera"), clientMetadata, player.GameObjectId, []);
+        await pickupProcessor.Process(new AuthProcessorContext(player, requestPacketSender), new PickupItem(item));
+        return requestPacketSender.Packets;
+    }
+
+    /// <summary>
+    ///     Drops a camera from an inventory back into the world, the way the dropping client reports it.
+    /// </summary>
+    internal async Task<IReadOnlyList<Packet>> DropAsync(ServerPlayer player, NitroxId cameraId, EntityMetadata? clientMetadata = null)
+    {
+        RecordingPacketSender requestPacketSender = new();
+        GlobalRootEntity camera = CreateCamera(cameraId);
+        camera.Metadata = clientMetadata;
+        await spawnProcessor.Process(new AuthProcessorContext(player, requestPacketSender), new EntitySpawnedByClient(camera, true, true));
+        return requestPacketSender.Packets;
+    }
+
+    /// <summary>
     ///     Finishes the first piece of a new base, the way the builder's client reports it.
     /// </summary>
     internal async Task<IReadOnlyList<Packet>> PlaceBaseAsync(ServerPlayer player, PlaceBase packet)
@@ -181,7 +211,7 @@ internal sealed class ScannerRoomScenarioFixture
     private static GlobalRootEntity CreateCamera(NitroxId cameraId) => new(
         new NitroxTransform(),
         GlobalRootEntity.GLOBAL_ROOT_LEVEL,
-        "733fd479-0760-4bc2-a03e-281cbf02bfa4",
+        CAMERA_CLASS_ID,
         true,
         cameraId,
         new NitroxTechType("MapRoomCamera"),

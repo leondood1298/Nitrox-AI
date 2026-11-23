@@ -12,7 +12,7 @@ namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
 internal sealed class PickupItemPacketProcessor(EntityRegistry entityRegistry, WorldEntityManager worldEntityManager,
     SimulationOwnershipData simulationOwnershipData, MapRoomCameraControlReleaseFactory cameraControlReleaseFactory,
-    MapRoomCameraControlLifecycle controlLifecycle, ScannerRoomDiagnostics diagnostics)
+    MapRoomCameraControlLifecycle controlLifecycle, ScannerRoomDiagnostics diagnostics, MapRoomLooseCameraState looseCameraState)
     : IAuthPacketProcessor<PickupItem>
 {
     private readonly EntityRegistry entityRegistry = entityRegistry;
@@ -37,6 +37,7 @@ internal sealed class PickupItemPacketProcessor(EntityRegistry entityRegistry, W
 
         StopTrackingExistingWorldEntity(id);
 
+        looseCameraState.KeepStateOnReplacement(packet.Item);
         entityRegistry.AddOrUpdate(packet.Item);
 
         foreach (MapRoomEntity mapRoom in entityRegistry.GetEntities<MapRoomEntity>())
