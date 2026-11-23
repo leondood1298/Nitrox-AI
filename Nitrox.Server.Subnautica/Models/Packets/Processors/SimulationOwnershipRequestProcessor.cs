@@ -16,7 +16,7 @@ internal sealed class SimulationOwnershipRequestProcessor(SimulationOwnershipDat
 
     public async Task Process(AuthProcessorContext context, SimulationOwnershipRequest ownershipRequest)
     {
-        // An exclusive lock on a Scanner Room camera that is held for a Stalker gives way to a player who asks.
+        // An exclusive lock on a Scanner Room camera that is held for a Stalker gives way to a player who takes the camera.
         await scannerRoomManager.MakeWayForExclusiveRequestAsync(context.Sender, ownershipRequest);
 
         if (!entityRegistry.TryGetEntityById(ownershipRequest.Id, out WorldEntity worldEntity))
@@ -30,11 +30,14 @@ internal sealed class SimulationOwnershipRequestProcessor(SimulationOwnershipDat
         if (simulatedEntities.Count == 0)
         {
             await context.ReplyAsync(new SimulationOwnershipResponse(ownershipRequest.Id, false, ownershipRequest.LockType));
+            await scannerRoomManager.ExclusiveRequestAnsweredAsync(context.Sender, ownershipRequest, false);
             return;
         }
 
         await context.ReplyAsync(new SimulationOwnershipResponse(ownershipRequest.Id, true, ownershipRequest.LockType));
         await context.SendToAllAsync(new SimulationOwnershipChange(simulatedEntities));
+        // A player who took the lock to control a Scanner Room camera controls it from here on.
+        await scannerRoomManager.ExclusiveRequestAnsweredAsync(context.Sender, ownershipRequest, true);
     }
 
     /// <summary>
@@ -50,5 +53,6 @@ internal sealed class SimulationOwnershipRequestProcessor(SimulationOwnershipDat
             await context.SendToOthersAsync(new SimulationOwnershipChange(ownershipRequest.Id, context.Sender.SessionId, ownershipRequest.LockType));
         }
         await context.ReplyAsync(new SimulationOwnershipResponse(ownershipRequest.Id, acquiredLock, ownershipRequest.LockType));
+        await scannerRoomManager.ExclusiveRequestAnsweredAsync(context.Sender, ownershipRequest, acquiredLock);
     }
 }

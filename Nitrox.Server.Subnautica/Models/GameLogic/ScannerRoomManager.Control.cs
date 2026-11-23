@@ -27,6 +27,13 @@ internal sealed partial class ScannerRoomManager
     private readonly ConcurrentDictionary<NitroxId, ControlSession> controllers = new();
 
     /// <summary>
+    ///     The players who have said that they are about to take a camera and whose request for its lock has not been
+    ///     answered yet. The lock request itself is the same for every entity and every purpose; this is what tells a
+    ///     player who wants to control a camera from a client whose Stalker wants to carry it. Only used inside the gate.
+    /// </summary>
+    private readonly HashSet<(NitroxId CameraId, SessionId SessionId)> pendingControllers = [];
+
+    /// <summary>
     ///     Whether <paramref name="player" /> holds this Scanner Room camera exclusively: by controlling it, or while
     ///     their Stalker carries it. Such a lock is only ended by the camera's own lifecycle (release, pickup, docking,
     ///     destruction, disconnect), never as a side effect of the player losing sight of the camera or handing off
@@ -53,11 +60,12 @@ internal sealed partial class ScannerRoomManager
 
     /// <summary>
     ///     Called for a request for an exclusive lock before it is decided like for any other entity. An exclusive lock
-    ///     on a camera that nobody controls the camera with is held for a Stalker that carries it. It is given to any
-    ///     client that asks and only given back when that client says so, so it must not keep players out: a Stalker
-    ///     that unloads mid-carry would leave the camera uncontrollable until its simulating player disconnects. In the
-    ///     game a carried camera can be controlled. Such a lock gives way; its holder is told like of any other change
-    ///     of ownership and makes its Stalker drop the camera.
+    ///     on a camera that no player controls the camera with is held for a Stalker that carries it. It is only given
+    ///     back when the Stalker's client says so, so it must not keep players out: a Stalker that unloads mid-carry
+    ///     would leave the camera uncontrollable until its simulating player disconnects. In the game a carried camera
+    ///     can be controlled. Such a lock gives way to a player who has said that they are taking the camera; its
+    ///     holder is told like of any other change of ownership and makes its Stalker drop the camera. It gives way to
+    ///     nobody else: not to another Stalker, and a player's own lock never does.
     /// </summary>
     public async Task MakeWayForExclusiveRequestAsync(Player requester, SimulationOwnershipRequest request)
     {
@@ -66,8 +74,10 @@ internal sealed partial class ScannerRoomManager
             return;
         }
         using Hold held = await EnterAsync();
-        if (simulationOwnershipData.TryGetLock(request.Id, out SimulationOwnershipData.PlayerLock heldLock) && heldLock.Player != requester &&
-            CanPreempt(heldLock.LockType, controllers.ContainsKey(request.Id)) && simulationOwnershipData.RevokeIfOwner(request.Id, heldLock.Player))
+        if (pendingControllers.Contains((request.Id, requester.SessionId)) &&
+            simulationOwnershipData.TryGetLock(request.Id, out SimulationOwnershipData.PlayerLock heldLock) && heldLock.Player != requester &&
+            CanPreempt(heldLock.LockType, controllers.ContainsKey(request.Id) || pendingControllers.Contains((request.Id, heldLock.Player.SessionId))) &&
+            simulationOwnershipData.RevokeIfOwner(request.Id, heldLock.Player))
         {
             CameraView camera = GetCamera(request.Id);
             diagnostics.RecordAccepted("control_preempt", camera.DockedRoom, request.Id, heldLock.Player.SessionId, camera.DockedSlot, $"exclusive_lock_taken_by_{requester.SessionId}");
@@ -75,21 +85,51 @@ internal sealed partial class ScannerRoomManager
     }
 
     /// <summary>
-    ///     Handles a player's word that they control a camera now, or no longer. Control takes the exclusive lock on
-    ///     the camera, which the player has asked for before. The other players are told; a player whose control is
-    ///     refused is told that it ended, because their game shows the camera's view by then.
+    ///     Called once a request for an exclusive lock has been decided. A player who had said that they are taking the
+    ///     camera controls it from the moment the lock is theirs: nothing can come between the grant and their control,
+    ///     so nobody else's request can take the camera from them.
+    /// </summary>
+    public async Task ExclusiveRequestAnsweredAsync(Player requester, SimulationOwnershipRequest request, bool acquired)
+    {
+        if (request.LockType != SimulationLockType.EXCLUSIVE || !IsScannerCamera(request.Id))
+        {
+            return;
+        }
+        using Hold held = await EnterAsync();
+        if (!pendingControllers.Remove((request.Id, requester.SessionId)))
+        {
+            return;
+        }
+        if (acquired)
+        {
+            await BeginControlInGateAsync(requester, request.Id);
+            return;
+        }
+        CameraView camera = GetCamera(request.Id);
+        diagnostics.RecordRejected("control_acquire", camera.DockedRoom, request.Id, requester.SessionId, camera.DockedSlot, "locked");
+    }
+
+    /// <summary>
+    ///     Handles a player's word that they control a camera now, or no longer. A player says that they take a camera
+    ///     before they ask for its exclusive lock, which is what control takes; they control the camera once they hold
+    ///     the lock (<see cref="ExclusiveRequestAnsweredAsync" />). A player who holds the lock already, because their
+    ///     Stalker carries the camera, controls it at once. The other players are told when control begins and ends.
     /// </summary>
     public async Task SetControlAsync(Player sender, MapRoomCameraControlChanged packet)
     {
         using Hold held = await EnterAsync();
-        CameraView camera = GetCamera(packet.CameraId);
         if (!packet.IsControlling)
         {
+            CameraView camera = GetCamera(packet.CameraId);
+            bool hadSaidSo = pendingControllers.Remove((packet.CameraId, sender.SessionId));
             // A release can cross the end of control by the server (the camera was picked up, say), and another
             // player may control the camera by the time it arrives.
             if (!IsController(packet.CameraId, sender.SessionId))
             {
-                diagnostics.RecordRejected("control_release", camera.DockedRoom, packet.CameraId, sender.SessionId, camera.DockedSlot, "not_controller");
+                if (!hadSaidSo)
+                {
+                    diagnostics.RecordRejected("control_release", camera.DockedRoom, packet.CameraId, sender.SessionId, camera.DockedSlot, "not_controller");
+                }
                 return;
             }
             EndControl(packet.CameraId, sender.SessionId);
@@ -98,49 +138,61 @@ internal sealed partial class ScannerRoomManager
             return;
         }
 
-        bool holdsExclusively = simulationOwnershipData.TryGetLock(packet.CameraId, out SimulationOwnershipData.PlayerLock senderLock) &&
-                                senderLock.Player == sender && senderLock.LockType == SimulationLockType.EXCLUSIVE;
+        if (HoldsExclusively(packet.CameraId, sender))
+        {
+            await BeginControlInGateAsync(sender, packet.CameraId);
+            return;
+        }
+        pendingControllers.Add((packet.CameraId, sender.SessionId));
+    }
+
+    private bool HoldsExclusively(NitroxId cameraId, Player player) =>
+        simulationOwnershipData.TryGetLock(cameraId, out SimulationOwnershipData.PlayerLock heldLock) && heldLock.Player == player && heldLock.LockType == SimulationLockType.EXCLUSIVE;
+
+    /// <summary>
+    ///     Makes the holder of a camera's exclusive lock its controller and tells the other players, or refuses and
+    ///     tells the holder that their control ended, because their game shows the camera's view by then or is about to.
+    /// </summary>
+    private async Task BeginControlInGateAsync(Player holder, NitroxId cameraId)
+    {
+        CameraView camera = GetCamera(cameraId);
         // Only a camera in a dock or out in the world can be controlled, not one in an inventory. Battery and health
         // are judged by what the server holds: the lock is the same for every entity and knows nothing of cameras, so
         // this is where the game's rule for a camera (MapRoomCamera.CanBeControlled) is the server's as well.
-        string? refusal = camera.WorldCamera == null ? "invalid_assoc" :
-                          !holdsExclusively ? "lock_required" : GetUnusableReason(camera.State.Energy, camera.State.Health, sender.GameMode);
+        string? refusal = camera.WorldCamera == null ? "invalid_assoc" : GetUnusableReason(camera.State.Energy, camera.State.Health, holder.GameMode);
         if (refusal != null)
         {
-            diagnostics.RecordRejected("control_acquire", camera.DockedRoom, packet.CameraId, sender.SessionId, camera.DockedSlot, refusal);
-            if (holdsExclusively)
-            {
-                // The lock was taken to control the camera. It goes back to what is left of it: simulating the camera.
-                await GiveUpExclusiveLockAsync(packet.CameraId, sender);
-            }
-            await ReplyAsync(sender, new MapRoomCameraControlChanged(packet.CameraId, sender.SessionId, false));
+            diagnostics.RecordRejected("control_acquire", camera.DockedRoom, cameraId, holder.SessionId, camera.DockedSlot, refusal);
+            // The lock was taken to control the camera. It goes back to what is left of it: simulating the camera.
+            await GiveUpExclusiveLockAsync(cameraId, holder);
+            await ReplyAsync(holder, new MapRoomCameraControlChanged(cameraId, holder.SessionId, false));
             return;
         }
 
-        knownCameraIds.TryAdd(packet.CameraId, 0);
-        if (IsController(packet.CameraId, sender.SessionId))
+        knownCameraIds.TryAdd(cameraId, 0);
+        if (IsController(cameraId, holder.SessionId))
         {
             return;
         }
-        // A controller on record who is not the sender has lost the lock without saying that their control ended.
-        if (controllers.TryRemove(packet.CameraId, out ControlSession? stale))
+        // A controller on record who is not the holder has lost the lock without saying that their control ended.
+        if (controllers.TryRemove(cameraId, out ControlSession? stale))
         {
-            diagnostics.RecordAccepted("control_revoke", camera.DockedRoom, packet.CameraId, stale.SessionId, camera.DockedSlot, "lock_lost");
-            await SendToAllAsync(new MapRoomCameraControlChanged(packet.CameraId, stale.SessionId, false));
+            diagnostics.RecordAccepted("control_revoke", camera.DockedRoom, cameraId, stale.SessionId, camera.DockedSlot, "lock_lost");
+            await SendToAllAsync(new MapRoomCameraControlChanged(cameraId, stale.SessionId, false));
         }
         // A player controls one camera at a time. Taking another one ends control of the previous one here: its
         // release may still be on its way or may never come.
-        NitroxId[] previousCameraIds = GetCamerasControlledBy(sender.SessionId).ToArray();
-        controllers[packet.CameraId] = new ControlSession(sender.SessionId);
-        diagnostics.RecordAccepted("control_acquire", camera.DockedRoom, packet.CameraId, sender.SessionId, camera.DockedSlot);
-        await SendToOthersAsync(sender, new MapRoomCameraControlChanged(packet.CameraId, sender.SessionId, true));
+        NitroxId[] previousCameraIds = GetCamerasControlledBy(holder.SessionId).ToArray();
+        controllers[cameraId] = new ControlSession(holder.SessionId);
+        diagnostics.RecordAccepted("control_acquire", camera.DockedRoom, cameraId, holder.SessionId, camera.DockedSlot);
+        await SendToOthersAsync(holder, new MapRoomCameraControlChanged(cameraId, holder.SessionId, true));
         foreach (NitroxId previousCameraId in previousCameraIds)
         {
-            if (EndControlOfLock(previousCameraId, sender.SessionId, "switch") is { } release)
+            if (EndControlOfLock(previousCameraId, holder.SessionId, "switch") is { } release)
             {
                 await SendToAllAsync(release);
             }
-            await GiveUpExclusiveLockAsync(previousCameraId, sender);
+            await GiveUpExclusiveLockAsync(previousCameraId, holder);
         }
     }
 
@@ -212,6 +264,7 @@ internal sealed partial class ScannerRoomManager
     {
         using Hold held = await EnterAsync();
         List<SimulationOwnershipData.RevokedLock> revokedLocks = simulationOwnershipData.RevokeAllLocksForOwner(sessionId);
+        pendingControllers.RemoveWhere(pending => pending.SessionId == sessionId);
         foreach (NitroxId cameraId in GetCamerasControlledBy(sessionId).ToArray())
         {
             if (EndControlOfLock(cameraId, sessionId, "disconnect") is { } release)
@@ -223,11 +276,11 @@ internal sealed partial class ScannerRoomManager
     }
 
     /// <summary>
-    ///     An exclusive lock on a camera is either camera control or the lock a client takes while its Stalker carries
-    ///     the camera. Only the second kind gives way to another player who asks for the camera.
+    ///     An exclusive lock on a camera is either a player's, who controls the camera or is about to, or the lock a
+    ///     client takes while its Stalker carries the camera. Only the second kind gives way.
     /// </summary>
-    internal static bool CanPreempt(SimulationLockType heldLockType, bool hasController) =>
-        heldLockType == SimulationLockType.EXCLUSIVE && !hasController;
+    internal static bool CanPreempt(SimulationLockType heldLockType, bool holderIsOrBecomesController) =>
+        heldLockType == SimulationLockType.EXCLUSIVE && !holderIsOrBecomesController;
 
     internal static string? GetUnusableReason(float energy, float health, SubnauticaGameMode gameMode)
     {

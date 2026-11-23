@@ -257,9 +257,9 @@ internal sealed class ScannerRoomScenarioFixture
         EntityRegistry.TryGetEntityById(cameraId, out Entity camera) && camera.ParentId != null && EntityRegistry.TryGetEntityById(camera.ParentId, out MapRoomEntity _);
 
     /// <summary>
-    ///     Takes or gives up control of a camera the way a client does. To take it, the player asks for the camera's
-    ///     exclusive lock through the real lock request processor and, once it has it, says that it controls the
-    ///     camera. To give it up, the player says so and asks for an ordinary lock.
+    ///     Takes or gives up control of a camera the way a client does. To take it, the player says that it takes the
+    ///     camera and asks for the camera's exclusive lock through the real lock request processor. To give it up, the
+    ///     player says so and asks for an ordinary lock.
     /// </summary>
     internal async Task<ControlResult> ControlAsync(ServerPlayer player, NitroxId cameraId, bool isControlling)
     {
@@ -267,10 +267,8 @@ internal sealed class ScannerRoomScenarioFixture
         bool granted;
         if (isControlling)
         {
-            if ((await RequestOwnershipAsync(player, cameraId, SimulationLockType.EXCLUSIVE)).LockAcquired)
-            {
-                await Manager.SetControlAsync(player, new MapRoomCameraControlChanged(cameraId, player.SessionId, true));
-            }
+            await Manager.SetControlAsync(player, new MapRoomCameraControlChanged(cameraId, player.SessionId, true));
+            await RequestOwnershipAsync(player, cameraId, SimulationLockType.EXCLUSIVE);
             granted = IsController(cameraId, player.SessionId);
         }
         else

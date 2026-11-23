@@ -68,8 +68,8 @@ public class MapRoomCameras
     /// <summary>
     ///     Called before the game puts the player into the view of a camera, by a click on a screen or by cycling. A
     ///     player controls a camera with the exclusive simulation lock on it, which is asked for like the lock on a
-    ///     vehicle the player wants to pilot. Until the server grants it the player stays where they are: in front of
-    ///     the screen, or in the view of the camera they control.
+    ///     vehicle the player wants to pilot, after telling the server what it is for. Until the server grants it the
+    ///     player stays where they are: in front of the screen, or in the view of the camera they control.
     /// </summary>
     /// <param name="runVanilla">Runs the game's method once the lock is granted.</param>
     /// <returns>True if the game may go on right away: there is no camera to take, or this player holds its lock.</returns>
@@ -82,6 +82,10 @@ public class MapRoomCameras
         }
         if (pendingControl.Add(cameraId))
         {
+            // Said before the lock is asked for. The request is the same for every entity and every purpose; with
+            // this the server knows that it is a player's, who controls the camera from the moment the lock is
+            // granted, and not that of a client whose Stalker wants to carry the camera.
+            packetSender.Send(new MapRoomCameraControlChanged(cameraId, multiplayerSession.Reservation.SessionId, true));
             diagnostics.Record("control_publish", "ok", cameraId, reason: "lock_requested");
             simulationOwnership.RequestSimulationLock(new LockRequest<CameraControlStart>(cameraId, SimulationLockType.EXCLUSIVE, LockAnswered, new CameraControlStart(screen, runVanilla)));
         }
@@ -118,7 +122,12 @@ public class MapRoomCameras
             return;
         }
         remoteControllers.Remove(cameraId);
-        packetSender.Send(new MapRoomCameraControlChanged(cameraId, multiplayerSession.Reservation.SessionId, true));
+        // A player who held the lock already, because their Stalker carries the camera, has not said yet that they
+        // take it. Everybody else has, when they asked for the lock.
+        if (!pendingControl.Remove(cameraId))
+        {
+            packetSender.Send(new MapRoomCameraControlChanged(cameraId, multiplayerSession.Reservation.SessionId, true));
+        }
         MovementBroadcaster.RegisterWatched(camera.gameObject, cameraId);
         diagnostics.Record("control_publish", "ok", cameraId, reason: "control_taken");
     }
@@ -154,9 +163,9 @@ public class MapRoomCameras
 
     private void LockAnswered(NitroxId cameraId, bool acquired, CameraControlStart start)
     {
-        pendingControl.Remove(cameraId);
         if (!acquired)
         {
+            pendingControl.Remove(cameraId);
             // Another player controls the camera, and this client had not heard of it when the player chose it.
             diagnostics.Record("control_apply", "reject", cameraId, reason: "lock_denied");
             if (Language.main != null)
@@ -169,10 +178,12 @@ public class MapRoomCameras
         {
             start.RunVanilla();
         }
-        if (!locallyControlled.Contains(cameraId))
+        if (pendingControl.Remove(cameraId))
         {
-            // The game did not take the camera after all: the screen is gone, or it chose another camera.
+            // The game did not take the camera after all: the screen is gone, or it chose another camera. The
+            // server has this player down as its controller since it granted the lock.
             diagnostics.Record("control_apply", "reject", cameraId, reason: "not_taken");
+            packetSender.Send(new MapRoomCameraControlChanged(cameraId, multiplayerSession.Reservation.SessionId, false));
             simulationOwnership.SimulateEntity(cameraId, SimulationLockType.TRANSIENT);
             simulationOwnership.RequestSimulationLock(cameraId, SimulationLockType.TRANSIENT);
         }
