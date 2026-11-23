@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.Linq;
 using NitroxClient.GameLogic.InitialSync.Abstract;
@@ -135,13 +134,13 @@ public sealed class StoryGoalInitialSyncProcessor : InitialSyncProcessor
         CrashedShipExploder.main.timeSerialized = DayNightCycle.main.timePassedAsFloat;
         CrashedShipExploder.main.OnProtoDeserialize(null);
 
-        // Sunbeam countdown is deducted from the scheduled goal PrecursorGunAimCheck
-        NitroxScheduledGoal sunbeamCountdownGoal = packet.StoryGoalData.ScheduledGoals.Find(goal => string.Equals(goal.GoalKey, "PrecursorGunAimCheck", StringComparison.OrdinalIgnoreCase));
-        if (sunbeamCountdownGoal != null)
+        // The Sunbeam countdown is deduced from whichever of its goals is still scheduled: in its last 30 seconds the
+        // first one (PrecursorGunAimCheck) has run already
+        StoryGoalCustomEventHandler handler = StoryGoalCustomEventHandler.main;
+        if (SunbeamTimeline.TryGetCountdownStart(handler.sunbeamGoals.Select(step => (step.trigger, step.key, step.delay)), packet.StoryGoalData.ScheduledGoals, out float countdownStart))
         {
-            StoryGoalCustomEventHandler.main.countdownActive = true;
-            StoryGoalCustomEventHandler.main.countdownStartingTime = sunbeamCountdownGoal.TimeExecute - 2370;
-            // See StoryGoalCustomEventHandler.endTime for calculation (endTime - 30 seconds)
+            handler.countdownActive = true;
+            handler.countdownStartingTime = countdownStart;
         }
     }
 
@@ -152,12 +151,19 @@ public sealed class StoryGoalInitialSyncProcessor : InitialSyncProcessor
 
         // We don't want any scheduled goal we add now to be executed before initial sync has finished, else they might not get broadcasted
         StoryGoalScheduler.main.paused = true;
-        Multiplayer.OnLoadingComplete += () => StoryGoalScheduler.main.paused = false;
+        Multiplayer.OnLoadingComplete += OnLoadingComplete;
 
         foreach (NitroxScheduledGoal scheduledGoal in scheduledGoals)
         {
             // Clear duplicated goals that might have appeared during loading and before sync
             StoryGoalScheduler.main.schedule.RemoveAll(goal => goal.goalKey == scheduledGoal.GoalKey);
+
+            // The server keeps the shoot-down line of each player's game; this game gets only its own, once its player's
+            // position is restored
+            if (StoryManager.IsSunbeamDestroyEventPickedByPosition(scheduledGoal.GoalKey))
+            {
+                continue;
+            }
 
             ScheduledGoal goal = new()
             {
@@ -172,6 +178,39 @@ public sealed class StoryGoalInitialSyncProcessor : InitialSyncProcessor
         }
 
         RefreshStoryWithLatestData();
+
+        void OnLoadingComplete()
+        {
+            Multiplayer.OnLoadingComplete -= OnLoadingComplete;
+            ScheduleOwnSunbeamDestroyLine(scheduledGoals);
+            StoryGoalScheduler.main.paused = false;
+        }
+    }
+
+    /// <summary>
+    ///     Each game picks the Sunbeam shoot-down line from its own player's position when the range check runs. A player
+    ///     who joins after it gets the line for its position now, at the time it would have had it, or none if that time
+    ///     has passed.
+    /// </summary>
+    private static void ScheduleOwnSunbeamDestroyLine(List<NitroxScheduledGoal> scheduledGoals)
+    {
+        StoryGoalCustomEventHandler handler = StoryGoalCustomEventHandler.main;
+        StoryGoalManager storyGoalManager = StoryGoalManager.main;
+        // Until the range check runs, this game picks its line itself
+        if (!handler || !storyGoalManager || !storyGoalManager.IsGoalComplete(SunbeamTimeline.RANGE_CHECK_GOAL))
+        {
+            return;
+        }
+
+        bool inRange = handler.IsPlayerAtLandingSite();
+        StoryGoal ownLine = inRange ? handler.sunbeamDestroyEventInRange : handler.sunbeamDestroyEventOutOfRange;
+        StoryGoal otherLine = inRange ? handler.sunbeamDestroyEventOutOfRange : handler.sunbeamDestroyEventInRange;
+        if (storyGoalManager.IsGoalComplete(ownLine.key) ||
+            !SunbeamTimeline.TryGetOwnDestroyLineTime(ownLine.key, ownLine.delay, otherLine.key, otherLine.delay, scheduledGoals, DayNightCycle.main.timePassedAsDouble, out float timeExecute))
+        {
+            return;
+        }
+        StoryGoalScheduler.main.schedule.Add(new ScheduledGoal { goalKey = ownLine.key, goalType = ownLine.goalType, timeExecute = timeExecute });
     }
 
     // Must happen after CompletedGoals
