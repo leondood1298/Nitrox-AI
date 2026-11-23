@@ -280,6 +280,34 @@ internal sealed class EntitySimulation : ISessionCleaner
     }
 
     /// <summary>
+    ///     Tells a player who has just joined which Scanner Room cameras are being controlled, and by whom. Control is
+    ///     announced when it is granted, which they missed: such a camera would stay frozen for them while its controller
+    ///     flies it, and their Scanner Room screen would offer it for control.
+    /// </summary>
+    public async Task SendCameraControlGrantsAsync(SessionId joinedSessionId)
+    {
+        IReadOnlyList<NitroxId> controlledCameraIds = cameraControlLifecycle.GetControlledCameras();
+        if (controlledCameraIds.Count == 0)
+        {
+            return;
+        }
+
+        // A release keeps the camera's gate until its packet is queued. Holding the gates here keeps one from slipping
+        // in between reading a grant and sending it, which would leave the joined player with a controller for good.
+        using IDisposable lifecycleGates = await cameraControlLifecycle.EnterTogetherAsync(controlledCameraIds);
+        foreach (NitroxId cameraId in controlledCameraIds)
+        {
+            if (simulationOwnershipData.TryGetLock(cameraId, out SimulationOwnershipData.PlayerLock controlLock) &&
+                controlLock.LockType == SimulationLockType.EXCLUSIVE &&
+                cameraControlLifecycle.IsActiveController(cameraId, controlLock.Player.SessionId) &&
+                cameraControlReleaseFactory.TryCreateCurrentGrant(cameraId, controlLock.Player.SessionId, out MapRoomCameraControl grant))
+            {
+                await packetSender.SendPacketAsync(grant, joinedSessionId);
+            }
+        }
+    }
+
+    /// <summary>
     ///     Whether <paramref name="player" /> is controlling this Scanner Room camera right now. Control is only ended by
     ///     the camera's own lifecycle (release, pickup, docking, destruction, disconnect), never as a side effect of the
     ///     player losing sight of the camera or handing off its movement.

@@ -61,6 +61,11 @@ internal sealed class MapRoomCameraControlLifecycle
     internal bool HasActiveController(NitroxId cameraId) => previewAcquisitions.ContainsKey(cameraId);
 
     /// <summary>
+    ///     Every camera that somebody is controlling right now.
+    /// </summary>
+    internal IReadOnlyList<NitroxId> GetControlledCameras() => previewAcquisitions.Keys.ToArray();
+
+    /// <summary>
     ///     The cameras this player is controlling right now. The game lets a player control one camera at a time.
     /// </summary>
     internal IReadOnlyList<NitroxId> GetCamerasControlledBy(SessionId controllerSessionId) =>

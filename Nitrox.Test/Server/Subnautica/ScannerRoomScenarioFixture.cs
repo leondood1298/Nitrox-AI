@@ -226,6 +226,16 @@ internal sealed class ScannerRoomScenarioFixture
     }
 
     /// <summary>
+    ///     What a player is told about camera control once their initial sync has finished.
+    /// </summary>
+    internal async Task<IReadOnlyList<MapRoomCameraControl>> JoinedPlayerControlGrantsAsync(SessionId joinedSessionId)
+    {
+        int alreadySent = worldPacketSender.Packets.Count;
+        await EntitySimulation.SendCameraControlGrantsAsync(joinedSessionId);
+        return worldPacketSender.Packets.Skip(alreadySent).Cast<MapRoomCameraControl>().ToList();
+    }
+
+    /// <summary>
     ///     Runs the simulation cleanup of a player who left.
     /// </summary>
     /// <returns>The packets that cleanup sent.</returns>
