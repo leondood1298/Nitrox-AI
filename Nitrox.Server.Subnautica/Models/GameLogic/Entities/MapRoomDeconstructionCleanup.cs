@@ -28,6 +28,9 @@ internal sealed class MapRoomDeconstructionCleanup(EntityRegistry entityRegistry
             await context.SendAsync(clearedResults, player.SessionId);
         }
 
+        // The room may have been removed together with its base, which only stops tracking the base itself. A room
+        // that stayed tracked would be handed to every joining player as something to simulate.
+        worldEntityManager.RemoveGlobalRootEntity(mapRoom.Id, false);
         simulationOwnershipData.RevokeOwnerOfId(mapRoom.Id);
         await context.SendToAllAsync(new DropSimulationOwnership([mapRoom.Id]));
         MapRoomCameraRecord[] cameras;

@@ -1,5 +1,7 @@
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Nitrox.Model.Configuration;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.GameLogic;
@@ -9,6 +11,7 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.GameLogic;
+using Nitrox.Server.Subnautica.Models.GameLogic.Bases;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
 using Nitrox.Server.Subnautica.Models.Packets.Processors;
@@ -33,6 +36,7 @@ internal sealed class ScannerRoomScenarioFixture
     private readonly MapRoomCameraControlProcessor controlProcessor;
     private readonly MapRoomDeconstructionCleanup deconstructionCleanup;
     private readonly SimulationOwnershipRequestProcessor ownershipRequestProcessor;
+    private readonly PlaceBaseProcessor placeBaseProcessor;
 
     internal EntityRegistry EntityRegistry { get; }
     internal SimulationOwnershipData Ownership { get; } = new();
@@ -42,6 +46,7 @@ internal sealed class ScannerRoomScenarioFixture
     internal MapRoomCameraControlLifecycle ControlLifecycle { get; } = new();
     internal MapRoomLooseCameraState LooseCameraState { get; }
     internal EntitySimulation EntitySimulation { get; }
+    internal WorldEntityManager WorldEntityManager { get; }
     internal MapRoomEntity Room { get; }
     internal ServerPlayer PlayerA { get; } = CreatePlayer(1, "A");
     internal ServerPlayer PlayerB { get; } = CreatePlayer(2, "B");
@@ -63,6 +68,7 @@ internal sealed class ScannerRoomScenarioFixture
         Diagnostics = new ScannerRoomDiagnostics(NullLogger<ScannerRoomDiagnostics>.Instance);
         ControlReleaseFactory = new MapRoomCameraControlReleaseFactory(EntityRegistry, Diagnostics, ControlLifecycle);
         WorldEntityManager worldEntityManager = new(worldPacketSender, EntityRegistry, null!, null!, null!, Diagnostics, null!, NullLogger<WorldEntityManager>.Instance);
+        WorldEntityManager = worldEntityManager;
         LooseCameraState = new MapRoomLooseCameraState(EntityRegistry);
         dockProcessor = new(EntityRegistry, worldEntityManager, Ownership, ControlReleaseFactory, RoomLifecycle,
             ControlLifecycle, Diagnostics, LooseCameraState, NullLogger<MapRoomCameraDockProcessor>.Instance);
@@ -73,6 +79,9 @@ internal sealed class ScannerRoomScenarioFixture
         EntitySimulation = new(worldPacketSender, EntityRegistry, worldEntityManager, Ownership,
             playerManager, ControlReleaseFactory, ControlLifecycle, NullLogger<EntitySimulation>.Instance);
         ownershipRequestProcessor = new(Ownership, EntitySimulation, EntityRegistry, ControlReleaseFactory, ControlLifecycle, Diagnostics);
+        BuildingManager buildingManager = new(worldPacketSender, EntityRegistry, worldEntityManager,
+            Options.Create(new SubnauticaServerOptions()), NullLogger<BuildingManager>.Instance);
+        placeBaseProcessor = new(buildingManager, EntitySimulation);
     }
 
     internal async Task<MapRoomCameraDock> DockAsync(ServerPlayer player, NitroxId cameraId, int slot, bool isDocked,
@@ -115,6 +124,16 @@ internal sealed class ScannerRoomScenarioFixture
     {
         RecordingPacketSender requestPacketSender = new();
         await deconstructionCleanup.CleanupAsync(room, new AuthProcessorContext(PlayerA, requestPacketSender));
+        return requestPacketSender.Packets;
+    }
+
+    /// <summary>
+    ///     Finishes the first piece of a new base, the way the builder's client reports it.
+    /// </summary>
+    internal async Task<IReadOnlyList<Packet>> PlaceBaseAsync(ServerPlayer player, PlaceBase packet)
+    {
+        RecordingPacketSender requestPacketSender = new();
+        await placeBaseProcessor.Process(new AuthProcessorContext(player, requestPacketSender), packet);
         return requestPacketSender.Packets;
     }
 

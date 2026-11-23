@@ -159,6 +159,13 @@ internal sealed class BuildingManager
 
         worldEntityManager.RemoveGlobalRootEntity(entity.Id);
         worldEntityManager.AddOrUpdateGlobalRootEntity(placeBase.BuildEntity);
+        // A Scanner Room can be the first piece of a base. It then arrives nested in the base instead of as the built
+        // piece of an update, and has to be tracked the same way: simulation ownership is only handed out, at build
+        // time and to joining players, for tracked global root entities.
+        foreach (MapRoomEntity mapRoom in placeBase.BuildEntity.ChildEntities.OfType<MapRoomEntity>())
+        {
+            worldEntityManager.AddOrUpdateGlobalRootEntity(mapRoom, false);
+        }
         return true;
     }
 
