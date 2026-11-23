@@ -118,6 +118,10 @@ public sealed class PlayerInitialSyncProcessor : InitialSyncProcessor
     {
         if (statsData != null)
         {
+            // AddOxygen only tops up, and the fresh player's lungs are full, so the stored level is set rather than
+            // added. Equipment is not on yet, so this is the lungs; the stored level also counts a worn tank, whose own
+            // level comes back with the tank.
+            Player.main.oxygenMgr.RemoveOxygen(Player.main.oxygenMgr.GetOxygenAvailable());
             Player.main.oxygenMgr.AddOxygen(statsData.Oxygen);
             // Spawning a player with 0 health makes them invincible so we'd rather set it to 1 HP
             Player.main.liveMixin.health = Mathf.Max(1f, statsData.Health);
