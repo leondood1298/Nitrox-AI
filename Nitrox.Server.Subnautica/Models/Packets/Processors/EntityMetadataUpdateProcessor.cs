@@ -101,13 +101,14 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
 
             if (MapRoomMetadataAuthority.IsProgressUpdate(entity.Metadata as MapRoomMetadata, requestedMapRoomMetadata) && simulationOwnershipData.GetPlayerForLock(entity.Id) != sendingPlayer)
             {
-                logger.ZLogWarning($"Player {sendingPlayer.Name} tried updating scan progress for Map Room {entity.Id} without simulation ownership");
+                scannerRoomDiagnostics.RecordRejected("scan_progress", mapRoom, sessionId: sendingPlayer.SessionId, reason: "non_owner");
                 return false;
             }
 
             if (!MapRoomMetadataAuthority.TryAcceptAndApply(mapRoom, requestedMapRoomMetadata, out MapRoomMetadata acceptedMapRoomMetadata))
             {
                 logger.ZLogDebug($"Rejected stale or duplicate Map Room metadata for {entity.Id}: requested {requestedMapRoomMetadata}, current {entity.Metadata}");
+                scannerRoomDiagnostics.RecordStaleScanRequest(mapRoom, sendingPlayer.SessionId, requestedMapRoomMetadata);
                 return false;
             }
 

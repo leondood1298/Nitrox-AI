@@ -128,6 +128,7 @@ internal sealed class MapRoomCameraControlReleaseFactory(EntityRegistry entityRe
 
         Optional<NitroxId> roomId = dockedRoom == null ? Optional.Empty : Optional.Of(dockedRoom.Id);
         grant = new MapRoomCameraControl(cameraId, roomId, dockedSlot, true, lightOn, true, true, controllerSessionId);
+        diagnostics.RecordAccepted("control_sync", dockedRoom, cameraId, controllerSessionId, dockedSlot, "current_pilot_sent_to_joined_player");
         return true;
     }
 

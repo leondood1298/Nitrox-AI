@@ -45,8 +45,11 @@ internal static class ScannerRoomStateFingerprint
             }
 
             MapRoomCameraRecord[] records = room.CameraRegistry?.Where(record => record != null).ToArray() ?? [];
-            if (records.Length != (room.CameraRegistry?.Count ?? 0) ||
-                records.Select(record => record.CameraId).Distinct().Count() != records.Length)
+            if (records.Length != (room.CameraRegistry?.Count ?? 0))
+            {
+                return "null_camera_record";
+            }
+            if (records.Select(record => record.CameraId).Distinct().Count() != records.Length)
             {
                 return "duplicate_camera_registration";
             }
@@ -83,7 +86,6 @@ internal static class ScannerRoomStateFingerprint
 
     private static ScannerRoomStateSnapshot CreateLocked(MapRoomEntity room)
     {
-
         MapRoomCameraRecord?[] cameras = room.CameraRegistry?.Select(static camera => (MapRoomCameraRecord?)camera).ToArray() ?? [];
         MapRoomScanResultRecord?[] scanResults = room.ScanResults?.Select(static result => (MapRoomScanResultRecord?)result).ToArray() ?? [];
         string?[] scanTypes = room.AvailableScanTypes?.Select(static type => type?.Name).ToArray() ?? [];
@@ -133,7 +135,8 @@ internal static class ScannerRoomStateFingerprint
         string fingerprint = Convert.ToHexString(hash.AsSpan(0, 8)).ToLowerInvariant();
         return new ScannerRoomStateSnapshot(fingerprint, canonicalState, cameras.Length, scanResults.Length, scanTypes.Length,
             room.DockingRevision, metadata?.TypeToScan?.Name ?? "", metadata?.NumNodesScanned ?? 0,
-            metadata?.Generation ?? 0, metadata?.Revision ?? 0, room.FabricatorMetadata != null);
+            metadata?.Generation ?? 0, metadata?.Revision ?? 0, room.FabricatorMetadata != null,
+            room.LeftDockCameraId, room.RightDockCameraId, room.ScanResultGeneration, room.ScanResultRevision, room.AvailableScanTypesRevision);
     }
 
     private static string CanonicalCamera(MapRoomCameraRecord? camera)
@@ -216,4 +219,9 @@ internal readonly record struct ScannerRoomStateSnapshot(
     int NodesScanned,
     long MetadataGeneration,
     long MetadataRevision,
-    bool FabricatorActive);
+    bool FabricatorActive,
+    NitroxId? LeftDockCameraId = null,
+    NitroxId? RightDockCameraId = null,
+    long ScanResultGeneration = 0,
+    long ScanResultRevision = 0,
+    long ScanTypesRevision = 0);

@@ -11,7 +11,7 @@ namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 ///     Moves the simulation of an entity away from a player who reports being unable to simulate it. Without this the
 ///     entity stays frozen for everyone: a base power source would neither generate nor lose what others take from it.
 /// </summary>
-internal sealed class SimulationOwnershipReleaseProcessor(PlayerManager playerManager, EntitySimulation entitySimulation, EntityRegistry entityRegistry)
+internal sealed class SimulationOwnershipReleaseProcessor(PlayerManager playerManager, EntitySimulation entitySimulation, EntityRegistry entityRegistry, BasePowerDiagnostics? basePowerDiagnostics = null)
     : IAuthPacketProcessor<SimulationOwnershipRelease>
 {
     public async Task Process(AuthProcessorContext context, SimulationOwnershipRelease packet)
@@ -23,8 +23,10 @@ internal sealed class SimulationOwnershipReleaseProcessor(PlayerManager playerMa
         List<Player> otherPlayers = playerManager.GetConnectedPlayersExcept(context.Sender);
         if (!entitySimulation.TryReleaseBackgroundSimulation(context.Sender, entity, otherPlayers, out List<SimulatedEntity>? takenOver))
         {
+            basePowerDiagnostics?.RecordHandBack(entity, context.Sender.SessionId, false, false);
             return;
         }
+        basePowerDiagnostics?.RecordHandBack(entity, context.Sender.SessionId, true, takenOver != null);
 
         if (takenOver != null)
         {
