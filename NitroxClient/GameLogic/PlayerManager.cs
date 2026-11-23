@@ -94,6 +94,32 @@ public class PlayerManager
         }
     }
 
+    /// <summary>
+    ///     The hand of the remote player nearest to <paramref name="position" /> who holds a tool of type
+    ///     <typeparamref name="T" />.
+    /// </summary>
+    /// <returns>Null when no remote player holds such a tool.</returns>
+    public Transform? FindNearestHandHolding<T>(Vector3 position) where T : PlayerTool
+    {
+        Transform? nearestHand = null;
+        float nearestDistance = float.MaxValue;
+        foreach (RemotePlayer player in sessionsById.Values)
+        {
+            // A drawn tool hangs from the attach point; a holstered one is moved back into the inventory
+            if (!player.ItemAttachPoint || !player.ItemAttachPoint.GetComponentInChildren<T>())
+            {
+                continue;
+            }
+            float distance = Vector3.Distance(position, player.ItemAttachPoint.position);
+            if (distance < nearestDistance)
+            {
+                nearestDistance = distance;
+                nearestHand = player.ItemAttachPoint;
+            }
+        }
+        return nearestHand;
+    }
+
     /// <returns>Remote players + You => X + 1</returns>
     public int GetTotalPlayerCount() => sessionsById.Count + 1;
 
