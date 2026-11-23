@@ -117,6 +117,26 @@ public sealed class ScannerRoomClientDiagnosticsTest
     }
 
     [TestMethod]
+    public void CameraManagerNamesThePlayerWhoHoldsACamera()
+    {
+        IMultiplayerSession multiplayerSession = Substitute.For<IMultiplayerSession>();
+        multiplayerSession.Reservation.Returns(new MultiplayerSessionReservation((SessionId)(ushort)1));
+        ScannerRoomClientDiagnostics diagnostics = new();
+        MapRoomCameras cameras = new(multiplayerSession, multiplayerSession, null!, new SimulationOwnership(multiplayerSession, multiplayerSession),
+            diagnostics, new StalkerCameraLockPurposeTracker());
+        NitroxId cameraId = new("11111111-1111-1111-1111-111111111111");
+
+        // This client asked for a camera that session 2 is piloting, then session 2 lets go of it.
+        cameras.ProcessControl(new MapRoomCameraControl(cameraId, Optional.Empty, -1, true, false, true, false, (SessionId)(ushort)2));
+        cameras.ProcessControl(new MapRoomCameraControl(cameraId, Optional.Empty, -1, false, false, true, true, (SessionId)(ushort)2));
+
+        IReadOnlyList<string> history = diagnostics.GetHistory();
+        Assert.AreEqual(2, history.Count);
+        Assert.IsTrue(history[0].Contains(" ev=control_apply out=reject ") && history[0].EndsWith(" reason=locked_by_2"));
+        Assert.IsTrue(history[1].Contains(" ev=control_release_apply out=ok ") && history[1].EndsWith(" reason=remote_pilot_2"));
+    }
+
+    [TestMethod]
     public void CameraManagerRecordsRefusedAndOutdatedCameraState()
     {
         IMultiplayerSession multiplayerSession = Substitute.For<IMultiplayerSession>();

@@ -278,7 +278,7 @@ public class MapRoomCameras
                 simulationOwnership.RequestSimulationLock(packet.CameraId, SimulationLockType.TRANSIENT);
             }
             diagnostics.Record("control_apply", "reject", packet.CameraId, packet.MapRoomId.HasValue ? packet.MapRoomId.Value : null,
-                slot: packet.CameraIndex, reason: isLocalController ? "denied" : "locked_remote");
+                slot: packet.CameraIndex, reason: isLocalController ? "denied" : $"locked_by_{packet.ControllerSessionId}");
             if (!isLocalController)
             {
                 remotelyControlled.Add(packet.CameraId);
@@ -338,7 +338,7 @@ public class MapRoomCameras
             }
             remotelyControlled.Add(packet.CameraId);
             diagnostics.Record("control_apply", "ok", packet.CameraId, packet.MapRoomId.HasValue ? packet.MapRoomId.Value : null,
-                slot: packet.CameraIndex, reason: "remote");
+                slot: packet.CameraIndex, reason: $"remote_pilot_{packet.ControllerSessionId}");
         }
         else if (NitroxEntity.TryGetObjectFrom(packet.CameraId, out gameObject2) && gameObject2.TryGetComponent<MapRoomCameraMovementReplicator>(out component))
         {
@@ -366,7 +366,7 @@ public class MapRoomCameras
         if (!packet.IsControlling)
         {
             diagnostics.Record("control_release_apply", "ok", packet.CameraId, packet.MapRoomId.HasValue ? packet.MapRoomId.Value : null,
-                slot: packet.CameraIndex, reason: isLocalController ? "local" : "remote");
+                slot: packet.CameraIndex, reason: isLocalController ? "local" : $"remote_pilot_{packet.ControllerSessionId}");
         }
     }
 
