@@ -273,8 +273,7 @@ internal sealed class EntitySimulation : ISessionCleaner
         AssignEntitiesToOtherPlayers(args.Session.Id, revokedEntities, ownershipChanges, false);
         await BroadcastSimulationChanges(ownershipChanges);
 
-        // Locks on ids that are not registered entities (a docked Scanner Room camera, for example) cannot be
-        // reassigned; players are told to forget them.
+        // Locks on ids that are not registered entities cannot be reassigned; players are told to forget them.
         if (unregisteredRevokedIds.Count > 0)
         {
             logger.ZLogInformation($"Dropping {unregisteredRevokedIds.Count} unregistered simulation lock(s) after session {args.Session.Id} disconnected");

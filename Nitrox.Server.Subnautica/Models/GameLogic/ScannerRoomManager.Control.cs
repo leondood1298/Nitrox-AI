@@ -130,9 +130,8 @@ internal sealed partial class ScannerRoomManager
     }
 
     /// <summary>
-    ///     Handles a generic simulation lock request if it is for a Scanner Room camera. A camera is locked through its
-    ///     control lifecycle, and a docked camera is a record of its room, not a registered entity, so such a request
-    ///     cannot take the path of other entities.
+    ///     Handles a generic simulation lock request if it is for a Scanner Room camera. An exclusive lock on a camera
+    ///     is camera control, which has its own lifecycle, so such a request cannot take the path of other entities.
     /// </summary>
     /// <returns>False if the id is not a Scanner Room camera's and the request is still to be handled.</returns>
     public async Task<bool> TryHandleLockRequestAsync(Player sender, SimulationOwnershipRequest request)

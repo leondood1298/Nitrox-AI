@@ -37,6 +37,12 @@ public sealed class MapRoomCameraDocks(IPacketSender packetSender, SimulationOwn
     private readonly Dictionary<NitroxId, MapRoomCameraDocking> lastDockByCameraId = [];
 
     /// <summary>
+    ///     Docks the server announced for cameras that had not spawned on this client yet. A camera spawns with the
+    ///     dock it had when its entity was sent, which can be older than this.
+    /// </summary>
+    private readonly Dictionary<NitroxId, MapRoomCameraDocked> pendingDocks = [];
+
+    /// <summary>
     ///     The room a dock belongs to and the dock's index in that room.
     /// </summary>
     public static bool TryGetPlace(MapRoomCameraDocking dockingPoint, out MapRoomFunctionality mapRoom, out int dockingIndex)
@@ -141,15 +147,19 @@ public sealed class MapRoomCameraDocks(IPacketSender packetSender, SimulationOwn
         if (!NitroxEntity.TryGetComponentFrom(packet.CameraId, out MapRoomCamera camera) ||
             !NitroxEntity.TryGetComponentFrom(packet.MapRoomId, out MapRoomFunctionality mapRoom))
         {
+            // Applied when the camera has spawned, see ApplyDockingIndex.
+            pendingDocks[packet.CameraId] = packet;
             diagnostics.Record("dock_apply", "pending", packet.CameraId, packet.MapRoomId, slot: packet.DockingIndex, reason: "waiting_object");
             return;
         }
+        pendingDocks.Remove(packet.CameraId);
         Dock(camera, mapRoom, packet.DockingIndex);
         diagnostics.Record("dock_apply", "ok", packet.CameraId, packet.MapRoomId, slot: packet.DockingIndex);
     }
 
     public void ProcessUndocked(MapRoomCameraUndocked packet)
     {
+        pendingDocks.Remove(packet.CameraId);
         if (NitroxEntity.TryGetComponentFrom(packet.CameraId, out MapRoomCamera camera))
         {
             Undock(camera);
@@ -163,6 +173,11 @@ public sealed class MapRoomCameraDocks(IPacketSender packetSender, SimulationOwn
     /// </summary>
     public void ApplyDockingIndex(MapRoomCamera camera, int dockingIndex)
     {
+        if (camera.TryGetNitroxId(out NitroxId spawnedCameraId) && pendingDocks.TryGetValue(spawnedCameraId, out MapRoomCameraDocked pendingDock))
+        {
+            ProcessDocked(pendingDock);
+            return;
+        }
         if (dockingIndex < 0)
         {
             Undock(camera);
@@ -227,7 +242,8 @@ public sealed class MapRoomCameraDocks(IPacketSender packetSender, SimulationOwn
             {
                 continue;
             }
-            // Light, battery, health and number are the server's to keep. It only takes the dock from here.
+            // Light, battery, health and number are the server's to keep. It only takes the dock from here. The entity
+            // is otherwise the one a camera gets that a player drops into the world (Items.Dropped).
             cameras.Add(new GlobalRootEntity(camera.transform.ToWorldDto(), (int)LargeWorldEntity.CellLevel.Global, prefabIdentifier.ClassId, true, cameraId,
                 TechType.MapRoomCamera.ToDto(), new MapRoomCameraMetadata(dockingIndex: dockingIndex), mapRoomId, []));
         }
@@ -237,7 +253,8 @@ public sealed class MapRoomCameraDocks(IPacketSender packetSender, SimulationOwn
     /// <summary>
     ///     The cameras among the children of a room's entity, for spawning them.
     /// </summary>
-    public static List<Entity> GetCameraEntities(MapRoomEntity mapRoom) => mapRoom.ChildEntities.FindAll(child => child is GlobalRootEntity);
+    public static List<Entity> GetCameraEntities(MapRoomEntity mapRoom) =>
+        mapRoom.ChildEntities.FindAll(child => child is GlobalRootEntity && TechType.MapRoomCamera.ToDto().Equals(child.TechType));
 
     /// <summary>
     ///     Whether the game may put a camera that drifted into a free dock into that dock. It tries on every client
@@ -331,7 +348,11 @@ public sealed class MapRoomCameraDocks(IPacketSender packetSender, SimulationOwn
         return dockingPoint.GetComponentInParent<MapRoomFunctionality>();
     }
 
-    private static int CompareWorldPosition(Vector3 a, Vector3 b)
+    /// <summary>
+    ///     Orders two docks by where they are: by x, then y, then z. Positions that differ by less than the tolerance
+    ///     count as the same, so that clients whose floats differ in the last digits agree on the order.
+    /// </summary>
+    internal static int CompareWorldPosition(Vector3 a, Vector3 b)
     {
         if (Mathf.Abs(a.x - b.x) > DOCK_POSITION_SORT_TOLERANCE)
         {

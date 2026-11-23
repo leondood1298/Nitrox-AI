@@ -549,20 +549,32 @@ public sealed class ScannerRoomManagerDockingTest
         AssertLock(scenario, cameraB, scenario.PlayerB, SimulationLockType.TRANSIENT);
     }
 
+    [TestMethod]
+    public async Task PlayerGivenARoomToSimulateAlsoGetsItsCamerasThatNobodySimulates()
+    {
+        ScannerRoomScenarioFixture scenario = new();
+        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, cameraA, 0, true)).Granted);
+        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, cameraB, 1, true)).Granted);
+        Assert.IsTrue(scenario.Ownership.RevokeOwnerOfId(cameraB));
+
+        List<SimulatedEntity> acquired = [.. scenario.EntitySimulation.TryAcquireEntity(scenario.PlayerB, scenario.Room, true)];
+
+        CollectionAssert.AreEquivalent(new[] { scenario.Room.Id, cameraB }, acquired.Select(entity => entity.Id).ToArray());
+        Assert.IsFalse(acquired.Single(entity => entity.Id == cameraB).ChangesPosition, "Only a player who flies a camera moves it.");
+        AssertLock(scenario, cameraB, scenario.PlayerB, SimulationLockType.TRANSIENT);
+        AssertLock(scenario, cameraA, scenario.PlayerA, SimulationLockType.TRANSIENT);
+    }
+
     private static MapRoomEntity CreateBuiltRoom(params GlobalRootEntity[] cameras) => new(builtRoomId, baseId, new NitroxInt3(2, 0, 2))
     {
         ChildEntities = [.. cameras]
     };
 
     /// <summary>
-    ///     A camera as the builder's client sends it with a new room: not spawned by the server, and a child of the room.
+    ///     A camera as the builder's client sends it with a new room: a child of the room.
     /// </summary>
-    private static GlobalRootEntity CreateBuiltCamera(NitroxId cameraId, MapRoomCameraMetadata? clientState)
-    {
-        GlobalRootEntity camera = ScannerRoomScenarioFixture.CreateCamera(cameraId, builtRoomId, clientState);
-        camera.SpawnedByServer = false;
-        return camera;
-    }
+    private static GlobalRootEntity CreateBuiltCamera(NitroxId cameraId, MapRoomCameraMetadata? clientState) =>
+        ScannerRoomScenarioFixture.CreateCamera(cameraId, builtRoomId, clientState);
 
     /// <summary>
     ///     Finishes a Scanner Room on an existing base, the way the builder's client reports it.

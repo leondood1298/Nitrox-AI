@@ -87,6 +87,9 @@ public static class SimulationWhitelist
     /// </summary>
     private static readonly HashSet<NitroxTechType> utilityWhitelist = [
         TechType.CrashHome.ToDto(),
+        // Its simulating player reports its battery and health, and recharges it while it sits in a dock. Its
+        // movement is not simulated: only a player who flies it moves it.
+        TechType.MapRoomCamera.ToDto(),
     ];
 
     private static readonly HashSet<Type> propagateSimulationEntityTypes = [
