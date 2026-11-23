@@ -144,7 +144,7 @@ public sealed partial class MapRoomScans
     {
         if (simulationOwnership.HasAnyLockType(room.Id))
         {
-            GetState(room.Id).ReportDue = true;
+            GetState(room).ReportDue = true;
         }
     }
 
@@ -199,7 +199,7 @@ public sealed partial class MapRoomScans
 
     internal void ApplySnapshot(IRoom room, MapRoomScanSnapshot snapshot)
     {
-        RoomState state = GetState(room.Id);
+        RoomState state = GetState(room);
         // After a server start nobody has reported the types yet. Until then every client lists what its own game finds.
         if (snapshot.AvailableTypes.Count > 0 || state.TypesReceived)
         {
@@ -215,7 +215,7 @@ public sealed partial class MapRoomScans
 
     internal void ApplyChange(IRoom room, MapRoomScanResultChanged change)
     {
-        if (change.Generation != GetState(room.Id).Generation)
+        if (change.Generation != GetState(room).Generation)
         {
             return;
         }
@@ -350,7 +350,7 @@ public sealed partial class MapRoomScans
 
     private void ReportResult(IRoom room, ResourceTrackerDatabase.ResourceInfo info, bool removed, bool isRangeExit, bool throttled)
     {
-        RoomState state = GetState(room.Id);
+        RoomState state = GetState(room);
         if (room.Target != state.Target)
         {
             // The server has not confirmed this target yet. The full list is reported once it has.

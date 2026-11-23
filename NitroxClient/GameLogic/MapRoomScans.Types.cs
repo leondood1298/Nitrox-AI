@@ -46,7 +46,7 @@ public sealed partial class MapRoomScans
 
     internal bool ObtainsTypesLocally(IRoom room)
     {
-        RoomState state = GetState(room.Id);
+        RoomState state = GetState(room);
         if (!state.TypesReceived || simulationOwnership.HasAnyLockType(room.Id))
         {
             return true;
@@ -70,7 +70,7 @@ public sealed partial class MapRoomScans
         {
             return;
         }
-        RoomState state = GetState(room.Id);
+        RoomState state = GetState(room);
         float now = secondsSinceStartup();
         float scanRange = room.ScanRange;
         if (state.PublishedTypes != null && now - state.PublishedTime < UNCHANGED_TYPES_REFRESH_SECONDS &&
@@ -85,7 +85,7 @@ public sealed partial class MapRoomScans
             room.ScanOrigin.ToDto(), scanRange));
     }
 
-    internal void ApplyTypes(IRoom room, MapRoomScanTypesChanged change) => SetAvailableTypes(room, GetState(room.Id), change.TechTypes);
+    internal void ApplyTypes(IRoom room, MapRoomScanTypesChanged change) => SetAvailableTypes(room, GetState(room), change.TechTypes);
 
     private static void SetAvailableTypes(IRoom room, RoomState state, IEnumerable<NitroxTechType> types)
     {

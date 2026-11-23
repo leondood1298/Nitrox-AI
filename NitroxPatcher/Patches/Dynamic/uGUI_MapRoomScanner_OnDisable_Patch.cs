@@ -1,5 +1,4 @@
 using System.Reflection;
-using NitroxClient.GameLogic;
 
 namespace NitroxPatcher.Patches.Dynamic;
 
@@ -14,6 +13,4 @@ public sealed partial class uGUI_MapRoomScanner_OnDisable_Patch : NitroxPatch, I
     private static readonly MethodInfo TARGET_METHOD = Reflect.Method((uGUI_MapRoomScanner t) => t.OnDisable());
 
     public static bool Prefix() => false;
-
-    public static void Postfix(uGUI_MapRoomScanner __instance) => Resolve<MapRoomScans>().Unsubscribe(__instance);
 }

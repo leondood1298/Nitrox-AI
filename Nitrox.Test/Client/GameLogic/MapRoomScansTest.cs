@@ -285,7 +285,6 @@ public sealed class MapRoomScansTest
     [TestMethod]
     public void PlayerWhoStopsSimulatingAsksTheServerForItsList()
     {
-        scans.Subscribe(room);
         simulationOwnership.SimulateEntity(room.Id, SimulationLockType.TRANSIENT);
         scans.Update(room);
 
@@ -295,6 +294,55 @@ public sealed class MapRoomScansTest
 
         Assert.AreEqual(2, Sent<MapRoomScanSubscription>().Count);
         Assert.IsTrue(Sent<MapRoomScanSubscription>().All(subscription => subscription.Subscribed && subscription.MapRoomId == room.Id));
+    }
+
+    [TestMethod]
+    public void RoomIsSubscribedToOnceForAsLongAsItExists()
+    {
+        // The room's screen being switched off and on again plays no part in it.
+        scans.Update(room);
+        scans.Update(room);
+        scans.Update(room);
+        MapRoomScanSubscription subscription = Sent<MapRoomScanSubscription>().Single();
+        Assert.AreEqual(room.Id, subscription.MapRoomId);
+        Assert.IsTrue(subscription.Subscribed);
+
+        scans.RoomDestroyed(room);
+        scans.RoomDestroyed(room);
+
+        Assert.AreEqual(2, Sent<MapRoomScanSubscription>().Count);
+        Assert.IsFalse(Sent<MapRoomScanSubscription>().Last().Subscribed);
+    }
+
+    [TestMethod]
+    public void RoomBuiltAgainWithTheSameIdIsSubscribedToAgainAndStartsFromNothing()
+    {
+        scans.ApplyMetadata(room, new MapRoomMetadata(quartz, 2, 5));
+        scans.Update(room);
+        FakeRoom rebuilt = new(room.Id, scans);
+
+        scans.Update(rebuilt);
+        // The old room's object can be destroyed after the new one is there.
+        scans.RoomDestroyed(room);
+
+        Assert.AreEqual(2, Sent<MapRoomScanSubscription>().Count);
+        Assert.IsTrue(Sent<MapRoomScanSubscription>().All(subscription => subscription.Subscribed), "The new room's subscription must not be ended with the old room.");
+        Assert.AreEqual(0, scans.GetGeneration(room.Id), "The server counts the new room's targets from zero.");
+        scans.ApplySnapshot(rebuilt, new MapRoomScanSnapshot(room.Id, 0, [new MapRoomScanResultRecord("found", quartz, NitroxVector3.Zero)], []));
+        Assert.AreEqual(1, rebuilt.Nodes.Count);
+    }
+
+    [TestMethod]
+    public void SubscriptionThatCouldNotBeSentIsSentLater()
+    {
+        // Packets are held back while a base is built anew, which is when a room starts existing.
+        packetSender.Send(Arg.Any<MapRoomScanSubscription>()).Returns(false, true);
+
+        scans.Update(room);
+        scans.Update(room);
+        scans.Update(room);
+
+        Assert.AreEqual(2, Sent<MapRoomScanSubscription>().Count);
     }
 
     [TestMethod]
@@ -416,7 +464,7 @@ public sealed class MapRoomScansTest
         scans.ResultsObtained(room);
         scans.Update(room);
 
-        Assert.AreEqual(0, Sent<Packet>().Count);
+        Assert.IsTrue(Sent<Packet>().All(packet => packet is MapRoomScanSubscription));
         Assert.AreSame(info, room.Nodes.Single());
     }
 

@@ -43,10 +43,16 @@ public sealed partial class MapRoomScans
     }
 
     /// <summary>
-    ///     Called every frame for every room that has an id. Notices when this client starts or stops simulating the
-    ///     room, and sends the reports that are due.
+    ///     Called every frame for every room that has an id. Subscribes to the room's scan, notices when this client
+    ///     starts or stops simulating the room, and sends the reports that are due.
     /// </summary>
-    public void Update(MapRoomFunctionality mapRoom, NitroxId roomId) => Update(GetRoom(mapRoom, roomId));
+    public void Update(MapRoomFunctionality mapRoom, NitroxId roomId)
+    {
+        if (IsRoomOf(roomId, mapRoom))
+        {
+            Update(GetRoom(mapRoom, roomId));
+        }
+    }
 
     /// <summary>
     ///     The room's scan target and progress as this client reports them to the server.
@@ -91,21 +97,18 @@ public sealed partial class MapRoomScans
     }
 
     /// <summary>
-    ///     Asks the server for what the room's scan has found, and for every change from now on.
+    ///     Called when the room's object is destroyed.
     /// </summary>
-    public void Subscribe(uGUI_MapRoomScanner scanner)
+    public void RoomDestroyed(MapRoomFunctionality mapRoom)
     {
-        if (scanner && TryGetRoom(scanner.mapRoom, out IRoom? room))
+        // Not looked up by id: the object is on its way out, and its id may already belong to the room built in its place.
+        foreach (RoomState state in statesByRoomId.Values)
         {
-            Subscribe(room);
-        }
-    }
-
-    public void Unsubscribe(uGUI_MapRoomScanner scanner)
-    {
-        if (scanner && TryGetRoom(scanner.mapRoom, out IRoom? room))
-        {
-            Unsubscribe(room);
+            if (state.Room is GameRoom gameRoom && ReferenceEquals(gameRoom.MapRoom, mapRoom))
+            {
+                RoomDestroyed(gameRoom);
+                return;
+            }
         }
     }
 
@@ -113,7 +116,13 @@ public sealed partial class MapRoomScans
 
     internal void Update(IRoom room)
     {
-        RoomState state = GetState(room.Id);
+        RoomState state = GetState(room);
+        if (!state.Subscribed)
+        {
+            // For as long as the room exists, not for as long as its screen is on: the HUD shows the results far from
+            // the room, and a screen that is switched on again has to show what changed in between.
+            Subscribe(room, state);
+        }
         bool simulating = simulationOwnership.HasAnyLockType(room.Id);
         if (simulating != state.Simulating)
         {
@@ -122,11 +131,11 @@ public sealed partial class MapRoomScans
             {
                 StartSimulating(room, state);
             }
-            else if (state.Subscribed)
+            else
             {
                 // What this client's game left in the room's list is not what the others see. The server answers a
                 // subscription with its list.
-                Subscribe(room);
+                Subscribe(room, state);
             }
         }
         // Results are found for a target the server has confirmed. A target this client has just chosen is on its
@@ -144,7 +153,7 @@ public sealed partial class MapRoomScans
     /// </summary>
     internal void ApplyMetadata(IRoom room, MapRoomMetadata metadata)
     {
-        RoomState state = GetState(room.Id);
+        RoomState state = GetState(room);
         if (state.MetadataApplied && metadata.Generation < state.Generation)
         {
             // A room is spawned with the state it had when the server prepared the spawn. An update for it can
@@ -213,7 +222,7 @@ public sealed partial class MapRoomScans
     /// </summary>
     internal void NodeScanned(IRoom room)
     {
-        RoomState state = GetState(room.Id);
+        RoomState state = GetState(room);
         if (!simulationOwnership.HasAnyLockType(room.Id) || room.Target != state.Target || room.NodesScanned <= state.NodesKnownToServer)
         {
             return;
@@ -223,13 +232,27 @@ public sealed partial class MapRoomScans
             update => update.Id, PROGRESS_THROTTLE_SECONDS);
     }
 
-    internal void Subscribe(IRoom room) => GetState(room.Id).Subscribed = packetSender.Send(new MapRoomScanSubscription(room.Id, true));
-
-    internal void Unsubscribe(IRoom room)
+    /// <summary>
+    ///     Forgets what is known about the room's scan and tells the server to stop sending it.
+    /// </summary>
+    internal void RoomDestroyed(IRoom room)
     {
-        packetSender.Send(new MapRoomScanSubscription(room.Id, false));
-        GetState(room.Id).Subscribed = false;
+        if (!statesByRoomId.TryGetValue(room.Id, out RoomState? state) || !ReferenceEquals(state.Room, room))
+        {
+            return;
+        }
+        statesByRoomId.Remove(room.Id);
+        if (state.Subscribed)
+        {
+            packetSender.Send(new MapRoomScanSubscription(room.Id, false));
+        }
     }
+
+    /// <summary>
+    ///     Asks the server for what the room's scan has found, and for every change from now on. A packet can be held
+    ///     back, as during a base resync; then this is tried again.
+    /// </summary>
+    private void Subscribe(IRoom room, RoomState state) => state.Subscribed = packetSender.Send(new MapRoomScanSubscription(room.Id, true));
 
     /// <summary>
     ///     The lists the room holds so far are the ones the server sent. From now on this client's own game says what
@@ -246,19 +269,23 @@ public sealed partial class MapRoomScans
         ReportTypes(room);
     }
 
-    private RoomState GetState(NitroxId roomId)
+    /// <summary>
+    ///     What is known about this room's scan. A room that was built again has the id of the one before it and
+    ///     starts from nothing: neither the generation nor the subscription of the old one are its own.
+    /// </summary>
+    private RoomState GetState(IRoom room)
     {
-        if (!statesByRoomId.TryGetValue(roomId, out RoomState? state))
+        if (!statesByRoomId.TryGetValue(room.Id, out RoomState? state) || !ReferenceEquals(state.Room, room))
         {
-            state = new RoomState();
-            statesByRoomId[roomId] = state;
+            state = new RoomState(room);
+            statesByRoomId[room.Id] = state;
         }
         return state;
     }
 
     private bool TryGetRoom(MapRoomFunctionality mapRoom, out IRoom? room)
     {
-        if (!mapRoom || !mapRoom.TryGetNitroxId(out NitroxId? roomId))
+        if (!mapRoom || !mapRoom.TryGetNitroxId(out NitroxId? roomId) || !IsRoomOf(roomId, mapRoom))
         {
             room = null;
             return false;
@@ -266,6 +293,13 @@ public sealed partial class MapRoomScans
         room = GetRoom(mapRoom, roomId);
         return true;
     }
+
+    /// <summary>
+    ///     A room that is being replaced keeps its id until its object is destroyed. From the moment the id leads to
+    ///     the new object, the old one is no longer the room.
+    /// </summary>
+    private static bool IsRoomOf(NitroxId roomId, MapRoomFunctionality mapRoom) =>
+        NitroxEntity.TryGetObjectFrom(roomId, out GameObject gameObject) && gameObject == mapRoom.gameObject;
 
     private bool TryGetRoom(NitroxId roomId, out IRoom? room)
     {
@@ -278,22 +312,18 @@ public sealed partial class MapRoomScans
         return true;
     }
 
-    private IRoom GetRoom(MapRoomFunctionality mapRoom, NitroxId roomId)
-    {
-        RoomState state = GetState(roomId);
-        if (state.Room is not GameRoom gameRoom || !ReferenceEquals(gameRoom.MapRoom, mapRoom))
-        {
-            state.Room = new GameRoom(mapRoom, roomId);
-        }
-        return state.Room;
-    }
+    private IRoom GetRoom(MapRoomFunctionality mapRoom, NitroxId roomId) =>
+        statesByRoomId.TryGetValue(roomId, out RoomState? state) && state.Room is GameRoom gameRoom && ReferenceEquals(gameRoom.MapRoom, mapRoom)
+            ? gameRoom
+            : new GameRoom(mapRoom, roomId);
 
-    private sealed class RoomState
+    private sealed class RoomState(IRoom room)
     {
         /// <summary>
-        ///     The room in the game, kept so that asking for it every frame creates nothing.
+        ///     The room this is about. Kept so that asking for the game's room every frame creates nothing, and to
+        ///     tell a room from one that was built in its place.
         /// </summary>
-        public IRoom? Room;
+        public IRoom Room => room;
 
         /// <summary>
         ///     The generation of the scan target the server last sent, see <see cref="MapRoomMetadata.Generation" />.
