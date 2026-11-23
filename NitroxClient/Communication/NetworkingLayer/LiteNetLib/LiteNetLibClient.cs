@@ -53,7 +53,8 @@ public class LiteNetLibClient : IClient
         };
 
 
-        client = new NetManager(listener, NitroxEnvironment.IsReleaseMode ? new Crc32cLayer() : null)
+        // The same framing in Debug and Release builds: a checksum on one side only drops every packet in silence
+        client = new NetManager(listener, new Crc32cLayer())
         {
             UpdateTime = 15,
             ChannelsCount = (byte)typeof(Packet.UdpChannelId).GetEnumValues().Length,
