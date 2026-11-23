@@ -4,9 +4,10 @@ using NitroxClient.GameLogic;
 namespace NitroxPatcher.Patches.Dynamic;
 
 /// <summary>
-///     A player picked a resource on the room's screen. This and <see cref="uGUI_MapRoomScanner_OnCancelScan_Patch" />
-///     are the only places a scan target is sent from: <see cref="MapRoomFunctionality.StartScanning" /> itself is also
-///     called by the game for its own reasons.
+///     A player picked a resource on the room's screen. A scan target is sent from here, from
+///     <see cref="uGUI_MapRoomScanner_OnCancelScan_Patch" />, and by <see cref="MapRoomScans" />
+///     when the room loses power, and from nowhere else: <see cref="MapRoomFunctionality.StartScanning" /> itself is
+///     also called by the game for its own reasons.
 /// </summary>
 public sealed partial class uGUI_MapRoomScanner_OnStartScan_Patch : NitroxPatch, IDynamicPatch
 {

@@ -71,6 +71,7 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
         MapRoomMetadata scanState => scannerRoomManager.AcceptRoomMetadata(sender, entity, scanState),
         MapRoomCameraMetadata cameraState => scannerRoomManager.TryAcceptCameraMetadata(sender, entity, cameraState),
         CrafterMetadata when entity is MapRoomEntity room => scannerRoomManager.RejectFabricatorStateForRoom(sender, room),
+        _ when ScannerRoomManager.HoldsScannerRoomState(entity) => scannerRoomManager.RejectReplacement(sender, entity, metadata),
         _ => null
     };
 

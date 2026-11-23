@@ -4,10 +4,10 @@ using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.Packets.Processors;
 using NitroxClient.MonoBehaviours;
 
-namespace Nitrox.Test.Client.GameLogic;
+namespace Nitrox.Test.Client.MonoBehaviours;
 
 [TestClass]
-public sealed class MovementBroadcasterBatchingTest
+public sealed class MovementBroadcasterTest
 {
     [TestMethod]
     public void ClientChunkLimitMatchesServerAuthorityLimit()

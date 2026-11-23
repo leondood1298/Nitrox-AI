@@ -91,6 +91,12 @@ public sealed partial class MapRoomScans
         float ScanRange { get; }
 
         /// <summary>
+        ///     Whether the game counts the room as powered. The game asks the room's base every frame, and switches the
+        ///     room's screen off in the frame in which this turns false.
+        /// </summary>
+        bool Powered { get; }
+
+        /// <summary>
         ///     The types the room's screen lists. Null if the room has no screen.
         /// </summary>
         HashSet<TechType>? ShownTypes { get; }
@@ -129,6 +135,12 @@ public sealed partial class MapRoomScans
         ///     Makes the room's screen list these types.
         /// </summary>
         void ShowTypes(IEnumerable<TechType> types);
+
+        /// <summary>
+        ///     Tells the player that the room can now scan for this type, as the game does when it finds a type the
+        ///     screen did not list: with a popup, and only while the player looks through one of the room's cameras.
+        /// </summary>
+        void ShowDiscovery(TechType type);
     }
 
     private sealed class GameRoom(MapRoomFunctionality mapRoom, NitroxId id) : IRoom
@@ -148,6 +160,7 @@ public sealed partial class MapRoomScans
         public List<ResourceTrackerDatabase.ResourceInfo> Nodes => mapRoom.resourceNodes;
         public Vector3 ScanOrigin => mapRoom.wireFrameWorld.position;
         public float ScanRange => mapRoom.GetScanRange();
+        public bool Powered => mapRoom.powered;
         public HashSet<TechType>? ShownTypes => Scanner ? Scanner.availableTechTypes : null;
         public IEnumerable<TechType> DetectableTypes => ResourceTrackerDatabase.GetDetectableTechTypes();
 
@@ -195,6 +208,15 @@ public sealed partial class MapRoomScans
             Scanner.availableTechTypes.UnionWith(types);
             Scanner.currentPage = Mathf.Clamp(Scanner.currentPage, 0, Mathf.Max(0, Scanner.numPages - 1));
             Scanner.RebuildResourceList();
+        }
+
+        public void ShowDiscovery(TechType type)
+        {
+            // The end of uGUI_MapRoomScanner.OnResourceDiscovered, which this client's game does not get to.
+            if (Scanner && Scanner.mapRoomScreen && Scanner.mapRoomScreen.GetCurrentCamera())
+            {
+                uGUI_PopupNotification.main.OnResourceDiscovered(type);
+            }
         }
     }
 }

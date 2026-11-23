@@ -26,7 +26,7 @@ using NSubstitute;
 using Packet = Nitrox.Model.Packets.Packet;
 using ServerPlayer = Nitrox.Server.Subnautica.Models.Player;
 
-namespace Nitrox.Test.Server.Subnautica;
+namespace Nitrox.Test.Server.GameLogic;
 
 /// <summary>
 ///     Deterministic in-process Scanner Room server: the real <see cref="ScannerRoomManager" /> on a real entity
@@ -257,9 +257,9 @@ internal sealed class ScannerRoomScenarioFixture
         EntityRegistry.TryGetEntityById(cameraId, out Entity camera) && camera.ParentId != null && EntityRegistry.TryGetEntityById(camera.ParentId, out MapRoomEntity _);
 
     /// <summary>
-    ///     Takes or gives up control of a camera the way a client does. To take it, the player asks for the camera's
-    ///     exclusive lock through the real lock request processor and, once it has it, says that it controls the
-    ///     camera. To give it up, the player says so and asks for an ordinary lock.
+    ///     Takes or gives up control of a camera the way a client does. To take it, the player says that it takes the
+    ///     camera and asks for the camera's exclusive lock through the real lock request processor. To give it up, the
+    ///     player says so and asks for an ordinary lock.
     /// </summary>
     internal async Task<ControlResult> ControlAsync(ServerPlayer player, NitroxId cameraId, bool isControlling)
     {
@@ -267,10 +267,8 @@ internal sealed class ScannerRoomScenarioFixture
         bool granted;
         if (isControlling)
         {
-            if ((await RequestOwnershipAsync(player, cameraId, SimulationLockType.EXCLUSIVE)).LockAcquired)
-            {
-                await Manager.SetControlAsync(player, new MapRoomCameraControlChanged(cameraId, player.SessionId, true));
-            }
+            await Manager.SetControlAsync(player, new MapRoomCameraControlChanged(cameraId, player.SessionId, true));
+            await RequestOwnershipAsync(player, cameraId, SimulationLockType.EXCLUSIVE);
             granted = IsController(cameraId, player.SessionId);
         }
         else
@@ -375,10 +373,16 @@ internal sealed class ScannerRoomScenarioFixture
     internal Task<IReadOnlyList<Packet>> PlaceBaseAsync(ServerPlayer player, PlaceBase packet) =>
         SentDuringAsync(() => placeBaseProcessor.Process(Context(player), packet));
 
-    internal async Task<SimulationOwnershipResponse> RequestOwnershipAsync(ServerPlayer player, NitroxId entityId,
-        SimulationLockType lockType) =>
-        (await SentDuringAsync(() => ownershipRequestProcessor.Process(Context(player), new SimulationOwnershipRequest(player.SessionId, entityId, lockType))))
-        .OfType<SimulationOwnershipResponse>().Single();
+    /// <summary>
+    ///     Asks for a simulation lock the way a client does, through the real lock request processor.
+    /// </summary>
+    /// <returns>The answer to this player, also when another player's request is answered at the same moment.</returns>
+    internal async Task<SimulationOwnershipResponse> RequestOwnershipAsync(ServerPlayer player, NitroxId entityId, SimulationLockType lockType)
+    {
+        int alreadyAnswered = SentTo<SimulationOwnershipResponse>(player).Count;
+        await ownershipRequestProcessor.Process(Context(player), new SimulationOwnershipRequest(player.SessionId, entityId, lockType));
+        return SentTo<SimulationOwnershipResponse>(player).Skip(alreadyAnswered).Single();
+    }
 
     /// <summary>
     ///     Reports a camera's state the way a client does: everything it has for the camera, here what the server

@@ -13,6 +13,9 @@ namespace Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 [DataContract]
 public class MapRoomCameraMetadata : EntityMetadata
 {
+    // Taken to be what a new camera of the game has: the capacity of its battery and the health of its LiveMixin.
+    // Both are data of the game's prefab, which its IL does not show, and are not confirmed there. A camera starts
+    // with them, and the server refuses reports above them.
     public const float MAX_ENERGY = 100f;
     public const float MAX_HEALTH = 400f;
 

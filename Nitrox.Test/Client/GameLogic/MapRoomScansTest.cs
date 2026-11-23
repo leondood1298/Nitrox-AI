@@ -6,11 +6,12 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication.Abstract;
+using NitroxClient.GameLogic;
 using NitroxClient.Helpers;
 using NSubstitute;
 using UnityEngine;
 
-namespace NitroxClient.GameLogic;
+namespace Nitrox.Test.Client.GameLogic;
 
 [TestClass]
 public sealed class MapRoomScansTest
@@ -23,12 +24,14 @@ public sealed class MapRoomScansTest
     private readonly MapRoomScans scans;
     private readonly FakeRoom room;
     private float now = 100f;
+    private bool worldLoaded = true;
 
     public MapRoomScansTest()
     {
         packetSender.Send(Arg.Any<MapRoomScanSubscription>()).Returns(true);
         simulationOwnership = new SimulationOwnership(Substitute.For<IMultiplayerSession>(), packetSender);
-        scans = new MapRoomScans(packetSender, new ThrottledPacketSender(packetSender), simulationOwnership, () => now);
+        scans = new MapRoomScans(packetSender, new ThrottledPacketSender(packetSender), simulationOwnership, new BasePowerConsumptionForwarder(packetSender, simulationOwnership),
+            () => now, () => worldLoaded);
         room = new FakeRoom(new NitroxId(), scans);
     }
 
@@ -343,6 +346,111 @@ public sealed class MapRoomScansTest
         scans.Update(room);
 
         Assert.AreEqual(2, Sent<MapRoomScanSubscription>().Count);
+    }
+
+    [TestMethod]
+    public void SimulatingPlayerWhoseGameSeesTheRoomLosePowerStopsTheScanForEveryone()
+    {
+        simulationOwnership.SimulateEntity(room.Id, SimulationLockType.TRANSIENT);
+        scans.ApplyMetadata(room, new MapRoomMetadata(quartz, 5, 6));
+        scans.Update(room);
+        int shownBefore = room.TargetsShown;
+
+        room.Powered = false;
+        scans.Update(room);
+        scans.Update(room);
+
+        Assert.AreEqual(TechType.None, room.Target);
+        Assert.AreEqual(shownBefore + 1, room.TargetsShown);
+        MapRoomMetadata sent = (MapRoomMetadata)Sent<EntityMetadataUpdate>().Single().NewValue;
+        Assert.AreEqual(NitroxTechType.None, sent.TypeToScan);
+        Assert.AreEqual(6, sent.Generation, "It is sent like a target a player chose, so the server tells everyone.");
+
+        room.Powered = true;
+        scans.Update(room);
+        Assert.AreEqual(TechType.None, room.Target, "The game does not take a scan up again when the power returns.");
+    }
+
+    [TestMethod]
+    public void PlayerWhoDoesNotSimulateStopsNothingWhenItsOwnGameSeesThePowerGo()
+    {
+        scans.ApplyMetadata(room, new MapRoomMetadata(quartz, 5, 6));
+        scans.Update(room);
+
+        room.Powered = false;
+        scans.Update(room);
+
+        Assert.AreEqual(TechType.Quartz, room.Target);
+        Assert.AreEqual(0, Sent<EntityMetadataUpdate>().Count, "Whether the room has lost its power is for the simulating player's game to say.");
+    }
+
+    [TestMethod]
+    public void RoomThatIsDestroyedWhileItHasPowerKeepsItsScan()
+    {
+        // The game switches the room's screen off with a room that is destroyed, as it does when the power goes.
+        simulationOwnership.SimulateEntity(room.Id, SimulationLockType.TRANSIENT);
+        scans.ApplyMetadata(room, new MapRoomMetadata(quartz, 5, 6));
+        scans.Update(room);
+
+        scans.RoomDestroyed(room);
+
+        Assert.AreEqual(TechType.Quartz, room.Target);
+        Assert.AreEqual(0, Sent<EntityMetadataUpdate>().Count, "The room built in its place goes on with the scan the server holds.");
+    }
+
+    [TestMethod]
+    public void PowerThatIsMissingWhenARoomStartsExistingWasNotLost()
+    {
+        // A room is spawned with its scan. Its game may connect it to the power of its base a moment later.
+        simulationOwnership.SimulateEntity(room.Id, SimulationLockType.TRANSIENT);
+        room.Powered = false;
+        scans.ApplyMetadata(room, new MapRoomMetadata(quartz, 5, 6));
+
+        scans.Update(room);
+        room.Powered = true;
+        scans.Update(room);
+
+        Assert.AreEqual(TechType.Quartz, room.Target);
+        Assert.AreEqual(0, Sent<EntityMetadataUpdate>().Count);
+    }
+
+    [TestMethod]
+    public void PowerThatGoesWhileTheWorldIsStillLoadingIsNoLoss()
+    {
+        simulationOwnership.SimulateEntity(room.Id, SimulationLockType.TRANSIENT);
+        scans.ApplyMetadata(room, new MapRoomMetadata(quartz, 5, 6));
+        scans.Update(room);
+
+        // The power sources of a base are brought in one after the other while this client joins or builds its bases
+        // anew. The game itself counts a base as powered while it loads.
+        worldLoaded = false;
+        room.Powered = false;
+        scans.Update(room);
+        worldLoaded = true;
+        room.Powered = true;
+        scans.Update(room);
+
+        Assert.AreEqual(TechType.Quartz, room.Target);
+        Assert.AreEqual(0, Sent<EntityMetadataUpdate>().Count);
+
+        room.Powered = false;
+        scans.Update(room);
+        Assert.AreEqual(TechType.None, room.Target, "A loss after that is a real one.");
+    }
+
+    [TestMethod]
+    public void RoomThatScansForNothingHasNoScanToStopWhenItLosesPower()
+    {
+        simulationOwnership.SimulateEntity(room.Id, SimulationLockType.TRANSIENT);
+        scans.ApplyMetadata(room, new MapRoomMetadata(NitroxTechType.None, 0, 6));
+        scans.Update(room);
+        int startedBefore = room.ScansStarted;
+
+        room.Powered = false;
+        scans.Update(room);
+
+        Assert.AreEqual(startedBefore, room.ScansStarted);
+        Assert.AreEqual(0, Sent<EntityMetadataUpdate>().Count);
     }
 
     [TestMethod]
@@ -667,6 +775,53 @@ public sealed class MapRoomScansTest
         CollectionAssert.AreEquivalent(new[] { TechType.Titanium }, room.ShownTypes.ToArray());
     }
 
+    [TestMethod]
+    public void PlayerWhoDoesNotSimulateIsToldOfATypeTheServerAddsToItsList()
+    {
+        scans.ApplyTypes(room, new MapRoomScanTypesChanged(room.Id, [quartz]));
+        Assert.AreEqual(0, room.DiscoveriesShown.Count, "The first list holds what the room could scan for all along.");
+
+        scans.ApplyTypes(room, new MapRoomScanTypesChanged(room.Id, [quartz, titanium]));
+        scans.ApplyTypes(room, new MapRoomScanTypesChanged(room.Id, [quartz, titanium]));
+        CollectionAssert.AreEqual(new[] { TechType.Titanium }, room.DiscoveriesShown);
+
+        // A type that is gone from the list and found again is a find again, as in the game.
+        scans.ApplyTypes(room, new MapRoomScanTypesChanged(room.Id, [titanium]));
+        scans.ApplyTypes(room, new MapRoomScanTypesChanged(room.Id, [quartz, titanium]));
+        CollectionAssert.AreEqual(new[] { TechType.Titanium, TechType.Quartz }, room.DiscoveriesShown);
+    }
+
+    [TestMethod]
+    public void TypeThatComesWithTheResultsOfTheScanIsAFindAsWell()
+    {
+        scans.ApplySnapshot(room, new MapRoomScanSnapshot(room.Id, 0, [], [quartz]));
+
+        scans.ApplySnapshot(room, new MapRoomScanSnapshot(room.Id, 0, [], [quartz, titanium]));
+
+        CollectionAssert.AreEqual(new[] { TechType.Titanium }, room.DiscoveriesShown);
+    }
+
+    [TestMethod]
+    public void SimulatingPlayerIsNotToldOfATypeByTheServerBecauseItsOwnGameTellsIt()
+    {
+        simulationOwnership.SimulateEntity(room.Id, SimulationLockType.TRANSIENT);
+        scans.ApplyTypes(room, new MapRoomScanTypesChanged(room.Id, [quartz]));
+
+        // The server answers every report with its list, which holds the type this player's game has just found.
+        scans.ApplyTypes(room, new MapRoomScanTypesChanged(room.Id, [quartz, titanium]));
+
+        Assert.AreEqual(0, room.DiscoveriesShown.Count, "It would be told twice.");
+    }
+
+    [TestMethod]
+    [DataRow(false, false, false)]
+    [DataRow(true, true, false)]
+    [DataRow(true, false, true)]
+    public void SuppressesOnlyKnownNonOwnerDrain(bool hasEntityId, bool hasOwnership, bool expected)
+    {
+        Assert.AreEqual(expected, MapRoomScans.ShouldSuppressPowerDrain(hasEntityId, hasOwnership));
+    }
+
     private List<T> Sent<T>() where T : Packet => packetSender.ReceivedCalls().Select(call => call.GetArguments()[0]).OfType<T>().ToList();
 
     private static ResourceTrackerDatabase.ResourceInfo Info(string id, float x, TechType techType = TechType.Quartz) => new()
@@ -691,6 +846,7 @@ public sealed class MapRoomScansTest
         public int ScansStarted { get; private set; }
         public int TargetsShown { get; private set; }
         public int ResultsShown { get; private set; }
+        public List<TechType> DiscoveriesShown { get; } = [];
 
         public NitroxId Id => id;
         public TechType Target { get; private set; }
@@ -698,6 +854,7 @@ public sealed class MapRoomScansTest
         public List<ResourceTrackerDatabase.ResourceInfo> Nodes { get; } = [];
         public Vector3 ScanOrigin => new(1f, 2f, 3f);
         public float ScanRange { get; set; } = 300f;
+        public bool Powered { get; set; } = true;
         public HashSet<TechType>? ShownTypes { get; set; } = [];
         public IEnumerable<TechType> DetectableTypes => [TechType.Quartz, TechType.Titanium];
 
@@ -735,5 +892,7 @@ public sealed class MapRoomScansTest
         public void ShowTarget() => TargetsShown++;
 
         public void ShowTypes(IEnumerable<TechType> types) => ShownTypes = [.. types];
+
+        public void ShowDiscovery(TechType type) => DiscoveriesShown.Add(type);
     }
 }

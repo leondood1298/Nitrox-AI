@@ -13,21 +13,6 @@ public sealed partial class MapRoomScreen_OnHandClick_Patch : NitroxPatch, IDyna
 {
     private static readonly MethodInfo TARGET_METHOD = Reflect.Method((MapRoomScreen t) => t.OnHandClick(default(GUIHand)));
 
-    private static bool skipPrefix;
-
-    public static bool Prefix(MapRoomScreen __instance, GUIHand guiHand)
-    {
-        return skipPrefix || Resolve<MapRoomCameras>().TryStartControl(__instance, 0, () =>
-        {
-            skipPrefix = true;
-            try
-            {
-                __instance.OnHandClick(guiHand);
-            }
-            finally
-            {
-                skipPrefix = false;
-            }
-        });
-    }
+    public static bool Prefix(MapRoomScreen __instance, GUIHand guiHand) =>
+        Resolve<MapRoomCameras>().TryStartControl(__instance, MapRoomCameras.CLICK_DIRECTION, () => __instance.OnHandClick(guiHand));
 }

@@ -11,6 +11,9 @@ namespace NitroxClient.GameLogic;
 /// </summary>
 public sealed class BasePowerRelayAudioSuppressor(BasePowerClientDiagnostics diagnostics)
 {
+    /// <summary>
+    ///     How long after the initial sync a relay that was created during it stays silent. A guess, not measured.
+    /// </summary>
     internal const float LOAD_SETTLE_SECONDS = 2f;
 
     private readonly ConditionalWeakTable<BasePowerRelay, LoadWindow> loadWindows = new();

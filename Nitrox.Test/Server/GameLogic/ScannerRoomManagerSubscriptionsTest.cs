@@ -8,10 +8,11 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.AppEvents;
 using Nitrox.Server.Subnautica.Models.Communication;
+using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Test.Server.Helper;
-using Nitrox.Test.Server.Subnautica;
+using ServerPlayer = Nitrox.Server.Subnautica.Models.Player;
 
-namespace Nitrox.Server.Subnautica.Models.GameLogic;
+namespace Nitrox.Test.Server.GameLogic;
 
 /// <summary>
 ///     What a room's scan finds only goes to the players who subscribed to it, and is held in memory only.
@@ -26,9 +27,9 @@ public sealed class ScannerRoomManagerSubscriptionsTest
     private ScannerRoomScenarioFixture scenario;
     private MapRoomEntity firstRoom;
     private MapRoomEntity secondRoom;
-    private Player simulator;
-    private Player firstPlayer;
-    private Player secondPlayer;
+    private ServerPlayer simulator;
+    private ServerPlayer firstPlayer;
+    private ServerPlayer secondPlayer;
 
     [TestInitialize]
     public void Init()

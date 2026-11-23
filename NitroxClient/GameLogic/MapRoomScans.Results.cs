@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using Nitrox.Model.DataStructures;
-using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.Packets;
 using UnityEngine;
@@ -14,8 +13,22 @@ namespace NitroxClient.GameLogic;
 /// </summary>
 public sealed partial class MapRoomScans
 {
+    /// <summary>
+    ///     The shortest time between two reports about one result that moves or leaves the range. A guess, not measured.
+    /// </summary>
     private const float RESULT_CHANGE_THROTTLE_SECONDS = 0.5f;
+
+    /// <summary>
+    ///     Ten centimetres, squared: a result of the same type this close to where a resource was picked up is taken
+    ///     for that resource. A guess, not measured.
+    /// </summary>
     private const float PICKUP_POSITION_TOLERANCE_SQUARED = 0.01f;
+
+    /// <summary>
+    ///     One centimetre, squared: a resource the game registers again closer than this to where it was has not
+    ///     moved. A guess at more than float noise.
+    /// </summary>
+    private const float MOVED_SQR_DISTANCE_THRESHOLD = 0.0001f;
 
     /// <summary>
     ///     Whether the game may add to and remove from the room's list of results as resources load and unload in
@@ -51,15 +64,36 @@ public sealed partial class MapRoomScans
     }
 
     /// <summary>
-    ///     Called after a resource that was already loaded in this client's game was registered at another position.
+    ///     Where the game has a resource registered, or null if it has not. Asked before the game registers a
+    ///     resource: registering one it already has overwrites where it was.
     /// </summary>
-    public void ResourceMoved(ResourceTrackerDatabase.ResourceInfo info)
+    public static Vector3? FindRegisteredPosition(string uniqueId, TechType techType)
     {
+        ResourceTrackerDatabase.ResourceInfo existing = FindRegistered(uniqueId, techType);
+        return existing != null ? existing.position : null;
+    }
+
+    /// <summary>
+    ///     Called after the game registered a resource. For one it already had, the game only takes over where the
+    ///     resource is now and tells nobody. If that is somewhere else, the move is reported.
+    /// </summary>
+    /// <param name="previousPosition">What <see cref="FindRegisteredPosition" /> returned before the game registered it.</param>
+    public void ResourceRegistered(string uniqueId, TechType techType, Vector3 position, Vector3? previousPosition)
+    {
+        if (!previousPosition.HasValue || (previousPosition.Value - position).sqrMagnitude < MOVED_SQR_DISTANCE_THRESHOLD)
+        {
+            return;
+        }
+        ResourceTrackerDatabase.ResourceInfo moved = FindRegistered(uniqueId, techType);
+        if (moved == null)
+        {
+            return;
+        }
         foreach (MapRoomFunctionality mapRoom in MapRoomFunctionality.mapRooms)
         {
             if (TryGetRoom(mapRoom, out IRoom? room))
             {
-                ResourceMoved(room, info);
+                ResourceMoved(room, moved);
             }
         }
     }
@@ -366,6 +400,18 @@ public sealed partial class MapRoomScans
         {
             packetSender.Send(report);
         }
+    }
+
+    private static ResourceTrackerDatabase.ResourceInfo FindRegistered(string uniqueId, TechType techType)
+    {
+        foreach (ResourceTrackerDatabase.ResourceInfo info in ResourceTrackerDatabase.GetNodes(techType))
+        {
+            if (info.uniqueId == uniqueId)
+            {
+                return info;
+            }
+        }
+        return null;
     }
 
     private static void Evict(IRoom room, ResourceTrackerDatabase.ResourceInfo info)

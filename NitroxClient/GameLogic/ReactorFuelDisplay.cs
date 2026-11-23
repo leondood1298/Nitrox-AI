@@ -5,8 +5,24 @@ using UnityEngine;
 
 namespace NitroxClient.GameLogic;
 
+/// <summary>
+///     The line about a reactor's fuel that is shown below the game's own hand text, which only has the stored power:
+///     how many fuel items the reactor holds, the energy left in them, and how long that lasts at full output.
+/// </summary>
 public static class ReactorFuelDisplay
 {
+    private const float SECONDS_PER_MINUTE = 60f;
+    private const int MINUTES_PER_HOUR = 60;
+
+    /// <summary>
+    ///     Called after the game set a bioreactor's hand text (BaseBioReactor.OnHover). Sets it again, with the fuel
+    ///     line below the game's own.
+    /// </summary>
+    public static void ShowHandText(BaseBioReactor reactor) => ShowHandText("UseBaseBioReactor", reactor._powerSource, GetStatus(reactor));
+
+    /// <inheritdoc cref="ShowHandText(BaseBioReactor)" />
+    public static void ShowHandText(BaseNuclearReactor reactor) => ShowHandText("UseBaseNuclearReactor", reactor._powerSource, GetStatus(reactor));
+
     public static string GetStatus(BaseBioReactor reactor)
     {
         float fuelCapacity = 0f;
@@ -15,7 +31,7 @@ public static class ReactorFuelDisplay
         {
             foreach (InventoryItem inventoryItem in (IEnumerable<InventoryItem>)reactor.container)
             {
-                if (inventoryItem?.item == null)
+                if (inventoryItem == null || !inventoryItem.item)
                 {
                     continue;
                 }
@@ -39,16 +55,24 @@ public static class ReactorFuelDisplay
 
     public static float CalculateRemainingEnergy(float fuelCapacity, float fuelConsumed) => Math.Max(0f, fuelCapacity - fuelConsumed);
 
-    public static string FormatRuntime(float seconds)
+    /// <summary>
+    ///     A duration in whole minutes, at least one, in the shortest of three forms. The forms come from the language
+    ///     file and name the numbers as {HOURS} and {MINUTES}.
+    /// </summary>
+    public static string FormatRuntime(float seconds, string hoursMinutesFormat, string hoursFormat, string minutesFormat)
     {
-        int totalMinutes = Math.Max(1, Mathf.CeilToInt(seconds / 60f));
-        int hours = totalMinutes / 60;
-        int minutes = totalMinutes % 60;
-        if (hours == 0)
-        {
-            return $"{minutes}m";
-        }
-        return minutes == 0 ? $"{hours}h" : $"{hours}h {minutes}m";
+        int totalMinutes = Math.Max(1, Mathf.CeilToInt(seconds / SECONDS_PER_MINUTE));
+        int hours = totalMinutes / MINUTES_PER_HOUR;
+        int minutes = totalMinutes % MINUTES_PER_HOUR;
+        string format = hours == 0 ? minutesFormat : minutes == 0 ? hoursFormat : hoursMinutesFormat;
+        return format.Replace("{HOURS}", hours.ToString()).Replace("{MINUTES}", minutes.ToString());
+    }
+
+    /// <param name="gameTextKey">The language key of the game's own line, which takes the stored power and the capacity.</param>
+    private static void ShowHandText(string gameTextKey, PowerSource powerSource, string fuelStatus)
+    {
+        string gameText = Language.main.GetFormat(gameTextKey, Mathf.RoundToInt(powerSource.GetPower()), Mathf.RoundToInt(powerSource.GetMaxPower()));
+        HandReticle.main.SetText(HandReticle.TextType.Hand, $"{gameText}\n{fuelStatus}", false, GameInput.Button.LeftHand);
     }
 
     private static string FormatStatus(int itemCount, string itemLabelKey, float fuelCapacity, float fuelConsumed, float powerPerSecond)
@@ -58,7 +82,8 @@ public static class ReactorFuelDisplay
         {
             return Language.main.Get("Nitrox_ReactorFuelEmpty");
         }
-        string runtime = FormatRuntime(remaining / Math.Max(powerPerSecond, float.Epsilon));
+        string runtime = FormatRuntime(remaining / Math.Max(powerPerSecond, float.Epsilon), Language.main.Get("Nitrox_ReactorFuelRuntimeHoursMinutes"),
+            Language.main.Get("Nitrox_ReactorFuelRuntimeHours"), Language.main.Get("Nitrox_ReactorFuelRuntimeMinutes"));
         return Language.main.Get("Nitrox_ReactorFuelStatus")
                             .Replace("{COUNT}", itemCount.ToString())
                             .Replace("{ITEMS}", Language.main.Get(itemLabelKey))

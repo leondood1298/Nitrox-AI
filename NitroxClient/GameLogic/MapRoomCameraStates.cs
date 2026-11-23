@@ -10,8 +10,9 @@ namespace NitroxClient.GameLogic;
 /// <summary>
 ///     Light, battery and health of Scanner Room cameras. The server holds them as the metadata of the camera's entity
 ///     and decides who may change what: the light belongs to the player who holds the camera exclusively (who flies
-///     it), battery and health to the player who simulates it. That player's game is where they change, and this class
-///     reports the change; everybody else is told by the server, and this class applies it.
+///     it), battery and health to the player who simulates it. That player's game is where they change, which
+///     includes the recharging of a docked camera, and this class reports the change; everybody else is told by the
+///     server, and this class applies it.
 /// </summary>
 /// <remarks>
 ///     What this client decides is never taken back from the server. Its own report comes back in the camera's state
@@ -20,6 +21,9 @@ namespace NitroxClient.GameLogic;
 /// </remarks>
 public sealed partial class MapRoomCameraStates
 {
+    // How far battery and health have to move before the server is told. Guesses, not measured. The battery of a
+    // camera that is flown or recharged changes every frame, and is reported in steps of half a unit of charge.
+    // Health only changes by damage and repair, so its threshold just keeps float noise from being sent.
     private const float ENERGY_REPORT_THRESHOLD = 0.5f;
     private const float HEALTH_REPORT_THRESHOLD = 0.05f;
 
@@ -96,6 +100,14 @@ public sealed partial class MapRoomCameraStates
         // The number and the dock are the server's; it ignores what is sent for them.
         packetSender.Send(new EntityMetadataUpdate(camera.Id, new MapRoomCameraMetadata(lightOn, energy, health, known.CameraNumber, known.DockingIndex)));
     }
+
+    /// <summary>
+    ///     Whether the game may damage or repair a camera here. A camera's health is the simulating player's to decide,
+    ///     like a vehicle's: in anybody else's game the change would show there alone, until the server's state undoes
+    ///     it. A repair by another player is passed on to the simulating player instead (see Welder_Weld_Patch).
+    /// </summary>
+    /// <param name="applyingServerState">Whether the change is the server's state being put into the camera.</param>
+    internal bool ChangesHealthHere(NitroxId cameraId, bool applyingServerState) => applyingServerState || simulationOwnership.HasAnyLockType(cameraId);
 
     /// <summary>
     ///     A camera of the game, as far as its light, battery and health go. Tests put a camera without the game here.

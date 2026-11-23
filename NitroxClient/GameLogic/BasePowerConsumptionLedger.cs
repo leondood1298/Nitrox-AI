@@ -9,10 +9,14 @@ namespace NitroxClient.GameLogic;
 /// </summary>
 internal sealed class BasePowerConsumptionLedger
 {
+    /// <summary>
+    ///     A guess, not measured: four reports a second at most.
+    /// </summary>
     internal const float REPORT_INTERVAL_SECONDS = 0.25f;
 
     /// <summary>
-    ///     Below this a source's pending amount is kept for a later report rather than sent on its own.
+    ///     Below this a source's pending amount is kept for a later report rather than sent on its own. A guess at
+    ///     what is too little to be worth a packet.
     /// </summary>
     internal const float MIN_REPORT_AMOUNT = 0.001f;
 

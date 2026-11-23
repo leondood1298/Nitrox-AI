@@ -15,15 +15,28 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic;
 /// </summary>
 internal sealed partial class ScannerRoomManager
 {
+    // The game's own numbers, read from the IL of MapRoomFunctionality.UpdateScanRangeAndInterval:
+    // scanRange = Min(500, 300 + range upgrades * 50).
     internal const float DEFAULT_SCAN_RANGE = 300f;
     internal const float SCAN_RANGE_PER_MODULE = 50f;
     internal const float MAX_SCAN_RANGE = 500f;
+
     // MapRoomEntity stores a base-grid cell, not an exact server world transform. Anchor to the base root and allow a
     // deliberately broad 512 m extent so legitimate large bases work while arbitrary remote-world queries do not.
     internal const float MAX_ORIGIN_DISTANCE_FROM_BASE = 512f;
+
+    /// <summary>
+    ///     How far a reported range may be off the range the server works out. A guess: the client sends the float
+    ///     its game computed, which matches the server's to far less than a centimetre.
+    /// </summary>
     private const float MIN_SCAN_RANGE_TOLERANCE = 0.01f;
+
+    /// <summary>
+    ///     Follows from the numbers above: (500 - 300) / 50. More upgrades than this add no range, so counting stops.
+    /// </summary>
     private const int MAX_RANGE_UPGRADE_COUNT = 4;
-    private static readonly NitroxTechType rangeUpgradeTechType = new("MapRoomUpgradeScanRange");
+
+    private static readonly NitroxTechType RANGE_UPGRADE_TECH_TYPE = new("MapRoomUpgradeScanRange");
 
     internal static bool TryResolveScanAnchor(EntityRegistry entityRegistry, MapRoomEntity room, out NitroxVector3 scanAnchor)
     {
@@ -180,7 +193,7 @@ internal sealed partial class ScannerRoomManager
             {
                 continue;
             }
-            if (entity?.TechType != null && entity.TechType.Equals(rangeUpgradeTechType))
+            if (entity?.TechType != null && entity.TechType.Equals(RANGE_UPGRADE_TECH_TYPE))
             {
                 count++;
                 if (count >= MAX_RANGE_UPGRADE_COUNT)

@@ -27,16 +27,21 @@ internal sealed class BasePowerDiagnostics(ILogger<BasePowerDiagnostics>? logger
 
     /// <summary>
     ///     Sources are identified by ids a client sends, so the per-source bookkeeping must not grow without limit.
+    ///     The number is a guess at far more sources than the bases of one world have.
     /// </summary>
     internal const int SOURCE_CAPACITY = 512;
 
     /// <summary>
-    ///     Session ids are handed out again after a disconnect, so a source only ever sees a few consumers.
+    ///     Session ids are handed out again after a disconnect, so a source only ever sees a few consumers. A guess
+    ///     as well.
     /// </summary>
     internal const int CONSUMER_CAPACITY = 16;
 
     internal const string NO_OWNER = "none";
     internal const string UNKNOWN_OWNER = "?";
+
+    // Guesses that bound memory and line length: reasons quote values a client sent, and the keys repeats are
+    // recognised by contain ids a client can make up.
     private const int REPEAT_KEY_CAPACITY = 256;
     private const int REASON_LENGTH = 64;
 
@@ -477,36 +482,3 @@ internal sealed class BasePowerDiagnostics(ILogger<BasePowerDiagnostics>? logger
         }
     }
 }
-
-/// <param name="LastOwner">The player whose update was accepted last; null when no update was accepted yet.</param>
-/// <param name="SinceLastUpdate">
-///     Time since that update. A live owner reports at least every thirty seconds even when nothing changes, so a
-///     larger value means the owner's simulation of the source is not running.
-/// </param>
-internal readonly record struct BasePowerSourceDiagnostics(
-    SessionId? LastOwner,
-    TimeSpan? SinceLastUpdate,
-    long AcceptedUpdates,
-    long RejectedUpdates,
-    string? LastRejection,
-    IReadOnlyList<BasePowerConsumerDiagnostics> Consumers,
-    long HandBacks = 0);
-
-internal readonly record struct BasePowerConsumerDiagnostics(
-    SessionId Consumer,
-    long Forwarded,
-    float ForwardedAmount,
-    long ServerApplied,
-    float ServerAppliedAmount,
-    long Rejected);
-
-internal readonly record struct BasePowerDiagnosticTotals(
-    long Events,
-    long AcceptedUpdates,
-    long RejectedUpdates,
-    long ConsumptionForwarded,
-    float ConsumptionForwardedAmount,
-    long ConsumptionAppliedByServer,
-    float ConsumptionAppliedByServerAmount,
-    long ConsumptionRejected,
-    long UntrackedSourceEvents);

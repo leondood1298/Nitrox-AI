@@ -1,31 +1,14 @@
 using NitroxClient.GameLogic;
-using NitroxPatcher.Patches.Dynamic;
 
-namespace Nitrox.Test.Patcher.Patches.Dynamic;
+namespace Nitrox.Test.Client.GameLogic;
 
+/// <summary>
+///     The voice that announces a base losing power or getting it back stays silent for the relays that are created
+///     while a player joins, until their restored power state has settled.
+/// </summary>
 [TestClass]
-public sealed class BasePowerRelay_PowerEvent_PatchTest
+public sealed class BasePowerRelayAudioSuppressorTest
 {
-    [TestMethod]
-    [DataRow(typeof(BasePowerRelay_Start_Patch), false)]
-    [DataRow(typeof(BasePowerRelay_PowerDownEvent_Patch), true)]
-    [DataRow(typeof(BasePowerRelay_PowerUpEvent_Patch), true)]
-    public void PatchTargetsExistInCurrentGameAssembly(Type patchType, bool takesPowerRelay)
-    {
-        FieldInfo targetField = patchType.GetField("TARGET_METHOD",
-            BindingFlags.NonPublic | BindingFlags.Static)!;
-
-        Assert.IsNotNull(targetField);
-        MethodInfo targetMethod = (MethodInfo)targetField.GetValue(null)!;
-        Assert.IsNotNull(targetMethod);
-        if (takesPowerRelay)
-        {
-            ParameterInfo[] parameters = targetMethod.GetParameters();
-            Assert.AreEqual(1, parameters.Length);
-            Assert.AreEqual(typeof(PowerRelay), parameters[0].ParameterType);
-        }
-    }
-
     [TestMethod]
     [DataRow(false, false, false)]
     [DataRow(false, true, false)]

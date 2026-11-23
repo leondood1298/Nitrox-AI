@@ -54,8 +54,7 @@ internal sealed partial class ScannerRoomManager(IPacketSender packetSender, Ent
     SimulationOwnershipData simulationOwnershipData, PlayerManager playerManager, ScannerRoomDiagnostics diagnostics,
     ILogger<ScannerRoomManager> logger) : ISessionCleaner
 {
-    private const string MAP_ROOM_CAMERA_CLASS_ID = "733fd479-0760-4bc2-a03e-281cbf02bfa4";
-    private static readonly NitroxTechType mapRoomCameraTechType = new("MapRoomCamera");
+    private static readonly NitroxTechType MAP_ROOM_CAMERA_TECH_TYPE = new("MapRoomCamera");
 
     private readonly SemaphoreSlim gate = new(1, 1);
 
@@ -99,6 +98,25 @@ internal sealed partial class ScannerRoomManager(IPacketSender packetSender, Ent
         IsCamera(entity) && entity.ParentId != null && entityRegistry.TryGetEntityById(entity.ParentId, out MapRoomEntity? _);
 
     /// <summary>
+    ///     Whether the one metadata slot of this entity is a Scanner Room's: the entity is a room, or a camera wherever
+    ///     it is (a camera is known by what it is, also while it holds no state yet). Does not enter the gate.
+    /// </summary>
+    internal static bool HoldsScannerRoomState(Entity entity) => entity is MapRoomEntity || IsCamera(entity) || entity.Metadata is MapRoomCameraMetadata;
+
+    /// <summary>
+    ///     The gate for metadata of any other kind sent for a room or a camera: always shut. An entity has one metadata
+    ///     slot. Taken by something else, what the room scans for, or the camera's dock, number, light, battery and
+    ///     health, would be gone for every player who joins later and after a restart.
+    /// </summary>
+    public MetadataUpdateResult RejectReplacement(Player sender, Entity target, EntityMetadata metadata)
+    {
+        using Hold held = Enter();
+        CameraView camera = GetCamera(target.Id);
+        diagnostics.RecordRejected("metadata", target as MapRoomEntity ?? camera.DockedRoom, camera.Exists ? target.Id : null, sender.SessionId, reason: $"replaced_by_{metadata.GetType().Name}");
+        return MetadataUpdateResult.Reject;
+    }
+
+    /// <summary>
     ///     Called once the saved world is in the entity registry and before any player can connect. Finds the rooms and
     ///     the cameras, and how far the camera numbers have got.
     /// </summary>
@@ -135,9 +153,20 @@ internal sealed partial class ScannerRoomManager(IPacketSender packetSender, Ent
     /// <summary>
     ///     Copies of all rooms, taken at one moment and ordered by id.
     /// </summary>
-    public IReadOnlyList<ScannerRoomSnapshot> GetSnapshots()
+    public IReadOnlyList<ScannerRoomSnapshot> GetSnapshots() => GetSnapshots(out _);
+
+    /// <inheritdoc cref="GetSnapshots()" />
+    /// <param name="worldCameras">
+    ///     Every camera that was in the world at that same moment, in a dock or not, ordered by id. A camera in an
+    ///     inventory is not among them.
+    /// </param>
+    public IReadOnlyList<ScannerRoomSnapshot> GetSnapshots(out IReadOnlyList<ScannerCameraSnapshot> worldCameras)
     {
         using Hold held = Enter();
+        worldCameras = [.. entityRegistry.GetEntities<WorldEntity>()
+                                         .Where(IsCamera)
+                                         .OrderBy(camera => camera.Id.ToString(), StringComparer.Ordinal)
+                                         .Select(camera => new ScannerCameraSnapshot(camera.Id, ReadState(camera)))];
         return [.. GetRooms().OrderBy(room => room.Id.ToString(), StringComparer.Ordinal).Select(Capture)];
     }
 
@@ -294,9 +323,9 @@ internal sealed partial class ScannerRoomManager(IPacketSender packetSender, Ent
     private bool IsWorldCamera(NitroxId cameraId) => TryGetWorldCamera(cameraId, out _);
 
     private bool TryGetWorldCamera(NitroxId cameraId, [NotNullWhen(true)] out WorldEntity? camera) =>
-        entityRegistry.TryGetEntityById(cameraId, out camera) && mapRoomCameraTechType.Equals(camera.TechType);
+        entityRegistry.TryGetEntityById(cameraId, out camera) && MAP_ROOM_CAMERA_TECH_TYPE.Equals(camera.TechType);
 
-    internal static bool IsCamera(Entity? entity) => entity != null && mapRoomCameraTechType.Equals(entity.TechType);
+    internal static bool IsCamera(Entity? entity) => entity != null && MAP_ROOM_CAMERA_TECH_TYPE.Equals(entity.TechType);
 
     /// <summary>
     ///     A camera as the entity registry has it: in a dock (a child of that room), loose in the world, or in an

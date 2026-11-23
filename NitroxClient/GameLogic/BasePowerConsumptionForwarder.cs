@@ -33,6 +33,23 @@ public sealed class BasePowerConsumptionForwarder(IPacketSender packetSender, Si
 
     public void EnterConsumer() => consumerDepth++;
 
+    /// <summary>
+    ///     Starts the update of a consumer that only draws in the game of the player who simulates it, if this client
+    ///     is that player.
+    /// </summary>
+    /// <param name="consumer">The component carrying the consumer's Nitrox id.</param>
+    /// <returns>Whether this client simulates the consumer. Only then does <see cref="ExitConsumer" /> have to follow.</returns>
+    public bool EnterConsumerIfSimulated(Component consumer)
+    {
+        // A consumer without an id draws on every client, which must not be reported once per player.
+        if (!consumer.TryGetNitroxId(out NitroxId consumerId) || !simulationOwnership.HasAnyLockType(consumerId))
+        {
+            return false;
+        }
+        EnterConsumer();
+        return true;
+    }
+
     public void ExitConsumer()
     {
         if (consumerDepth > 0)
@@ -88,6 +105,26 @@ public sealed class BasePowerConsumptionForwarder(IPacketSender packetSender, Si
     }
 
     /// <summary>
+    ///     Called after the game changed a power source's level (PowerSource.ModifyPower). Every draw on a base ends
+    ///     there: PowerSystem.ConsumeEnergy calls the relay's ModifyPower with a negative amount, and the relay spreads
+    ///     it over its sources. What the game gives out as consumed cannot be used to measure the draw, because it is
+    ///     the requested amount, whatever happened to the level, in modes that do not require power.
+    /// </summary>
+    /// <param name="levelBefore">The source's level before the change.</param>
+    public void SourceLevelChanged(PowerSource source, float levelBefore)
+    {
+        float consumed = levelBefore - source.power;
+        if (consumed <= 0f)
+        {
+            return;
+        }
+        if (IsConsumerActive && source.TryGetNitroxId(out NitroxId sourceId))
+        {
+            RecordConsumption(sourceId, consumed);
+        }
+    }
+
+    /// <summary>
     ///     Called when a power source's level dropped locally by <paramref name="consumed" />.
     /// </summary>
     public void RecordConsumption(NitroxId sourceId, float consumed)
@@ -110,22 +147,4 @@ public sealed class BasePowerConsumptionForwarder(IPacketSender packetSender, Si
             packetSender.Send(new BasePowerSourceConsume(due.Key, due.Value));
         }
     }
-}
-
-public enum SharedConsumerDraw
-{
-    /// <summary>
-    ///     Another player simulates the consumer and draws for it.
-    /// </summary>
-    NONE,
-
-    /// <summary>
-    ///     This client simulates the consumer: it draws, and what comes from sources of other players is reported.
-    /// </summary>
-    DRAW_AND_REPORT,
-
-    /// <summary>
-    ///     The consumer is not a synchronized entity; it behaves as in the game.
-    /// </summary>
-    LOCAL_ONLY
 }

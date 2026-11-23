@@ -2,9 +2,10 @@ using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication.Abstract;
+using NitroxClient.GameLogic;
 using NSubstitute;
 
-namespace NitroxClient.GameLogic;
+namespace Nitrox.Test.Client.GameLogic;
 
 [TestClass]
 public sealed class BasePowerSourcesTest

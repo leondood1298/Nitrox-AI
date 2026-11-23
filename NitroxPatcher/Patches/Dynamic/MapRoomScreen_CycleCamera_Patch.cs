@@ -11,21 +11,6 @@ public sealed partial class MapRoomScreen_CycleCamera_Patch : NitroxPatch, IDyna
 {
     private static readonly MethodInfo TARGET_METHOD = Reflect.Method((MapRoomScreen t) => t.CycleCamera(default(int)));
 
-    private static bool skipPrefix;
-
-    public static bool Prefix(MapRoomScreen __instance, int direction)
-    {
-        return skipPrefix || Resolve<MapRoomCameras>().TryStartControl(__instance, direction, () =>
-        {
-            skipPrefix = true;
-            try
-            {
-                __instance.CycleCamera(direction);
-            }
-            finally
-            {
-                skipPrefix = false;
-            }
-        });
-    }
+    public static bool Prefix(MapRoomScreen __instance, int direction) =>
+        Resolve<MapRoomCameras>().TryStartControl(__instance, direction, () => __instance.CycleCamera(direction));
 }

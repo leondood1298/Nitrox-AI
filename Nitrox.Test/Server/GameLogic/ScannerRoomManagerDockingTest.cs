@@ -7,7 +7,6 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.GameLogic;
-using Nitrox.Test.Server.Subnautica;
 using Packet = Nitrox.Model.Packets.Packet;
 using ServerPlayer = Nitrox.Server.Subnautica.Models.Player;
 
@@ -55,20 +54,6 @@ public sealed class ScannerRoomManagerDockingTest
         MapRoomCameraUndocked relayedUndock = (MapRoomCameraUndocked)undocked.Sent.Single();
         Assert.AreSame(relayedUndock, scenario.SentToOthers<MapRoomCameraUndocked>().Single());
         Assert.AreEqual((cameraA, scenario.Room.Id), (relayedUndock.CameraId, relayedUndock.MapRoomId));
-    }
-
-    [TestMethod]
-    [DataRow(true, true, true, 0, null)]
-    [DataRow(true, true, true, 1, null)]
-    [DataRow(true, true, true, 2, "invalid_slot")]
-    [DataRow(true, true, true, -1, "invalid_slot")]
-    [DataRow(true, false, true, 0, "room_removed")]
-    [DataRow(true, false, false, 0, "unknown_room")]
-    [DataRow(false, true, true, 0, "unknown_camera")]
-    [DataRow(false, false, false, 5, "invalid_slot")]
-    public void DockNeedsACameraOutInTheWorldARoomAndOneOfItsTwoDocks(bool isWorldCamera, bool roomExists, bool roomWasKnown, int dockingIndex, string? expectedRefusal)
-    {
-        Assert.AreEqual(expectedRefusal, ScannerRoomManager.GetDockRefusal(isWorldCamera, roomExists, roomWasKnown, dockingIndex));
     }
 
     [TestMethod]
@@ -246,6 +231,37 @@ public sealed class ScannerRoomManagerDockingTest
         Assert.AreEqual(0, undocked.Sent.Concat(docked.Sent).OfType<MapRoomCameraControlChanged>().Count(), "Nobody may be told that control ended.");
         AssertLock(scenario, cameraA, scenario.PlayerA, SimulationLockType.EXCLUSIVE);
         Assert.IsTrue(scenario.IsController(cameraA, scenario.PlayerA.SessionId));
+    }
+
+    [TestMethod]
+    public async Task DockOrUndockReportedByAPlayerWhoDoesNotSimulateTheCameraNeverEndsAnotherPlayersControlOfIt()
+    {
+        // Every game whose physics sees a camera go into a dock or leave it can report that. Only the report of the
+        // camera's simulating player counts, who is its controller for as long as it is flown.
+        ScannerRoomScenarioFixture scenario = new();
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, cameraA, true)).Granted);
+        // Simulating the room gives no say over a camera either.
+        Assert.IsTrue(scenario.Ownership.TryAcquire(scenario.Room.Id, scenario.PlayerB, SimulationLockType.TRANSIENT));
+
+        ScannerRoomScenarioFixture.DockResult othersDock = await scenario.DockAsync(scenario.PlayerB, cameraA, 0, true, establishAuthority: false);
+
+        Assert.IsFalse(othersDock.Granted);
+        Assert.IsFalse(scenario.IsDocked(cameraA));
+        AssertCorrection(scenario, othersDock, scenario.PlayerB, cameraA, MapRoomCameraMetadata.NOT_DOCKED);
+        AssertLastDiagnostic(scenario, "dock", ScannerRoomDiagnosticOutcome.REJECTED, "non_owner");
+        AssertLock(scenario, cameraA, scenario.PlayerA, SimulationLockType.EXCLUSIVE);
+        Assert.IsTrue(scenario.IsController(cameraA, scenario.PlayerA.SessionId));
+
+        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, cameraA, 0, true, establishAuthority: false)).Granted, "The controller's own report docks the camera.");
+        ScannerRoomScenarioFixture.DockResult othersUndock = await scenario.DockAsync(scenario.PlayerB, cameraA, 0, false, establishAuthority: false);
+
+        Assert.IsFalse(othersUndock.Granted);
+        Assert.AreEqual(cameraA, scenario.DockedCamera(0));
+        AssertCorrection(scenario, othersUndock, scenario.PlayerB, cameraA, 0);
+        AssertLastDiagnostic(scenario, "undock", ScannerRoomDiagnosticOutcome.REJECTED, "non_owner");
+        AssertLock(scenario, cameraA, scenario.PlayerA, SimulationLockType.EXCLUSIVE);
+        Assert.IsTrue(scenario.IsController(cameraA, scenario.PlayerA.SessionId));
+        Assert.AreEqual(0, scenario.Sent<MapRoomCameraControlChanged>().Count(packet => !packet.IsControlling), "Nobody was told that control ended.");
     }
 
     [TestMethod]

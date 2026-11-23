@@ -1,9 +1,7 @@
 using System;
 using System.Collections.Generic;
-using FMOD.Studio;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
-using Nitrox.Model.Subnautica.Helper;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication.Abstract;
 using NitroxClient.GameLogic.Simulation;
@@ -12,15 +10,22 @@ using UnityEngine;
 
 namespace NitroxClient.GameLogic;
 
+/// <summary>
+///     Who controls which Scanner Room camera. A player controls a camera with the exclusive simulation lock on it.
+///     This class asks for that lock and gives it back, tells the server when this player takes a camera or lets go
+///     of it, and keeps what the server says about the cameras other players control.
+/// </summary>
 public class MapRoomCameras
 {
-    private const float DOCK_CHARGE_FRACTION_PER_UPDATE = 0.1f;
-    private const int PREVIEW_JPEG_QUALITY = 55;
+    /// <summary>
+    ///     The direction of a click on a screen, which takes the camera the screen is at. Cycling goes on to the next
+    ///     camera (1) or back to the previous one (-1).
+    /// </summary>
+    public const int CLICK_DIRECTION = 0;
 
     private readonly IPacketSender packetSender;
     private readonly IMultiplayerSession multiplayerSession;
     private readonly SimulationOwnership simulationOwnership;
-    private readonly MapRoomCameraStates cameraStates;
     private readonly ScannerRoomClientDiagnostics diagnostics;
 
     /// <summary>
@@ -39,28 +44,35 @@ public class MapRoomCameras
     /// </summary>
     private readonly Dictionary<NitroxId, SessionId> remoteControllers = [];
 
-    private MapRoomCameraPreview pendingPreview;
-    private bool pendingPreviewPixelsApplied;
+    /// <summary>
+    ///     The instance ids of the cameras that were last not offered to the player, so that the log says why once
+    ///     and not every time the game asks.
+    /// </summary>
+    private readonly HashSet<int> loggedUnavailableCameras = [];
 
-    public MapRoomCameras(IPacketSender packetSender, IMultiplayerSession multiplayerSession, SimulationOwnership simulationOwnership,
-        MapRoomCameraStates cameraStates, ScannerRoomClientDiagnostics diagnostics)
+    /// <summary>
+    ///     True while the game's method runs that was held back until the lock was granted. That run comes past
+    ///     <see cref="TryStartControl" /> a second time, which lets it through.
+    /// </summary>
+    private bool runningGrantedStart;
+
+    public MapRoomCameras(IPacketSender packetSender, IMultiplayerSession multiplayerSession, SimulationOwnership simulationOwnership, ScannerRoomClientDiagnostics diagnostics)
     {
         this.packetSender = packetSender;
         this.multiplayerSession = multiplayerSession;
         this.simulationOwnership = simulationOwnership;
-        this.cameraStates = cameraStates;
         this.diagnostics = diagnostics;
     }
 
     /// <summary>
-    ///     The camera a screen would give the player: on a click (direction 0), or when the player cycles to the next
-    ///     or previous one. The game itself is asked, and its screen is left as it was.
+    ///     The camera a screen would give the player: on a click (<see cref="CLICK_DIRECTION" />), or when the player
+    ///     cycles to the next or previous one. The game itself is asked, and its screen is left as it was.
     /// </summary>
     public static MapRoomCamera PeekCamera(MapRoomScreen screen, int direction)
     {
         int index = screen.currentIndex;
         screen.currentIndex = screen.NormalizeIndex(index + direction);
-        MapRoomCamera camera = screen.FindCamera(direction == 0 ? 1 : direction);
+        MapRoomCamera camera = screen.FindCamera(direction == CLICK_DIRECTION ? 1 : direction);
         screen.currentIndex = index;
         return camera;
     }
@@ -68,13 +80,17 @@ public class MapRoomCameras
     /// <summary>
     ///     Called before the game puts the player into the view of a camera, by a click on a screen or by cycling. A
     ///     player controls a camera with the exclusive simulation lock on it, which is asked for like the lock on a
-    ///     vehicle the player wants to pilot. Until the server grants it the player stays where they are: in front of
-    ///     the screen, or in the view of the camera they control.
+    ///     vehicle the player wants to pilot, after telling the server what it is for. Until the server grants it the
+    ///     player stays where they are: in front of the screen, or in the view of the camera they control.
     /// </summary>
     /// <param name="runVanilla">Runs the game's method once the lock is granted.</param>
     /// <returns>True if the game may go on right away: there is no camera to take, or this player holds its lock.</returns>
     public bool TryStartControl(MapRoomScreen screen, int direction, Action runVanilla)
     {
+        if (runningGrantedStart)
+        {
+            return true;
+        }
         MapRoomCamera camera = PeekCamera(screen, direction);
         if (!camera || camera == screen.currentCamera || !camera.TryGetNitroxId(out NitroxId cameraId) || simulationOwnership.HasExclusiveLock(cameraId))
         {
@@ -82,6 +98,10 @@ public class MapRoomCameras
         }
         if (pendingControl.Add(cameraId))
         {
+            // Said before the lock is asked for. The request is the same for every entity and every purpose; with
+            // this the server knows that it is a player's, who controls the camera from the moment the lock is
+            // granted, and not that of a client whose Stalker wants to carry the camera.
+            packetSender.Send(new MapRoomCameraControlChanged(cameraId, multiplayerSession.Reservation.SessionId, true));
             diagnostics.Record("control_publish", "ok", cameraId, reason: "lock_requested");
             simulationOwnership.RequestSimulationLock(new LockRequest<CameraControlStart>(cameraId, SimulationLockType.EXCLUSIVE, LockAnswered, new CameraControlStart(screen, runVanilla)));
         }
@@ -118,7 +138,12 @@ public class MapRoomCameras
             return;
         }
         remoteControllers.Remove(cameraId);
-        packetSender.Send(new MapRoomCameraControlChanged(cameraId, multiplayerSession.Reservation.SessionId, true));
+        // A player who held the lock already, because their Stalker carries the camera, has not said yet that they
+        // take it. Everybody else has, when they asked for the lock.
+        if (!pendingControl.Remove(cameraId))
+        {
+            packetSender.Send(new MapRoomCameraControlChanged(cameraId, multiplayerSession.Reservation.SessionId, true));
+        }
         MovementBroadcaster.RegisterWatched(camera.gameObject, cameraId);
         diagnostics.Record("control_publish", "ok", cameraId, reason: "control_taken");
     }
@@ -154,12 +179,12 @@ public class MapRoomCameras
 
     private void LockAnswered(NitroxId cameraId, bool acquired, CameraControlStart start)
     {
-        pendingControl.Remove(cameraId);
         if (!acquired)
         {
+            pendingControl.Remove(cameraId);
             // Another player controls the camera, and this client had not heard of it when the player chose it.
             diagnostics.Record("control_apply", "reject", cameraId, reason: "lock_denied");
-            if (Language.main != null)
+            if (Language.main)
             {
                 ErrorMessage.AddMessage(Language.main.Get("Nitrox_DenyOwnershipHand"));
             }
@@ -167,12 +192,22 @@ public class MapRoomCameras
         }
         if (start.Screen)
         {
-            start.RunVanilla();
+            runningGrantedStart = true;
+            try
+            {
+                start.RunVanilla();
+            }
+            finally
+            {
+                runningGrantedStart = false;
+            }
         }
-        if (!locallyControlled.Contains(cameraId))
+        if (pendingControl.Remove(cameraId))
         {
-            // The game did not take the camera after all: the screen is gone, or it chose another camera.
+            // The game did not take the camera after all: the screen is gone, or it chose another camera. The
+            // server has this player down as its controller since it granted the lock.
             diagnostics.Record("control_apply", "reject", cameraId, reason: "not_taken");
+            packetSender.Send(new MapRoomCameraControlChanged(cameraId, multiplayerSession.Reservation.SessionId, false));
             simulationOwnership.SimulateEntity(cameraId, SimulationLockType.TRANSIENT);
             simulationOwnership.RequestSimulationLock(cameraId, SimulationLockType.TRANSIENT);
         }
@@ -195,38 +230,6 @@ public class MapRoomCameras
             // (returns the player and resets the view).
             camera.FreeCamera(resetPlayerPosition: true);
             camera.ExitLockedMode(resetPlayerPosition: true);
-        }
-    }
-
-    public void BroadcastPreview(MapRoomCamera camera)
-    {
-        if (!camera || !camera.TryGetNitroxId(out NitroxId cameraId) || !camera.mapRoomRenderTexture)
-        {
-            return;
-        }
-
-        try
-        {
-            byte[] jpegBytes = CapturePreviewJpeg(camera.mapRoomRenderTexture);
-            if (MapRoomCameraPreviewImage.TryValidate(jpegBytes, out int width, out int height))
-            {
-                packetSender.Send(new MapRoomCameraPreview(cameraId, jpegBytes));
-                diagnostics.Record("preview_publish", "ok", cameraId, slot: camera.GetCameraNumber(),
-                    reason: $"bytes_{jpegBytes.Length}_{width}x{height}");
-            }
-            else
-            {
-                diagnostics.Record("preview_publish", "reject", cameraId, slot: camera.GetCameraNumber(),
-                    reason: $"invalid_jpeg_bytes_{jpegBytes?.Length ?? 0}");
-                Log.Warn($"[MapRoomCameras] Dropped invalid or oversized local camera preview for {cameraId}");
-            }
-        }
-        catch (Exception ex)
-        {
-            // Preview publication is cosmetic and must never strand the player in camera control mode.
-            diagnostics.Record("preview_publish", "reject", cameraId, slot: camera.GetCameraNumber(),
-                reason: "capture_exception");
-            Log.Error(ex, $"[MapRoomCameras] Failed to capture camera preview for {cameraId}");
         }
     }
 
@@ -290,58 +293,34 @@ public class MapRoomCameras
     }
 
     /// <summary>
-    ///     Handles the picture another player took of what a camera sees. Every screen shows the latest one.
+    ///     Called after the game decided whether it offers a camera to the player. A camera another player controls
+    ///     is offered to nobody.
     /// </summary>
-    public void ProcessPreview(MapRoomCameraPreview packet)
+    /// <param name="gameOffers">What the game decided.</param>
+    /// <returns>Whether the camera is offered.</returns>
+    public bool CanBeControlled(MapRoomCamera camera, bool gameOffers)
     {
-        if (!MapRoomCameraPreviewImage.TryValidate(packet.JpegBytes, out int width, out int height))
+        bool controllerStateAllows = CanSelectForControl(camera);
+        bool offered = gameOffers && controllerStateAllows;
+        int instanceId = camera.GetInstanceID();
+        if (offered)
         {
-            diagnostics.Record("preview_receive", "reject", packet.CameraId, reason: $"invalid_jpeg_bytes_{packet.JpegBytes?.Length ?? 0}");
-            return;
+            loggedUnavailableCameras.Remove(instanceId);
         }
-        diagnostics.Record("preview_receive", "ok", packet.CameraId, reason: $"bytes_{packet.JpegBytes.Length}_{width}x{height}");
-        pendingPreview = packet;
-        pendingPreviewPixelsApplied = false;
-        TryApplyPendingPreview();
-    }
-
-    /// <summary>
-    ///     Shows the latest picture. Its camera may not have spawned on this client yet, as for a player who has just
-    ///     joined; the picture is kept until it has.
-    /// </summary>
-    private void TryApplyPendingPreview()
-    {
-        if (pendingPreview == null)
+        else if (loggedUnavailableCameras.Add(instanceId))
         {
-            return;
+            float energy = camera.energyMixin ? camera.energyMixin.charge : -1f;
+            bool alive = camera.liveMixin && camera.liveMixin.IsAlive();
+            bool attached = camera.pickupAble && camera.pickupAble.attached;
+            Log.Warn($"[MapRoomCamera] Camera {camera.cameraNumber} unavailable: vanilla={gameOffers}, controllerState={controllerStateAllows}, energy={energy:F2}, alive={alive}, attached={attached}, activeAndEnabled={camera.isActiveAndEnabled}");
         }
-        MapRoomCamera camera = FindCamera(pendingPreview.CameraId);
-        RenderTexture renderTexture = FindSharedPreviewTexture(camera);
-        if (!pendingPreviewPixelsApplied && renderTexture)
-        {
-            pendingPreviewPixelsApplied = TryApplyPreviewPixels(renderTexture, pendingPreview.JpegBytes);
-            if (!pendingPreviewPixelsApplied)
-            {
-                diagnostics.Record("preview_apply", "reject", pendingPreview.CameraId, reason: "decode_failed");
-                pendingPreview = null;
-                return;
-            }
-        }
-        if (!pendingPreviewPixelsApplied || !camera)
-        {
-            diagnostics.Record("preview_apply", "pending", pendingPreview.CameraId, reason: renderTexture ? "camera_missing" : "missing_texture");
-            return;
-        }
-        ShowOnScreens(camera);
-        diagnostics.Record("preview_apply", "ok", pendingPreview.CameraId, slot: camera.GetCameraNumber());
-        pendingPreview = null;
-        pendingPreviewPixelsApplied = false;
+        return offered;
     }
 
     /// <summary>
     ///     Whether the game may offer a camera to the player. A camera another player controls is offered to nobody.
     /// </summary>
-    public bool CanSelectForControl(MapRoomCamera camera) => !camera || !camera.TryGetNitroxId(out NitroxId cameraId) || CanSelectForControl(cameraId);
+    internal bool CanSelectForControl(MapRoomCamera camera) => !camera || !camera.TryGetNitroxId(out NitroxId cameraId) || CanSelectForControl(cameraId);
 
     internal bool CanSelectForControl(NitroxId cameraId) => !remoteControllers.ContainsKey(cameraId);
 
@@ -369,26 +348,6 @@ public class MapRoomCameras
     }
 
     /// <summary>
-    ///     A camera in a dock is recharged by the player who simulates it, like everything else about its battery.
-    /// </summary>
-    private bool CanSimulateDockedCamera(MapRoomCamera camera) =>
-        camera && camera.dockingPoint && camera.TryGetNitroxId(out NitroxId cameraId) && simulationOwnership.HasAnyLockType(cameraId);
-
-    /// <summary>
-    ///     Gives a camera the number the server assigned to it. Without one, the game numbers a camera by its place in
-    ///     this client's own list of cameras.
-    /// </summary>
-    public void SetCameraNumber(MapRoomCamera camera, int cameraNumber)
-    {
-        if (camera.cameraNumber != cameraNumber)
-        {
-            camera.cameraNumber = cameraNumber;
-            camera.UpdatePingLabel();
-            TryApplyPendingPreview();
-        }
-    }
-
-    /// <summary>
     ///     Called when a camera has spawned and the state it was sent with is applied. If the server said before that
     ///     somebody controls it, as it does for a player who has just joined, the camera follows that player now.
     /// </summary>
@@ -397,172 +356,6 @@ public class MapRoomCameras
         if (remoteControllers.ContainsKey(cameraId))
         {
             EnsureMovedByItsController(cameraId);
-        }
-        TryApplyPendingPreview();
-    }
-
-    public void UpdateEnergyRecharge(MapRoomCamera camera)
-    {
-        bool charging = false;
-        if (CanSimulateDockedCamera(camera) && camera.energyMixin.battery != null)
-        {
-            float current = camera.energyMixin.charge;
-            float amount = CalculateDockCharge(current, camera.energyMixin.capacity);
-            if (amount > 0f)
-            {
-                PowerRelay relay = camera.dockingPoint.GetComponentInParent<PowerRelay>();
-                float consumed = 0f;
-                if (relay)
-                {
-                    PowerSystem.ConsumeEnergy(relay, amount, out consumed);
-                }
-                // As in the game, whatever the base supplied is added, even when it could not supply all that was asked.
-                // ConsumeEnergy returns false for a partial draw but has still taken that energy from the base.
-                if (!GameModeUtils.RequiresPower())
-                {
-                    camera.energyMixin.AddEnergy(amount);
-                    charging = true;
-                }
-                else if (consumed > 0f)
-                {
-                    camera.energyMixin.AddEnergy(consumed);
-                    charging = true;
-                }
-            }
-        }
-        if (charging)
-        {
-            camera.chargingSound.Play();
-        }
-        else
-        {
-            camera.chargingSound.Stop(STOP_MODE.IMMEDIATE);
-        }
-        cameraStates.ReportIfChanged(camera);
-    }
-
-    /// <summary>
-    ///     Energy a docked camera takes in one update. This is the game's own rule (MapRoomCamera.UpdateEnergyRecharge):
-    ///     a tenth of the battery's capacity per update until full, so a docked camera is recharged almost at once.
-    /// </summary>
-    internal static float CalculateDockCharge(float current, float capacity)
-    {
-        if (capacity <= 0f || current >= capacity)
-        {
-            return 0f;
-        }
-        return Math.Min(capacity - Math.Max(0f, current), capacity * DOCK_CHARGE_FRACTION_PER_UPDATE);
-    }
-
-    private static byte[] CapturePreviewJpeg(RenderTexture source)
-    {
-        const int SIZE = MapRoomCameraPreviewImage.MAX_DIMENSION;
-        RenderTexture temporary = RenderTexture.GetTemporary(SIZE, SIZE, 0, RenderTextureFormat.ARGB32,
-            RenderTextureReadWrite.Default);
-        RenderTexture previous = RenderTexture.active;
-        Texture2D readback = null;
-        try
-        {
-            Graphics.Blit(source, temporary);
-            RenderTexture.active = temporary;
-            readback = new Texture2D(SIZE, SIZE, TextureFormat.RGB24, mipChain: false);
-            readback.ReadPixels(new Rect(0f, 0f, SIZE, SIZE), 0, 0, recalculateMipMaps: false);
-            readback.Apply(updateMipmaps: false, makeNoLongerReadable: false);
-            return ImageConversion.EncodeToJPG(readback, PREVIEW_JPEG_QUALITY);
-        }
-        finally
-        {
-            RenderTexture.active = previous;
-            if (readback)
-            {
-                UnityEngine.Object.Destroy(readback);
-            }
-            RenderTexture.ReleaseTemporary(temporary);
-        }
-    }
-
-    private static MapRoomCamera FindCamera(NitroxId cameraId)
-    {
-        if (NitroxEntity.TryGetObjectFrom(cameraId, out GameObject cameraObject) && cameraObject &&
-            cameraObject.TryGetComponent(out MapRoomCamera camera))
-        {
-            return camera;
-        }
-        foreach (MapRoomCamera candidate in MapRoomCamera.cameras)
-        {
-            if (candidate && candidate.TryGetNitroxId(out NitroxId candidateId) && candidateId == cameraId)
-            {
-                return candidate;
-            }
-        }
-        return null;
-    }
-
-    private static RenderTexture FindSharedPreviewTexture(MapRoomCamera camera)
-    {
-        if (camera && camera.mapRoomRenderTexture)
-        {
-            return camera.mapRoomRenderTexture;
-        }
-        foreach (MapRoomCamera candidate in MapRoomCamera.cameras)
-        {
-            if (candidate && candidate.mapRoomRenderTexture)
-            {
-                return candidate.mapRoomRenderTexture;
-            }
-        }
-        foreach (MapRoomFunctionality mapRoom in Resources.FindObjectsOfTypeAll<MapRoomFunctionality>())
-        {
-            if (mapRoom && mapRoom.gameObject.scene.IsValid() && mapRoom.mapRoomRenderTexture)
-            {
-                return mapRoom.mapRoomRenderTexture;
-            }
-        }
-        return null;
-    }
-
-    private static bool TryApplyPreviewPixels(RenderTexture target, byte[] jpegBytes)
-    {
-        Texture2D decoded = null;
-        try
-        {
-            decoded = new Texture2D(2, 2, TextureFormat.RGB24, mipChain: false);
-            if (!ImageConversion.LoadImage(decoded, jpegBytes, markNonReadable: true) ||
-                decoded.width > MapRoomCameraPreviewImage.MAX_DIMENSION ||
-                decoded.height > MapRoomCameraPreviewImage.MAX_DIMENSION)
-            {
-                return false;
-            }
-            Graphics.Blit(decoded, target);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "[MapRoomCameras] Failed to apply remote camera preview");
-            return false;
-        }
-        finally
-        {
-            if (decoded)
-            {
-                UnityEngine.Object.Destroy(decoded);
-            }
-        }
-    }
-
-    /// <summary>
-    ///     Makes every screen show the camera a picture is of, as the game does when the local player flies a camera.
-    ///     A screen the local player flies a camera with is left alone: the game would take the camera of the picture
-    ///     for the one the player is at, and cycle on from there.
-    /// </summary>
-    private static void ShowOnScreens(MapRoomCamera camera)
-    {
-        foreach (MapRoomScreen screen in Resources.FindObjectsOfTypeAll<MapRoomScreen>())
-        {
-            if (screen && screen.gameObject.scene.IsValid() && !screen.currentCamera)
-            {
-                screen.OnMapRoomCameraChanged(camera);
-            }
         }
     }
 }

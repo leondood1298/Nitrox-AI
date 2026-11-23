@@ -171,7 +171,6 @@ internal sealed partial class ScannerRoomManager
                 Undock(worldCamera, camera.State);
                 await SendToAllAsync(new MapRoomCameraUndocked(id, room.Id));
             }
-            // Do not track this entity in the open world anymore.
             worldEntityManager.StopTrackingEntity(worldCamera);
         }
         await RemoveFromScanResultsAsync(id);

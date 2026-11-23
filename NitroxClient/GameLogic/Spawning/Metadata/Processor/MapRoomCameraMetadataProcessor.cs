@@ -10,8 +10,12 @@ namespace NitroxClient.GameLogic.Spawning.Metadata.Processor;
 ///     inventory), when another player changed its light, battery or health, when the server gives it its number, and
 ///     when the server answers something it refused from this client.
 /// </summary>
-public class MapRoomCameraMetadataProcessor(MapRoomCameras mapRoomCameras, MapRoomCameraDocks mapRoomCameraDocks, MapRoomCameraStates mapRoomCameraStates)
-    : EntityMetadataProcessor<MapRoomCameraMetadata>
+/// <remarks>
+///     Metadata processors live as long as the program, the services they hand the state to as long as one session.
+///     The services are therefore looked up when they are needed and not taken in the constructor, which would give
+///     this class services of its own that no patch and no packet processor ever talks to.
+/// </remarks>
+public class MapRoomCameraMetadataProcessor : EntityMetadataProcessor<MapRoomCameraMetadata>
 {
     public override void ProcessMetadata(GameObject gameObject, MapRoomCameraMetadata metadata)
     {
@@ -22,12 +26,15 @@ public class MapRoomCameraMetadataProcessor(MapRoomCameras mapRoomCameras, MapRo
         }
 
         // Before MapRoomCamera.Start, which gives a camera without a number its place in this client's own list.
-        if (metadata.CameraNumber > 0)
+        if (metadata.CameraNumber > 0 && MapRoomCameraStates.SetCameraNumber(camera, metadata.CameraNumber))
         {
-            mapRoomCameras.SetCameraNumber(camera, metadata.CameraNumber);
+            // The screens show a camera's number with its picture.
+            Resolve<MapRoomCameraPreviews>().ShowPending();
         }
-        mapRoomCameraDocks.ApplyDockingIndex(camera, metadata.DockingIndex);
-        mapRoomCameraStates.Apply(camera, cameraId, metadata);
-        mapRoomCameras.CameraSpawned(cameraId);
+        Resolve<MapRoomCameraDocks>().ApplyDockingIndex(camera, metadata.DockingIndex);
+        Resolve<MapRoomCameraStates>().Apply(camera, cameraId, metadata);
+        Resolve<MapRoomCameras>().CameraSpawned(cameraId);
+        // A picture that arrived before its camera had spawned can be shown now.
+        Resolve<MapRoomCameraPreviews>().ShowPending();
     }
 }

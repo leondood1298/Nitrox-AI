@@ -22,11 +22,23 @@ namespace NitroxClient.GameLogic;
 /// </summary>
 public sealed class BasePowerClientDiagnostics
 {
+    // How much is kept and written. Guesses, not measurements: enough lines to see every source and relay of a
+    // large base while a player joins, and a fixed bound on what a long session adds to the log and to memory.
     internal const int SOURCE_HISTORY_CAPACITY = 48;
     internal const int AUDIO_HISTORY_CAPACITY = 16;
+
+    /// <summary>
+    ///     Both traces, and the one line with which each of them says that it stopped.
+    /// </summary>
     internal const int HISTORY_CAPACITY = SOURCE_HISTORY_CAPACITY + AUDIO_HISTORY_CAPACITY + 2;
+
     private const int REPEAT_KEY_CAPACITY = 128;
     private const int PROBLEM_CAPACITY = 32;
+
+    /// <summary>
+    ///     The same length the server cuts its reasons off at (BasePowerDiagnostics), so the two logs compare.
+    /// </summary>
+    private const int REASON_LENGTH = 64;
 
     private readonly string epoch = DiagnosticLineFormat.NewEpoch();
     private readonly List<string> history = new(HISTORY_CAPACITY);
@@ -209,7 +221,7 @@ public sealed class BasePowerClientDiagnostics
                     marker = $"{DiagnosticLineFormat.Header(DiagnosticLineFormat.BASE_POWER_TAG, null, epoch, DiagnosticLineFormat.CLIENT_SIDE, sessionId, "epoch", "info")} utc={ReadUtcStamp()} reason=client_diagnostics_started";
                 }
                 line = FormattableString.Invariant(
-                    $"{DiagnosticLineFormat.Header(DiagnosticLineFormat.BASE_POWER_TAG, ++nextSequence, epoch, DiagnosticLineFormat.CLIENT_SIDE, sessionId, eventName, outcome)} base={DiagnosticLineFormat.NOT_APPLICABLE} source={DiagnosticLineFormat.ShortId(sourceId, true)} power={shown.Power:F2}/{maxPower:F2} initial={DiagnosticLineFormat.NOT_APPLICABLE} wait={DiagnosticLineFormat.NOT_APPLICABLE}{(occurrences > 1 ? $" rep={DiagnosticLineFormat.Number(occurrences)}" : "")} reason={DiagnosticLineFormat.Token($"{shown.SourceType}_{reason}", 64)}");
+                    $"{DiagnosticLineFormat.Header(DiagnosticLineFormat.BASE_POWER_TAG, ++nextSequence, epoch, DiagnosticLineFormat.CLIENT_SIDE, sessionId, eventName, outcome)} base={DiagnosticLineFormat.NOT_APPLICABLE} source={DiagnosticLineFormat.ShortId(sourceId, true)} power={shown.Power:F2}/{maxPower:F2} initial={DiagnosticLineFormat.NOT_APPLICABLE} wait={DiagnosticLineFormat.NOT_APPLICABLE}{(occurrences > 1 ? $" rep={DiagnosticLineFormat.Number(occurrences)}" : "")} reason={DiagnosticLineFormat.Token($"{shown.SourceType}_{reason}", REASON_LENGTH)}");
                 if (problems.Count == PROBLEM_CAPACITY)
                 {
                     problems.Dequeue();

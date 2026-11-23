@@ -4,7 +4,10 @@ using UnityEngine;
 
 namespace NitroxClient.GameLogic.Spawning.Metadata.Processor;
 
-public class MapRoomMetadataProcessor(MapRoomScans mapRoomScans) : EntityMetadataProcessor<MapRoomMetadata>
+/// <remarks>
+///     The service is looked up when it is needed, see <see cref="MapRoomCameraMetadataProcessor" />.
+/// </remarks>
+public class MapRoomMetadataProcessor : EntityMetadataProcessor<MapRoomMetadata>
 {
     public override void ProcessMetadata(GameObject gameObject, MapRoomMetadata metadata)
     {
@@ -13,6 +16,6 @@ public class MapRoomMetadataProcessor(MapRoomScans mapRoomScans) : EntityMetadat
             Log.Error($"Could not find MapRoomFunctionality on {gameObject.name}");
             return;
         }
-        mapRoomScans.ApplyMetadata(mapRoom, metadata);
+        Resolve<MapRoomScans>().ApplyMetadata(mapRoom, metadata);
     }
 }

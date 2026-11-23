@@ -2,10 +2,11 @@ using System.Threading.Tasks;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.GameLogic;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Test.Model.Subnautica;
-using Nitrox.Test.Server.Subnautica;
+using Nitrox.Test.Server.Helper;
 using Packet = Nitrox.Model.Packets.Packet;
 using ServerPlayer = Nitrox.Server.Subnautica.Models.Player;
 
@@ -52,21 +53,55 @@ public sealed class ScannerRoomManagerControlTest
     }
 
     [TestMethod]
-    [DataRow(false)]
-    [DataRow(true)]
-    public async Task WordOfControlFromAPlayerWhoDoesNotHoldTheCameraExclusivelyIsRefused(bool simulatesTheCamera)
+    public async Task WordOfTakingACameraIsNoControlUntilTheLockIsGranted()
     {
         ScannerRoomScenarioFixture scenario = new();
-        Assert.IsTrue(scenario.Ownership.TryAcquire(cameraId, simulatesTheCamera ? scenario.PlayerB : scenario.PlayerA, SimulationLockType.TRANSIENT));
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, cameraId, true)).Granted);
 
-        IReadOnlyList<Packet> sent = await scenario.ControlChangedAsync(scenario.PlayerB, cameraId, true);
+        // B says that it takes the camera, which A controls. Its request for the lock is then refused.
+        IReadOnlyList<Packet> said = await scenario.ControlChangedAsync(scenario.PlayerB, cameraId, true);
+        Assert.AreEqual(0, said.Count, "Nobody is told of an intent.");
+        Assert.IsTrue(scenario.IsController(cameraId, scenario.PlayerA.SessionId));
+        Assert.IsFalse((await scenario.RequestOwnershipAsync(scenario.PlayerB, cameraId, SimulationLockType.EXCLUSIVE)).LockAcquired);
+        Assert.AreEqual("locked", scenario.Diagnostics.GetHistory()[^1].Reason);
 
+        // The refusal ended the intent. A later lock of B on the camera, for its Stalker, is no control.
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, cameraId, false)).Granted);
+        Assert.IsTrue((await scenario.RequestOwnershipAsync(scenario.PlayerB, cameraId, SimulationLockType.EXCLUSIVE)).LockAcquired);
         Assert.IsFalse(scenario.HasController(cameraId));
-        MapRoomCameraControlChanged answer = (MapRoomCameraControlChanged)sent.Single();
-        Assert.AreSame(answer, scenario.SentTo<MapRoomCameraControlChanged>(scenario.PlayerB).Single(), "Only the player who is refused is told.");
-        Assert.AreEqual((scenario.PlayerB.SessionId, false), (answer.SessionId, answer.IsControlling), "Their game shows the camera's view by now; told that their control ended, it leaves it.");
-        ScannerRoomDiagnosticEntry recorded = scenario.Diagnostics.GetHistory()[^1];
-        Assert.AreEqual(("control_acquire", ScannerRoomDiagnosticOutcome.REJECTED, "lock_required"), (recorded.EventName, recorded.Outcome, recorded.Reason));
+    }
+
+    [TestMethod]
+    public async Task PlayerWhoWasGrantedACameraControlsItAtOnceAndLosesItToNobodysRequest()
+    {
+        // The player says what the lock is for before asking for it, so there is no moment in which the lock is
+        // theirs and the server takes it for a Stalker's.
+        ScannerRoomScenarioFixture scenario = new();
+        await scenario.ControlChangedAsync(scenario.PlayerA, cameraId, true);
+
+        SimulationOwnershipResponse granted = await scenario.RequestOwnershipAsync(scenario.PlayerA, cameraId, SimulationLockType.EXCLUSIVE);
+
+        Assert.IsTrue(granted.LockAcquired);
+        Assert.IsTrue(scenario.IsController(cameraId, scenario.PlayerA.SessionId), "With the grant, without another word from the player.");
+        MapRoomCameraControlChanged announced = scenario.SentToOthers<MapRoomCameraControlChanged>().Single();
+        Assert.AreEqual((cameraId, scenario.PlayerA.SessionId, true), (announced.CameraId, announced.SessionId, announced.IsControlling));
+
+        Assert.IsFalse((await scenario.ControlAsync(scenario.PlayerB, cameraId, true)).Granted, "Not to another player who wants to control it.");
+        Assert.IsFalse((await scenario.RequestOwnershipAsync(scenario.PlayerB, cameraId, SimulationLockType.EXCLUSIVE)).LockAcquired, "Not to a client whose Stalker wants to carry it.");
+        Assert.IsTrue(scenario.IsController(cameraId, scenario.PlayerA.SessionId));
+        Assert.AreEqual(0, (await scenario.ControlChangedAsync(scenario.PlayerA, cameraId, true)).Count, "Saying it again changes nothing.");
+    }
+
+    [TestMethod]
+    public async Task PlayerWhoHoldsTheLockForTheirStalkerControlsTheCameraWhenTheySaySo()
+    {
+        ScannerRoomScenarioFixture scenario = new();
+        Assert.IsTrue((await scenario.RequestOwnershipAsync(scenario.PlayerA, cameraId, SimulationLockType.EXCLUSIVE)).LockAcquired);
+
+        await scenario.ControlChangedAsync(scenario.PlayerA, cameraId, true);
+
+        Assert.IsTrue(scenario.IsController(cameraId, scenario.PlayerA.SessionId));
+        Assert.IsTrue(scenario.SentToOthers<MapRoomCameraControlChanged>().Single().IsControlling);
     }
 
     [TestMethod]
@@ -179,11 +214,158 @@ public sealed class ScannerRoomManagerControlTest
         ScannerRoomScenarioFixture scenario = new();
         Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, cameraId, true)).Granted);
 
-        IReadOnlyList<Packet> sent = await scenario.DisconnectAsync(scenario.PlayerA);
+        List<Packet> sent = [.. await scenario.DisconnectAsync(scenario.PlayerA)];
 
         AssertEndedForEveryone(scenario, sent, scenario.PlayerA);
+        Assert.IsTrue(sent.FindIndex(packet => packet is MapRoomCameraControlChanged) < sent.FindIndex(packet => packet is SimulationOwnershipChange),
+            "Players hear that control ended before the camera is handed to whoever simulates it next.");
         Assert.IsNull(scenario.Ownership.GetPlayerForLock(cameraId));
         Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerB, cameraId, true)).Granted);
+    }
+
+    [TestMethod]
+    public async Task ControllerWhoLostTheLockWithoutGivingTheCameraUpIsToldSoBeforeTheNextPlayerIsGranted()
+    {
+        // Giving a camera up is a word and a request for an ordinary lock. If only the request arrives, the server
+        // learns that this player's control is over when another player takes the camera.
+        ScannerRoomScenarioFixture scenario = new();
+        byte[] picture = MapRoomCameraPreviewImageTest.CreateJpeg(64, 64);
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, cameraId, true)).Granted);
+        Assert.IsTrue((await scenario.RequestOwnershipAsync(scenario.PlayerA, cameraId, SimulationLockType.TRANSIENT)).LockAcquired);
+        Assert.IsTrue(scenario.IsController(cameraId, scenario.PlayerA.SessionId), "The lock alone says nothing about control.");
+
+        List<Packet> sent = [.. (await scenario.ControlAsync(scenario.PlayerB, cameraId, true)).Sent];
+
+        MapRoomCameraControlChanged ended = sent.OfType<MapRoomCameraControlChanged>().Single(packet => !packet.IsControlling);
+        MapRoomCameraControlChanged granted = sent.OfType<MapRoomCameraControlChanged>().Single(packet => packet.IsControlling);
+        Assert.AreEqual((cameraId, scenario.PlayerA.SessionId), (ended.CameraId, ended.SessionId));
+        CollectionAssert.Contains(scenario.SentToAll<MapRoomCameraControlChanged>(), ended, "The player who lost the camera is told as well.");
+        Assert.AreEqual((cameraId, scenario.PlayerB.SessionId), (granted.CameraId, granted.SessionId));
+        Assert.IsTrue(sent.IndexOf(ended) < sent.IndexOf(granted), "Players hear that the old control ended before they hear of the new one.");
+        Assert.IsTrue(scenario.IsController(cameraId, scenario.PlayerB.SessionId));
+
+        Assert.AreEqual(0, (await scenario.PreviewAsync(scenario.PlayerA, new MapRoomCameraPreview(cameraId, picture))).Count, "The picture of the player the camera was taken from comes too late.");
+        Assert.IsTrue(scenario.Diagnostics.GetHistory()[^1].Reason.StartsWith("not_controller", StringComparison.Ordinal));
+        Assert.AreEqual(1, (await scenario.PreviewAsync(scenario.PlayerB, new MapRoomCameraPreview(cameraId, picture))).Count, "The new controller has a picture of their own to publish.");
+    }
+
+    [TestMethod]
+    public async Task PlayersHearThatControlEndedBeforeTheyHearThatTheCameraIsGone()
+    {
+        ConnectedPlayers players = new();
+        ScannerRoomScenarioFixture scenario = new(connectedPlayers: players);
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, cameraId, true)).Granted);
+
+        // Reported by another player, whose game saw the camera die.
+        List<Packet> sent = [.. await scenario.DestroyAsync(scenario.PlayerB, cameraId)];
+
+        MapRoomCameraControlChanged ended = sent.OfType<MapRoomCameraControlChanged>().Single();
+        EntityDestroyed destroyed = sent.OfType<EntityDestroyed>().Single();
+        Assert.AreEqual((cameraId, scenario.PlayerA.SessionId, false), (ended.CameraId, ended.SessionId, ended.IsControlling));
+        CollectionAssert.Contains(scenario.SentTo<EntityDestroyed>(scenario.PlayerA), destroyed);
+        Assert.IsTrue(sent.IndexOf(ended) < sent.IndexOf(destroyed), "The controller's game needs the camera to take its player out of the camera's view.");
+    }
+
+    [TestMethod]
+    public async Task CameraThatIsGoneCannotBeControlledAndNoLockOnItIsLeftBehind()
+    {
+        // A request can cross the camera's destruction on its way to the server. The lock on something that is no
+        // entity any more is simply granted; what it is for is refused.
+        ScannerRoomScenarioFixture scenario = new();
+        await scenario.DestroyAsync(scenario.PlayerB, cameraId);
+
+        ScannerRoomScenarioFixture.ControlResult refused = await scenario.ControlAsync(scenario.PlayerA, cameraId, true);
+
+        Assert.IsFalse(refused.Granted);
+        Assert.IsFalse(refused.Sent.OfType<MapRoomCameraControlChanged>().Single().IsControlling, "The player's game shows the camera's view by then and is told to leave it.");
+        Assert.IsNull(scenario.Ownership.GetPlayerForLock(cameraId));
+        Assert.AreEqual("invalid_assoc", scenario.Diagnostics.GetHistory()[^1].Reason);
+    }
+
+    [TestMethod]
+    [DataRow(1533)]
+    [DataRow(2576)]
+    public async Task TwoPlayersRacingForOneCameraProduceExactlyOneController(int seed)
+    {
+        Random random = new(seed);
+
+        for (int iteration = 0; iteration < 16; iteration++)
+        {
+            ScannerRoomScenarioFixture scenario = new();
+            bool swap = random.Next(2) == 0;
+            ServerPlayer firstPlayer = swap ? scenario.PlayerB : scenario.PlayerA;
+            ServerPlayer secondPlayer = swap ? scenario.PlayerA : scenario.PlayerB;
+
+            using Barrier start = new(2);
+            Task<ScannerRoomScenarioFixture.ControlResult> first = Task.Run(async () =>
+            {
+                start.SignalAndWait();
+                return await scenario.ControlAsync(firstPlayer, cameraId, true);
+            });
+            Task<ScannerRoomScenarioFixture.ControlResult> second = Task.Run(async () =>
+            {
+                start.SignalAndWait();
+                return await scenario.ControlAsync(secondPlayer, cameraId, true);
+            });
+
+            ScannerRoomScenarioFixture.ControlResult[] results = await Task.WhenAll(first, second);
+
+            Assert.AreEqual(1, results.Count(result => result.Granted), $"seed={seed}, iteration={iteration}");
+            ServerPlayer winner = results[0].Granted ? firstPlayer : secondPlayer;
+            Assert.IsTrue(scenario.IsController(cameraId, winner.SessionId), $"seed={seed}, iteration={iteration}");
+            AssertLock(scenario, cameraId, winner, SimulationLockType.EXCLUSIVE);
+            Assert.AreEqual(winner.SessionId, scenario.Sent<MapRoomCameraControlChanged>().Single().SessionId, $"Nobody is told of the player who lost. seed={seed}, iteration={iteration}");
+        }
+    }
+
+    [TestMethod]
+    public async Task ControlAskedForWhileARoomIsDeconstructedWaitsAndIsRefusedForACameraThatWentWithTheRoom()
+    {
+        ScannerRoomScenarioFixture scenario = new();
+        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, cameraId, 0, true)).Granted);
+
+        ScannerRoomScenarioFixture.ControlResult decided = await ControlWhileTheRoomIsDeconstructedAsync(scenario, scenario.PlayerB);
+
+        Assert.IsFalse(decided.Granted, "The cameras in a room's docks go with the room.");
+        Assert.IsFalse(decided.Sent.OfType<MapRoomCameraControlChanged>().Single().IsControlling);
+        Assert.IsNull(scenario.Ownership.GetPlayerForLock(cameraId), "The lock that was taken for it is not left behind.");
+    }
+
+    [TestMethod]
+    public async Task ControlAskedForWhileARoomIsDeconstructedWaitsAndIsGrantedForACameraThatIsOutInTheWorld()
+    {
+        ScannerRoomScenarioFixture scenario = new();
+        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, cameraId, 0, true)).Granted);
+        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, cameraId, 0, false)).Granted);
+
+        ScannerRoomScenarioFixture.ControlResult decided = await ControlWhileTheRoomIsDeconstructedAsync(scenario, scenario.PlayerB);
+
+        Assert.IsTrue(decided.Granted, "A camera that left its dock outlives the room.");
+        AssertLock(scenario, cameraId, scenario.PlayerB, SimulationLockType.EXCLUSIVE);
+        Assert.IsTrue(scenario.SentToOthers<MapRoomCameraControlChanged>().Single().IsControlling);
+    }
+
+    [TestMethod]
+    public async Task LockAskedForOnACameraWaitsUntilTheManagerHasFinishedWhatItIsHandling()
+    {
+        // What the client of a Stalker sends is put in order with everything else that happens to the camera: a lock
+        // that was granted in the middle of a pickup or a destruction would be a lock on a camera that is gone.
+        ScannerRoomScenarioFixture scenario = new();
+        IDisposable handling = await scenario.Manager.HoldGateAsync();
+        Task<SimulationOwnershipResponse> request = scenario.RequestOwnershipAsync(scenario.PlayerA, cameraId, SimulationLockType.EXCLUSIVE);
+        try
+        {
+            Task first = await Task.WhenAny(request, Task.Delay(100));
+            Assert.AreNotSame(request, first, "The request must wait.");
+            Assert.IsNull(scenario.Ownership.GetPlayerForLock(cameraId));
+        }
+        finally
+        {
+            handling.Dispose();
+        }
+
+        Assert.IsTrue((await request.WaitAsync(TimeSpan.FromSeconds(5))).LockAcquired);
+        AssertLock(scenario, cameraId, scenario.PlayerA, SimulationLockType.EXCLUSIVE);
     }
 
     [TestMethod]
@@ -272,19 +454,29 @@ public sealed class ScannerRoomManagerControlTest
     }
 
     [TestMethod]
-    public async Task PlayerWhoseLockWasTakenBeforeTheySaidWhatItIsForIsToldThatTheirControlEnded()
+    public async Task LockHeldForAStalkerGivesWayToNoOtherStalker()
     {
-        // Between the grant of the lock and the word of control, the lock looks like one held for a Stalker. Another
-        // player who asks in that moment gets the camera, and the first player must not stay in its view.
         ScannerRoomScenarioFixture scenario = new();
         Assert.IsTrue((await scenario.RequestOwnershipAsync(scenario.PlayerA, cameraId, SimulationLockType.EXCLUSIVE)).LockAcquired);
-        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerB, cameraId, true)).Granted);
 
-        IReadOnlyList<Packet> sent = await scenario.ControlChangedAsync(scenario.PlayerA, cameraId, true);
+        // A request that no word of taking the camera came before: another client's Stalker.
+        SimulationOwnershipResponse answer = await scenario.RequestOwnershipAsync(scenario.PlayerB, cameraId, SimulationLockType.EXCLUSIVE);
 
-        MapRoomCameraControlChanged answer = (MapRoomCameraControlChanged)sent.Single();
-        Assert.AreEqual((scenario.PlayerA.SessionId, false), (answer.SessionId, answer.IsControlling));
-        Assert.IsTrue(scenario.IsController(cameraId, scenario.PlayerB.SessionId));
+        Assert.IsFalse(answer.LockAcquired);
+        AssertLock(scenario, cameraId, scenario.PlayerA, SimulationLockType.EXCLUSIVE);
+        Assert.AreEqual(0, scenario.Diagnostics.GetHistory().Count(entry => entry.EventName == "control_preempt"));
+    }
+
+    [TestMethod]
+    public async Task ControlledScannerCameraIsRecognisedOnlyForItsController()
+    {
+        ScannerRoomScenarioFixture scenario = new();
+        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, cameraId, 0, true)).Granted);
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, cameraId, true)).Granted);
+
+        Assert.IsTrue(scenario.Manager.IsControlledBy(cameraId, scenario.PlayerA));
+        Assert.IsFalse(scenario.Manager.IsControlledBy(cameraId, scenario.PlayerB));
+        Assert.IsFalse(scenario.Manager.IsControlledBy(new NitroxId("00000000-0000-0000-0000-000000000900"), scenario.PlayerA), "Only Scanner Room cameras are covered.");
     }
 
     [TestMethod]
@@ -353,6 +545,118 @@ public sealed class ScannerRoomManagerControlTest
         Assert.AreEqual(0, fromAnotherPlayer.Count + withoutControl.Count + noPicture.Count);
         Assert.AreEqual(0, afterNoPicture.Count, "What is no picture uses the one opportunity up, or it would be a way to send without end.");
         Assert.AreEqual(0, (await scenario.JoinedPlayerControlGrantsAsync((SessionId)(ushort)9)).OfType<MapRoomCameraPreview>().Count());
+    }
+
+    [TestMethod]
+    public async Task PictureFromAnotherPlayerDoesNotUseUpTheControllersOwn()
+    {
+        ScannerRoomScenarioFixture scenario = new();
+        byte[] picture = MapRoomCameraPreviewImageTest.CreateJpeg(64, 64);
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, cameraId, true)).Granted);
+
+        IReadOnlyList<Packet> fromAnotherPlayer = await scenario.PreviewAsync(scenario.PlayerB, new MapRoomCameraPreview(cameraId, picture));
+        IReadOnlyList<Packet> fromTheController = await scenario.PreviewAsync(scenario.PlayerA, new MapRoomCameraPreview(cameraId, picture));
+
+        Assert.AreEqual(0, fromAnotherPlayer.Count);
+        Assert.AreSame(fromTheController.Single(), scenario.SentToOthers<MapRoomCameraPreview>().Single(), "Otherwise any player could keep a camera's picture from everyone.");
+    }
+
+    [TestMethod]
+    public async Task PictureFromAPlayerWhoGaveTheCameraUpOrLeftIsDropped()
+    {
+        ScannerRoomScenarioFixture scenario = new();
+        byte[] picture = MapRoomCameraPreviewImageTest.CreateJpeg(64, 64);
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, cameraId, true)).Granted);
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerB, otherCameraId, true)).Granted);
+
+        // Both pictures were on their way when control ended.
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, cameraId, false)).Granted);
+        await scenario.DisconnectAsync(scenario.PlayerB);
+        IReadOnlyList<Packet> afterGivingUp = await scenario.PreviewAsync(scenario.PlayerA, new MapRoomCameraPreview(cameraId, picture));
+        IReadOnlyList<Packet> afterLeaving = await scenario.PreviewAsync(scenario.PlayerB, new MapRoomCameraPreview(otherCameraId, picture));
+
+        Assert.AreEqual(0, afterGivingUp.Count, "The player goes on simulating the camera, which is no control.");
+        Assert.AreEqual(0, afterLeaving.Count);
+        Assert.AreEqual(0, scenario.Sent<MapRoomCameraPreview>().Count);
+    }
+
+    [TestMethod]
+    public async Task SayingAgainThatTheyControlTheCameraGivesAPlayerNoSecondPicture()
+    {
+        ScannerRoomScenarioFixture scenario = new();
+        byte[] picture = MapRoomCameraPreviewImageTest.CreateJpeg(64, 64);
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, cameraId, true)).Granted);
+        Assert.AreEqual(1, (await scenario.PreviewAsync(scenario.PlayerA, new MapRoomCameraPreview(cameraId, picture))).Count);
+
+        // Everything a client sends to take a camera, a second time: the word and the request for the lock.
+        ScannerRoomScenarioFixture.ControlResult repeated = await scenario.ControlAsync(scenario.PlayerA, cameraId, true);
+        IReadOnlyList<Packet> second = await scenario.PreviewAsync(scenario.PlayerA, new MapRoomCameraPreview(cameraId, picture));
+
+        Assert.IsTrue(repeated.Granted);
+        Assert.AreEqual(0, repeated.Sent.OfType<MapRoomCameraControlChanged>().Count(), "Nobody is told twice.");
+        Assert.AreEqual(0, second.Count, "Only a camera that was given up and taken again is taken anew.");
+    }
+
+    [TestMethod]
+    public async Task RefreshOfWhatAPlayerSimulatesLeavesTheirCameraAndItsOnePictureWithThem()
+    {
+        // The server asks for an ordinary lock on everything a player can simulate whenever cells come into their
+        // view. That must not turn the lock of the camera they are flying into an ordinary one.
+        ScannerRoomScenarioFixture scenario = new();
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, cameraId, true)).Granted);
+        Entity camera = scenario.EntityRegistry.GetEntityById(cameraId).Value;
+
+        SimulatedEntity refreshed = scenario.EntitySimulation.TryAcquireEntity(scenario.PlayerA, camera, propagate: true).Single();
+
+        Assert.AreEqual(SimulationLockType.EXCLUSIVE, refreshed.LockType, "Players are told the lock that is held.");
+        AssertLock(scenario, cameraId, scenario.PlayerA, SimulationLockType.EXCLUSIVE);
+        Assert.IsTrue(scenario.IsController(cameraId, scenario.PlayerA.SessionId));
+        Assert.AreEqual(1, (await scenario.PreviewAsync(scenario.PlayerA, new MapRoomCameraPreview(cameraId, MapRoomCameraPreviewImageTest.CreateJpeg(64, 64)))).Count);
+    }
+
+    [TestMethod]
+    public async Task JoiningPlayerIsSentNothingForACameraWhoseControlHasEnded()
+    {
+        ScannerRoomScenarioFixture scenario = new();
+        byte[] picture = MapRoomCameraPreviewImageTest.CreateJpeg(64, 64);
+        SessionId joiner = (SessionId)(ushort)9;
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, cameraId, true)).Granted);
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerB, otherCameraId, true)).Granted);
+        await scenario.PreviewAsync(scenario.PlayerA, new MapRoomCameraPreview(cameraId, picture));
+        await scenario.PreviewAsync(scenario.PlayerB, new MapRoomCameraPreview(otherCameraId, picture));
+
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, cameraId, false)).Granted);
+        await scenario.DisconnectAsync(scenario.PlayerB);
+
+        Assert.AreEqual(0, (await scenario.JoinedPlayerControlGrantsAsync(joiner)).Count, "Neither a controller nor the picture they took.");
+
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, cameraId, true)).Granted);
+        MapRoomCameraControlChanged announced = (MapRoomCameraControlChanged)(await scenario.JoinedPlayerControlGrantsAsync(joiner)).Single();
+        Assert.AreEqual((cameraId, scenario.PlayerA.SessionId, true), (announced.CameraId, announced.SessionId, announced.IsControlling),
+            "A camera that is taken again comes without the picture of the time before.");
+    }
+
+    /// <summary>
+    ///     Has a player take the fixture's first camera while the manager is busy with the deconstruction of the room,
+    ///     which the test stands in for: the request has to wait, and is decided once the room is gone.
+    /// </summary>
+    private static async Task<ScannerRoomScenarioFixture.ControlResult> ControlWhileTheRoomIsDeconstructedAsync(ScannerRoomScenarioFixture scenario, ServerPlayer player)
+    {
+        IDisposable deconstruction = await scenario.Manager.HoldGateAsync();
+        Task<ScannerRoomScenarioFixture.ControlResult> control = scenario.ControlAsync(player, cameraId, true);
+        try
+        {
+            Task first = await Task.WhenAny(control, Task.Delay(100));
+            Assert.AreNotSame(control, first, "Whoever asks while the manager is handling something else must wait for it.");
+            Assert.IsFalse(scenario.HasController(cameraId));
+            // A deconstructed room leaves the entity registry together with the cameras in its docks.
+            Assert.IsTrue(scenario.EntityRegistry.RemoveEntity(scenario.Room.Id).HasValue);
+        }
+        finally
+        {
+            deconstruction.Dispose();
+        }
+        return await control.WaitAsync(TimeSpan.FromSeconds(5));
     }
 
     private static void AssertEndedForEveryone(ScannerRoomScenarioFixture scenario, IReadOnlyList<Packet> sent, ServerPlayer controller)

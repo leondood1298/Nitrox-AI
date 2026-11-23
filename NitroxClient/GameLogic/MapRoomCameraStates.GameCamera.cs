@@ -14,6 +14,10 @@ namespace NitroxClient.GameLogic;
 /// </summary>
 public sealed partial class MapRoomCameraStates
 {
+    /// <summary>
+    ///     After this long without a battery the log says so; the wait itself goes on. A guess at what is clearly
+    ///     longer than the game takes to make a battery.
+    /// </summary>
     private const float CAMERA_BATTERY_WAIT_SECONDS = 10f;
 
     private readonly LiveMixinManager liveMixinManager;
@@ -21,10 +25,12 @@ public sealed partial class MapRoomCameraStates
     private readonly Dictionary<NitroxId, CameraBatteryInitialization> initializingCameraBatteries = [];
     private long nextCameraBatteryInitializationGeneration;
 
-    public MapRoomCameraStates(IPacketSender packetSender, SimulationOwnership simulationOwnership, LiveMixinManager liveMixinManager, ScannerRoomClientDiagnostics diagnostics)
+    public MapRoomCameraStates(IPacketSender packetSender, SimulationOwnership simulationOwnership, LiveMixinManager liveMixinManager,
+        BasePowerConsumptionForwarder powerConsumptionForwarder, ScannerRoomClientDiagnostics diagnostics)
         : this(packetSender, simulationOwnership, diagnostics)
     {
         this.liveMixinManager = liveMixinManager;
+        this.powerConsumptionForwarder = powerConsumptionForwarder;
     }
 
     /// <inheritdoc cref="Apply{TCamera}(TCamera, MapRoomCameraMetadata)" />
@@ -39,14 +45,33 @@ public sealed partial class MapRoomCameraStates
         }
     }
 
+    /// <inheritdoc cref="ChangesHealthHere(NitroxId, bool)" />
+    public bool ChangesHealthHere(MapRoomCamera camera) =>
+        // A camera that is no entity is nobody's to decide.
+        !camera.TryGetNitroxId(out NitroxId cameraId) || ChangesHealthHere(cameraId, liveMixinManager.IsRemoteHealthChanging);
+
     /// <summary>
     ///     What the game shows for a camera, for the entity a client makes of it. The server keeps its own state for
     ///     a camera it knows and takes nothing from here.
     /// </summary>
-    public static MapRoomCameraMetadata Extract(MapRoomCamera camera)
+    /// <param name="dockingIndex">The dock the camera sits in, which <see cref="MapRoomCameraDocks" /> knows.</param>
+    public static MapRoomCameraMetadata Extract(MapRoomCamera camera, int dockingIndex) =>
+        new(IsLightOn(camera), camera.energyMixin.charge, camera.liveMixin.health, camera.cameraNumber, dockingIndex);
+
+    /// <summary>
+    ///     Gives a camera the number the server assigned to it. Without one, the game numbers a camera by its place in
+    ///     this client's own list of cameras.
+    /// </summary>
+    /// <returns>True if the camera had another number before.</returns>
+    public static bool SetCameraNumber(MapRoomCamera camera, int cameraNumber)
     {
-        int dockingIndex = MapRoomCameraDocks.TryGetPlace(camera.dockingPoint, out _, out int index) ? index : MapRoomCameraMetadata.NOT_DOCKED;
-        return new MapRoomCameraMetadata(IsLightOn(camera), camera.energyMixin.charge, camera.liveMixin.health, camera.cameraNumber, dockingIndex);
+        if (camera.cameraNumber == cameraNumber)
+        {
+            return false;
+        }
+        camera.cameraNumber = cameraNumber;
+        camera.UpdatePingLabel();
+        return true;
     }
 
     internal static void SetLight(MapRoomCamera camera, bool on)
@@ -149,7 +174,7 @@ public sealed partial class MapRoomCameraStates
             bool cameraAlive = camera;
             bool batteryAvailable = cameraAlive && camera.energyMixin.battery != null;
             bool currentGeneration = IsCurrentCameraBatteryInitialization(cameraId, camera, generation);
-            if (ShouldClearCameraBatteryInitialization(currentGeneration, cameraAlive, batteryAvailable, canonicalEnergyApplied))
+            if (currentGeneration && (!cameraAlive || batteryAvailable && canonicalEnergyApplied))
             {
                 pendingCameraEnergy.Remove(cameraId);
                 initializingCameraBatteries.Remove(cameraId);
@@ -160,10 +185,6 @@ public sealed partial class MapRoomCameraStates
     private bool IsCurrentCameraBatteryInitialization(NitroxId cameraId, MapRoomCamera camera, long generation) =>
         initializingCameraBatteries.TryGetValue(cameraId, out CameraBatteryInitialization initialization) &&
         initialization.Generation == generation && ReferenceEquals(initialization.Camera, camera);
-
-    internal static bool ShouldClearCameraBatteryInitialization(bool currentGeneration, bool cameraAlive,
-        bool batteryAvailable, bool canonicalEnergyApplied) =>
-        currentGeneration && (!cameraAlive || batteryAvailable && canonicalEnergyApplied);
 
     private readonly record struct CameraBatteryInitialization(MapRoomCamera Camera, long Generation);
 

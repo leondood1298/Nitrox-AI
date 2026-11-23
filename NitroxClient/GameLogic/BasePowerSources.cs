@@ -16,21 +16,29 @@ namespace NitroxClient.GameLogic;
 /// </summary>
 public sealed class BasePowerSources(IPacketSender packetSender, SimulationOwnership simulationOwnership)
 {
+    /// <summary>
+    ///     The shortest time between two states of one source. A guess, not measured.
+    /// </summary>
     private const float BROADCAST_THROTTLE_SECONDS = 1f;
 
     /// <summary>
     ///     A source whose level does not move is still sent this often. The copy another player holds can drift from
     ///     what that player's own game does to it, and nothing else would put it right while the level is pinned.
+    ///     The number is a guess. The server's basepower command counts on it: it calls a source that was not
+    ///     reported for three times as long frozen.
     /// </summary>
     private const float UNCHANGED_HEARTBEAT_SECONDS = 30f;
 
     /// <summary>
     ///     Share of a source's capacity its level or fuel progress has to move before the new state is worth a packet.
     ///     A source that is charging changes every frame; sending each second of that for every source adds up to one
-    ///     packet per source per second for every player, for a difference nobody can see.
+    ///     packet per source per second for every player, for a difference nobody can see. One percent is a guess.
     /// </summary>
     private const float CHANGE_FRACTION_OF_CAPACITY = 0.01f;
 
+    /// <summary>
+    ///     What a change has to reach at least, whatever the capacity is said to be. A guess at more than float noise.
+    /// </summary>
     private const float MIN_CHANGE = 0.001f;
 
     private readonly Dictionary<NitroxId, Broadcast> lastBroadcastBySource = [];
@@ -43,7 +51,7 @@ public sealed class BasePowerSources(IPacketSender packetSender, SimulationOwner
     public readonly record struct Broadcast(float Time, float Power, float FuelConsumed);
 
     /// <summary>
-    ///     True while this client replaces its bases with the server's copy (see <see cref="CanSimulate" />).
+    ///     True while this client replaces its bases with the server's copy (see <see cref="CanSimulate(bool, bool, bool)" />).
     /// </summary>
     public static bool IsRebuildingBases() => BuildingHandler.Main && BuildingHandler.Main.Resyncing;
 
@@ -196,6 +204,48 @@ public sealed class BasePowerSources(IPacketSender packetSender, SimulationOwner
     }
 
     /// <summary>
+    ///     Whether a source generates its power in this client's game: in the game of the player who simulates it, and
+    ///     in everybody's if it is no synchronized entity. Reactors need the stricter <see cref="CanSimulate(Component)" />.
+    /// </summary>
+    /// <param name="owner">The solar panel or thermal plant component, which carries the Nitrox id.</param>
+    public bool GeneratesHere(Component owner) => !owner.TryGetNitroxId(out NitroxId sourceId) || simulationOwnership.HasAnyLockType(sourceId);
+
+    /// <inheritdoc cref="CanSimulate(bool, bool, bool)" />
+    /// <param name="owner">The solar panel, thermal plant or reactor component, which carries the Nitrox id.</param>
+    public bool CanSimulate(Component owner)
+    {
+        bool hasId = owner.TryGetNitroxId(out NitroxId sourceId);
+        return CanSimulate(hasId, hasId && simulationOwnership.HasAnyLockType(sourceId), IsRebuildingBases());
+    }
+
+    /// <summary>
+    ///     Stands in for PowerSource.ModifyPower where the game would ignore an addition that has to be applied (see
+    ///     <see cref="MustGenerateWithoutPowerRequirement" />).
+    /// </summary>
+    /// <param name="consumed">Set to what the game's method gives out.</param>
+    /// <param name="result">Set to what the game's method returns.</param>
+    /// <returns>False if the game's own method has to run.</returns>
+    public bool TryGenerateWithoutPowerRequirement(PowerSource source, float amount, ref float consumed, ref bool result)
+    {
+        // Checked first: nearly every player's mode requires power, and then the game does all of this itself
+        if (GameModeUtils.RequiresPower())
+        {
+            return false;
+        }
+        bool simulatedLocally = amount > 0f && source.TryGetNitroxId(out NitroxId sourceId) && simulationOwnership.HasAnyLockType(sourceId);
+        if (!MustGenerateWithoutPowerRequirement(false, simulatedLocally, amount))
+        {
+            return false;
+        }
+
+        // What the game returns in a mode without power requirements, so that its callers behave as they do there
+        result = amount <= source.maxPower - source.power;
+        consumed = amount;
+        source.power = LevelAfterGenerating(source.power, source.maxPower, amount);
+        return true;
+    }
+
+    /// <summary>
     ///     Tells everyone the state of a source this client simulates, when it moved enough to matter.
     /// </summary>
     /// <param name="owner">The solar panel, thermal plant or reactor component, which carries the Nitrox id.</param>
@@ -267,22 +317,4 @@ public sealed class BasePowerSources(IPacketSender packetSender, SimulationOwner
         lastBroadcastBySource.Remove(sourceId);
         handedBackSources.Remove(sourceId);
     }
-}
-
-public enum ForwardedDraw
-{
-    /// <summary>
-    ///     Nothing to do here: someone else simulates the source by now, or this client cannot do better.
-    /// </summary>
-    IGNORE,
-
-    /// <summary>
-    ///     Take the energy from the source.
-    /// </summary>
-    APPLY,
-
-    /// <summary>
-    ///     The source does not exist on this client: give its simulation back so that someone who has it takes over.
-    /// </summary>
-    HAND_BACK
 }

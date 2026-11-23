@@ -21,14 +21,8 @@ public sealed partial class Charger_Update_Patch : NitroxPatch, IDynamicPatch
     /// </summary>
     public static void Prefix(Charger __instance, out bool __state)
     {
-        // Same condition as CheckSimulation. A charger whose parent has no id charges on every client, which must
-        // not be reported once per player.
-        __state = __instance.transform.parent && __instance.transform.parent.TryGetNitroxId(out NitroxId parentId) &&
-                  Resolve<SimulationOwnership>().HasAnyLockType(parentId);
-        if (__state)
-        {
-            Resolve<BasePowerConsumptionForwarder>().EnterConsumer();
-        }
+        // Same condition as CheckSimulation: the charger's parent is what is simulated.
+        __state = Resolve<BasePowerConsumptionForwarder>().EnterConsumerIfSimulated(__instance.transform.parent);
     }
 
     public static void Finalizer(bool __state)

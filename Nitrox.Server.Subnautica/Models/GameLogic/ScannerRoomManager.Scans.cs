@@ -19,6 +19,9 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic;
 /// </summary>
 internal sealed partial class ScannerRoomManager
 {
+    // Upper bounds for what one client can make the server hold and pass on for one room. Guesses, not measured:
+    // each is meant to be well above anything the game produces (an id is a GUID of 36 characters) and small enough
+    // that a client that makes reports up cannot fill the server's memory with them.
     internal const int MAX_SNAPSHOT_RESULTS = 10000;
     private const int MAX_RESOURCE_ID_LENGTH = 256;
     private const int MAX_SCAN_TYPES = 512;

@@ -2,8 +2,9 @@ using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
+using Nitrox.Server.Subnautica.Models.GameLogic;
 
-namespace Nitrox.Server.Subnautica.Models.GameLogic;
+namespace Nitrox.Test.Server.GameLogic;
 
 /// <summary>
 ///     Which requests for a room's scan target and scan progress are accepted. What the server sends in answer is

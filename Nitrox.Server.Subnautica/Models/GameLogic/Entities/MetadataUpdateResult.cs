@@ -31,11 +31,3 @@ internal readonly record struct MetadataUpdateResult(MetadataUpdateOutcome Outco
     /// </summary>
     public static MetadataUpdateResult RejectAndCorrect(EntityMetadata stored) => new(MetadataUpdateOutcome.REJECT_AND_CORRECT, stored);
 }
-
-internal enum MetadataUpdateOutcome
-{
-    ACCEPT,
-    ACCEPT_AND_ECHO,
-    REJECT,
-    REJECT_AND_CORRECT
-}

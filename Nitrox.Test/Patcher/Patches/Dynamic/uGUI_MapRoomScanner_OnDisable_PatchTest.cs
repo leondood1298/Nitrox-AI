@@ -6,9 +6,10 @@ namespace Nitrox.Test.Patcher.Patches.Dynamic;
 public sealed class uGUI_MapRoomScanner_OnDisable_PatchTest
 {
     [TestMethod]
-    public void GameNeverStopsTheScanBecauseTheScreenIsSwitchedOff()
+    public void ScreenThatIsSwitchedOffNeverStopsTheScanByItself()
     {
-        // The game's OnDisable stops the scan. A prefix that returns false keeps the game's method from running.
+        // The game's OnDisable stops the scan, whatever the screen was switched off for. A prefix that returns false
+        // keeps the game's method from running. What a real loss of power does is covered by MapRoomScansTest.
         Assert.IsFalse(uGUI_MapRoomScanner_OnDisable_Patch.Prefix());
     }
 }

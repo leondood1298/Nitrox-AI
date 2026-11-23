@@ -1,5 +1,8 @@
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
+using NitroxClient.Communication.Abstract;
+using NitroxClient.GameLogic.Spawning.Metadata.Extractor.Abstract;
+using NitroxClient.GameLogic.Spawning.Metadata.Processor.Abstract;
 
 namespace NitroxClient.GameLogic.Spawning.Metadata;
 
@@ -87,5 +90,38 @@ public sealed class EntityMetadataManagerTest
         manager.ClearNewerMetadata();
 
         Assert.AreSame(fromSpawnPacket, manager.TakeNewest(entityId, fromSpawnPacket, spawnContinues: false));
+    }
+
+    /// <summary>
+    ///     Metadata processors and extractors are registered as single instances and live as long as the program. The
+    ///     services of the game logic live as long as one session. A processor that takes such a service in its
+    ///     constructor gets one of its own, made outside any session, which no patch and no packet processor talks to:
+    ///     what the server sends would be applied to state nothing else reads. They look services up when they need
+    ///     them (Resolve) and may only be handed other processors or extractors.
+    /// </summary>
+    [TestMethod]
+    public void ProcessorsAndExtractorsTakeNoSessionServicesInTheirConstructors()
+    {
+        Type[] types;
+        try
+        {
+            types = typeof(EntityMetadataManager).Assembly.GetTypes();
+        }
+        catch (ReflectionTypeLoadException exception)
+        {
+            types = exception.Types.Where(type => type != null).ToArray()!;
+        }
+        Type[] metadataTypes = types.Where(type => !type.IsAbstract && (typeof(IEntityMetadataProcessor).IsAssignableFrom(type) || typeof(IEntityMetadataExtractor).IsAssignableFrom(type))).ToArray();
+
+        // Upstream's vehicle processors take these two, and upstream's code is left as it is. Nothing else is to follow them.
+        Type[] upstreamExceptions = [typeof(IPacketSender), typeof(LiveMixinManager)];
+
+        string[] offenders = metadataTypes.SelectMany(type => type.GetConstructors().SelectMany(constructor => constructor.GetParameters())
+                                                                  .Where(parameter => !metadataTypes.Contains(parameter.ParameterType) && !upstreamExceptions.Contains(parameter.ParameterType))
+                                                                  .Select(parameter => $"{type.Name}({parameter.ParameterType.Name})"))
+                                          .ToArray();
+
+        Assert.IsTrue(metadataTypes.Length > 20, "The processors and extractors were not found.");
+        Assert.AreEqual(0, offenders.Length, string.Join(", ", offenders));
     }
 }

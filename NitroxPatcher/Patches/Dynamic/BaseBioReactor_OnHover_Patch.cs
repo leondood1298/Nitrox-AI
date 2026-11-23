@@ -7,9 +7,5 @@ public sealed partial class BaseBioReactor_OnHover_Patch : NitroxPatch, IDynamic
 {
     private static readonly MethodInfo TARGET_METHOD = Reflect.Method((BaseBioReactor t) => t.OnHover());
 
-    public static void Postfix(BaseBioReactor __instance)
-    {
-        string vanillaText = Language.main.GetFormat("UseBaseBioReactor", UnityEngine.Mathf.RoundToInt(__instance._powerSource.GetPower()), UnityEngine.Mathf.RoundToInt(__instance._powerSource.GetMaxPower()));
-        HandReticle.main.SetText(HandReticle.TextType.Hand, $"{vanillaText}\n{ReactorFuelDisplay.GetStatus(__instance)}", false, GameInput.Button.LeftHand);
-    }
+    public static void Postfix(BaseBioReactor __instance) => ReactorFuelDisplay.ShowHandText(__instance);
 }

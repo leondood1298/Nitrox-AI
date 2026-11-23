@@ -24,7 +24,20 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
     TimeProvider? timeProvider = null)
 {
     public const string PREFIX = DiagnosticLineFormat.SCANNER_ROOM_TAG;
+
+    /// <summary>
+    ///     How many entries the scannerroom command can look back on. Like the other capacities and lengths below a
+    ///     guess, not a measurement: enough to follow a test step, and a fixed bound on what a server that runs for
+    ///     weeks keeps in memory.
+    /// </summary>
     public const int HISTORY_CAPACITY = 256;
+
+    /// <summary>
+    ///     Reasons quote ids, sizes and session ids and are cut off here. A tester's mark is a reason as well.
+    /// </summary>
+    internal const int REASON_LENGTH = 64;
+
+    private const int EVENT_NAME_LENGTH = 32;
 
     /// <summary>
     ///     Printed for a lock field when the lock exists as a concept for the line but nobody holds it.
@@ -45,6 +58,10 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
     private const int REJECTION_KEY_CAPACITY = 256;
     private const int STATE_REVISION_CAPACITY = 256;
 
+    /// <summary>
+    ///     A guess: long enough that <see cref="REJECTION_LINES_PER_WINDOW" /> lines in it are no flood, short enough
+    ///     that a tester who waits it out sees the next rejection.
+    /// </summary>
     internal static readonly TimeSpan REJECTION_WINDOW = TimeSpan.FromSeconds(60);
 
     private readonly Queue<ScannerRoomDiagnosticEntry> history = new(HISTORY_CAPACITY);
@@ -212,7 +229,7 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
             if (stateRevision is { } revision && IsUnchangedState(eventName, room, revision))
             {
                 Interlocked.Increment(ref unchangedRepeats);
-                return new ScannerRoomDiagnosticEntry(0, epoch, DiagnosticLineFormat.Token(eventName, 32), outcome, sessionId,
+                return new ScannerRoomDiagnosticEntry(0, epoch, DiagnosticLineFormat.Token(eventName, EVENT_NAME_LENGTH), outcome, sessionId,
                     DiagnosticLineFormat.ShortId(room?.Id, false), DiagnosticLineFormat.NOT_APPLICABLE, slot, null, null, "unchanged");
             }
             return RecordCore(outcome, eventName, room, cameraId, sessionId, slot, reason, capturedSnapshot);
@@ -261,7 +278,7 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
                 // The log sink is what failed. There is nowhere left to report it.
             }
         }
-        return new ScannerRoomDiagnosticEntry(0, epoch, DiagnosticLineFormat.Token(eventName, 32), outcome, sessionId,
+        return new ScannerRoomDiagnosticEntry(0, epoch, DiagnosticLineFormat.Token(eventName, EVENT_NAME_LENGTH), outcome, sessionId,
             DiagnosticLineFormat.NOT_APPLICABLE, DiagnosticLineFormat.NOT_APPLICABLE, null, null, null, "diagnostics_failed");
     }
 
@@ -294,7 +311,7 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
             entry = new ScannerRoomDiagnosticEntry(
                 ++nextSequence,
                 epoch,
-                DiagnosticLineFormat.Token(eventName, 32),
+                DiagnosticLineFormat.Token(eventName, EVENT_NAME_LENGTH),
                 outcome,
                 sessionId,
                 DiagnosticLineFormat.ShortId(room?.Id, false),
@@ -302,7 +319,7 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
                 slot,
                 snapshot?.CameraCount ?? cameraCount,
                 snapshot?.Fingerprint,
-                DiagnosticLineFormat.Token(reason, 64),
+                DiagnosticLineFormat.Token(reason, REASON_LENGTH),
                 roomLock,
                 cameraLock,
                 Time: timeProvider.GetUtcNow());
@@ -371,7 +388,7 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
     }
 
     private string FormatMarker(string eventName, SessionId? sessionId, string reason) =>
-        $"{DiagnosticLineFormat.Header(PREFIX, null, epoch, DiagnosticLineFormat.SERVER_SIDE, sessionId, eventName, "info")} utc={DiagnosticLineFormat.UtcStamp(timeProvider.GetUtcNow())} reason={DiagnosticLineFormat.Token(reason, 64)}";
+        $"{DiagnosticLineFormat.Header(PREFIX, null, epoch, DiagnosticLineFormat.SERVER_SIDE, sessionId, eventName, "info")} utc={DiagnosticLineFormat.UtcStamp(timeProvider.GetUtcNow())} reason={DiagnosticLineFormat.Token(reason, REASON_LENGTH)}";
 
     /// <summary>
     ///     Decides whether a rejection gets a log line. Repeats of the same rejection are thinned out and say how
@@ -440,56 +457,4 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
                 break;
         }
     }
-}
-
-internal enum ScannerRoomDiagnosticOutcome
-{
-    ACCEPTED,
-    REJECTED,
-    INVARIANT_FAILURE,
-    CHECKPOINT
-}
-
-internal readonly record struct ScannerRoomDiagnosticCounters(
-    long Recorded,
-    long Accepted,
-    long Rejected,
-    long InvariantFailures,
-    long Checkpoints,
-    long SuppressedWarnings = 0);
-
-internal readonly record struct ScannerRoomDiagnosticEntry(
-    long Sequence,
-    string Epoch,
-    string EventName,
-    ScannerRoomDiagnosticOutcome Outcome,
-    SessionId? SessionId,
-    string RoomId,
-    string CameraId,
-    int? Slot,
-    int? CameraCount,
-    string? StateFingerprint,
-    string Reason,
-    string RoomLock = DiagnosticLineFormat.NOT_APPLICABLE,
-    string CameraLock = DiagnosticLineFormat.NOT_APPLICABLE,
-    long Repeat = 1,
-    DateTimeOffset Time = default)
-{
-    /// <summary>
-    ///     <c>rep=</c> is only printed for a repeated rejection: it counts how often the same request was rejected
-    ///     for the same reason, including the repeats that did not get a line of their own.
-    /// </summary>
-    public string Format() =>
-        $"{DiagnosticLineFormat.Header(ScannerRoomDiagnostics.PREFIX, Sequence, Epoch, DiagnosticLineFormat.SERVER_SIDE, SessionId, EventName, OutcomeToken())} room={RoomId} cam={CameraId} slot={DiagnosticLineFormat.Number(Slot)} cams={DiagnosticLineFormat.Number(CameraCount)} roomLock={RoomLock} camLock={CameraLock} fp={StateFingerprint ?? DiagnosticLineFormat.NOT_APPLICABLE}{(Repeat > 1 ? $" rep={DiagnosticLineFormat.Number(Repeat)}" : "")} reason={Reason}";
-
-    public override string ToString() => Format();
-
-    private string OutcomeToken() => Outcome switch
-    {
-        ScannerRoomDiagnosticOutcome.ACCEPTED => "ok",
-        ScannerRoomDiagnosticOutcome.REJECTED => "reject",
-        ScannerRoomDiagnosticOutcome.INVARIANT_FAILURE => "invariant",
-        ScannerRoomDiagnosticOutcome.CHECKPOINT => "checkpoint",
-        _ => "unknown"
-    };
 }

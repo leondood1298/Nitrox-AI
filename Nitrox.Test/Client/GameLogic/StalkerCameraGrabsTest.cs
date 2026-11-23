@@ -30,7 +30,7 @@ public sealed class StalkerCameraGrabsTest
         IMultiplayerSession multiplayerSession = Substitute.For<IMultiplayerSession>();
         multiplayerSession.Reservation.Returns(new MultiplayerSessionReservation(localSession));
         simulationOwnership = new SimulationOwnership(multiplayerSession, packetSender);
-        cameras = new MapRoomCameras(packetSender, multiplayerSession, simulationOwnership, null!, new ScannerRoomClientDiagnostics());
+        cameras = new MapRoomCameras(packetSender, multiplayerSession, simulationOwnership, new ScannerRoomClientDiagnostics());
         grabs = new StalkerCameraGrabs(simulationOwnership, cameras);
     }
 

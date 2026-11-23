@@ -2,6 +2,11 @@ using System;
 
 namespace NitroxClient.GameLogic;
 
+/// <summary>
+///     A room's scan range and scan interval from the upgrades in its console, by the game's own formula. The numbers
+///     are read from the IL of MapRoomFunctionality.UpdateScanRangeAndInterval; the server checks reported scan
+///     ranges against the same ones.
+/// </summary>
 public static class MapRoomUpgradeEffects
 {
     internal const float BASE_RANGE = 300f;
@@ -14,4 +19,10 @@ public static class MapRoomUpgradeEffects
     public static float ScanRange(int rangeModules) => Math.Min(MAX_RANGE, BASE_RANGE + Math.Max(0, rangeModules) * RANGE_PER_MODULE);
 
     public static float ScanInterval(int speedModules) => Math.Max(MIN_INTERVAL, BASE_INTERVAL - Math.Max(0, speedModules) * INTERVAL_REDUCTION_PER_MODULE);
+
+    public static void Apply(MapRoomFunctionality mapRoom)
+    {
+        mapRoom.scanRange = ScanRange(mapRoom.storageContainer.container.GetCount(TechType.MapRoomUpgradeScanRange));
+        mapRoom.scanInterval = ScanInterval(mapRoom.storageContainer.container.GetCount(TechType.MapRoomUpgradeScanSpeed));
+    }
 }

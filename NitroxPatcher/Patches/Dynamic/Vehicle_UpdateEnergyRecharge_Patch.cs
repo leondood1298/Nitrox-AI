@@ -1,6 +1,5 @@
 using System.Reflection;
 using NitroxClient.GameLogic;
-using Nitrox.Model.DataStructures;
 
 namespace NitroxPatcher.Patches.Dynamic;
 
@@ -14,11 +13,7 @@ public sealed partial class Vehicle_UpdateEnergyRecharge_Patch : NitroxPatch, ID
 
     public static bool Prefix(Vehicle __instance, out bool __state)
     {
-        __state = __instance.TryGetNitroxId(out NitroxId vehicleId) && Resolve<SimulationOwnership>().HasAnyLockType(vehicleId);
-        if (__state)
-        {
-            Resolve<BasePowerConsumptionForwarder>().EnterConsumer();
-        }
+        __state = Resolve<BasePowerConsumptionForwarder>().EnterConsumerIfSimulated(__instance);
         return __state;
     }
 

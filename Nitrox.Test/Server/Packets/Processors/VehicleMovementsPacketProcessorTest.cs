@@ -4,18 +4,18 @@ using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.GameLogic.PlayerAnimation;
-using Nitrox.Model.Packets;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.MultiplayerSession;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
-using Nitrox.Server.Subnautica.Models.Packets.Processors;
+using Nitrox.Test.Server.GameLogic;
+using NSubstitute;
 
-namespace Nitrox.Test.Server.Subnautica;
+namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
 [TestClass]
-public sealed class VehicleMovementsPacketProcessorAuthorityTest
+public sealed class VehicleMovementsPacketProcessorTest
 {
     [TestMethod]
     [DataRow(0, false)]
@@ -63,11 +63,11 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
         SimpleMovementData movement = CreateMovement(ScannerRoomScenarioFixture.CameraAId, 1f);
 
         await test.Processor.Process(
-            new AuthProcessorContext(test.Scenario.PlayerB, test.Sender),
+            test.Scenario.Context(test.Scenario.PlayerB),
             new VehicleMovements([movement], 10d));
 
         AssertCanonicalTransform(test.Entity(ScannerRoomScenarioFixture.CameraAId), NitroxVector3.Zero, NitroxQuaternion.Identity);
-        Assert.AreEqual(0, test.Sender.OthersPackets);
+        Assert.AreEqual(0, test.Forwarded().Count);
     }
 
     [TestMethod]
@@ -82,9 +82,9 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
         SimpleMovementData ownedC = CreateMovement(ScannerRoomScenarioFixture.CameraCId, 3f);
         VehicleMovements request = new([ownedA, foreignB, ownedC], 42.5d);
 
-        await test.Processor.Process(new AuthProcessorContext(test.Scenario.PlayerA, test.Sender), request);
+        await test.Processor.Process(test.Scenario.Context(test.Scenario.PlayerA), request);
 
-        VehicleMovements forwarded = test.Sender.Single<VehicleMovements>();
+        VehicleMovements forwarded = test.Forwarded().Single();
         Assert.AreEqual(42.5d, forwarded.RealTime);
         CollectionAssert.AreEqual(
             new[] { ScannerRoomScenarioFixture.CameraAId, ScannerRoomScenarioFixture.CameraCId },
@@ -125,7 +125,7 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
         using (test.Scenario.Manager.HoldGateAsync().GetAwaiter().GetResult())
         {
             processing = Task.Run(() => test.Processor.Process(
-                new AuthProcessorContext(test.Scenario.PlayerA, test.Sender),
+                test.Scenario.Context(test.Scenario.PlayerA),
                 new VehicleMovements([movement], 43d)));
             completedWhileRoomLocked = processing.Wait(TimeSpan.FromMilliseconds(500));
         }
@@ -133,7 +133,7 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
 
         Assert.IsTrue(completedWhileRoomLocked,
             "An ordinary non-camera movement batch must not wait for Scanner Room state.");
-        VehicleMovements forwarded = test.Sender.Single<VehicleMovements>();
+        VehicleMovements forwarded = test.Forwarded().Single();
         Assert.AreSame(movement, forwarded.Data.Single());
         AssertCanonicalTransform(ordinaryEntity, movement.Position, movement.Rotation);
     }
@@ -156,14 +156,14 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
         ];
 
         await test.Processor.Process(
-            new AuthProcessorContext(test.Scenario.PlayerA, test.Sender),
+            test.Scenario.Context(test.Scenario.PlayerA),
             new VehicleMovements(malformed, 1d));
 
         foreach (NitroxId cameraId in test.Scenario.CameraIds)
         {
             AssertCanonicalTransform(test.Entity(cameraId), NitroxVector3.Zero, NitroxQuaternion.Identity);
         }
-        Assert.AreEqual(0, test.Sender.OthersPackets);
+        Assert.AreEqual(0, test.Forwarded().Count);
     }
 
     [TestMethod]
@@ -171,7 +171,7 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
     {
         MovementScenario test = new();
         Assert.IsTrue(test.Scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.CameraAId, test.Scenario.PlayerA, SimulationLockType.EXCLUSIVE));
-        AuthProcessorContext context = new(test.Scenario.PlayerA, test.Sender);
+        AuthProcessorContext context = test.Scenario.Context(test.Scenario.PlayerA);
         SimpleMovementData movement = CreateMovement(ScannerRoomScenarioFixture.CameraAId, 4f);
         List<MovementData> oversized = Enumerable.Range(0, VehicleMovementsPacketProcessor.MAX_MOVEMENTS_PER_PACKET + 1)
             .Select(index => (MovementData)CreateMovement(ScannerRoomScenarioFixture.CameraAId, index + 1f))
@@ -186,7 +186,7 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
         await test.Processor.Process(context, new VehicleMovements([movement], double.MaxValue));
 
         AssertCanonicalTransform(test.Entity(ScannerRoomScenarioFixture.CameraAId), NitroxVector3.Zero, NitroxQuaternion.Identity);
-        Assert.AreEqual(0, test.Sender.OthersPackets);
+        Assert.AreEqual(0, test.Forwarded().Count);
     }
 
     [TestMethod]
@@ -197,10 +197,10 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
         SimpleMovementData movement = CreateMovement(ScannerRoomScenarioFixture.CameraAId, 7f);
 
         await test.Processor.Process(
-            new AuthProcessorContext(test.Scenario.PlayerA, test.Sender),
+            test.Scenario.Context(test.Scenario.PlayerA),
             new VehicleMovements([movement], 1533d));
 
-        VehicleMovements forwarded = test.Sender.Single<VehicleMovements>();
+        VehicleMovements forwarded = test.Forwarded().Single();
         Assert.AreEqual(1, forwarded.Data.Count);
         Assert.AreSame(movement, forwarded.Data[0]);
         Assert.AreEqual(1533d, forwarded.RealTime);
@@ -218,20 +218,20 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
             cameraId, test.Scenario.PlayerA, SimulationLockType.TRANSIENT));
 
         await test.Processor.Process(
-            new AuthProcessorContext(test.Scenario.PlayerA, test.Sender),
+            test.Scenario.Context(test.Scenario.PlayerA),
             new VehicleMovements([CreateMovement(cameraId, 7.1f)], 1533.1d));
 
-        Assert.AreEqual(0, test.Sender.OthersPackets);
+        Assert.AreEqual(0, test.Forwarded().Count);
         AssertCanonicalTransform(test.Entity(cameraId),
             NitroxVector3.Zero, NitroxQuaternion.Identity);
 
         Assert.IsTrue(test.Scenario.Ownership.TryAcquire(
             cameraId, test.Scenario.PlayerA, SimulationLockType.EXCLUSIVE));
         await test.Processor.Process(
-            new AuthProcessorContext(test.Scenario.PlayerA, test.Sender),
+            test.Scenario.Context(test.Scenario.PlayerA),
             new VehicleMovements([CreateMovement(cameraId, 7.2f)], 1533.2d));
 
-        Assert.AreEqual(0, test.Sender.OthersPackets,
+        Assert.AreEqual(0, test.Forwarded().Count,
             "An exclusive lock without canonical control must not move a docked camera.");
         AssertCanonicalTransform(test.Entity(cameraId),
             NitroxVector3.Zero, NitroxQuaternion.Identity);
@@ -240,10 +240,10 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
             test.Scenario.PlayerA, cameraId, true)).Granted);
         SimpleMovementData authorizedMovement = CreateMovement(cameraId, 7.3f);
         await test.Processor.Process(
-            new AuthProcessorContext(test.Scenario.PlayerA, test.Sender),
+            test.Scenario.Context(test.Scenario.PlayerA),
             new VehicleMovements([authorizedMovement], 1533.3d));
 
-        Assert.AreEqual(1, test.Sender.OthersPackets);
+        Assert.AreEqual(1, test.Forwarded().Count);
         AssertCanonicalTransform(test.Entity(cameraId),
             authorizedMovement.Position, authorizedMovement.Rotation);
     }
@@ -256,11 +256,14 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
         Assert.IsTrue(test.Scenario.Ownership.TryAcquire(cameraId, test.Scenario.PlayerA, SimulationLockType.EXCLUSIVE));
         using ManualResetEventSlim sendEntered = new();
         using ManualResetEventSlim continueSend = new();
-        test.Sender.SendEntered = sendEntered;
-        test.Sender.ContinueSend = continueSend;
+        test.Scenario.PacketSender.When(sender => sender.SendPacketToOthersAsync(Arg.Any<VehicleMovements>(), Arg.Any<SessionId>())).Do(_ =>
+        {
+            sendEntered.Set();
+            continueSend.Wait(TimeSpan.FromSeconds(5));
+        });
 
         Task movement = Task.Run(() => test.Processor.Process(
-            new AuthProcessorContext(test.Scenario.PlayerA, test.Sender),
+            test.Scenario.Context(test.Scenario.PlayerA),
             new VehicleMovements([CreateMovement(cameraId, 9f)], 10d)));
         Assert.IsTrue(sendEntered.Wait(TimeSpan.FromSeconds(5)), "Movement did not reach the packet enqueue boundary.");
 
@@ -277,7 +280,7 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
 
         await movement.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.IsTrue(await revoke.WaitAsync(TimeSpan.FromSeconds(5)));
-        Assert.AreEqual(1, test.Sender.OthersPackets);
+        Assert.AreEqual(1, test.Forwarded().Count);
     }
 
     [TestMethod]
@@ -292,10 +295,10 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
         NitroxVector3 playerPositionBefore = test.Scenario.PlayerA.Position;
 
         await test.Processor.Process(
-            new AuthProcessorContext(test.Scenario.PlayerA, test.Sender),
+            test.Scenario.Context(test.Scenario.PlayerA),
             new VehicleMovements([movement], 1d));
 
-        Assert.AreEqual(1, test.Sender.OthersPackets);
+        Assert.AreEqual(1, test.Forwarded().Count);
         AssertCanonicalTransform(test.Entity(cameraId), movement.Position, movement.Rotation);
         Assert.AreEqual(playerPositionBefore, test.Scenario.PlayerA.Position,
             "Only a registered pilot's own position follows the vehicle.");
@@ -311,10 +314,10 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
         test.Scenario.PlayerA.PlayerContext = CreatePlayerContext(test.Scenario.PlayerA, cameraId);
 
         await test.Processor.Process(
-            new AuthProcessorContext(test.Scenario.PlayerA, test.Sender),
+            test.Scenario.Context(test.Scenario.PlayerA),
             new VehicleMovements([movement], 2d));
 
-        Assert.AreEqual(1, test.Sender.OthersPackets);
+        Assert.AreEqual(1, test.Forwarded().Count);
         AssertCanonicalTransform(test.Entity(cameraId), movement.Position, movement.Rotation);
         Assert.AreEqual(movement.Position, test.Scenario.PlayerA.Position);
         Assert.AreEqual(movement.Rotation, test.Scenario.PlayerA.Rotation);
@@ -346,7 +349,6 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
     private sealed class MovementScenario
     {
         internal ScannerRoomScenarioFixture Scenario { get; } = new();
-        internal RecordingPacketSender Sender { get; } = new();
         internal VehicleMovementsPacketProcessor Processor { get; }
 
         internal MovementScenario()
@@ -358,8 +360,7 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
                 entity.Transform.LocalRotation = NitroxQuaternion.Identity;
                 entity.Transform.LocalScale = NitroxVector3.One;
             }
-            Processor = new(Scenario.EntityRegistry, Scenario.Ownership, Scenario.Manager,
-                new DiscardingLogger<VehicleMovementsPacketProcessor>());
+            Processor = new(Scenario.EntityRegistry, Scenario.Ownership, Scenario.Manager, Substitute.For<ILogger<VehicleMovementsPacketProcessor>>());
         }
 
         internal WorldEntity Entity(NitroxId id)
@@ -367,39 +368,15 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
             Assert.IsTrue(Scenario.EntityRegistry.TryGetEntityById(id, out WorldEntity entity));
             return entity;
         }
-    }
 
-    private sealed class RecordingPacketSender : IPacketSender
-    {
-        private readonly List<Packet> packets = [];
-
-        internal int OthersPackets { get; private set; }
-        internal ManualResetEventSlim? SendEntered { get; set; }
-        internal ManualResetEventSlim? ContinueSend { get; set; }
-
-        public ValueTask SendPacketAsync<T>(T packet, SessionId sessionId) where T : Packet => throw new NotSupportedException();
-        public ValueTask SendPacketToAllAsync<T>(T packet) where T : Packet => throw new NotSupportedException();
-
-        public ValueTask SendPacketToOthersAsync<T>(T packet, SessionId excludedSessionId) where T : Packet
+        /// <summary>
+        ///     The movement the processor passed on, which it does to the other players and to nobody else.
+        /// </summary>
+        internal List<VehicleMovements> Forwarded()
         {
-            SendEntered?.Set();
-            ContinueSend?.Wait(TimeSpan.FromSeconds(5));
-            packets.Add(packet);
-            OthersPackets++;
-            return ValueTask.CompletedTask;
-        }
-
-        internal T Single<T>() where T : Packet => packets.OfType<T>().Single();
-    }
-
-    private sealed class DiscardingLogger<T> : ILogger<T>
-    {
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
-            Func<TState, Exception?, string> formatter)
-        {
+            List<VehicleMovements> toOthers = Scenario.SentToOthers<VehicleMovements>();
+            Assert.AreEqual(toOthers.Count, Scenario.Sent<VehicleMovements>().Count, "Movement is passed on to the other players only.");
+            return toOthers;
         }
     }
 }
