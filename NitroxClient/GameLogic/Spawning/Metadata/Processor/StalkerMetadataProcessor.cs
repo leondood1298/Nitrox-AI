@@ -10,6 +10,7 @@ public class StalkerMetadataProcessor : EntityMetadataProcessor<StalkerMetadata>
     {
         // Before InitializeOnce, whose infection roll must see that the infection is decided
         Resolve<CreatureInfections>().ApplyReceived(gameObject, metadata.InfectedAmount);
+        Resolve<CreatureLeashes>().ApplyReceived(gameObject, metadata);
 
         if (gameObject.TryGetComponent(out Stalker stalker))
         {

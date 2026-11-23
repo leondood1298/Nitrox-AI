@@ -2,6 +2,7 @@ using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication.Packets.Processors.Core;
 using NitroxClient.GameLogic;
+using NitroxClient.MonoBehaviours;
 
 namespace NitroxClient.Communication.Packets.Processors;
 
@@ -10,7 +11,8 @@ internal sealed class SimulationOwnershipChangeProcessor(
     MapRoomCameras mapRoomCameras,
     StalkerCameraGrabs stalkerCameraGrabs,
     CreatureInfections creatureInfections,
-    StalkerShinyGrabs? stalkerShinyGrabs = null)
+    StalkerShinyGrabs? stalkerShinyGrabs = null,
+    CreatureLeashes? creatureLeashes = null)
     : IClientPacketProcessor<SimulationOwnershipChange>
 {
     private readonly SimulationOwnership simulationOwnershipManager = simulationOwnershipManager;
@@ -28,6 +30,11 @@ internal sealed class SimulationOwnershipChangeProcessor(
             {
                 // The creature appeared long ago: its infection roll ran without the lock
                 creatureInfections.RollIfUndecided(simulatedEntity.Id);
+                // Its leash and size may never have been sent
+                if (creatureLeashes != null && NitroxEntity.TryGetComponentFrom(simulatedEntity.Id, out Creature creature) && creature.isInitialized)
+                {
+                    creatureLeashes.OnStarted(creature);
+                }
             }
             if (lockLost)
             {

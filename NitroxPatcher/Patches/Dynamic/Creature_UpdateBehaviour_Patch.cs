@@ -35,6 +35,14 @@ public sealed partial class Creature_UpdateBehaviour_Patch : NitroxPatch, IDynam
                                             .InstructionEnumeration();
     }
 
+    /// <summary>
+    ///     A leash its actions moved (fleeing, a Stalker's nest) is sent by the creature's simulating player.
+    /// </summary>
+    public static void Postfix(Creature __instance)
+    {
+        Resolve<CreatureLeashes>().OnBehaviourUpdated(__instance);
+    }
+
     public static void StopPerform(CreatureAction action, Creature creature, float time)
     {
         if (Resolve<AI>().MayRunAction(creature, action, false))

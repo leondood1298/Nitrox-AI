@@ -25,7 +25,9 @@ public class WaterParkCreatureMetadata : CreatureMetadata
         // Constructor for serialization. Has to be "protected" for json serialization.
     }
 
-    public WaterParkCreatureMetadata(float age, double matureTime, float timeNextBreed, bool bornInside, float infectedAmount, float enzymeEndTime = NO_ENZYME) : base(infectedAmount, enzymeEndTime)
+    public WaterParkCreatureMetadata(float age, double matureTime, float timeNextBreed, bool bornInside, float infectedAmount, float enzymeEndTime = NO_ENZYME, bool hasLeash = false,
+                                     Nitrox.Model.DataStructures.Unity.NitroxVector3 leashPosition = default, bool hasSize = false, float size = 0f)
+        : base(infectedAmount, enzymeEndTime, hasLeash, leashPosition, hasSize, size)
     {
         Age = age;
         MatureTime = matureTime;
