@@ -22,7 +22,7 @@ public sealed class MapRoomCameraJoinControlStateTest
     {
         ScannerRoomScenarioFixture scenario = new();
         Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 1, true)).Granted);
-        scenario.SetCameraState(ScannerRoomScenarioFixture.CameraAId, scenario.CameraState(ScannerRoomScenarioFixture.CameraAId).WithLight(true, 1));
+        scenario.SetCameraState(ScannerRoomScenarioFixture.CameraAId, scenario.CameraState(ScannerRoomScenarioFixture.CameraAId).WithLight(true));
         Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 1, true)).Granted);
         Assert.IsTrue(scenario.EntityRegistry.TryGetEntityById(ScannerRoomScenarioFixture.CameraBId, out WorldEntity looseCamera));
         looseCamera.Metadata = new MapRoomCameraMetadata(true, 2);

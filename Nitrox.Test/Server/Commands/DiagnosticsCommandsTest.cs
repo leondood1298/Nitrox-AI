@@ -60,7 +60,7 @@ public sealed class DiagnosticsCommandsTest
         lines.Should().Contain(line => line.StartsWith(" ! camera ") && line.Contains("is out in the world and nobody simulates it"));
         Array.FindIndex(lines, line => line.StartsWith("Rooms and their cameras")).Should().Be(5, "the listing comes after every anomaly");
         lines[6].Should().StartWith($"[SRD1] snapshot ep={diagnostics.Epoch} side=S room={ScannerRoomScenarioFixture.RoomId} roomLock=none left=00000000.0000 right=- cams=1 ");
-        lines[7].Should().StartWith("  cam=00000000.0000 number=1 where=slot0 camLock=1t control=- light=off lightRev=0 energy=100.0 health=400.0 compRev=0 ")
+        lines[7].Should().StartWith("  cam=00000000.0000 number=1 where=slot0 camLock=1t control=- light=off energy=100.0 health=400.0 ")
                 .And.EndWith($" id={ScannerRoomScenarioFixture.CameraAId}");
         lines[8].Should().Be("Cameras in no dock (2):");
         lines[9].Should().Contain(" where=world camLock=2x control=- ").And.EndWith($" id={ScannerRoomScenarioFixture.CameraBId}");

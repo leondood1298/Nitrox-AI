@@ -27,28 +27,22 @@ public class MapRoomCameraMetadata : EntityMetadata
     public bool LightOn { get; }
 
     [DataMember(Order = 2)]
-    public long LightRevision { get; }
-
-    [DataMember(Order = 3)]
     public float Energy { get; }
 
-    [DataMember(Order = 4)]
+    [DataMember(Order = 3)]
     public float Health { get; }
-
-    [DataMember(Order = 5)]
-    public long ComponentRevision { get; }
 
     /// <summary>
     ///     The number the camera shows on every screen. The game has one list of all cameras, and any screen cycles
     ///     through all of them, so the number is unique in the world. The server assigns it once; 0 until then.
     /// </summary>
-    [DataMember(Order = 6)]
+    [DataMember(Order = 4)]
     public int CameraNumber { get; }
 
     /// <summary>
     ///     The dock of its parent room the camera sits in, or <see cref="NOT_DOCKED" />. Only the server changes it.
     /// </summary>
-    [DataMember(Order = 7)]
+    [DataMember(Order = 5)]
     public int DockingIndex { get; }
 
     public bool IsDocked => DockingIndex >= 0;
@@ -59,26 +53,22 @@ public class MapRoomCameraMetadata : EntityMetadata
         // Constructor for serialization. Has to be "protected" for json serialization.
     }
 
-    public MapRoomCameraMetadata(bool lightOn = false, long lightRevision = 0, float energy = MAX_ENERGY, float health = MAX_HEALTH, long componentRevision = 0,
-        int cameraNumber = 0, int dockingIndex = NOT_DOCKED)
+    public MapRoomCameraMetadata(bool lightOn = false, float energy = MAX_ENERGY, float health = MAX_HEALTH, int cameraNumber = 0, int dockingIndex = NOT_DOCKED)
     {
         LightOn = lightOn;
-        LightRevision = lightRevision;
         Energy = energy;
         Health = health;
-        ComponentRevision = componentRevision;
         CameraNumber = cameraNumber;
         DockingIndex = dockingIndex;
     }
 
-    public MapRoomCameraMetadata WithLight(bool lightOn, long lightRevision) => new(lightOn, lightRevision, Energy, Health, ComponentRevision, CameraNumber, DockingIndex);
+    public MapRoomCameraMetadata WithLight(bool lightOn) => new(lightOn, Energy, Health, CameraNumber, DockingIndex);
 
-    public MapRoomCameraMetadata WithComponents(float energy, float health, long componentRevision) =>
-        new(LightOn, LightRevision, energy, health, componentRevision, CameraNumber, DockingIndex);
+    public MapRoomCameraMetadata WithComponents(float energy, float health) => new(LightOn, energy, health, CameraNumber, DockingIndex);
 
-    public MapRoomCameraMetadata WithCameraNumber(int cameraNumber) => new(LightOn, LightRevision, Energy, Health, ComponentRevision, cameraNumber, DockingIndex);
+    public MapRoomCameraMetadata WithCameraNumber(int cameraNumber) => new(LightOn, Energy, Health, cameraNumber, DockingIndex);
 
-    public MapRoomCameraMetadata WithDockingIndex(int dockingIndex) => new(LightOn, LightRevision, Energy, Health, ComponentRevision, CameraNumber, dockingIndex);
+    public MapRoomCameraMetadata WithDockingIndex(int dockingIndex) => new(LightOn, Energy, Health, CameraNumber, dockingIndex);
 
     /// <summary>
     ///     Coarse percentage band (0, 10, 25, 50, 75 or 100) of a camera's energy or health relative to its maximum.
@@ -96,6 +86,6 @@ public class MapRoomCameraMetadata : EntityMetadata
 
     public override string ToString()
     {
-        return $"[{nameof(MapRoomCameraMetadata)} Number: {CameraNumber}, DockingIndex: {DockingIndex}, LightOn: {LightOn} (rev {LightRevision}), Energy: {Energy}, Health: {Health} (rev {ComponentRevision})]";
+        return $"[{nameof(MapRoomCameraMetadata)} Number: {CameraNumber}, DockingIndex: {DockingIndex}, LightOn: {LightOn}, Energy: {Energy}, Health: {Health}]";
     }
 }

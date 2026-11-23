@@ -78,11 +78,11 @@ public sealed class MapRoomCameraControlRefusalTest
     {
         ScannerRoomScenarioFixture scenario = new();
         Assert.IsTrue(scenario.EntityRegistry.TryGetEntityById(cameraId, out WorldEntity camera));
-        camera.Metadata = new MapRoomCameraMetadata(false, 0, 0f, MapRoomCameraMetadata.MAX_HEALTH, 3);
+        camera.Metadata = new MapRoomCameraMetadata(false, 0f);
 
         Assert.IsFalse((await scenario.ControlLooseAsync(scenario.PlayerA, cameraId, true)).Granted);
 
-        camera.Metadata = new MapRoomCameraMetadata(false, 0, 1f, MapRoomCameraMetadata.MAX_HEALTH, 4);
+        camera.Metadata = new MapRoomCameraMetadata(false, 1f);
         Assert.IsTrue((await scenario.ControlLooseAsync(scenario.PlayerA, cameraId, true)).Granted);
     }
 

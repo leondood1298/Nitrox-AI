@@ -16,54 +16,37 @@ namespace NitroxClient.GameLogic;
 
 public class MapRoomCameras
 {
-    private const float ENERGY_BROADCAST_THRESHOLD = 0.5f;
-    private const float HEALTH_BROADCAST_THRESHOLD = 0.05f;
     private const float DOCK_CHARGE_FRACTION_PER_UPDATE = 0.1f;
-    private const float CAMERA_BATTERY_WAIT_SECONDS = 10f;
     private const int PREVIEW_JPEG_QUALITY = 55;
 
     private readonly IPacketSender packetSender;
     private readonly IMultiplayerSession multiplayerSession;
-    private readonly LiveMixinManager liveMixinManager;
     private readonly SimulationOwnership simulationOwnership;
+    private readonly MapRoomCameraStates cameraStates;
     private readonly ScannerRoomClientDiagnostics diagnostics;
     private readonly StalkerCameraLockPurposeTracker stalkerCameraLockPurposeTracker;
-
-    private readonly Dictionary<NitroxId, bool> lastBroadcastLightState = new();
 
     private readonly HashSet<NitroxId> locallyControlled = new();
     private readonly HashSet<NitroxId> pendingControl = new();
     private readonly HashSet<NitroxId> remotelyControlled = new();
-    private readonly Dictionary<NitroxId, long> lightRevisions = new();
-    private readonly Dictionary<NitroxId, (float Energy, float Health)> lastComponents = new();
-    private readonly Dictionary<NitroxId, long> componentRevisions = new();
-    private readonly Dictionary<NitroxId, float> pendingCameraEnergy = new();
-    private readonly Dictionary<NitroxId, CameraBatteryInitialization> initializingCameraBatteries = new();
 
     /// <summary>
-    ///     What the server sent for cameras that had not spawned on this client yet: who controls them, and the latest
-    ///     light and battery and health that arrived after the camera's own entity was sent. Applied when the camera
-    ///     spawns.
+    ///     Who the server said controls cameras that had not spawned on this client yet. Applied when the camera spawns.
     /// </summary>
     private readonly Dictionary<NitroxId, MapRoomCameraControl> pendingControls = new();
-
-    private readonly Dictionary<NitroxId, MapRoomCameraLight> pendingLights = new();
-    private readonly Dictionary<NitroxId, MapRoomCameraComponentState> pendingComponents = new();
-    private long nextCameraBatteryInitializationGeneration;
     private long latestPreviewRevision;
     private MapRoomCameraPreview pendingPreview;
     private bool pendingPreviewPixelsApplied;
     private long lastPreviewApplyDiagnosticRevision;
     private string lastPreviewApplyDiagnosticOutcome;
 
-    public MapRoomCameras(IPacketSender packetSender, IMultiplayerSession multiplayerSession, LiveMixinManager liveMixinManager,
-        SimulationOwnership simulationOwnership, ScannerRoomClientDiagnostics diagnostics,
-        StalkerCameraLockPurposeTracker stalkerCameraLockPurposeTracker)
+    public MapRoomCameras(IPacketSender packetSender, IMultiplayerSession multiplayerSession, SimulationOwnership simulationOwnership,
+        MapRoomCameraStates cameraStates, ScannerRoomClientDiagnostics diagnostics, StalkerCameraLockPurposeTracker stalkerCameraLockPurposeTracker)
     {
         this.packetSender = packetSender;
         this.multiplayerSession = multiplayerSession;
-        this.liveMixinManager = liveMixinManager;
         this.simulationOwnership = simulationOwnership;
+        this.cameraStates = cameraStates;
         this.diagnostics = diagnostics;
         this.stalkerCameraLockPurposeTracker = stalkerCameraLockPurposeTracker;
     }
@@ -110,7 +93,6 @@ public class MapRoomCameras
             }
             NitroxId cameraId = NitroxEntity.GetIdOrGenerateNew(camera.gameObject);
             bool lightOn = camera.lightsParent && camera.lightsParent.activeSelf;
-            lastBroadcastLightState[cameraId] = lightOn;
             pendingControl.Add(cameraId);
             packetSender.Send(new MapRoomCameraControl(cameraId, mapRoomId, cameraIndex, isControlling: true, lightOn));
             diagnostics.Record("control_publish", "ok", cameraId, mapRoomId.HasValue ? mapRoomId.Value : null, slot: cameraIndex, reason: "acquire_requested");
@@ -119,7 +101,6 @@ public class MapRoomCameras
         {
             pendingControl.Remove(cameraId);
             locallyControlled.Remove(cameraId);
-            lastBroadcastLightState.Remove(cameraId);
             // Release the camera-specific lock before generic movement ownership is relinquished.
             // Otherwise the server can see an already-unlocked camera and fail to notify remote clients.
             packetSender.Send(new MapRoomCameraControl(cameraId, Optional.Empty, -1, isControlling: false, lightOn: false));
@@ -236,7 +217,7 @@ public class MapRoomCameras
                 return;
             }
             pendingControls.Remove(packet.CameraId);
-            SetLight(cameraObject, packet.LightOn);
+            MapRoomCameraStates.SetLight(cameraObject.GetComponent<MapRoomCamera>(), packet.LightOn);
             if (isLocalController)
             {
                 remotelyControlled.Remove(packet.CameraId);
@@ -406,7 +387,6 @@ public class MapRoomCameras
         bool hadControlState = pendingControl.Remove(cameraId);
         hadControlState |= locallyControlled.Remove(cameraId);
         hadControlState |= remotelyControlled.Remove(cameraId);
-        lastBroadcastLightState.Remove(cameraId);
         stalkerCameraLockPurposeTracker.Forget(cameraId);
         MovementBroadcaster.UnregisterWatched(cameraId);
         if (NitroxEntity.TryGetObjectFrom(cameraId, out GameObject cameraObject) &&
@@ -421,82 +401,11 @@ public class MapRoomCameras
         }
     }
 
-    public void BroadcastLightIfChanged(MapRoomCamera camera)
-    {
-        if (camera && camera.lightsParent && camera.TryGetNitroxId(out NitroxId cameraId))
-        {
-            bool lightOn = camera.lightsParent.activeSelf;
-            if (!lastBroadcastLightState.TryGetValue(cameraId, out bool lastLightOn) || lastLightOn != lightOn)
-            {
-                lastBroadcastLightState[cameraId] = lightOn;
-                packetSender.Send(new MapRoomCameraLight(cameraId, lightOn));
-            }
-        }
-    }
-
-    public void ProcessLight(MapRoomCameraLight packet)
-    {
-        diagnostics.RecordIfIgnored("light_apply", packet.CameraId, packet.IsServerResponse, packet.Granted, packet.Revision, lightRevisions);
-        if (!packet.IsServerResponse || !packet.Granted ||
-            lightRevisions.TryGetValue(packet.CameraId, out long revision) && packet.Revision < revision)
-        {
-            return;
-        }
-        lightRevisions[packet.CameraId] = packet.Revision;
-        if (!NitroxEntity.TryGetObjectFrom(packet.CameraId, out GameObject cameraObject) || !cameraObject.GetComponent<MapRoomCamera>())
-        {
-            pendingLights[packet.CameraId] = packet;
-            return;
-        }
-        pendingLights.Remove(packet.CameraId);
-        SetLight(cameraObject, packet.On);
-        lastBroadcastLightState[packet.CameraId] = packet.On;
-        diagnostics.Record("light_apply", "ok", packet.CameraId, revision: packet.Revision, reason: packet.On ? "on" : "off");
-    }
-
-    public void BroadcastComponentStateIfChanged(MapRoomCamera camera)
-    {
-        if (!camera || !camera.TryGetNitroxId(out NitroxId cameraId) || (!locallyControlled.Contains(cameraId) && !simulationOwnership.HasAnyLockType(cameraId)))
-        {
-            return;
-        }
-        // Until the server's battery and health have been applied, what the camera shows is what its prefab came
-        // with, and while its battery is being put in, it shows none.
-        if (!lastComponents.TryGetValue(cameraId, out (float Energy, float Health) last) || initializingCameraBatteries.ContainsKey(cameraId))
-        {
-            return;
-        }
-        float energy = camera.energyMixin.charge;
-        float health = camera.liveMixin.health;
-        if (Math.Abs(last.Energy - energy) >= ENERGY_BROADCAST_THRESHOLD || Math.Abs(last.Health - health) >= HEALTH_BROADCAST_THRESHOLD)
-        {
-            lastComponents[cameraId] = (energy, health);
-            packetSender.Send(new MapRoomCameraComponentState(cameraId, energy, health));
-        }
-    }
-
     /// <summary>
     ///     A camera in a dock is recharged by the player who simulates it, like everything else about its battery.
     /// </summary>
     private bool CanSimulateDockedCamera(MapRoomCamera camera) =>
         camera && camera.dockingPoint && camera.TryGetNitroxId(out NitroxId cameraId) && simulationOwnership.HasAnyLockType(cameraId);
-
-    public void ProcessComponentState(MapRoomCameraComponentState packet)
-    {
-        diagnostics.RecordIfIgnored("component_apply", packet.CameraId, packet.IsServerResponse, packet.Granted, packet.Revision, componentRevisions);
-        if (!packet.IsServerResponse || !packet.Granted || componentRevisions.TryGetValue(packet.CameraId, out long revision) && packet.Revision < revision)
-        {
-            return;
-        }
-        componentRevisions[packet.CameraId] = packet.Revision;
-        if (!NitroxEntity.TryGetComponentFrom(packet.CameraId, out MapRoomCamera camera))
-        {
-            pendingComponents[packet.CameraId] = packet;
-            return;
-        }
-        pendingComponents.Remove(packet.CameraId);
-        ApplyComponentState(camera, packet);
-    }
 
     /// <summary>
     ///     Gives a camera the number the server assigned to it. Without one, the game numbers a camera by its place in
@@ -513,50 +422,16 @@ public class MapRoomCameras
     }
 
     /// <summary>
-    ///     Called when a camera has spawned and the state it was sent with is applied. Whatever arrived for it before
-    ///     it existed is newer than that state and is applied now.
+    ///     Called when a camera has spawned and the state it was sent with is applied. If the server said before that
+    ///     somebody controls it, that is applied now.
     /// </summary>
     public void CameraSpawned(NitroxId cameraId)
     {
-        if (pendingLights.TryGetValue(cameraId, out MapRoomCameraLight light))
-        {
-            ProcessLight(light);
-        }
-        if (pendingComponents.TryGetValue(cameraId, out MapRoomCameraComponentState components))
-        {
-            ProcessComponentState(components);
-        }
         if (pendingControls.TryGetValue(cameraId, out MapRoomCameraControl control))
         {
             ProcessControl(control);
         }
         TryApplyPendingPreview();
-    }
-
-    private void ApplyComponentState(MapRoomCamera camera, MapRoomCameraComponentState packet)
-    {
-        if (camera.energyMixin.battery != null)
-        {
-            camera.energyMixin.battery.charge = packet.Energy;
-            pendingCameraEnergy.Remove(packet.CameraId);
-            // A replacement camera can become ready while an older instance still owns the wait.
-            // Supersede that generation; its coroutine will observe that it is stale and exit.
-            initializingCameraBatteries.Remove(packet.CameraId);
-        }
-        else
-        {
-            pendingCameraEnergy[packet.CameraId] = packet.Energy;
-            if (!initializingCameraBatteries.TryGetValue(packet.CameraId, out CameraBatteryInitialization initialization) ||
-                !ReferenceEquals(initialization.Camera, camera))
-            {
-                long generation = ++nextCameraBatteryInitializationGeneration;
-                initializingCameraBatteries[packet.CameraId] = new CameraBatteryInitialization(camera, generation);
-                UWE.CoroutineHost.StartCoroutine(InitializeCameraBattery(camera, packet.CameraId, generation));
-            }
-        }
-        liveMixinManager.SyncRemoteHealth(camera.liveMixin, packet.Health);
-        lastComponents[packet.CameraId] = (packet.Energy, packet.Health);
-        diagnostics.RecordComponentApplied(packet.CameraId, packet.Energy, packet.Health, packet.Revision, true);
     }
 
     public void UpdateEnergyRecharge(MapRoomCamera camera)
@@ -596,7 +471,7 @@ public class MapRoomCameras
         {
             camera.chargingSound.Stop(STOP_MODE.IMMEDIATE);
         }
-        BroadcastComponentStateIfChanged(camera);
+        cameraStates.ReportIfChanged(camera);
     }
 
     /// <summary>
@@ -611,99 +486,6 @@ public class MapRoomCameras
         }
         return Math.Min(capacity - Math.Max(0f, current), capacity * DOCK_CHARGE_FRACTION_PER_UPDATE);
     }
-
-    private IEnumerator InitializeCameraBattery(MapRoomCamera camera, NitroxId cameraId, long generation)
-    {
-        bool canonicalEnergyApplied = false;
-        bool populationFailed = false;
-        Exception populationException = null;
-        try
-        {
-            if (camera && camera.energyMixin.battery == null)
-            {
-                try
-                {
-                    BatteryChildEntityHelper.PopulateInstalledBattery(camera.energyMixin, [], cameraId);
-                }
-                catch (Exception ex)
-                {
-                    populationFailed = true;
-                    populationException = ex;
-                }
-
-                if (!populationFailed)
-                {
-                    float timeoutAt = Time.time + CAMERA_BATTERY_WAIT_SECONDS;
-                    yield return new WaitUntil(() => !camera || camera.energyMixin.battery != null ||
-                        !IsCurrentCameraBatteryInitialization(cameraId, camera, generation) || Time.time >= timeoutAt);
-                }
-            }
-
-            if (populationFailed && IsCurrentCameraBatteryInitialization(cameraId, camera, generation))
-            {
-                Log.Error(populationException, $"[MapRoomCameras] Failed to request a restored battery for camera {cameraId}; authoritative component broadcasts remain suppressed");
-                diagnostics.Record("component_apply", "pending", cameraId, reason: "battery_spawn_exception");
-            }
-            else if (camera && camera.energyMixin.battery == null &&
-                IsCurrentCameraBatteryInitialization(cameraId, camera, generation))
-            {
-                Log.Warn($"[MapRoomCameras] Restored camera {cameraId} battery is still unavailable after {CAMERA_BATTERY_WAIT_SECONDS} seconds; authoritative component broadcasts remain suppressed");
-                diagnostics.Record("component_apply", "pending", cameraId, reason: "battery_wait_timeout");
-            }
-
-            if (camera && camera.energyMixin.battery == null &&
-                IsCurrentCameraBatteryInitialization(cameraId, camera, generation))
-            {
-                yield return new WaitUntil(() => !camera || camera.energyMixin.battery != null ||
-                    !IsCurrentCameraBatteryInitialization(cameraId, camera, generation));
-            }
-
-            if (IsCurrentCameraBatteryInitialization(cameraId, camera, generation) && camera &&
-                camera.energyMixin.battery != null && pendingCameraEnergy.TryGetValue(cameraId, out float energy))
-            {
-                camera.energyMixin.battery.charge = energy;
-                canonicalEnergyApplied = true;
-                Log.Info($"[MapRoomCameras] Initialized restored camera {cameraId} battery with {energy:F2} energy");
-            }
-        }
-        finally
-        {
-            bool cameraAlive = camera;
-            bool batteryAvailable = cameraAlive && camera.energyMixin.battery != null;
-            bool currentGeneration = IsCurrentCameraBatteryInitialization(cameraId, camera, generation);
-            if (ShouldClearCameraBatteryInitialization(currentGeneration, cameraAlive, batteryAvailable, canonicalEnergyApplied))
-            {
-                pendingCameraEnergy.Remove(cameraId);
-                initializingCameraBatteries.Remove(cameraId);
-            }
-        }
-    }
-
-    private bool IsCurrentCameraBatteryInitialization(NitroxId cameraId, MapRoomCamera camera, long generation) =>
-        initializingCameraBatteries.TryGetValue(cameraId, out CameraBatteryInitialization initialization) &&
-        initialization.Generation == generation && ReferenceEquals(initialization.Camera, camera);
-
-    internal static bool ShouldClearCameraBatteryInitialization(bool currentGeneration, bool cameraAlive,
-        bool batteryAvailable, bool canonicalEnergyApplied) =>
-        currentGeneration && (!cameraAlive || batteryAvailable && canonicalEnergyApplied);
-
-    private static void SetLight(GameObject cameraObject, bool on)
-    {
-        if (!cameraObject.TryGetComponent(out MapRoomCamera camera))
-        {
-            return;
-        }
-
-        // Start restores lightsParent from this serialized field. Keep it canonical even when
-        // authoritative state arrives between prefab creation and the component's Start callback.
-        camera.lightState = on;
-        if (camera.lightsParent && camera.lightsParent.activeSelf != on)
-        {
-            camera.lightsParent.SetActive(on);
-        }
-    }
-
-    private readonly record struct CameraBatteryInitialization(MapRoomCamera Camera, long Generation);
 
     private static byte[] CapturePreviewJpeg(RenderTexture source)
     {

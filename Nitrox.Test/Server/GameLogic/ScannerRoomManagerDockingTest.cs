@@ -378,7 +378,7 @@ public sealed class ScannerRoomManagerDockingTest
         ScannerRoomScenarioFixture scenario = new();
         // What the builder's client says about the cameras besides their ids does not count.
         MapRoomEntity built = CreateBuiltRoom(
-            CreateBuiltCamera(builtCameraLeftId, new MapRoomCameraMetadata(true, 9, 5f, 1f, 9, 77, 0)),
+            CreateBuiltCamera(builtCameraLeftId, new MapRoomCameraMetadata(true, 5f, 1f, 77, 0)),
             CreateBuiltCamera(builtCameraRightId, new MapRoomCameraMetadata(dockingIndex: 1)));
 
         IReadOnlyList<Packet> sent = await BuildRoomAsync(scenario, scenario.PlayerA, built);

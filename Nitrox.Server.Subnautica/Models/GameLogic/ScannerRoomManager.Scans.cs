@@ -105,16 +105,6 @@ internal sealed partial class ScannerRoomManager
     }
 
     /// <summary>
-    ///     The gate for a camera's light, battery and health sent as generic entity metadata: always shut. Only the
-    ///     light and component packets may change them, after their ownership checks.
-    /// </summary>
-    public MetadataUpdateResult RejectCameraMetadata(Player sender, Entity camera)
-    {
-        logger.ZLogWarning($"Player {sender.Name} tried updating camera {camera.Id} state through generic metadata");
-        return MetadataUpdateResult.Reject;
-    }
-
-    /// <summary>
     ///     Handles the full list of scan results a room's simulating player reports. The list the server settles on
     ///     goes back to that player, whose own list lacks what its game has not loaded, and to the subscribers if it
     ///     differs from what they were told before.

@@ -11,13 +11,12 @@ namespace NitroxClient.GameLogic;
 
 /// <summary>
 ///     Compact client-side evidence for Scanner Room requests and canonical applies.
-///     It intentionally omits movement and unchanged component packets.
+///     It intentionally omits movement, and battery and health that stay within their band.
 ///     <p />
 ///     Line shape (see <see cref="DiagnosticLineFormat" />):
 ///     <c>[SRD1] n= ep= side=C sid= ev= out= room= cam= slot= rev= reason=</c>. <c>sid</c> is this client's own
-///     session id, the same number the server prints for this player's requests. <c>rev</c> is the revision the
-///     event is about: the room's docking revision for dock events, the light or component revision for those, the
-///     preview revision for previews. Outcomes: <c>ok</c> (applied or sent), <c>reject</c> (refused by the server or
+///     session id, the same number the server prints for this player's requests. <c>rev</c> is the revision of the
+///     preview a preview event is about. Outcomes: <c>ok</c> (applied or sent), <c>reject</c> (refused by the server or
 ///     by this client), <c>stale</c> (older than what is already applied), <c>pending</c> (waiting for a game object),
 ///     <c>diverge</c> (the game object does not match the server's state). Everything but <c>ok</c> is thinned out
 ///     when it repeats and then says how often it happened (<c>rep=</c>).
@@ -111,38 +110,7 @@ public sealed class ScannerRoomClientDiagnostics
         return line;
     }
 
-    /// <summary>
-    ///     Call before a light or component packet is checked. Records the packet when it is about to be ignored:
-    ///     the server refused the request this client sent (<c>reject</c>), or the packet is older than what this
-    ///     client already applied (<c>stale</c>). Both are dropped without any other trace, and the second one is
-    ///     what a camera looks like whose revisions started over on the server, which its revision floors are there
-    ///     to prevent.
-    /// </summary>
-    internal void RecordIfIgnored(string eventName, NitroxId cameraId, bool isServerResponse, bool granted, long revision,
-        IReadOnlyDictionary<NitroxId, long> appliedRevisions)
-    {
-        try
-        {
-            if (!isServerResponse)
-            {
-                return;
-            }
-            if (!granted)
-            {
-                Record(eventName, "reject", cameraId, revision: revision, reason: "server_reject");
-            }
-            else if (appliedRevisions.TryGetValue(cameraId, out long applied) && revision < applied)
-            {
-                Record(eventName, "stale", cameraId, revision: revision, reason: $"applied_{DiagnosticLineFormat.Number(applied)}");
-            }
-        }
-        catch (Exception)
-        {
-            Interlocked.Increment(ref ownFailures);
-        }
-    }
-
-    internal void RecordComponentApplied(NitroxId cameraId, float energy, float health, long revision, bool objectFound)
+    internal void RecordComponentApplied(NitroxId cameraId, float energy, float health, bool objectFound)
     {
         int energyBand = EnergyBand(energy);
         int healthBand = HealthBand(health);
@@ -155,7 +123,7 @@ public sealed class ScannerRoomClientDiagnostics
         }
         if (shouldRecord)
         {
-            Record("component_apply", objectFound ? "ok" : "diverge", cameraId, revision: revision,
+            Record("component_apply", objectFound ? "ok" : "diverge", cameraId,
                 reason: objectFound ? $"e{energyBand}_h{healthBand}" : "missing_object");
         }
     }

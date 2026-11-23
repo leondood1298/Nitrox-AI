@@ -41,12 +41,12 @@ public sealed class MapRoomCameraReleaseSimulationTest
         ScannerRoomScenarioFixture scenario = new();
         Assert.IsTrue((await scenario.ControlLooseAsync(scenario.PlayerA, cameraId, true)).Granted);
         await scenario.ControlPacketsAsync(scenario.PlayerA, Release(cameraId));
-        MapRoomCameraComponentStateProcessor processor = new(scenario.Manager);
 
-        await processor.Process(scenario.Context(scenario.PlayerA), new MapRoomCameraComponentState(cameraId, 60f, 250f));
+        IReadOnlyList<Packet> sent = await scenario.ReportCameraAsync(scenario.PlayerA, cameraId, energy: 60f, health: 250f);
 
-        Assert.IsTrue(scenario.Sent<MapRoomCameraComponentState>().Single().Granted,
+        Assert.AreEqual((60f, 250f), (scenario.CameraState(cameraId).Energy, scenario.CameraState(cameraId).Health),
             "Someone has to be able to report a repair or damage to a camera nobody is controlling.");
+        Assert.AreEqual(0, sent.Count, "They are not sent back what they reported.");
     }
 
     [TestMethod]

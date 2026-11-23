@@ -25,6 +25,13 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
                 basePowerManager.RejectUnknownSource(context.Sender, packet.Id);
                 return;
             }
+            if (packet.NewValue is MapRoomCameraMetadata)
+            {
+                // The player who simulated a camera can report its battery once more while the camera's removal is on
+                // its way to them.
+                scannerRoomManager.RejectMetadataForUnknownCamera(context.Sender, packet.Id);
+                return;
+            }
             logger.ZLogError($"Entity metadata {packet.NewValue.GetType()} updated on an entity unknown to the server {packet.Id}");
             return;
         }
@@ -63,7 +70,7 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
     {
         MapRoomMetadata scanState => scannerRoomManager.AcceptRoomMetadata(sender, entity, scanState),
         CrafterMetadata crafting when entity is MapRoomEntity room => scannerRoomManager.AcceptFabricatorMetadata(sender, room, crafting),
-        MapRoomCameraMetadata => scannerRoomManager.RejectCameraMetadata(sender, entity),
+        MapRoomCameraMetadata cameraState => scannerRoomManager.TryAcceptCameraMetadata(sender, entity, cameraState),
         _ => null
     };
 

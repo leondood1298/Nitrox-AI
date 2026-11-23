@@ -62,7 +62,7 @@ public sealed class MapRoomCameraSelectionTest
         multiplayerSession.Reservation.Returns(new MultiplayerSessionReservation(localSessionId));
         SimulationOwnership simulationOwnership = new(multiplayerSession, multiplayerSession);
         StalkerCameraLockPurposeTracker purposeTracker = new();
-        MapRoomCameras cameras = new(multiplayerSession, multiplayerSession, null!, simulationOwnership,
+        MapRoomCameras cameras = new(multiplayerSession, multiplayerSession, simulationOwnership, null!,
             new ScannerRoomClientDiagnostics(), purposeTracker);
         DropSimulationOwnershipProcessor processor = new(simulationOwnership, cameras);
 
@@ -85,7 +85,7 @@ public sealed class MapRoomCameraSelectionTest
         IMultiplayerSession multiplayerSession = Substitute.For<IMultiplayerSession>();
         multiplayerSession.Reservation.Returns(new MultiplayerSessionReservation(localSessionId));
         SimulationOwnership simulationOwnership = new(multiplayerSession, multiplayerSession);
-        MapRoomCameras cameras = new(multiplayerSession, multiplayerSession, null!, simulationOwnership,
+        MapRoomCameras cameras = new(multiplayerSession, multiplayerSession, simulationOwnership, null!,
             new ScannerRoomClientDiagnostics(), new StalkerCameraLockPurposeTracker());
         SimulationOwnershipChangeProcessor processor = new(simulationOwnership);
 
@@ -111,7 +111,7 @@ public sealed class MapRoomCameraSelectionTest
         StalkerCameraLockPurposeTracker purposeTracker = new();
         purposeTracker.RecordAcquisition(cameraId, cameraControlAlreadyGranted: false);
         Assert.IsFalse(purposeTracker.TryConsumeForDowngrade(cameraId, true, cameraControlProtected: true));
-        MapRoomCameras cameras = new(multiplayerSession, multiplayerSession, null!, simulationOwnership,
+        MapRoomCameras cameras = new(multiplayerSession, multiplayerSession, simulationOwnership, null!,
             new ScannerRoomClientDiagnostics(), purposeTracker);
 
         cameras.ProcessControl(new MapRoomCameraControl(cameraId, Optional.Empty, -1, true, false,

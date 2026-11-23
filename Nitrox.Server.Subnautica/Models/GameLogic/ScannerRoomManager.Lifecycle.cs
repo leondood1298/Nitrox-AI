@@ -135,8 +135,8 @@ internal sealed partial class ScannerRoomManager
 
     /// <summary>
     ///     Handles what picking an item up means for Scanner Rooms. Any item leaves the scan results of the rooms that
-    ///     had found it. A camera also leaves its dock, its controller and its light behind, in an order clients rely
-    ///     on, so its whole pickup is done here. Its state goes with it into the inventory.
+    ///     had found it. A camera also leaves its dock and its controller behind, in an order clients rely on, and its
+    ///     light goes off, so its whole pickup is done here. Its state goes with it into the inventory.
     /// </summary>
     /// <returns>True if the item is a camera and nothing is left for the caller to do.</returns>
     public async Task<bool> EntityPickedUpAsync(Player sender, Entity item)
@@ -176,18 +176,15 @@ internal sealed partial class ScannerRoomManager
         await RemoveFromScanResultsAsync(id);
 
         MapRoomCameraMetadata state = KeepCameraStateOnReplacementInGate(item);
-        // The game switches a camera's light off when it is picked up (MapRoomCamera.OnPickedUp). The stored state
-        // follows, or everyone but the player holding the camera would be shown a lit camera when it is dropped again.
-        MapRoomCameraLight? lightOff = null;
+        // The game switches a camera's light off when it is picked up (MapRoomCamera.OnPickedUp), in the game of the
+        // player who picks it up. The stored state follows and reaches everyone else with the item, or they would be
+        // shown a lit camera when it is dropped again.
         if (state.LightOn)
         {
-            lightOff = new MapRoomCameraLight(id, false, SetLight(item, false, out _).LightRevision, true, true);
+            SetState(item, state.WithLight(false));
+            diagnostics.RecordAccepted("light", cameraId: id, sessionId: sender.SessionId, reason: "off_pickup");
         }
         entityRegistry.AddOrUpdate(item);
-        if (lightOff != null)
-        {
-            await SendToAllAsync(lightOff);
-        }
 
         // Have other players respawn the item inside the inventory.
         await SendToOthersAsync(sender, new SpawnEntities(item, forceRespawn: true));

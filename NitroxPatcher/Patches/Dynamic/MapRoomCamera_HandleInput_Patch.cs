@@ -9,8 +9,6 @@ public sealed partial class MapRoomCamera_HandleInput_Patch : NitroxPatch, IDyna
 
     public static void Postfix(MapRoomCamera __instance)
     {
-        MapRoomCameras cameras = Resolve<MapRoomCameras>();
-        cameras.BroadcastLightIfChanged(__instance);
-        cameras.BroadcastComponentStateIfChanged(__instance);
+        Resolve<MapRoomCameraStates>().ReportIfChanged(__instance);
     }
 }

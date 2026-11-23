@@ -325,14 +325,22 @@ public sealed class EntityMetadataUpdateProcessorTest
     }
 
     [TestMethod]
-    public async Task CameraStateSentAsMetadataIsNotStoredAndNobodyIsTold()
+    public async Task CameraStateForSomethingThatIsNoCameraIsNotStoredAndNobodyIsTold()
     {
-        // Light, battery and health of a camera only change through their own packets, which check who may set them.
-        ModuleEntity camera = AddSource(null, simulator);
+        ModuleEntity locker = AddSource(null, simulator);
 
-        await Send(simulator, camera, new MapRoomCameraMetadata(true, 9, 1f, 1f, 9));
+        await Send(simulator, locker, new MapRoomCameraMetadata(true, 1f, 1f, 9, 1));
 
-        Assert.IsNull(camera.Metadata);
+        Assert.IsNull(locker.Metadata);
+        Assert.AreEqual(0, packetSender.ReceivedCalls().Count());
+    }
+
+    [TestMethod]
+    public async Task CameraStateForACameraTheServerNoLongerHasIsDroppedQuietly()
+    {
+        // Its simulating player can report its battery once more while the camera's removal is on its way to them.
+        await processor.Process(new AuthProcessorContext(simulator, packetSender), new EntityMetadataUpdate(new NitroxId(), new MapRoomCameraMetadata(false, 50f)));
+
         Assert.AreEqual(0, packetSender.ReceivedCalls().Count());
     }
 

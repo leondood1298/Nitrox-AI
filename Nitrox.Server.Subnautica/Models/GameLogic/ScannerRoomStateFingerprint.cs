@@ -42,8 +42,7 @@ internal static class ScannerRoomStateFingerprint
         foreach (MapRoomCameraMetadata camera in cameras)
         {
             if (!float.IsFinite(camera.Energy) || camera.Energy is < 0f or > MapRoomCameraMetadata.MAX_ENERGY ||
-                !float.IsFinite(camera.Health) || camera.Health is < 0f or > MapRoomCameraMetadata.MAX_HEALTH ||
-                camera.LightRevision < 0 || camera.ComponentRevision < 0)
+                !float.IsFinite(camera.Health) || camera.Health is < 0f or > MapRoomCameraMetadata.MAX_HEALTH)
             {
                 return "invalid_camera_component";
             }
@@ -64,7 +63,7 @@ internal static class ScannerRoomStateFingerprint
         MapRoomMetadata? metadata = room.Metadata as MapRoomMetadata;
 
         StringBuilder canonical = new(512);
-        AppendField(canonical, "version", "3");
+        AppendField(canonical, "version", "4");
         AppendField(canonical, "room", FormatId(room.Id));
         AppendField(canonical, "parent", FormatId(room.ParentId));
         AppendField(canonical, "cellX", Format(room.Cell.X));
@@ -107,10 +106,8 @@ internal static class ScannerRoomStateFingerprint
         AppendField(canonical, "dock", Format(state.DockingIndex));
         AppendField(canonical, "number", Format(state.CameraNumber));
         AppendField(canonical, "light", state.LightOn ? "1" : "0");
-        AppendField(canonical, "lightRevision", Format(state.LightRevision));
         AppendField(canonical, "energy", Format(state.Energy));
         AppendField(canonical, "health", Format(state.Health));
-        AppendField(canonical, "componentRevision", Format(state.ComponentRevision));
         return canonical.ToString();
     }
 

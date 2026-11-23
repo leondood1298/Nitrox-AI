@@ -113,6 +113,7 @@ namespace NitroxClient
             containerBuilder.RegisterType<Fires>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<FireExtinguishers>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<MapRoomCameras>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<MapRoomCameraStates>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<MapRoomCameraDocks>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<StalkerCameraLockPurposeTracker>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<ScannerRoomClientDiagnostics>().InstancePerLifetimeScope();

@@ -38,9 +38,11 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic;
 ///         </item>
 ///     </list>
 ///     <para>
-///         The gate is taken first, the lock of <see cref="SimulationOwnershipData" /> second (light, battery and
-///         preview reports are queued under that lock as well, so a lock cannot change hands before the report it
-///         authorized is on its way). Code that runs under the ownership lock must not enter the gate.
+///         The gate is taken first, the lock of <see cref="SimulationOwnershipData" /> second (what a player may set
+///         of a camera's state is decided and stored under that lock, and a preview is queued under it, so a lock
+///         cannot change hands in the middle of either). Code that runs under the ownership lock must not enter the
+///         gate. An accepted update of a camera's state is passed on by the packet processor after the gate is left,
+///         like every entity metadata update.
 ///     </para>
 ///     <para>
 ///         The gate is not reentrant. Nothing awaited inside it may call a method of this class that enters it; such a
