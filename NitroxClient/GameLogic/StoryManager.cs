@@ -11,20 +11,31 @@ public static class StoryManager
 {
     public static void ScanCompleted(NitroxId entityId, bool destroy)
     {
-        PDAScanner.cachedProgress.Remove(entityId.ToString());
-        if (NitroxEntity.TryGetObjectFrom(entityId, out GameObject scanObject))
+        string fragmentKey = entityId.ToString();
+        PDAScanner.cachedProgress.Remove(fragmentKey);
+        NitroxEntity.TryGetObjectFrom(entityId, out GameObject scanObject);
+        if (destroy)
         {
-            // Copy the SendMessage from PDAScanner.Scan() but we don't care about the EntryData
-            scanObject.SendMessage("OnScanned", null, SendMessageOptions.DontRequireReceiver);
-            if (!destroy)
+            PDAScanner.fragments.Remove(fragmentKey);
+            if (scanObject)
             {
-                PDAScanner.fragments.Add(entityId.ToString(), 1f);
-            }
-            else
-            {
-                PDAScanner.fragments.Remove(entityId.ToString());
+                // Copy the SendMessage from PDAScanner.Scan() but we don't care about the EntryData
+                scanObject.SendMessage("OnScanned", null, SendMessageOptions.DontRequireReceiver);
                 GameObject.Destroy(scanObject);
             }
+            return;
+        }
+
+        // The scanning player's game recorded the fragment already when the server sends its scan back
+        if (PDAScanner.fragments.ContainsKey(fragmentKey))
+        {
+            return;
+        }
+        // Recorded even when the object is not loaded here, else it could be scanned again once it is
+        PDAScanner.fragments.Add(fragmentKey, 1f);
+        if (scanObject)
+        {
+            scanObject.SendMessage("OnScanned", null, SendMessageOptions.DontRequireReceiver);
         }
     }
 
