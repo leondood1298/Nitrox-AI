@@ -15,7 +15,7 @@ namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, WorldEntityManager worldEntityManager,
     SimulationOwnershipData simulationOwnershipData, MapRoomCameraControlReleaseFactory cameraControlReleaseFactory,
     MapRoomLifecycle roomLifecycle, MapRoomCameraControlLifecycle controlLifecycle, ScannerRoomDiagnostics diagnostics,
-    MapRoomLooseCameraState looseCameraState, ILogger<MapRoomCameraDockProcessor> logger) : IAuthPacketProcessor<MapRoomCameraDock>
+    MapRoomLooseCameraState looseCameraState, MapRoomRevisionFloors revisionFloors, ILogger<MapRoomCameraDockProcessor> logger) : IAuthPacketProcessor<MapRoomCameraDock>
 {
     private const string MAP_ROOM_CAMERA_CLASS_ID = "733fd479-0760-4bc2-a03e-281cbf02bfa4";
     private readonly EntityRegistry entityRegistry = entityRegistry;
@@ -131,6 +131,7 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
                 {
                     // First registration with a room: the record takes over the state the camera had on its own.
                     looseCameraState.MoveIntoRecord(packet.CameraId, record);
+                    revisionFloors.RaiseAbove(record);
                 }
                 response = new MapRoomCameraDock(packet.CameraId, packet.MapRoomId, packet.DockingIndex, mapRoom.DockingRevision, true, granted, packet.IsDocked, cameraNumber, record?.LightOn ?? false, record?.LightRevision ?? 0, record?.Energy ?? MapRoomCameraRecord.MAX_ENERGY, record?.Health ?? MapRoomCameraRecord.MAX_HEALTH, record?.ComponentRevision ?? 0);
                 diagnosticReason = granted ? alreadyCanonical ? "idempotent" : response.Revision == 0 ? "bootstrap" : "changed" : diagnosticReason;

@@ -45,6 +45,8 @@ internal sealed class ScannerRoomScenarioFixture
     private readonly RecordingPacketSender worldPacketSender = new();
     private readonly PickupItemPacketProcessor pickupProcessor;
     private readonly EntitySpawnedByClientProcessor spawnProcessor;
+    private readonly UpdateBaseProcessor updateBaseProcessor;
+    private readonly EntityDestroyedPacketProcessor destroyProcessor;
 
     internal EntityRegistry EntityRegistry { get; }
     internal SimulationOwnershipData Ownership { get; } = new();
@@ -53,6 +55,7 @@ internal sealed class ScannerRoomScenarioFixture
     internal MapRoomLifecycle RoomLifecycle { get; } = new();
     internal MapRoomCameraControlLifecycle ControlLifecycle { get; } = new();
     internal MapRoomLooseCameraState LooseCameraState { get; }
+    internal MapRoomRevisionFloors RevisionFloors { get; } = new();
     internal EntitySimulation EntitySimulation { get; }
     internal WorldEntityManager WorldEntityManager { get; }
     internal MapRoomEntity Room { get; }
@@ -78,17 +81,19 @@ internal sealed class ScannerRoomScenarioFixture
         WorldEntityManager = worldEntityManager;
         LooseCameraState = new MapRoomLooseCameraState(EntityRegistry);
         dockProcessor = new(EntityRegistry, worldEntityManager, Ownership, ControlReleaseFactory, RoomLifecycle,
-            ControlLifecycle, Diagnostics, LooseCameraState, NullLogger<MapRoomCameraDockProcessor>.Instance);
+            ControlLifecycle, Diagnostics, LooseCameraState, RevisionFloors, NullLogger<MapRoomCameraDockProcessor>.Instance);
         controlProcessor = new(Ownership, EntityRegistry, ControlLifecycle, ControlReleaseFactory, Diagnostics);
         PlayerManager playerManager = new(null!, null!, null!, NullLogger<PlayerManager>.Instance);
         deconstructionCleanup = new(EntityRegistry, Ownership, ControlReleaseFactory,
-            new MapRoomScanResultSubscriptions(), ControlLifecycle, playerManager, Diagnostics, worldEntityManager, LooseCameraState);
+            new MapRoomScanResultSubscriptions(), ControlLifecycle, playerManager, Diagnostics, worldEntityManager, LooseCameraState, RevisionFloors);
         EntitySimulation = new(worldPacketSender, EntityRegistry, worldEntityManager, Ownership,
             playerManager, ControlReleaseFactory, ControlLifecycle, NullLogger<EntitySimulation>.Instance);
         ownershipRequestProcessor = new(Ownership, EntitySimulation, EntityRegistry, ControlReleaseFactory, ControlLifecycle, Diagnostics);
         BuildingManager buildingManager = new(worldPacketSender, EntityRegistry, worldEntityManager,
-            Options.Create(new SubnauticaServerOptions()), NullLogger<BuildingManager>.Instance);
+            Options.Create(new SubnauticaServerOptions()), RevisionFloors, NullLogger<BuildingManager>.Instance);
         placeBaseProcessor = new(buildingManager, EntitySimulation);
+        updateBaseProcessor = new(buildingManager, EntitySimulation);
+        destroyProcessor = new(playerManager, EntitySimulation, worldEntityManager, EntityRegistry, ControlReleaseFactory, ControlLifecycle, Diagnostics, RevisionFloors);
         pickupProcessor = new(EntityRegistry, worldEntityManager, Ownership, ControlReleaseFactory, ControlLifecycle, Diagnostics, LooseCameraState);
         spawnProcessor = new(playerManager, EntityRegistry, worldEntityManager, EntitySimulation, LooseCameraState);
     }
@@ -177,6 +182,26 @@ internal sealed class ScannerRoomScenarioFixture
         GlobalRootEntity camera = CreateCamera(cameraId);
         camera.Metadata = clientMetadata;
         await spawnProcessor.Process(new AuthProcessorContext(player, requestPacketSender), new EntitySpawnedByClient(camera, true, true));
+        return requestPacketSender.Packets;
+    }
+
+    /// <summary>
+    ///     Finishes a piece on an existing base, the way the builder's client reports it.
+    /// </summary>
+    internal async Task<IReadOnlyList<Packet>> UpdateBaseAsync(ServerPlayer player, UpdateBase packet)
+    {
+        RecordingPacketSender requestPacketSender = new();
+        await updateBaseProcessor.Process(new AuthProcessorContext(player, requestPacketSender), packet);
+        return requestPacketSender.Packets;
+    }
+
+    /// <summary>
+    ///     Reports an entity as destroyed, the way the client that saw it die does.
+    /// </summary>
+    internal async Task<IReadOnlyList<Packet>> DestroyAsync(ServerPlayer player, NitroxId entityId)
+    {
+        RecordingPacketSender requestPacketSender = new();
+        await destroyProcessor.Process(new AuthProcessorContext(player, requestPacketSender), new EntityDestroyed(entityId));
         return requestPacketSender.Packets;
     }
 

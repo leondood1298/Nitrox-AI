@@ -13,10 +13,12 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 internal sealed class MapRoomDeconstructionCleanup(EntityRegistry entityRegistry, SimulationOwnershipData simulationOwnershipData,
     MapRoomCameraControlReleaseFactory cameraControlReleaseFactory, MapRoomScanResultSubscriptions subscriptions,
     MapRoomCameraControlLifecycle controlLifecycle, PlayerManager playerManager, ScannerRoomDiagnostics diagnostics,
-    WorldEntityManager worldEntityManager, MapRoomLooseCameraState looseCameraState)
+    WorldEntityManager worldEntityManager, MapRoomLooseCameraState looseCameraState, MapRoomRevisionFloors revisionFloors)
 {
     public async Task CleanupAsync(MapRoomEntity mapRoom, AuthProcessorContext context)
     {
+        // The room keeps its id if it is built again.
+        revisionFloors.Remember(mapRoom);
         MapRoomScanResultSnapshot clearedResults;
         lock (mapRoom)
         {
@@ -70,6 +72,11 @@ internal sealed class MapRoomDeconstructionCleanup(EntityRegistry entityRegistry
             }
             // The game destroys a docked camera together with its dock. Without removing the server's copy, a camera
             // that had ever been undocked would come back for later joiners as a loose camera at a stale position.
+            if (dockedCameraIds.Contains(camera.CameraId))
+            {
+                // A default camera of the room built again gets the same id.
+                revisionFloors.Remember(camera);
+            }
             if (dockedCameraIds.Contains(camera.CameraId) && worldEntityManager.TryDestroyEntity(camera.CameraId, out _))
             {
                 await context.SendToAllAsync(new EntityDestroyed(camera.CameraId));

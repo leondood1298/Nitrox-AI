@@ -17,14 +17,17 @@ internal sealed class BuildingManager
     private readonly EntityRegistry entityRegistry;
     private readonly WorldEntityManager worldEntityManager;
     private readonly IOptions<SubnauticaServerOptions> options;
+    private readonly MapRoomRevisionFloors mapRoomRevisionFloors;
     private readonly ILogger<BuildingManager> logger;
 
-    public BuildingManager(IPacketSender packetSender, EntityRegistry entityRegistry, WorldEntityManager worldEntityManager, IOptions<SubnauticaServerOptions> options, ILogger<BuildingManager> logger)
+    public BuildingManager(IPacketSender packetSender, EntityRegistry entityRegistry, WorldEntityManager worldEntityManager, IOptions<SubnauticaServerOptions> options,
+        MapRoomRevisionFloors mapRoomRevisionFloors, ILogger<BuildingManager> logger)
     {
         this.packetSender = packetSender;
         this.entityRegistry = entityRegistry;
         this.worldEntityManager = worldEntityManager;
         this.options = options;
+        this.mapRoomRevisionFloors = mapRoomRevisionFloors;
         this.logger = logger;
     }
 
@@ -158,6 +161,10 @@ internal sealed class BuildingManager
         }
 
         worldEntityManager.RemoveGlobalRootEntity(entity.Id);
+        foreach (MapRoomEntity mapRoom in placeBase.BuildEntity.ChildEntities.OfType<MapRoomEntity>())
+        {
+            mapRoomRevisionFloors.RaiseAbove(mapRoom);
+        }
         worldEntityManager.AddOrUpdateGlobalRootEntity(placeBase.BuildEntity);
         // A Scanner Room can be the first piece of a base. It then arrives nested in the base instead of as the built
         // piece of an update, and has to be tracked the same way: simulation ownership is only handed out, at build
@@ -232,6 +239,10 @@ internal sealed class BuildingManager
 
         if (updateBase.BuiltPieceEntity != null && updateBase.BuiltPieceEntity is GlobalRootEntity builtPieceEntity)
         {
+            if (builtPieceEntity is MapRoomEntity builtMapRoom)
+            {
+                mapRoomRevisionFloors.RaiseAbove(builtMapRoom);
+            }
             worldEntityManager.AddOrUpdateGlobalRootEntity(builtPieceEntity);
         }
 
