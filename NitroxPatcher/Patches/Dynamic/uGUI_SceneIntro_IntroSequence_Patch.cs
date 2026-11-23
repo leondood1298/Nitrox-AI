@@ -100,13 +100,16 @@ public sealed partial class uGUI_SceneIntro_IntroSequence_Patch : NitroxPatch, I
     {
         LiveMixin radioLiveMixin = EscapePod.main.radioSpawner.spawnedObj.GetComponent<Radio>().liveMixin;
         float radioHealthBefore = radioLiveMixin.health;
+        float playerHealthBefore = Player.main.liveMixin.health;
 
         uGuiSceneIntro.Stop(true);
 
         if (!wasNewPlayer)
         {
-            // EscapePod.DamageRadio() is called by GuiSceneIntro.Stop(true) but is undesired. We revert it here
+            // EscapePod.StopIntroCinematic(true), called by uGUI_SceneIntro.Stop(true), damages the radio and takes 20
+            // health from a player at full health: the crash of a new arrival, not of a player who comes back.
             radioLiveMixin.health = radioHealthBefore;
+            Player.main.liveMixin.health = playerHealthBefore;
         }
 
         if (radioLiveMixin.IsFullHealth())
@@ -135,6 +138,9 @@ public sealed partial class uGUI_SceneIntro_IntroSequence_Patch : NitroxPatch, I
         {
             Object.Destroy(gameObject2);
         }
+
+        // Stop(true) also showed the pod's damaged effects and set its emergency lighting.
+        Resolve<EscapePodRepairState>().ApplyAfterIntro();
 
         Resolve<PlayerCinematics>().SetLocalIntroCinematicMode(IntroCinematicMode.COMPLETED);
     }
@@ -243,6 +249,14 @@ public sealed partial class uGUI_SceneIntro_IntroSequence_Patch : NitroxPatch, I
             partner.AnimationController["escapepod_intro"] = false;
             partner.ArmsController.enabled = true;
             partner.AnimationController.UpdatePlayerAnimations = true;
+        }
+
+        // Stop(false) damaged the radio. While the intro fire still burns, IntroLifepodDirector.ConcludeIntroSequence
+        // will set the emergency lighting once it is put out; the stored state is applied after that instead
+        // (IntroLifepodDirector_ConcludeIntroSequence_Patch).
+        if (!IntroLifepodDirector.IsActive)
+        {
+            Resolve<EscapePodRepairState>().ApplyAfterIntro();
         }
 
         Resolve<PlayerCinematics>().SetLocalIntroCinematicMode(IntroCinematicMode.COMPLETED);

@@ -1,3 +1,4 @@
+using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using NitroxClient.GameLogic.Spawning.Metadata.Processor.Abstract;
 using NitroxClient.Communication;
@@ -16,6 +17,12 @@ public class EscapePodMetadataProcessor : EntityMetadataProcessor<EscapePodMetad
         {
             Log.Error($"[{nameof(EscapePodMetadataProcessor)}] Could not get the EscapePod component from the provided gameobject.");
             return;
+        }
+
+        // Kept for the end of the intro, which damages the pod and radio locally once more (EscapePod.StopIntroCinematic).
+        if (pod.TryGetNitroxId(out NitroxId podId))
+        {
+            Resolve<EscapePodRepairState>().Remember(podId, metadata);
         }
 
         if (!pod.liveMixin.IsFullHealth() && metadata.PodRepaired)
