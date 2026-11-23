@@ -179,6 +179,7 @@ internal static partial class ServiceCollectionExtensions
                     .AddSingleton<WorldEntityManager>()
                     .AddSingleton<EntitySimulation>()
                     .AddSingleton<EscapePodManager>()
+                    .AddSingleton<IntroCinematicPairing>()
                     .AddSingleton<PdaManager>()
                     .AddSingleton<BatchEntitySpawner>()
                     .AddSingleton<EntityRegistry>()
