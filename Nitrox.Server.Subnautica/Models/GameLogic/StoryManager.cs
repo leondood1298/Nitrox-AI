@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using Nitrox.Model.Core;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Server.Subnautica.Models.AppEvents;
 using Nitrox.Server.Subnautica.Models.AppEvents.Core;
@@ -28,6 +30,8 @@ internal sealed class StoryManager : ISummarize
     private readonly PdaManager pdaManager;
     private readonly IPacketSender packetSender;
     private readonly TimeService timeService;
+    private readonly Lock auroraFollowUpsLock = new();
+    private SessionId? auroraRestoredBy;
 
     /// <summary>
     ///     Time at which the Aurora explosion countdown will start (last warning is sent).
@@ -123,6 +127,45 @@ internal sealed class StoryManager : ISummarize
 
         await packetSender.SendPacketToAllAsync(new AuroraAndTimeUpdate(GetTimeData(), true));
         logger.ZLogInformation($"Restored Aurora, will explode again in {GetMinutesBeforeAuroraExplosion():@minutes} minutes");
+    }
+
+    /// <summary>
+    ///     The player whose game reports which goals followed from the Aurora's, after that player restored the Aurora.
+    ///     The story's data names those goals, which only the games have.
+    /// </summary>
+    public void ExpectAuroraFollowUps(SessionId restoredBy)
+    {
+        lock (auroraFollowUpsLock)
+        {
+            auroraRestoredBy = restoredBy;
+        }
+    }
+
+    /// <summary>
+    ///     Takes back the goals that followed from the Aurora's, as the reporting game did, if that game's player restored
+    ///     the Aurora and has not reported yet.
+    /// </summary>
+    /// <param name="storyScheduler">Passed in because the scheduler depends on this class.</param>
+    /// <returns>False when the report is not the one expected.</returns>
+    public async Task<bool> ClearAuroraFollowUpsAsync(SessionId reportedBy, IEnumerable<string> goalKeys, StoryScheduler storyScheduler)
+    {
+        lock (auroraFollowUpsLock)
+        {
+            if (auroraRestoredBy != reportedBy)
+            {
+                return false;
+            }
+            auroraRestoredBy = null;
+        }
+
+        foreach (string goalKey in goalKeys)
+        {
+            pdaManager.RemovePdaLogsByKey(goalKey);
+            StoryGoalData.CompletedGoals.Remove(goalKey);
+            await storyScheduler.UnscheduleStory(goalKey);
+            StoryGoalData.RadioQueue.RemoveWhere(queuedKey => string.Equals(queuedKey, goalKey, StringComparison.OrdinalIgnoreCase));
+        }
+        return true;
     }
 
     /// <summary>

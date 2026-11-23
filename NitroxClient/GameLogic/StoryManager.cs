@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using NitroxClient.Communication.Abstract;
 using NitroxClient.MonoBehaviours;
 using Nitrox.Model.DataStructures;
@@ -145,26 +146,50 @@ public static class StoryManager
         dayNightCycle.timePassedAsDouble = timeAfter;
     }
 
-    public static void RestoreAurora()
+    /// <returns>The goals that followed from the Aurora's warnings and explosion, which are taken back too.</returns>
+    public static List<string> RestoreAurora()
     {
-        CleanAuroraEvents();
+        List<string> followUps = CleanAuroraEvents();
         // Same logic as in OnConsoleCommand_restoreship but without the time recalculation
         CrashedShipExploder.main.SwapModels(false);
         CrashedShipExploder.main.fxControl.StopAndDestroy(0, 0f);
         CrashedShipExploder.main.fxControl.StopAndDestroy(1, 0f);
+        return followUps;
     }
 
     /// <summary>
-    /// Removes the aurora-related entries from StoryGoalManager's completedEvents and PDALog
+    ///     Takes back the Aurora's goals and the goals that followed from them (<see cref="AuroraFollowUps" />): completed
+    ///     goals, log entries, scheduled goals and radio messages waiting to be played.
     /// </summary>
-    public static void CleanAuroraEvents()
+    /// <returns>The goals that followed from the Aurora's.</returns>
+    public static List<string> CleanAuroraEvents()
     {
-        foreach (string eventKey in AuroraEventData.GoalNames)
+        StoryGoalManager storyGoalManager = StoryGoalManager.main;
+        CompoundGoalTracker compoundGoalTracker = storyGoalManager.compoundGoalTracker;
+        CompoundGoal[] compoundGoals = compoundGoalTracker && compoundGoalTracker.goalData ? compoundGoalTracker.goalData.goals : [];
+        List<string> followUps = AuroraFollowUps.Find(AuroraEventData.GoalNames, compoundGoals.Select(goal => (goal.key, goal.preconditions)));
+        HashSet<string> takenBack = new(AuroraEventData.GoalNames.Concat(followUps), StringComparer.OrdinalIgnoreCase);
+
+        foreach (string eventKey in takenBack)
         {
-            StoryGoalManager.main.completedGoals.Remove(eventKey);
+            storyGoalManager.completedGoals.Remove(eventKey);
             PDALog.Remove(eventKey);
             // A warning of the previous run still waiting would play right away
             StoryGoalScheduler.main.schedule.RemoveAll(goal => goal.goalKey == eventKey);
         }
+        storyGoalManager.pendingRadioMessages.RemoveAll(takenBack.Contains);
+
+        // The tracker dropped the compound goals that triggered; they wait for the next explosion again
+        if (compoundGoalTracker)
+        {
+            foreach (CompoundGoal goal in compoundGoals)
+            {
+                if (AuroraFollowUps.MustTrackAgain(goal.key, goal.preconditions, takenBack) && !compoundGoalTracker.goals.Exists(tracked => tracked.key == goal.key))
+                {
+                    compoundGoalTracker.goals.Add(goal);
+                }
+            }
+        }
+        return followUps;
     }
 }
