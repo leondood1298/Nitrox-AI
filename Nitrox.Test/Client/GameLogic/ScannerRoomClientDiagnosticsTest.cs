@@ -64,6 +64,20 @@ public sealed class ScannerRoomClientDiagnosticsTest
     }
 
     [TestMethod]
+    public void FailingSessionLookupCannotBreakTheCodeBeingObserved()
+    {
+        ScannerRoomClientDiagnostics diagnostics = new(static () => throw new InvalidOperationException("session is gone"),
+            static () => throw new InvalidOperationException("clock is gone"));
+        NitroxId cameraId = new("11111111-1111-1111-1111-111111111111");
+
+        string line = diagnostics.Record("dock_apply", "ok", cameraId);
+        diagnostics.RecordComponentApplied(cameraId, 50f, 50f, 1, true);
+
+        StringAssert.Contains(line, " side=C sid=- ev=dock_apply out=ok ");
+        Assert.AreEqual(2, diagnostics.GetHistory().Count);
+    }
+
+    [TestMethod]
     public void EpochIsStableWithinInstanceAndDistinctAcrossInstances()
     {
         ScannerRoomClientDiagnostics first = new();

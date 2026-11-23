@@ -176,6 +176,41 @@ public sealed class ScannerRoomDiagnosticsTest
     }
 
     [TestMethod]
+    public void FailingLoggerCannotBreakTheCodeBeingObserved()
+    {
+        ScannerRoomDiagnostics diagnostics = new(new ThrowingLogger());
+        MapRoomEntity room = CreateRoom();
+
+        Action record = () =>
+        {
+            diagnostics.RecordAccepted("dock", room);
+            diagnostics.RecordRejected("dock", room, reason: "non_owner");
+            diagnostics.RecordInvariantFailure("control_revoke", room, reason: "duplicate_registration");
+            diagnostics.RecordCheckpoint("manual", room);
+        };
+
+        record.Should().NotThrow("a packet processor must finish its work whatever happens to its diagnostics");
+        diagnostics.GetCounters().Should().Be(new ScannerRoomDiagnosticCounters(4, 1, 1, 1, 1));
+    }
+
+    [TestMethod]
+    public void UnreadableRoomCannotBreakTheCodeBeingObserved()
+    {
+        ScannerRoomDiagnostics diagnostics = new(NullLogger<ScannerRoomDiagnostics>.Instance);
+        MapRoomEntity room = CreateRoom();
+        room.CameraRegistry = null!;
+        room.ScanResults = null!;
+
+        Action record = () =>
+        {
+            diagnostics.RecordAccepted("dock", room);
+            diagnostics.RecordCheckpoint("manual", room);
+        };
+
+        record.Should().NotThrow();
+    }
+
+    [TestMethod]
     public void CompactIdsDistinguishSiblingScannerCameras()
     {
         ScannerRoomDiagnostics diagnostics = new(NullLogger<ScannerRoomDiagnostics>.Instance);
@@ -369,6 +404,15 @@ public sealed class ScannerRoomDiagnosticsTest
         public override long GetTimestamp() => now.UtcTicks;
 
         public void Advance(TimeSpan duration) => now += duration;
+    }
+
+    private sealed class ThrowingLogger : ILogger<ScannerRoomDiagnostics>
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) => throw new InvalidOperationException("log sink is gone");
     }
 
     private sealed class CapturingLogger<T> : ILogger<T>

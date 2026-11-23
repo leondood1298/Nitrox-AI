@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
@@ -29,8 +30,15 @@ public sealed class ScannerRoomClientDiagnostics
     private readonly Func<DateTimeOffset> utcNow;
     private bool epochAnnounced;
     private long nextSequence;
+    private long ownFailures;
 
     internal string Epoch => epoch;
+
+    /// <summary>
+    ///     How often recording or writing a line failed. Such a failure is swallowed, because these calls sit in the
+    ///     middle of the game code they observe.
+    /// </summary>
+    internal long OwnFailures => Interlocked.Read(ref ownFailures);
 
     public ScannerRoomClientDiagnostics() : this(static () => null, static () => DateTimeOffset.UtcNow)
     {
@@ -51,10 +59,26 @@ public sealed class ScannerRoomClientDiagnostics
         this.utcNow = utcNow;
     }
 
+    /// <summary>
+    ///     Never throws: a failure in here must not abort the dock, control or restore step that reported the event.
+    /// </summary>
     internal string Record(string eventName, string outcome, NitroxId? cameraId = null, NitroxId? roomId = null,
         long? revision = null, int? slot = null, string? reason = null)
     {
-        SessionId? sessionId = localSessionId();
+        try
+        {
+            return RecordCore(eventName, outcome, cameraId, roomId, revision, slot, reason);
+        }
+        catch (Exception)
+        {
+            Interlocked.Increment(ref ownFailures);
+            return DiagnosticLineFormat.Header(DiagnosticLineFormat.SCANNER_ROOM_TAG, null, epoch, DiagnosticLineFormat.CLIENT_SIDE, null, eventName, "diagnostics_failed");
+        }
+    }
+
+    private string RecordCore(string eventName, string outcome, NitroxId? cameraId, NitroxId? roomId, long? revision, int? slot, string? reason)
+    {
+        SessionId? sessionId = ReadLocalSessionId();
         string line;
         lock (sync)
         {
@@ -66,14 +90,7 @@ public sealed class ScannerRoomClientDiagnostics
                 history.Dequeue();
             }
             history.Enqueue(line);
-            if (outcome is "reject" or "diverge")
-            {
-                Log.Warn(line);
-            }
-            else
-            {
-                Log.Info(line);
-            }
+            Write(line, outcome is "reject" or "diverge");
         }
         return line;
     }
@@ -120,7 +137,54 @@ public sealed class ScannerRoomClientDiagnostics
             return;
         }
         epochAnnounced = true;
-        Log.Info($"{DiagnosticLineFormat.Header(DiagnosticLineFormat.SCANNER_ROOM_TAG, null, epoch, DiagnosticLineFormat.CLIENT_SIDE, sessionId, "epoch", "info")} utc={DiagnosticLineFormat.UtcStamp(utcNow())} reason=client_diagnostics_started");
+        Write($"{DiagnosticLineFormat.Header(DiagnosticLineFormat.SCANNER_ROOM_TAG, null, epoch, DiagnosticLineFormat.CLIENT_SIDE, sessionId, "epoch", "info")} utc={ReadUtcStamp()} reason=client_diagnostics_started", false);
+    }
+
+    private SessionId? ReadLocalSessionId()
+    {
+        try
+        {
+            return localSessionId();
+        }
+        catch (Exception)
+        {
+            // The session is torn down while late packets are still being applied. The event is still worth a line.
+            return null;
+        }
+    }
+
+    private string ReadUtcStamp()
+    {
+        try
+        {
+            return DiagnosticLineFormat.UtcStamp(utcNow());
+        }
+        catch (Exception)
+        {
+            return DiagnosticLineFormat.NOT_APPLICABLE;
+        }
+    }
+
+    /// <summary>
+    ///     Writes a line without letting a failing log sink undo the bookkeeping already done for the event.
+    /// </summary>
+    private void Write(string line, bool warning)
+    {
+        try
+        {
+            if (warning)
+            {
+                Log.Warn(line);
+            }
+            else
+            {
+                Log.Info(line);
+            }
+        }
+        catch (Exception)
+        {
+            Interlocked.Increment(ref ownFailures);
+        }
     }
 
     private static int ComponentBand(float value, float maximum) => value switch

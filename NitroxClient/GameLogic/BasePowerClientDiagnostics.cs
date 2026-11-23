@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
@@ -32,8 +33,15 @@ public sealed class BasePowerClientDiagnostics
     private int sourceEntries;
     private bool audioTruncated;
     private bool sourceTruncated;
+    private long ownFailures;
 
     internal string Epoch => epoch;
+
+    /// <summary>
+    ///     How often recording or writing a line failed. Such a failure is swallowed, because these calls sit in the
+    ///     middle of the game code they observe.
+    /// </summary>
+    internal long OwnFailures => Interlocked.Read(ref ownFailures);
 
     public BasePowerClientDiagnostics() : this(static () => null, static () => DateTimeOffset.UtcNow)
     {
@@ -76,10 +84,27 @@ public sealed class BasePowerClientDiagnostics
         }
     }
 
+    /// <summary>
+    ///     Never throws: a failure in here must not abort the power event or the metadata apply that reported it.
+    /// </summary>
     private string? Record(bool audio, string eventName, string outcome, NitroxId? baseId, NitroxId? sourceId,
         float power, float maxPower, bool initialSyncCompleted, bool waitScreenWaiting, string reason)
     {
-        SessionId? sessionId = localSessionId();
+        try
+        {
+            return RecordCore(audio, eventName, outcome, baseId, sourceId, power, maxPower, initialSyncCompleted, waitScreenWaiting, reason);
+        }
+        catch (Exception)
+        {
+            Interlocked.Increment(ref ownFailures);
+            return null;
+        }
+    }
+
+    private string? RecordCore(bool audio, string eventName, string outcome, NitroxId? baseId, NitroxId? sourceId,
+        float power, float maxPower, bool initialSyncCompleted, bool waitScreenWaiting, string reason)
+    {
+        SessionId? sessionId = ReadLocalSessionId();
         string line;
         string? marker = null;
         lock (sync)
@@ -87,7 +112,7 @@ public sealed class BasePowerClientDiagnostics
             if (!epochAnnounced)
             {
                 epochAnnounced = true;
-                marker = $"{DiagnosticLineFormat.Header(DiagnosticLineFormat.BASE_POWER_TAG, null, epoch, DiagnosticLineFormat.CLIENT_SIDE, sessionId, "epoch", "info")} utc={DiagnosticLineFormat.UtcStamp(utcNow())} reason=client_diagnostics_started";
+                marker = $"{DiagnosticLineFormat.Header(DiagnosticLineFormat.BASE_POWER_TAG, null, epoch, DiagnosticLineFormat.CLIENT_SIDE, sessionId, "epoch", "info")} utc={ReadUtcStamp()} reason=client_diagnostics_started";
             }
             int capacity = audio ? AUDIO_HISTORY_CAPACITY : SOURCE_HISTORY_CAPACITY;
             bool atCapacity = audio ? audioEntries >= capacity : sourceEntries >= capacity;
@@ -129,10 +154,50 @@ public sealed class BasePowerClientDiagnostics
         if (marker != null)
         {
             // Its UTC stamp, next to the log's own local time, lines this log up with the server's and the other client's.
-            Log.Info(marker);
+            Write(marker);
         }
-        Log.Info(line);
+        Write(line);
         return line;
+    }
+
+    private SessionId? ReadLocalSessionId()
+    {
+        try
+        {
+            return localSessionId();
+        }
+        catch (Exception)
+        {
+            // The session is torn down while late packets are still being applied. The event is still worth a line.
+            return null;
+        }
+    }
+
+    private string ReadUtcStamp()
+    {
+        try
+        {
+            return DiagnosticLineFormat.UtcStamp(utcNow());
+        }
+        catch (Exception)
+        {
+            return DiagnosticLineFormat.NOT_APPLICABLE;
+        }
+    }
+
+    /// <summary>
+    ///     Writes a line without letting a failing log sink undo the bookkeeping already done for the event.
+    /// </summary>
+    private void Write(string line)
+    {
+        try
+        {
+            Log.Info(line);
+        }
+        catch (Exception)
+        {
+            Interlocked.Increment(ref ownFailures);
+        }
     }
 
     private string FormatLine(int sequence, SessionId? sessionId, string eventName, string outcome, NitroxId? baseId, NitroxId? sourceId,

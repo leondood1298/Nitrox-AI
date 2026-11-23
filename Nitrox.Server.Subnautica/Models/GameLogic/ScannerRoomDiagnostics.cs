@@ -59,8 +59,15 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
     private long rejectionWindowStart;
     private int rejectionLinesInWindow;
     private long rejectionsMutedInWindow;
+    private long ownFailures;
 
     internal string Epoch => epoch;
+
+    /// <summary>
+    ///     How often recording or writing a line failed. Such a failure is swallowed, because these calls sit in the
+    ///     middle of the packet processors they observe.
+    /// </summary>
+    internal long OwnFailures => Interlocked.Read(ref ownFailures);
 
     public ScannerRoomDiagnosticEntry RecordAccepted(string eventName, MapRoomEntity? room = null, NitroxId? cameraId = null,
         SessionId? sessionId = null, int? slot = null, string? reason = null) =>
@@ -76,7 +83,15 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
 
     public ScannerRoomDiagnosticEntry RecordCheckpoint(string eventName, MapRoomEntity room, string? reason = null)
     {
-        string? invariantFailure = ScannerRoomStateFingerprint.Validate(room);
+        string? invariantFailure;
+        try
+        {
+            invariantFailure = ScannerRoomStateFingerprint.Validate(room);
+        }
+        catch (Exception exception)
+        {
+            return ReportOwnFailure(exception, ScannerRoomDiagnosticOutcome.Checkpoint, eventName, null);
+        }
         return invariantFailure == null
             ? Record(ScannerRoomDiagnosticOutcome.Checkpoint, eventName, room, reason: reason)
             : Record(ScannerRoomDiagnosticOutcome.InvariantFailure, $"{eventName}_invalid", room, reason: invariantFailure);
@@ -130,6 +145,42 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
         NitroxId? cameraId = null, SessionId? sessionId = null, int? slot = null, string? reason = null,
         ScannerRoomStateSnapshot? capturedSnapshot = null)
     {
+        try
+        {
+            return RecordCore(outcome, eventName, room, cameraId, sessionId, slot, reason, capturedSnapshot);
+        }
+        catch (Exception exception)
+        {
+            return ReportOwnFailure(exception, outcome, eventName, sessionId);
+        }
+    }
+
+    /// <summary>
+    ///     A diagnostics call must never break the feature it observes: a processor that has already changed state
+    ///     still has to answer the client and release its locks. So a failure in here ends in a placeholder entry.
+    /// </summary>
+    private ScannerRoomDiagnosticEntry ReportOwnFailure(Exception exception, ScannerRoomDiagnosticOutcome outcome, string eventName,
+        SessionId? sessionId)
+    {
+        long failures = Interlocked.Increment(ref ownFailures);
+        if (DiagnosticRepeatSampler.IsSampledOccurrence(failures))
+        {
+            try
+            {
+                logger.ZLogError(exception, $"{PREFIX} could not record {eventName} (failure {failures} of the diagnostics themselves)");
+            }
+            catch (Exception)
+            {
+                // The log sink is what failed. There is nowhere left to report it.
+            }
+        }
+        return new ScannerRoomDiagnosticEntry(0, epoch, DiagnosticLineFormat.Token(eventName, 32), outcome, sessionId,
+            DiagnosticLineFormat.NOT_APPLICABLE, DiagnosticLineFormat.NOT_APPLICABLE, null, null, null, null, "diagnostics_failed");
+    }
+
+    private ScannerRoomDiagnosticEntry RecordCore(ScannerRoomDiagnosticOutcome outcome, string eventName, MapRoomEntity? room,
+        NitroxId? cameraId, SessionId? sessionId, int? slot, string? reason, ScannerRoomStateSnapshot? capturedSnapshot)
+    {
         // Read before taking any other lock: callers may hold the room's lock, never the lock table's.
         string roomLock = DescribeLock(room?.Id);
         string cameraLock = DescribeLock(cameraId);
@@ -146,7 +197,7 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
             lock (room)
             {
                 dockingRevision = room.DockingRevision;
-                cameraCount = room.CameraRegistry.Count;
+                cameraCount = room.CameraRegistry?.Count ?? 0;
                 if (outcome is ScannerRoomDiagnosticOutcome.Checkpoint or ScannerRoomDiagnosticOutcome.InvariantFailure)
                 {
                     snapshot = ScannerRoomStateFingerprint.Create(room);
@@ -189,15 +240,13 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
             if (outcome == ScannerRoomDiagnosticOutcome.InvariantFailure)
             {
                 // Invariants are rare correctness failures. Never let a preceding rejection burst hide one.
-                string line = entry.Format();
-                logger.ZLogWarning($"{line}");
+                Write(LogLevel.Warning, entry.Format());
             }
             else if (outcome == ScannerRoomDiagnosticOutcome.Rejected)
             {
                 if (writeRejection)
                 {
-                    string line = entry.Format();
-                    logger.ZLogWarning($"{line}");
+                    Write(LogLevel.Warning, entry.Format());
                 }
                 else
                 {
@@ -206,11 +255,32 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
             }
             else
             {
-                string line = entry.Format();
-                logger.ZLogInformation($"{line}");
+                Write(LogLevel.Information, entry.Format());
             }
         }
         return entry;
+    }
+
+    /// <summary>
+    ///     Writes a line without letting a failing log sink undo the bookkeeping already done for the event.
+    /// </summary>
+    private void Write(LogLevel level, string line)
+    {
+        try
+        {
+            if (level == LogLevel.Warning)
+            {
+                logger.ZLogWarning($"{line}");
+            }
+            else
+            {
+                logger.ZLogInformation($"{line}");
+            }
+        }
+        catch (Exception)
+        {
+            Interlocked.Increment(ref ownFailures);
+        }
     }
 
     /// <summary>
@@ -224,8 +294,7 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
             return;
         }
         epochAnnounced = true;
-        string line = FormatMarker("epoch", null, "server_diagnostics_started");
-        logger.ZLogInformation($"{line}");
+        Write(LogLevel.Information, FormatMarker("epoch", null, "server_diagnostics_started"));
     }
 
     private string FormatMarker(string eventName, SessionId? sessionId, string reason) =>
@@ -260,9 +329,8 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
         }
         if (rejectionsMutedInWindow == 0)
         {
-            string line = FormatMarker("log_budget", null,
-                $"rejections_muted_after_{REJECTION_LINES_PER_WINDOW}_lines_in_{(int)REJECTION_WINDOW.TotalSeconds}s");
-            logger.ZLogWarning($"{line}");
+            Write(LogLevel.Warning, FormatMarker("log_budget", null,
+                $"rejections_muted_after_{REJECTION_LINES_PER_WINDOW}_lines_in_{(int)REJECTION_WINDOW.TotalSeconds}s"));
         }
         rejectionsMutedInWindow++;
         return false;
@@ -277,8 +345,7 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
         rejectionWindowOpen = false;
         if (rejectionsMutedInWindow > 0)
         {
-            string line = FormatMarker("log_budget", null, $"rejections_logged_again_{rejectionsMutedInWindow}_were_muted");
-            logger.ZLogWarning($"{line}");
+            Write(LogLevel.Warning, FormatMarker("log_budget", null, $"rejections_logged_again_{rejectionsMutedInWindow}_were_muted"));
         }
     }
 
@@ -298,8 +365,6 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
             case ScannerRoomDiagnosticOutcome.Checkpoint:
                 checkpoints++;
                 break;
-            default:
-                throw new ArgumentOutOfRangeException(nameof(outcome), outcome, null);
         }
     }
 }
@@ -352,6 +417,6 @@ internal readonly record struct ScannerRoomDiagnosticEntry(
         ScannerRoomDiagnosticOutcome.Rejected => "reject",
         ScannerRoomDiagnosticOutcome.InvariantFailure => "invariant",
         ScannerRoomDiagnosticOutcome.Checkpoint => "checkpoint",
-        _ => throw new ArgumentOutOfRangeException(nameof(Outcome), Outcome, null)
+        _ => "unknown"
     };
 }

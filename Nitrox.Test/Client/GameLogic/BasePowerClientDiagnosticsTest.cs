@@ -36,6 +36,18 @@ public sealed class BasePowerClientDiagnosticsTest
     }
 
     [TestMethod]
+    public void FailingSessionLookupCannotBreakTheCodeBeingObserved()
+    {
+        BasePowerClientDiagnostics diagnostics = new(static () => throw new InvalidOperationException("session is gone"),
+            static () => throw new InvalidOperationException("clock is gone"));
+
+        string line = diagnostics.RecordAudioTransition("audio_up", false, null, 1f, 2f, true, false, null)!;
+
+        StringAssert.Contains(line, " side=C sid=- ev=audio_up out=pass ");
+        Assert.AreEqual(1, diagnostics.GetHistory().Count);
+    }
+
+    [TestMethod]
     public void SourceTraceIncludesCanonicalTypeAndRevision()
     {
         BasePowerClientDiagnostics diagnostics = new();
