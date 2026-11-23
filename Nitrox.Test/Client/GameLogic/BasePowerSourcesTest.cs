@@ -258,4 +258,41 @@ public sealed class BasePowerSourcesTest
         Assert.IsTrue(sources.TryCreateUpdate(source, new PowerSourceMetadata(40f, 0f, BasePowerSourceType.SOLAR), SOLAR_CAPACITY, now: 100.5f, out _));
         Assert.AreEqual(ForwardedDraw.HAND_BACK, sources.DecideForwardedDraw(source, simulatedLocally: true, sourceObjectExists: false, finishedLoading: true));
     }
+
+    [TestMethod]
+    public void ASourceThatRegeneratesIsALifepodCell()
+    {
+        Assert.AreEqual(BasePowerSourceType.ESCAPE_POD, BasePowerSources.ClassifySource(false, false, false, false, regenerates: true));
+        Assert.AreEqual(BasePowerSourceType.UNKNOWN, BasePowerSources.ClassifySource(false, false, false, false, regenerates: false));
+        Assert.AreEqual(BasePowerSourceType.SOLAR, BasePowerSources.ClassifySource(true, false, false, false, regenerates: false));
+        Assert.AreEqual(BasePowerSourceType.NUCLEAR, BasePowerSources.ClassifySource(false, false, false, true, regenerates: false));
+    }
+
+    [TestMethod]
+    public void ALifepodCellRegeneratesOnlyInTheGameOfThePlayerWhoSimulatesIt()
+    {
+        // Regenerated in every game, each player would have energy of their own.
+        Assert.IsTrue(BasePowerSources.SetsPowerHere(isEscapePodCell: true, hasId: true, simulatedLocally: true));
+        Assert.IsFalse(BasePowerSources.SetsPowerHere(isEscapePodCell: true, hasId: true, simulatedLocally: false));
+    }
+
+    [TestMethod]
+    public void ACellWithoutIdAndEverySourceThatIsNoCellAreLeftToTheGame()
+    {
+        // Before its entity has spawned a cell is not synchronized; a base source's level is not set by SetPower in
+        // the game, and Nitrox only sets it there for sources it may set.
+        Assert.IsTrue(BasePowerSources.SetsPowerHere(isEscapePodCell: true, hasId: false, simulatedLocally: false));
+        Assert.IsTrue(BasePowerSources.SetsPowerHere(isEscapePodCell: false, hasId: true, simulatedLocally: false));
+    }
+
+    [TestMethod]
+    public void ALifepodCellsStateIsSentLikeAnyOtherSource()
+    {
+        NitroxId cell = new();
+
+        Assert.IsTrue(sources.TryCreateUpdate(cell, new PowerSourceMetadata(20f, 0f, BasePowerSourceType.ESCAPE_POD), 25f, now: 100f, out EntityMetadataUpdate update));
+
+        Assert.AreEqual(BasePowerSourceType.ESCAPE_POD, ((PowerSourceMetadata)update.NewValue).SourceType);
+        Assert.IsFalse(sources.TryCreateUpdate(cell, new PowerSourceMetadata(20.1f, 0f, BasePowerSourceType.ESCAPE_POD), 25f, now: 100.5f, out _), "Throttled like the others.");
+    }
 }

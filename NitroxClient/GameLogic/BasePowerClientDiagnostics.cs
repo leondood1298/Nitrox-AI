@@ -85,7 +85,7 @@ public sealed class BasePowerClientDiagnostics
     internal string? RecordSourceApply(NitroxId? sourceId, PowerSourceMetadata metadata, bool objectFound,
         bool initialSyncCompleted, bool waitScreenWaiting, string reason)
     {
-        BasePowerSourceTypes.TryGetMaxPower(metadata.SourceType, out float maxPower);
+        BasePowerSourceTypes.TryGetCapacity(metadata.SourceType, out float maxPower);
         return Record(false, "source_apply", objectFound ? "ok" : "missing", null, sourceId, metadata.Power, maxPower,
             initialSyncCompleted, waitScreenWaiting, $"{reason}_{metadata.SourceType}");
     }
@@ -206,7 +206,7 @@ public sealed class BasePowerClientDiagnostics
         try
         {
             SessionId? sessionId = ReadLocalSessionId();
-            BasePowerSourceTypes.TryGetMaxPower(shown.SourceType, out float maxPower);
+            BasePowerSourceTypes.TryGetCapacity(shown.SourceType, out float maxPower);
             string line;
             string? marker = null;
             lock (sync)
