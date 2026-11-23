@@ -10,12 +10,18 @@ internal sealed class AuroraAndTimeUpdateProcessor(TimeManager timeManager) : IC
 
     public Task Process(ClientProcessorContext context, AuroraAndTimeUpdate packet)
     {
+        double timeBefore = DayNightCycle.main ? DayNightCycle.main.timePassedAsDouble : 0;
         timeManager.ProcessUpdate(packet.TimeData.TimePacket);
         StoryManager.UpdateAuroraData(packet.TimeData.AuroraEventData);
         timeManager.AuroraRealExplosionTime = packet.TimeData.AuroraEventData.AuroraRealExplosionTime;
         if (packet.Restore)
         {
             StoryManager.RestoreAurora();
+        }
+        else
+        {
+            // A time skip comes with this packet and may pass several warnings, or the explosion
+            StoryManager.ActOnAuroraEventsPassed(timeBefore);
         }
         return Task.CompletedTask;
     }

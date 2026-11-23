@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using NitroxClient.Communication.Abstract;
 using NitroxClient.MonoBehaviours;
 using Nitrox.Model.DataStructures;
@@ -107,6 +108,41 @@ public static class StoryManager
         }
         CrashedShipExploder.main.timeToStartCountdown = auroraEventData.TimeToStartCountdown;
         CrashedShipExploder.main.timeToStartWarning = auroraEventData.TimeToStartWarning;
+    }
+
+    /// <summary>
+    ///     Acts on each Aurora warning and explosion step a time skip passed, in order. The game moves its own skips
+    ///     gradually (DayNightCycle.SkipTime); the server's skips set the clock at once.
+    /// </summary>
+    /// <param name="timeBefore">The game time before the skip was applied.</param>
+    public static void ActOnAuroraEventsPassed(double timeBefore)
+    {
+        CrashedShipExploder exploder = CrashedShipExploder.main;
+        DayNightCycle dayNightCycle = DayNightCycle.main;
+        // The initial sync sets up the Aurora from the time it is given
+        if (!exploder || !dayNightCycle || !Multiplayer.Main || !Multiplayer.Main.InitialSyncCompleted)
+        {
+            return;
+        }
+
+        double timeAfter = dayNightCycle.timePassedAsDouble;
+        List<double> steps = AuroraTimeline.GetStepsPassed(timeBefore, timeAfter, exploder.timeToStartWarning, exploder.timeToStartCountdown);
+        if (steps.Count == 0)
+        {
+            return;
+        }
+
+        AuroraWarnings auroraWarnings = Player.mainObject ? Player.mainObject.GetComponentInChildren<AuroraWarnings>(true) : null;
+        foreach (double step in steps)
+        {
+            dayNightCycle.timePassedAsDouble = step;
+            if (auroraWarnings)
+            {
+                auroraWarnings.Update();
+            }
+            exploder.Update();
+        }
+        dayNightCycle.timePassedAsDouble = timeAfter;
     }
 
     public static void RestoreAurora()
