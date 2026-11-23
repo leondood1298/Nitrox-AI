@@ -10,6 +10,7 @@ public sealed partial class BaseNuclearReactor_ProducePower_Patch : NitroxPatch,
 
     public static bool Prefix(BaseNuclearReactor __instance)
     {
-        return !__instance.TryGetNitroxId(out NitroxId id) || Resolve<SimulationOwnership>().HasAnyLockType(id);
+        bool hasId = __instance.TryGetNitroxId(out NitroxId id);
+        return BasePowerSources.CanSimulate(hasId, hasId && Resolve<SimulationOwnership>().HasAnyLockType(id), BasePowerBroadcaster.IsRebuildingBases());
     }
 }

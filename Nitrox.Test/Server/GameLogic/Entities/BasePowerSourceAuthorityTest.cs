@@ -33,6 +33,40 @@ public sealed class BasePowerSourceAuthorityTest
     }
 
     [TestMethod]
+    public void RevisionKeepsRisingWhenAReactorIsBuiltAgainUnderTheSameId()
+    {
+        // Deconstructing a reactor to a ghost and finishing it again keeps its id, but the rebuilt piece arrives as
+        // a new entity with fresh state. Players who saw revision 41 would ignore everything below it.
+        BasePowerSourceAuthority authority = new();
+        InteriorPieceEntity reactor = CreateInterior();
+        reactor.Metadata = new PowerSourceMetadata(900f, 2500f, BasePowerSourceType.NUCLEAR, 40);
+        Assert.IsTrue(authority.TryApply(reactor, firstOwner, Request(reactor.Id, BasePowerSourceType.NUCLEAR, 910f, 1), out PowerSourceMetadata beforeRebuild, out _));
+        Assert.AreEqual(41, beforeRebuild.Revision);
+
+        InteriorPieceEntity rebuilt = InteriorPieceEntity.MakeEmpty();
+        rebuilt.Id = reactor.Id;
+        rebuilt.Metadata = new PowerSourceMetadata(910f, 2500f, BasePowerSourceType.NUCLEAR);
+        Assert.IsTrue(authority.TryApply(rebuilt, firstOwner, Request(rebuilt.Id, BasePowerSourceType.NUCLEAR, 915f, 2), out PowerSourceMetadata afterRebuild, out _));
+
+        Assert.AreEqual(42, afterRebuild.Revision);
+    }
+
+    [TestMethod]
+    public void RevisionKeepsRisingWhenTheServerAppliesConsumptionAfterARebuild()
+    {
+        BasePowerSourceAuthority authority = new();
+        ModuleEntity panel = CreateModule();
+        panel.Metadata = new PowerSourceMetadata(30f, 75f, BasePowerSourceType.SOLAR, 12);
+        Assert.AreEqual(ConsumptionRoute.APPLIED_BY_SERVER, authority.RouteConsumption(panel, null, secondOwner, 5f, out PowerSourceMetadata first, out _));
+        Assert.AreEqual(13, first.Revision);
+
+        panel.Metadata = new PowerSourceMetadata(25f, 75f, BasePowerSourceType.SOLAR);
+        Assert.AreEqual(ConsumptionRoute.APPLIED_BY_SERVER, authority.RouteConsumption(panel, null, secondOwner, 5f, out PowerSourceMetadata second, out _));
+
+        Assert.AreEqual(14, second.Revision);
+    }
+
+    [TestMethod]
     public void RejoinedPlayerOnReusedSessionIdCanRestartClientSequence()
     {
         // A client restarts its counter at 1 on every join, and the server hands the same session id out again
@@ -190,6 +224,46 @@ public sealed class BasePowerSourceAuthorityTest
         Assert.IsFalse(authority.TryApplyTemperature(plant, new ThermalPlantMetadata(55f)));
         Assert.IsFalse(authority.TryApplyTemperature(plant, new ThermalPlantMetadata(float.NaN)));
         Assert.AreEqual(70f, ((PowerSourceMetadata)plant.Metadata).Temperature);
+    }
+
+    [TestMethod]
+    public void TemperatureIsStoredNoHigherThanAThermalPlantCanUse()
+    {
+        // Any player may report a temperature. Above 100 a plant's output and gauge no longer change.
+        BasePowerSourceAuthority authority = new();
+        ModuleEntity plant = CreateModule();
+        plant.Metadata = new PowerSourceMetadata(10f, 250f, BasePowerSourceType.THERMAL, 3, temperature: 70f);
+
+        Assert.IsTrue(authority.TryAcceptTemperature(plant, new ThermalPlantMetadata(1e9f), out ThermalPlantMetadata accepted));
+
+        Assert.AreEqual(100f, accepted.Temperature, "What is relayed to the other players is limited as well.");
+        Assert.AreEqual(100f, ((PowerSourceMetadata)plant.Metadata).Temperature);
+        Assert.IsFalse(authority.TryAcceptTemperature(plant, new ThermalPlantMetadata(5e9f), out _), "Nothing above the limit is news.");
+    }
+
+    [TestMethod]
+    public void TemperatureForAPlantWithoutPowerStateIsCheckedTheSameWay()
+    {
+        BasePowerSourceAuthority authority = new();
+        ModuleEntity plant = CreateModule();
+
+        Assert.IsTrue(authority.TryAcceptTemperature(plant, new ThermalPlantMetadata(250f), out ThermalPlantMetadata accepted));
+        Assert.AreEqual(100f, accepted.Temperature);
+        Assert.IsNull(plant.Metadata, "The caller stores the accepted report.");
+        Assert.IsFalse(authority.TryAcceptTemperature(plant, new ThermalPlantMetadata(float.NaN), out _));
+        Assert.IsFalse(authority.TryAcceptTemperature(plant, new ThermalPlantMetadata(float.PositiveInfinity), out _));
+
+        plant.Metadata = new ThermalPlantMetadata(48f);
+        Assert.IsFalse(authority.TryAcceptTemperature(plant, new ThermalPlantMetadata(48f), out _));
+        Assert.IsTrue(authority.TryAcceptTemperature(plant, new ThermalPlantMetadata(49f), out _));
+    }
+
+    [TestMethod]
+    public void OnlyTheSimulatingPlayerOrATemperatureReportMayTouchPowerState()
+    {
+        Assert.IsFalse(BasePowerSourceAuthority.MayReplacePowerState(new BatteryMetadata(100f), senderSimulatesSource: false));
+        Assert.IsTrue(BasePowerSourceAuthority.MayReplacePowerState(new BatteryMetadata(100f), senderSimulatesSource: true));
+        Assert.IsTrue(BasePowerSourceAuthority.MayReplacePowerState(new ThermalPlantMetadata(60f), senderSimulatesSource: false));
     }
 
     [TestMethod]

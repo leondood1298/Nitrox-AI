@@ -219,6 +219,40 @@ internal sealed class EntitySimulation : ISessionCleaner
         return false;
     }
 
+    /// <summary>
+    ///     Puts the players who finished loading first, keeping the order otherwise. A player who is still loading has
+    ///     not spawned the world yet: an entity given to it is simulated by nobody until it has, which for a base power
+    ///     source means no generation and other players' consumption being dropped.
+    /// </summary>
+    internal static List<Player> PreferPlayersInTheWorld(List<Player> players)
+    {
+        return [.. players.OrderByDescending(player => player.HasFinishedInitialSync)];
+    }
+
+    /// <summary>
+    ///     Takes background simulation of <paramref name="entity" /> away from a player who cannot simulate it and
+    ///     offers it to <paramref name="otherPlayers" />.
+    /// </summary>
+    /// <param name="takenOver">The new simulation, or null when no other player could take it.</param>
+    /// <returns>False when <paramref name="player" /> does not hold background simulation of the entity.</returns>
+    public bool TryReleaseBackgroundSimulation(Player player, Entity entity, List<Player> otherPlayers, out List<SimulatedEntity>? takenOver)
+    {
+        takenOver = null;
+        // An exclusive lock is a player piloting or controlling the entity; that only ends through its own lifecycle
+        if (!simulationOwnershipData.TryGetLock(entity.Id, out SimulationOwnershipData.PlayerLock heldLock) ||
+            heldLock.Player != player || heldLock.LockType != SimulationLockType.TRANSIENT ||
+            !simulationOwnershipData.RevokeIfOwner(entity.Id, player))
+        {
+            return false;
+        }
+
+        if (TryAssignEntityToPlayers(PreferPlayersInTheWorld(otherPlayers), entity, false, out List<SimulatedEntity>? simulatedEntities))
+        {
+            takenOver = simulatedEntities;
+        }
+        return true;
+    }
+
     public bool ShouldSimulateEntityMovement(NitroxId entityId)
     {
         return entityRegistry.TryGetEntityById(entityId, out WorldEntity worldEntity) && SimulationWhitelist.ShouldSimulateEntityMovement(worldEntity);
@@ -300,7 +334,7 @@ internal sealed class EntitySimulation : ISessionCleaner
         }
 
         // TODO: (optional) Find out if ordering the otherPlayers by distance to the previous simulator improves performance (ascending)
-        List<Player> otherPlayers = playerManager.GetConnectedPlayersExcept(oldSessionId);
+        List<Player> otherPlayers = PreferPlayersInTheWorld(playerManager.GetConnectedPlayersExcept(oldSessionId));
         foreach (Entity entity in entities)
         {
             if (TryAssignEntityToPlayers(otherPlayers, entity, propagate, out List<SimulatedEntity> simulatedEntities))
