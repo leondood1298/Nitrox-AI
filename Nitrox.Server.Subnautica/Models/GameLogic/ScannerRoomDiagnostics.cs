@@ -17,7 +17,8 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic;
 ///     <c>sid</c> is the player the request came from. <c>roomLock</c> and <c>camLock</c> name who simulates the room
 ///     and the camera at the moment of the line (<c>3x</c>: session 3 exclusively, <c>1t</c>: session 1 transiently,
 ///     <c>none</c>: nobody), because most Scanner Room failures come down to the wrong player, or no player, holding
-///     one of these two locks.
+///     one of these two locks. <c>n</c> counts every event, so a gap in it is a repeated rejection that got no line;
+///     the next line for the same rejection carries <c>rep=</c> with how often it has happened by then.
 /// </summary>
 internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> logger, SimulationOwnershipData? simulationOwnershipData = null,
     TimeProvider? timeProvider = null)
@@ -69,7 +70,8 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
     internal string Epoch => epoch;
 
     /// <summary>
-    ///     How many accepted requests were not recorded because they left the state at the revision already recorded.
+    ///     How many requests were not recorded because they changed nothing and are repeated as a matter of course:
+    ///     a refresh that left the state at the revision already recorded, or scan progress the server already had.
     /// </summary>
     internal long UnchangedRepeats => Interlocked.Read(ref unchangedRepeats);
 

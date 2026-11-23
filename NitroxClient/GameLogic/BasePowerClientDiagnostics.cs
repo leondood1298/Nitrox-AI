@@ -15,7 +15,10 @@ namespace NitroxClient.GameLogic;
 ///     Line shape (see <see cref="DiagnosticLineFormat" />):
 ///     <c>[BPD1] n= ep= side=C sid= ev= out= base= source= power=current/max initial= wait= reason=</c>. <c>sid</c> is
 ///     this client's own session id. <c>initial</c> and <c>wait</c> say whether the initial sync had completed and
-///     whether the loading screen was still up, because both events are only of interest while a player joins.
+///     whether the loading screen was still up, because the source applies and voice transitions are only of
+///     interest while a player joins; that trace stops at a fixed number of lines and says so. Updates this client
+///     dropped as outdated (<c>out=stale</c>) and reports the server refused (<c>out=reject</c>) are recorded for the
+///     whole session instead, thinned out when they repeat (<c>rep=</c> counts the repeats).
 /// </summary>
 public sealed class BasePowerClientDiagnostics
 {
@@ -87,7 +90,7 @@ public sealed class BasePowerClientDiagnostics
     ///     every later update: the source stays at the level it had. Not limited to the join phase, thinned out by
     ///     repeat instead, because it lasts for as long as the source does.
     /// </summary>
-    public string? RecordSourceStale(NitroxId sourceId, PowerSourceMetadata incoming, PowerSourceMetadata held) =>
+    internal string? RecordSourceStale(NitroxId sourceId, PowerSourceMetadata incoming, PowerSourceMetadata held) =>
         RecordProblem("source_apply", "stale", sourceId, incoming, $"rev_{incoming.Revision}_held_{held.Revision}", "stale");
 
     /// <summary>
@@ -95,7 +98,7 @@ public sealed class BasePowerClientDiagnostics
     ///     client reports once a second, so repeats are thinned out.
     /// </summary>
     /// <param name="canonical">The state the server told this client to restore.</param>
-    public string? RecordSourceRejected(NitroxId sourceId, PowerSourceMetadata canonical, string? reason) =>
+    internal string? RecordSourceRejected(NitroxId sourceId, PowerSourceMetadata canonical, string? reason) =>
         RecordProblem("source_update", "reject", sourceId, canonical, reason, WithoutDigits(reason));
 
     /// <summary>
