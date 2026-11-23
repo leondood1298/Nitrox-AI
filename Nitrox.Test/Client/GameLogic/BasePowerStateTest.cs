@@ -8,6 +8,47 @@ namespace NitroxClient.GameLogic;
 public sealed class BasePowerStateTest
 {
     [TestMethod]
+    public void DrawFromAnotherPlayerIsAppliedToASourceThisClientSimulates()
+    {
+        BasePowerState state = new();
+
+        Assert.AreEqual(ForwardedDraw.APPLY, state.DecideForwardedDraw(new NitroxId(), simulatedLocally: true, sourceObjectExists: true, finishedLoading: true));
+    }
+
+    [TestMethod]
+    public void DrawForASourceSomeoneElseSimulatesByNowIsIgnored()
+    {
+        BasePowerState state = new();
+
+        Assert.AreEqual(ForwardedDraw.IGNORE, state.DecideForwardedDraw(new NitroxId(), simulatedLocally: false, sourceObjectExists: true, finishedLoading: true));
+        Assert.AreEqual(ForwardedDraw.IGNORE, state.DecideForwardedDraw(new NitroxId(), simulatedLocally: false, sourceObjectExists: false, finishedLoading: true));
+    }
+
+    [TestMethod]
+    public void SourceMissingOnThisClientIsHandedBackOnce()
+    {
+        // Otherwise it stays frozen for everyone. If it comes back, nobody else could simulate it either.
+        BasePowerState state = new();
+        NitroxId source = new();
+
+        Assert.AreEqual(ForwardedDraw.HAND_BACK, state.DecideForwardedDraw(source, simulatedLocally: true, sourceObjectExists: false, finishedLoading: true));
+        Assert.AreEqual(ForwardedDraw.IGNORE, state.DecideForwardedDraw(source, simulatedLocally: true, sourceObjectExists: false, finishedLoading: true));
+        Assert.AreEqual(ForwardedDraw.HAND_BACK, state.DecideForwardedDraw(new NitroxId(), simulatedLocally: true, sourceObjectExists: false, finishedLoading: true),
+            "Each source is judged on its own.");
+    }
+
+    [TestMethod]
+    public void SourceNotSpawnedYetWhileLoadingIsKept()
+    {
+        BasePowerState state = new();
+        NitroxId source = new();
+
+        Assert.AreEqual(ForwardedDraw.IGNORE, state.DecideForwardedDraw(source, simulatedLocally: true, sourceObjectExists: false, finishedLoading: false));
+        Assert.AreEqual(ForwardedDraw.HAND_BACK, state.DecideForwardedDraw(source, simulatedLocally: true, sourceObjectExists: false, finishedLoading: true),
+            "Still missing once loading is over: it will not come.");
+    }
+
+    [TestMethod]
     public void ClientSequencesAreMonotonicAndIndependentPerSource()
     {
         BasePowerState state = new();
