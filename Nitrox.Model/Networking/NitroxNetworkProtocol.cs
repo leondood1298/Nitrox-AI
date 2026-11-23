@@ -10,9 +10,9 @@ public static class NitroxNetworkProtocol
     /// <summary>
     ///     Increment before shipping an incompatible packet type or schema change.
     /// </summary>
-    public const int Epoch = 5;
+    public const int EPOCH = 5;
 
-    public static string ConnectionKey { get; } = $"{CONNECTION_KEY_PREFIX}{Epoch}";
+    public static string ConnectionKey { get; } = $"{CONNECTION_KEY_PREFIX}{EPOCH}";
 
     public static bool IsCompatible(string? connectionKey) =>
         string.Equals(connectionKey, ConnectionKey, StringComparison.Ordinal);

@@ -1,5 +1,4 @@
 using System;
-using System.CodeDom.Compiler;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using HarmonyLib;
@@ -15,13 +14,13 @@ namespace NitroxPatcher.Patches.Dynamic;
 ///     Suppresses only base-power voice callbacks during multiplayer initial reconciliation.
 ///     The underlying <see cref="PowerRelay"/> state and events remain untouched.
 /// </summary>
-public sealed class BasePowerRelay_PowerEvent_Patch : NitroxPatch, IDynamicPatch, INitroxPatch
+public sealed class BasePowerRelay_PowerEvent_Patch : NitroxPatch, IDynamicPatch
 {
-    internal const float LoadSettleSeconds = 2f;
+    internal const float LOAD_SETTLE_SECONDS = 2f;
 
-    private static readonly MethodInfo START = AccessTools.Method(typeof(BasePowerRelay), "Start");
-    private static readonly MethodInfo POWER_DOWN_EVENT = AccessTools.Method(typeof(BasePowerRelay), "PowerDownEvent", [typeof(PowerRelay)]);
-    private static readonly MethodInfo POWER_UP_EVENT = AccessTools.Method(typeof(BasePowerRelay), "PowerUpEvent", [typeof(PowerRelay)]);
+    private static readonly MethodInfo TARGET_METHOD_START = Reflect.Method((BasePowerRelay t) => t.Start());
+    private static readonly MethodInfo TARGET_METHOD_POWER_DOWN_EVENT = Reflect.Method((BasePowerRelay t) => t.PowerDownEvent(default));
+    private static readonly MethodInfo TARGET_METHOD_POWER_UP_EVENT = Reflect.Method((BasePowerRelay t) => t.PowerUpEvent(default));
     private static readonly ConditionalWeakTable<BasePowerRelay, LoadWindow> loadWindows = new();
 
     public static void StartPostfix(BasePowerRelay __instance)
@@ -30,7 +29,7 @@ public sealed class BasePowerRelay_PowerEvent_Patch : NitroxPatch, IDynamicPatch
         if (ShouldTrack(Multiplayer.Active, initialSyncCompleted))
         {
             loadWindows.Remove(__instance);
-            loadWindows.Add(__instance, new LoadWindow(Time.time + LoadSettleSeconds));
+            loadWindows.Add(__instance, new LoadWindow(Time.time + LOAD_SETTLE_SECONDS));
         }
     }
 
@@ -67,12 +66,11 @@ public sealed class BasePowerRelay_PowerEvent_Patch : NitroxPatch, IDynamicPatch
     internal static bool ShouldSuppress(bool tracked, bool initialSyncCompleted, float currentTime, float suppressUntil) =>
         tracked && (!initialSyncCompleted || currentTime < suppressUntil);
 
-    [GeneratedCode("Nitrox.Analyzers", "1.0.13.0")]
     public override void Patch(Harmony harmony)
     {
-        PatchMultiple(harmony, START, null, new Action<BasePowerRelay>(StartPostfix).Method);
-        PatchMultiple(harmony, POWER_DOWN_EVENT, new Func<BasePowerRelay, bool>(PowerDownPrefix).Method);
-        PatchMultiple(harmony, POWER_UP_EVENT, new Func<BasePowerRelay, bool>(PowerUpPrefix).Method);
+        PatchPostfix(harmony, TARGET_METHOD_START, ((Action<BasePowerRelay>)StartPostfix).Method);
+        PatchPrefix(harmony, TARGET_METHOD_POWER_DOWN_EVENT, ((Func<BasePowerRelay, bool>)PowerDownPrefix).Method);
+        PatchPrefix(harmony, TARGET_METHOD_POWER_UP_EVENT, ((Func<BasePowerRelay, bool>)PowerUpPrefix).Method);
     }
 
     private sealed record LoadWindow(float SuppressUntil);

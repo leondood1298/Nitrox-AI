@@ -25,8 +25,8 @@ public sealed class NitroxNetworkProtocolTest
     [TestMethod]
     public void NeighbouringEpochsAreIncompatible()
     {
-        Assert.IsFalse(NitroxNetworkProtocol.IsCompatible($"nitrox-ai/{NitroxNetworkProtocol.Epoch - 1}"));
-        Assert.IsFalse(NitroxNetworkProtocol.IsCompatible($"nitrox-ai/{NitroxNetworkProtocol.Epoch + 1}"));
+        Assert.IsFalse(NitroxNetworkProtocol.IsCompatible($"nitrox-ai/{NitroxNetworkProtocol.EPOCH - 1}"));
+        Assert.IsFalse(NitroxNetworkProtocol.IsCompatible($"nitrox-ai/{NitroxNetworkProtocol.EPOCH + 1}"));
     }
 
     [TestMethod]

@@ -1,7 +1,5 @@
 using System;
-using System.CodeDom.Compiler;
 using System.Reflection;
-using HarmonyLib;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Helper;
 using NitroxClient.GameLogic;
@@ -10,7 +8,7 @@ using NitroxClient.MonoBehaviours;
 
 namespace NitroxPatcher.Patches.Dynamic;
 
-public sealed class CollectShiny_TryPickupShinyTarget_Patch : NitroxPatch, IDynamicPatch, INitroxPatch
+public sealed partial class CollectShiny_TryPickupShinyTarget_Patch : NitroxPatch, IDynamicPatch
 {
     private static readonly MethodInfo TARGET_METHOD = Reflect.Method((CollectShiny t) => t.TryPickupShinyTarget());
     private static bool applyingGrantedPickup;
@@ -100,11 +98,5 @@ public sealed class CollectShiny_TryPickupShinyTarget_Patch : NitroxPatch, IDyna
             context.CollectShiny.shinyTarget = null;
             context.CollectShiny.targetPickedUp = false;
         }
-    }
-
-    [GeneratedCode("Nitrox.Analyzers", "1.0.13.0")]
-    public override void Patch(Harmony harmony)
-    {
-        PatchMultiple(harmony, TARGET_METHOD, new Func<CollectShiny, bool>(Prefix).Method);
     }
 }

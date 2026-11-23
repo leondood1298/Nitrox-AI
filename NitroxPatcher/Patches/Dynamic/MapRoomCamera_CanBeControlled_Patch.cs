@@ -1,16 +1,13 @@
 using System;
 using System.Collections.Generic;
-using System.CodeDom.Compiler;
 using System.Reflection;
-using HarmonyLib;
 using Nitrox.Model.Helper;
 using NitroxClient.GameLogic;
 
 namespace NitroxPatcher.Patches.Dynamic;
 
-public sealed class MapRoomCamera_CanBeControlled_Patch : NitroxPatch, IDynamicPatch, INitroxPatch
+public sealed partial class MapRoomCamera_CanBeControlled_Patch : NitroxPatch, IDynamicPatch
 {
-    private delegate void PostfixDelegate(MapRoomCamera instance, ref bool result);
     private static readonly MethodInfo TARGET_METHOD = Reflect.Method((MapRoomCamera t) => t.CanBeControlled(null));
     private static readonly HashSet<int> loggedUnavailableCameras = [];
 
@@ -31,11 +28,5 @@ public sealed class MapRoomCamera_CanBeControlled_Patch : NitroxPatch, IDynamicP
             bool attached = __instance.pickupAble && __instance.pickupAble.attached;
             Log.Warn($"[MapRoomCamera] Camera {__instance.cameraNumber} unavailable: vanilla={vanillaResult}, controllerState={controllerStateAllows}, energy={energy:F2}, alive={alive}, attached={attached}, activeAndEnabled={__instance.isActiveAndEnabled}");
         }
-    }
-
-    [GeneratedCode("Nitrox.Analyzers", "1.0.13.0")]
-    public override void Patch(Harmony harmony)
-    {
-        PatchMultiple(harmony, TARGET_METHOD, null, new PostfixDelegate(Postfix).Method);
     }
 }

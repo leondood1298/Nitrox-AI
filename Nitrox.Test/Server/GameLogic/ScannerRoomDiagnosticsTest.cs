@@ -139,7 +139,7 @@ public sealed class ScannerRoomDiagnosticsTest
         }
 
         IReadOnlyList<ScannerRoomDiagnosticEntry> history = diagnostics.GetHistory();
-        history.Should().HaveCount(ScannerRoomDiagnostics.HistoryCapacity);
+        history.Should().HaveCount(ScannerRoomDiagnostics.HISTORY_CAPACITY);
         history[0].Sequence.Should().Be(45);
         history[^1].Sequence.Should().Be(300);
         history.Select(entry => entry.Sequence).Should().BeInAscendingOrder().And.OnlyHaveUniqueItems();
@@ -154,7 +154,7 @@ public sealed class ScannerRoomDiagnosticsTest
         Parallel.For(0, 1000, _ => diagnostics.RecordCheckpoint("fixture", CreateRoom()));
 
         IReadOnlyList<ScannerRoomDiagnosticEntry> history = diagnostics.GetHistory();
-        history.Should().HaveCount(ScannerRoomDiagnostics.HistoryCapacity);
+        history.Should().HaveCount(ScannerRoomDiagnostics.HISTORY_CAPACITY);
         history.Select(entry => entry.Sequence).Should().BeInAscendingOrder().And.OnlyHaveUniqueItems();
         diagnostics.GetCounters().Should().Be(new ScannerRoomDiagnosticCounters(1000, 0, 0, 0, 1000));
     }

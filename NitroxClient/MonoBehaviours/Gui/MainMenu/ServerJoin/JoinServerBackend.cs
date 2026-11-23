@@ -141,7 +141,7 @@ public static class JoinServerBackend
 
             if (ex is MultiplayerProtocolMismatchException protocolMismatch && NitroxNetworkProtocol.TryGetEpoch(protocolMismatch.ServerConnectionKey, out int serverEpoch))
             {
-                string languageKey = serverEpoch > NitroxNetworkProtocol.Epoch ? "Nitrox_OutOfDateClient" : "Nitrox_OutOfDateServer";
+                string languageKey = serverEpoch > NitroxNetworkProtocol.EPOCH ? "Nitrox_OutOfDateClient" : "Nitrox_OutOfDateServer";
                 msg = Language.main.Get(languageKey)
                               .Replace("{serverVersion}", protocolMismatch.ServerConnectionKey)
                               .Replace("{localVersion}", protocolMismatch.ClientConnectionKey);

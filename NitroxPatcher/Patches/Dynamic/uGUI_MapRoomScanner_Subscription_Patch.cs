@@ -1,23 +1,22 @@
 using System;
-using System.CodeDom.Compiler;
 using System.Reflection;
 using HarmonyLib;
 using NitroxClient.GameLogic;
 
 namespace NitroxPatcher.Patches.Dynamic;
 
-public sealed class uGUI_MapRoomScanner_Subscription_Patch : NitroxPatch, IDynamicPatch, INitroxPatch
+public sealed class uGUI_MapRoomScanner_Subscription_Patch : NitroxPatch, IDynamicPatch
 {
-    private static readonly MethodInfo START = AccessTools.Method(typeof(uGUI_MapRoomScanner), "Start");
-    private static readonly MethodInfo ON_DISABLE = AccessTools.Method(typeof(uGUI_MapRoomScanner), "OnDisable");
+    private static readonly MethodInfo TARGET_METHOD_START = Reflect.Method((uGUI_MapRoomScanner t) => t.Start());
+    private static readonly MethodInfo TARGET_METHOD_ON_DISABLE = Reflect.Method((uGUI_MapRoomScanner t) => t.OnDisable());
 
-    public static void Started(uGUI_MapRoomScanner __instance) => Resolve<MapRoomScanResultSubscriber>().Set(__instance, true);
-    public static void Disabled(uGUI_MapRoomScanner __instance) => Resolve<MapRoomScanResultSubscriber>().Set(__instance, false);
+    public static void PostfixStart(uGUI_MapRoomScanner __instance) => Resolve<MapRoomScanResultSubscriber>().Set(__instance, true);
 
-    [GeneratedCode("Nitrox.Analyzers", "1.0.13.0")]
+    public static void PostfixOnDisable(uGUI_MapRoomScanner __instance) => Resolve<MapRoomScanResultSubscriber>().Set(__instance, false);
+
     public override void Patch(Harmony harmony)
     {
-        PatchMultiple(harmony, START, null, new Action<uGUI_MapRoomScanner>(Started).Method);
-        PatchMultiple(harmony, ON_DISABLE, null, new Action<uGUI_MapRoomScanner>(Disabled).Method);
+        PatchPostfix(harmony, TARGET_METHOD_START, ((Action<uGUI_MapRoomScanner>)PostfixStart).Method);
+        PatchPostfix(harmony, TARGET_METHOD_ON_DISABLE, ((Action<uGUI_MapRoomScanner>)PostfixOnDisable).Method);
     }
 }

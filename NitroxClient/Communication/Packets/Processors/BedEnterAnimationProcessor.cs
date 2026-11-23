@@ -9,19 +9,17 @@ using UnityEngine;
 
 namespace NitroxClient.Communication.Packets.Processors;
 
-internal sealed class BedEnterAnimationProcessor(PlayerManager playerManager) : IClientPacketProcessor<BedEnterAnimation>, IClientPacketProcessor, IPacketProcessor, IPacketProcessor<ClientProcessorContext, BedEnterAnimation>
+internal sealed class BedEnterAnimationProcessor(PlayerManager playerManager) : IClientPacketProcessor<BedEnterAnimation>
 {
-	private readonly PlayerManager playerManager = playerManager;
+    private readonly PlayerManager playerManager = playerManager;
 
-	public Task Process(ClientProcessorContext context, BedEnterAnimation packet)
-	{
-		if (!NitroxEntity.TryGetObjectFrom(packet.BedId, out GameObject gameObject) || !gameObject.TryGetComponent<RemoteBedController>(out var component) || !playerManager.TryFind(packet.SessionId, out RemotePlayer remotePlayer) || !remotePlayer.Body || !remotePlayer.Body.activeInHierarchy)
-		{
-			return Task.CompletedTask;
-		}
-		component.StartBedAnimation(remotePlayer, packet.AnimationKey);
-		return Task.CompletedTask;
-	}
+    public Task Process(ClientProcessorContext context, BedEnterAnimation packet)
+    {
+        if (!NitroxEntity.TryGetObjectFrom(packet.BedId, out GameObject gameObject) || !gameObject.TryGetComponent<RemoteBedController>(out var component) || !playerManager.TryFind(packet.SessionId, out RemotePlayer remotePlayer) || !remotePlayer.Body || !remotePlayer.Body.activeInHierarchy)
+        {
+            return Task.CompletedTask;
+        }
+        component.StartBedAnimation(remotePlayer, packet.AnimationKey);
+        return Task.CompletedTask;
+    }
 }
-
-

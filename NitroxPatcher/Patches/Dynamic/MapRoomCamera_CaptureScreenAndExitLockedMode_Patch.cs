@@ -1,17 +1,13 @@
 using System;
-using System.CodeDom.Compiler;
 using System.Collections;
 using System.Reflection;
-using HarmonyLib;
 using NitroxClient.GameLogic;
 using UnityEngine;
 
 namespace NitroxPatcher.Patches.Dynamic;
 
-public sealed class MapRoomCamera_CaptureScreenAndExitLockedMode_Patch : NitroxPatch, IDynamicPatch, INitroxPatch
+public sealed partial class MapRoomCamera_CaptureScreenAndExitLockedMode_Patch : NitroxPatch, IDynamicPatch
 {
-    private delegate IEnumerator PostfixDelegate(IEnumerator result, MapRoomCamera instance);
-
     private static readonly MethodInfo TARGET_METHOD = typeof(MapRoomCamera).GetMethod(
         "CaptureScreenAndExitLockedMode", BindingFlags.Instance | BindingFlags.NonPublic);
 
@@ -40,11 +36,5 @@ public sealed class MapRoomCamera_CaptureScreenAndExitLockedMode_Patch : NitroxP
                 }
             }
         }
-    }
-
-    [GeneratedCode("Nitrox.Analyzers", "1.0.13.0")]
-    public override void Patch(Harmony harmony)
-    {
-        PatchMultiple(harmony, TARGET_METHOD, null, new PostfixDelegate(Postfix).Method);
     }
 }

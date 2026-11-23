@@ -75,7 +75,7 @@ public sealed class NitroxNetworkProtocolIntegrationTest
     public async Task ProductionClientReportsRejectedProtocolEpoch()
     {
         ushort port = GetAvailableUdpPort();
-        string otherEpochKey = $"nitrox-ai/{NitroxNetworkProtocol.Epoch + 1}";
+        string otherEpochKey = $"nitrox-ai/{NitroxNetworkProtocol.EPOCH + 1}";
         EventBasedNetListener listener = new();
         NetManager server = new(listener, NitroxEnvironment.IsReleaseMode ? new Crc32cLayer() : null)
         {
