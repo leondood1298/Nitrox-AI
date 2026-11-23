@@ -1,7 +1,5 @@
 using System.Threading.Tasks;
-using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
-using Nitrox.Model.Packets;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.Packets;
@@ -19,23 +17,21 @@ public sealed class MapRoomCameraPreviewProcessorTest
     public async Task AcceptedPreviewUsesCanonicalNumberAndCanPublishOnlyOncePerControlAcquisition()
     {
         ScannerRoomScenarioFixture scenario = await CreateControlledScenarioAsync();
-        MapRoomCameraPreviewProcessor processor = new(scenario.Ownership, scenario.EntityRegistry,
-            scenario.ControlLifecycle, scenario.Diagnostics);
-        RecordingSender sender = new();
+        MapRoomCameraPreviewProcessor processor = new(scenario.Manager);
         byte[] jpeg = MapRoomCameraPreviewImageTest.CreateJpeg(256, 256);
-        AuthProcessorContext context = new(scenario.PlayerA, sender);
+        AuthProcessorContext context = scenario.Context(scenario.PlayerA);
 
         await processor.Process(context, new MapRoomCameraPreview(ScannerRoomScenarioFixture.CameraAId, 999, jpeg));
         await processor.Process(context, new MapRoomCameraPreview(ScannerRoomScenarioFixture.CameraAId, 999, jpeg));
 
-        MapRoomCameraPreview accepted = sender.ToAll.Single();
+        MapRoomCameraPreview accepted = scenario.SentToAll<MapRoomCameraPreview>().Single();
         Assert.IsTrue(accepted.IsServerResponse);
         Assert.IsTrue(accepted.Granted);
         Assert.AreEqual(1, accepted.CameraNumber, "The server must ignore the request's presentation number.");
         Assert.AreEqual(1L, accepted.Revision);
         CollectionAssert.AreEqual(jpeg, accepted.JpegBytes);
-        Assert.AreEqual(0, sender.ToOthers.Count, "Accepted revisions must include the sender via all-client broadcast.");
-        Assert.AreEqual(1, sender.Replies.Count(packet => !packet.Granted));
+        Assert.AreEqual(0, scenario.SentToOthers<MapRoomCameraPreview>().Count, "Accepted revisions must include the sender via all-client broadcast.");
+        Assert.AreEqual(1, scenario.SentTo<MapRoomCameraPreview>(scenario.PlayerA).Count(packet => !packet.Granted));
     }
 
     [TestMethod]
@@ -45,15 +41,13 @@ public sealed class MapRoomCameraPreviewProcessorTest
         Assert.IsNull(scenario.Room.GetCameraRecord(ScannerRoomScenarioFixture.CameraAId));
         Assert.IsTrue((await scenario.ControlLooseAsync(scenario.PlayerA,
             ScannerRoomScenarioFixture.CameraAId, true)).Granted);
-        MapRoomCameraPreviewProcessor processor = new(scenario.Ownership, scenario.EntityRegistry,
-            scenario.ControlLifecycle, scenario.Diagnostics);
-        RecordingSender sender = new();
+        MapRoomCameraPreviewProcessor processor = new(scenario.Manager);
 
-        await processor.Process(new AuthProcessorContext(scenario.PlayerA, sender),
+        await processor.Process(scenario.Context(scenario.PlayerA),
             new MapRoomCameraPreview(ScannerRoomScenarioFixture.CameraAId, 37,
                 MapRoomCameraPreviewImageTest.CreateJpeg(64, 64)));
 
-        MapRoomCameraPreview accepted = sender.ToAll.Single();
+        MapRoomCameraPreview accepted = scenario.SentToAll<MapRoomCameraPreview>().Single();
         Assert.AreEqual(37, accepted.CameraNumber);
         Assert.IsTrue(accepted.Granted);
     }
@@ -67,10 +61,8 @@ public sealed class MapRoomCameraPreviewProcessorTest
         ScannerRoomScenarioFixture scenario = new();
         Assert.IsTrue((await scenario.ControlLooseAsync(scenario.PlayerA,
             ScannerRoomScenarioFixture.CameraAId, true)).Granted);
-        MapRoomCameraPreviewProcessor processor = new(scenario.Ownership, scenario.EntityRegistry,
-            scenario.ControlLifecycle, scenario.Diagnostics);
-        RecordingSender sender = new();
-        AuthProcessorContext context = new(scenario.PlayerA, sender);
+        MapRoomCameraPreviewProcessor processor = new(scenario.Manager);
+        AuthProcessorContext context = scenario.Context(scenario.PlayerA);
         byte[] jpeg = MapRoomCameraPreviewImageTest.CreateJpeg(64, 64);
 
         await processor.Process(context,
@@ -78,8 +70,8 @@ public sealed class MapRoomCameraPreviewProcessorTest
         await processor.Process(context,
             new MapRoomCameraPreview(ScannerRoomScenarioFixture.CameraAId, 1, jpeg));
 
-        Assert.AreEqual(0, sender.ToAll.Count);
-        Assert.AreEqual(2, sender.Replies.Count(packet => !packet.Granted));
+        Assert.AreEqual(0, scenario.SentToAll<MapRoomCameraPreview>().Count);
+        Assert.AreEqual(2, scenario.SentTo<MapRoomCameraPreview>(scenario.PlayerA).Count(packet => !packet.Granted));
     }
 
     [TestMethod]
@@ -88,32 +80,25 @@ public sealed class MapRoomCameraPreviewProcessorTest
         ScannerRoomScenarioFixture scenario = await CreateControlledScenarioAsync();
         MapRoomEntity duplicateRoom = new(new NitroxId("00000000-0000-0000-0000-000000000900"),
             new NitroxId("00000000-0000-0000-0000-000000000901"), new NitroxInt3());
-        lock (duplicateRoom)
-        {
-            duplicateRoom.GetOrAssignCameraNumber(ScannerRoomScenarioFixture.CameraAId, 7);
-        }
-        scenario.EntityRegistry.AddEntity(duplicateRoom);
-        MapRoomCameraPreviewProcessor processor = new(scenario.Ownership, scenario.EntityRegistry,
-            scenario.ControlLifecycle, scenario.Diagnostics);
-        RecordingSender sender = new();
+        duplicateRoom.GetOrAssignCameraNumber(ScannerRoomScenarioFixture.CameraAId, 7);
+        scenario.AddRoom(duplicateRoom);
+        MapRoomCameraPreviewProcessor processor = new(scenario.Manager);
 
-        await processor.Process(new AuthProcessorContext(scenario.PlayerA, sender),
+        await processor.Process(scenario.Context(scenario.PlayerA),
             new MapRoomCameraPreview(ScannerRoomScenarioFixture.CameraAId, 7,
                 MapRoomCameraPreviewImageTest.CreateJpeg(64, 64)));
 
-        Assert.AreEqual(0, sender.ToAll.Count);
-        Assert.AreEqual(1, sender.Replies.Count(packet => !packet.Granted));
+        Assert.AreEqual(0, scenario.SentToAll<MapRoomCameraPreview>().Count);
+        Assert.AreEqual(1, scenario.SentTo<MapRoomCameraPreview>(scenario.PlayerA).Count(packet => !packet.Granted));
     }
 
     [TestMethod]
     public async Task DuplicateControlAcquireDoesNotReopenConsumedPreview()
     {
         ScannerRoomScenarioFixture scenario = await CreateControlledScenarioAsync();
-        MapRoomCameraPreviewProcessor processor = new(scenario.Ownership, scenario.EntityRegistry,
-            scenario.ControlLifecycle, scenario.Diagnostics);
-        RecordingSender sender = new();
+        MapRoomCameraPreviewProcessor processor = new(scenario.Manager);
         byte[] jpeg = MapRoomCameraPreviewImageTest.CreateJpeg(64, 64);
-        AuthProcessorContext context = new(scenario.PlayerA, sender);
+        AuthProcessorContext context = scenario.Context(scenario.PlayerA);
 
         await processor.Process(context, new MapRoomCameraPreview(ScannerRoomScenarioFixture.CameraAId, 1, jpeg));
         MapRoomCameraControl duplicate = await scenario.ControlAsync(scenario.PlayerA,
@@ -121,8 +106,8 @@ public sealed class MapRoomCameraPreviewProcessorTest
         Assert.IsTrue(duplicate.Granted);
         await processor.Process(context, new MapRoomCameraPreview(ScannerRoomScenarioFixture.CameraAId, 1, jpeg));
 
-        Assert.AreEqual(1, sender.ToAll.Count);
-        Assert.AreEqual(1, sender.Replies.Count(packet => !packet.Granted));
+        Assert.AreEqual(1, scenario.SentToAll<MapRoomCameraPreview>().Count);
+        Assert.AreEqual(1, scenario.SentTo<MapRoomCameraPreview>(scenario.PlayerA).Count(packet => !packet.Granted));
     }
 
     [TestMethod]
@@ -140,96 +125,82 @@ public sealed class MapRoomCameraPreviewProcessorTest
         Assert.AreEqual(SimulationLockType.EXCLUSIVE, serverLock.LockType,
             "A background transient acquisition must not downgrade active camera control.");
 
-        MapRoomCameraPreviewProcessor processor = new(scenario.Ownership, scenario.EntityRegistry,
-            scenario.ControlLifecycle, scenario.Diagnostics);
-        RecordingSender sender = new();
-        await processor.Process(new AuthProcessorContext(scenario.PlayerA, sender),
+        MapRoomCameraPreviewProcessor processor = new(scenario.Manager);
+        await processor.Process(scenario.Context(scenario.PlayerA),
             new MapRoomCameraPreview(ScannerRoomScenarioFixture.CameraAId, 1,
                 MapRoomCameraPreviewImageTest.CreateJpeg(64, 64)));
 
-        Assert.AreEqual(1, sender.ToAll.Count,
+        Assert.AreEqual(1, scenario.SentToAll<MapRoomCameraPreview>().Count,
             "The preview must remain eligible after the background assignment interleaves with control.");
-        Assert.AreEqual(0, sender.Replies.Count);
+        Assert.AreEqual(0, scenario.SentTo<MapRoomCameraPreview>(scenario.PlayerA).Count);
     }
 
     [TestMethod]
     public async Task ReleaseThenRealReacquisitionOpensOneNewPreview()
     {
         ScannerRoomScenarioFixture scenario = await CreateControlledScenarioAsync();
-        MapRoomCameraPreviewProcessor processor = new(scenario.Ownership, scenario.EntityRegistry,
-            scenario.ControlLifecycle, scenario.Diagnostics);
-        RecordingSender sender = new();
+        MapRoomCameraPreviewProcessor processor = new(scenario.Manager);
         byte[] jpeg = MapRoomCameraPreviewImageTest.CreateJpeg(64, 64);
-        AuthProcessorContext context = new(scenario.PlayerA, sender);
+        AuthProcessorContext context = scenario.Context(scenario.PlayerA);
 
         await processor.Process(context, new MapRoomCameraPreview(ScannerRoomScenarioFixture.CameraAId, 1, jpeg));
         Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, false)).Granted);
         Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
         await processor.Process(context, new MapRoomCameraPreview(ScannerRoomScenarioFixture.CameraAId, 1, jpeg));
 
-        CollectionAssert.AreEqual(new long[] { 1, 2 }, sender.ToAll.Select(packet => packet.Revision).ToArray());
+        CollectionAssert.AreEqual(new long[] { 1, 2 }, scenario.SentToAll<MapRoomCameraPreview>().Select(packet => packet.Revision).ToArray());
     }
 
     [TestMethod]
     public async Task SequentialControllersPublishCanonicalRevisionsToAllClientsIncludingEachSender()
     {
         ScannerRoomScenarioFixture scenario = await CreateControlledScenarioAsync();
-        MapRoomCameraPreviewProcessor processor = new(scenario.Ownership, scenario.EntityRegistry,
-            scenario.ControlLifecycle, scenario.Diagnostics);
+        MapRoomCameraPreviewProcessor processor = new(scenario.Manager);
         byte[] jpeg = MapRoomCameraPreviewImageTest.CreateJpeg(64, 64);
-        RecordingSender firstSender = new();
 
-        await processor.Process(new AuthProcessorContext(scenario.PlayerA, firstSender),
+        await processor.Process(scenario.Context(scenario.PlayerA),
             new MapRoomCameraPreview(ScannerRoomScenarioFixture.CameraAId, 1, jpeg));
         Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA,
             ScannerRoomScenarioFixture.CameraAId, 0, false)).Granted);
         Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerB,
             ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
 
-        RecordingSender secondSender = new();
-        await processor.Process(new AuthProcessorContext(scenario.PlayerB, secondSender),
+        await processor.Process(scenario.Context(scenario.PlayerB),
             new MapRoomCameraPreview(ScannerRoomScenarioFixture.CameraAId, 1, jpeg));
 
-        Assert.AreEqual(1L, firstSender.ToAll.Single().Revision);
-        Assert.AreEqual(2L, secondSender.ToAll.Single().Revision);
-        Assert.AreEqual(0, firstSender.ToOthers.Count);
-        Assert.AreEqual(0, secondSender.ToOthers.Count);
+        CollectionAssert.AreEqual(new long[] { 1, 2 }, scenario.SentToAll<MapRoomCameraPreview>().Select(packet => packet.Revision).ToArray());
+        Assert.AreEqual(0, scenario.SentToOthers<MapRoomCameraPreview>().Count);
     }
 
     [TestMethod]
     public async Task NonOwnerCannotConsumeControllersPreviewOpportunity()
     {
         ScannerRoomScenarioFixture scenario = await CreateControlledScenarioAsync();
-        MapRoomCameraPreviewProcessor processor = new(scenario.Ownership, scenario.EntityRegistry,
-            scenario.ControlLifecycle, scenario.Diagnostics);
+        MapRoomCameraPreviewProcessor processor = new(scenario.Manager);
         byte[] jpeg = MapRoomCameraPreviewImageTest.CreateJpeg(64, 64);
-        RecordingSender attackerSender = new();
 
-        await processor.Process(new AuthProcessorContext(scenario.PlayerB, attackerSender),
+        await processor.Process(scenario.Context(scenario.PlayerB),
             new MapRoomCameraPreview(ScannerRoomScenarioFixture.CameraAId, 1, jpeg));
-        RecordingSender ownerSender = new();
-        await processor.Process(new AuthProcessorContext(scenario.PlayerA, ownerSender),
+        await processor.Process(scenario.Context(scenario.PlayerA),
             new MapRoomCameraPreview(ScannerRoomScenarioFixture.CameraAId, 1, jpeg));
 
-        Assert.AreEqual(1, attackerSender.Replies.Count(packet => !packet.Granted));
-        Assert.AreEqual(1, ownerSender.ToAll.Count);
+        Assert.AreEqual(1, scenario.SentTo<MapRoomCameraPreview>(scenario.PlayerB).Count(packet => !packet.Granted));
+        Assert.AreEqual(1, scenario.SentToAll<MapRoomCameraPreview>().Count);
     }
 
     [TestMethod]
     public async Task MalformedOwnerPayloadConsumesTheSingleOpportunity()
     {
         ScannerRoomScenarioFixture scenario = await CreateControlledScenarioAsync();
-        MapRoomCameraPreviewProcessor processor = new(scenario.Ownership, scenario.EntityRegistry,
-            scenario.ControlLifecycle, scenario.Diagnostics);
-        RecordingSender sender = new();
-        AuthProcessorContext context = new(scenario.PlayerA, sender);
+        MapRoomCameraPreviewProcessor processor = new(scenario.Manager);
+        AuthProcessorContext context = scenario.Context(scenario.PlayerA);
 
         await processor.Process(context, new MapRoomCameraPreview(ScannerRoomScenarioFixture.CameraAId, 1, [1, 2, 3]));
         await processor.Process(context, new MapRoomCameraPreview(ScannerRoomScenarioFixture.CameraAId, 1,
             MapRoomCameraPreviewImageTest.CreateJpeg(64, 64)));
 
-        Assert.AreEqual(0, sender.ToAll.Count);
-        Assert.AreEqual(2, sender.Replies.Count(packet => !packet.Granted));
+        Assert.AreEqual(0, scenario.SentToAll<MapRoomCameraPreview>().Count);
+        Assert.AreEqual(2, scenario.SentTo<MapRoomCameraPreview>(scenario.PlayerA).Count(packet => !packet.Granted));
     }
 
     [TestMethod]
@@ -238,31 +209,27 @@ public sealed class MapRoomCameraPreviewProcessorTest
         ScannerRoomScenarioFixture scenario = await CreateControlledScenarioAsync();
         Assert.IsTrue(scenario.Ownership.RevokeOwnerOfId(ScannerRoomScenarioFixture.CameraAId,
             out SimulationOwnershipData.PlayerLock revoked));
-        Assert.IsTrue(scenario.ControlReleaseFactory.TryCreate(ScannerRoomScenarioFixture.CameraAId, revoked,
+        Assert.IsTrue(scenario.Manager.TryCreateControlRelease(ScannerRoomScenarioFixture.CameraAId, revoked,
             "test_cleanup", out _));
         Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA,
             SimulationLockType.EXCLUSIVE));
-        MapRoomCameraPreviewProcessor processor = new(scenario.Ownership, scenario.EntityRegistry,
-            scenario.ControlLifecycle, scenario.Diagnostics);
-        RecordingSender sender = new();
+        MapRoomCameraPreviewProcessor processor = new(scenario.Manager);
 
-        await processor.Process(new AuthProcessorContext(scenario.PlayerA, sender),
+        await processor.Process(scenario.Context(scenario.PlayerA),
             new MapRoomCameraPreview(ScannerRoomScenarioFixture.CameraAId, 1,
                 MapRoomCameraPreviewImageTest.CreateJpeg(64, 64)));
 
-        Assert.AreEqual(0, sender.ToAll.Count);
-        Assert.AreEqual(1, sender.Replies.Count(packet => !packet.Granted));
+        Assert.AreEqual(0, scenario.SentToAll<MapRoomCameraPreview>().Count);
+        Assert.AreEqual(1, scenario.SentTo<MapRoomCameraPreview>(scenario.PlayerA).Count(packet => !packet.Granted));
     }
 
     [TestMethod]
     public async Task CleanupOfLegacyTransientLockClearsConsumedEligibilityBeforeReacquisition()
     {
         ScannerRoomScenarioFixture scenario = await CreateControlledScenarioAsync();
-        MapRoomCameraPreviewProcessor processor = new(scenario.Ownership, scenario.EntityRegistry,
-            scenario.ControlLifecycle, scenario.Diagnostics);
-        RecordingSender sender = new();
+        MapRoomCameraPreviewProcessor processor = new(scenario.Manager);
         byte[] jpeg = MapRoomCameraPreviewImageTest.CreateJpeg(64, 64);
-        AuthProcessorContext context = new(scenario.PlayerA, sender);
+        AuthProcessorContext context = scenario.Context(scenario.PlayerA);
         await processor.Process(context,
             new MapRoomCameraPreview(ScannerRoomScenarioFixture.CameraAId, 1, jpeg));
 
@@ -273,14 +240,14 @@ public sealed class MapRoomCameraPreviewProcessorTest
         Assert.IsTrue(scenario.Ownership.RevokeOwnerOfId(ScannerRoomScenarioFixture.CameraAId,
             out SimulationOwnershipData.PlayerLock revoked));
         Assert.AreEqual(SimulationLockType.TRANSIENT, revoked.LockType);
-        Assert.IsFalse(scenario.ControlReleaseFactory.TryCreate(ScannerRoomScenarioFixture.CameraAId, revoked,
+        Assert.IsFalse(scenario.Manager.TryCreateControlRelease(ScannerRoomScenarioFixture.CameraAId, revoked,
             "legacy_transient_cleanup", out _));
 
         Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
         await processor.Process(context,
             new MapRoomCameraPreview(ScannerRoomScenarioFixture.CameraAId, 1, jpeg));
 
-        CollectionAssert.AreEqual(new long[] { 1, 2 }, sender.ToAll.Select(packet => packet.Revision).ToArray());
+        CollectionAssert.AreEqual(new long[] { 1, 2 }, scenario.SentToAll<MapRoomCameraPreview>().Select(packet => packet.Revision).ToArray());
     }
 
     [TestMethod]
@@ -293,20 +260,18 @@ public sealed class MapRoomCameraPreviewProcessorTest
             out SimulationOwnershipData.PlayerLock preservedLock));
         Assert.AreEqual(SimulationLockType.EXCLUSIVE, preservedLock.LockType,
             "Only the canonical MapRoomCameraControl release may end active camera control.");
-        Assert.IsTrue(scenario.ControlLifecycle.IsActiveController(
+        Assert.IsTrue(scenario.IsController(
             ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA.SessionId));
         Assert.IsTrue((await scenario.RequestOwnershipAsync(scenario.PlayerA,
             ScannerRoomScenarioFixture.CameraAId, SimulationLockType.EXCLUSIVE)).LockAcquired);
-        MapRoomCameraPreviewProcessor processor = new(scenario.Ownership, scenario.EntityRegistry,
-            scenario.ControlLifecycle, scenario.Diagnostics);
-        RecordingSender sender = new();
+        MapRoomCameraPreviewProcessor processor = new(scenario.Manager);
 
-        await processor.Process(new AuthProcessorContext(scenario.PlayerA, sender),
+        await processor.Process(scenario.Context(scenario.PlayerA),
             new MapRoomCameraPreview(ScannerRoomScenarioFixture.CameraAId, 1,
                 MapRoomCameraPreviewImageTest.CreateJpeg(64, 64)));
 
-        Assert.AreEqual(1, sender.ToAll.Count);
-        Assert.AreEqual(0, sender.Replies.Count);
+        Assert.AreEqual(1, scenario.SentToAll<MapRoomCameraPreview>().Count);
+        Assert.AreEqual(0, scenario.SentTo<MapRoomCameraPreview>(scenario.PlayerA).Count);
     }
 
     private static async Task<ScannerRoomScenarioFixture> CreateControlledScenarioAsync()
@@ -323,50 +288,14 @@ public sealed class MapRoomCameraPreviewProcessorTest
         // Any entity id can be put in a preview packet. It must not become a "known camera", because ownership
         // requests for known ids that are not scanner cameras are denied (which would lock out e.g. a vehicle).
         ScannerRoomScenarioFixture scenario = new();
-        MapRoomCameraPreviewProcessor processor = new(scenario.Ownership, scenario.EntityRegistry,
-            scenario.ControlLifecycle, scenario.Diagnostics);
-        RecordingSender sender = new();
+        MapRoomCameraPreviewProcessor processor = new(scenario.Manager);
         NitroxId unrelatedEntityId = new();
 
-        await processor.Process(new AuthProcessorContext(scenario.PlayerA, sender),
+        await processor.Process(scenario.Context(scenario.PlayerA),
             new MapRoomCameraPreview(unrelatedEntityId, 1, MapRoomCameraPreviewImageTest.CreateJpeg(64, 64)));
 
-        Assert.IsFalse(sender.Replies.Single().Granted);
-        Assert.AreEqual(0, sender.ToAll.Count);
-        Assert.IsFalse(scenario.ControlLifecycle.IsKnown(unrelatedEntityId));
-    }
-
-    private sealed class RecordingSender : IPacketSender
-    {
-        internal List<MapRoomCameraPreview> Replies { get; } = [];
-        internal List<MapRoomCameraPreview> ToAll { get; } = [];
-        internal List<MapRoomCameraPreview> ToOthers { get; } = [];
-
-        public ValueTask SendPacketAsync<T>(T packet, SessionId sessionId) where T : Packet
-        {
-            if (packet is MapRoomCameraPreview preview)
-            {
-                Replies.Add(preview);
-            }
-            return ValueTask.CompletedTask;
-        }
-
-        public ValueTask SendPacketToAllAsync<T>(T packet) where T : Packet
-        {
-            if (packet is MapRoomCameraPreview preview)
-            {
-                ToAll.Add(preview);
-            }
-            return ValueTask.CompletedTask;
-        }
-
-        public ValueTask SendPacketToOthersAsync<T>(T packet, SessionId excludedSessionId) where T : Packet
-        {
-            if (packet is MapRoomCameraPreview preview)
-            {
-                ToOthers.Add(preview);
-            }
-            return ValueTask.CompletedTask;
-        }
+        Assert.IsFalse(scenario.SentTo<MapRoomCameraPreview>(scenario.PlayerA).Single().Granted);
+        Assert.AreEqual(0, scenario.SentToAll<MapRoomCameraPreview>().Count);
+        Assert.IsFalse(scenario.Manager.IsScannerCamera(unrelatedEntityId));
     }
 }

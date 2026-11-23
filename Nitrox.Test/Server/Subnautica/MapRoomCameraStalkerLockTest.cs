@@ -3,7 +3,6 @@ using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.GameLogic;
-using Nitrox.Server.Subnautica.Models.Packets.Processors;
 using Packet = Nitrox.Model.Packets.Packet;
 using ServerPlayer = Nitrox.Server.Subnautica.Models.Player;
 
@@ -32,7 +31,7 @@ public sealed class MapRoomCameraStalkerLockTest
         Assert.IsTrue(response.Granted, "A camera a Stalker carries can be controlled, as in the game.");
         Assert.AreEqual(scenario.PlayerA.SessionId, response.ControllerSessionId);
         AssertLock(scenario, scenario.PlayerA, SimulationLockType.EXCLUSIVE);
-        Assert.IsTrue(scenario.ControlLifecycle.IsActiveController(cameraId, scenario.PlayerA.SessionId));
+        Assert.IsTrue(scenario.IsController(cameraId, scenario.PlayerA.SessionId));
         SimulatedEntity announced = sent.OfType<SimulationOwnershipChange>().Single().Entities.Single();
         Assert.AreEqual(cameraId, announced.Id);
         Assert.AreEqual(scenario.PlayerA.SessionId, announced.SessionId, "The previous holder has to learn that its lock is gone.");
@@ -105,7 +104,7 @@ public sealed class MapRoomCameraStalkerLockTest
     public void OnlyAnExclusiveLockWithoutCameraControlIsTakenOver(SimulationLockType heldLockType, bool holderIsActiveController, bool expected)
     {
         // A transient lock is taken over by the ordinary acquire rules, not by this one.
-        Assert.AreEqual(expected, MapRoomCameraControlProcessor.CanPreempt(heldLockType, holderIsActiveController));
+        Assert.AreEqual(expected, ScannerRoomManager.CanPreempt(heldLockType, holderIsActiveController));
     }
 
     private static MapRoomCameraControl Acquire() => new(cameraId, Optional.Empty, -1, true, false);

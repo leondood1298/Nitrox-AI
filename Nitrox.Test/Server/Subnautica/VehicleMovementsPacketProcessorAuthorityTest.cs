@@ -12,7 +12,6 @@ using Nitrox.Model.Subnautica.MultiplayerSession;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
 using Nitrox.Server.Subnautica.Models.Packets.Processors;
-using Nitrox.Server.Subnautica.Models.Serialization.World;
 
 namespace Nitrox.Test.Server.Subnautica;
 
@@ -124,7 +123,7 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
 
         Task processing;
         bool completedWhileRoomLocked;
-        lock (test.Scenario.Room)
+        using (test.Scenario.Manager.HoldGateAsync().GetAwaiter().GetResult())
         {
             processing = Task.Run(() => test.Processor.Process(
                 new AuthProcessorContext(test.Scenario.PlayerA, test.Sender),
@@ -134,7 +133,7 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
         processing.Wait(TimeSpan.FromSeconds(5));
 
         Assert.IsTrue(completedWhileRoomLocked,
-            "An ordinary non-camera movement batch must not wait for Scanner Room topology locks.");
+            "An ordinary non-camera movement batch must not wait for Scanner Room state.");
         VehicleMovements forwarded = test.Sender.Single<VehicleMovements>();
         Assert.AreSame(movement, forwarded.Data.Single());
         AssertCanonicalTransform(ordinaryEntity, movement.Position, movement.Rotation);
@@ -289,13 +288,8 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
     {
         MovementScenario test = new();
         NitroxId cameraId = ScannerRoomScenarioFixture.CameraAId;
-        lock (test.Scenario.Room)
-        {
-            Assert.AreEqual(1,
-                test.Scenario.Room.GetOrAssignCameraNumber(cameraId, 1));
-        }
-        Assert.IsFalse(test.Scenario.ControlLifecycle.IsKnown(cameraId),
-            "A directly restored registration must begin outside runtime dock/control paths.");
+        Assert.AreEqual(1,
+            test.Scenario.Room.GetOrAssignCameraNumber(cameraId, 1));
 
         Assert.IsTrue(test.Scenario.EntityRegistry.RemoveEntity(cameraId).HasValue);
         GlobalRootEntity collision = new(
@@ -312,18 +306,19 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
         collision.Transform.LocalRotation = NitroxQuaternion.Identity;
         collision.Transform.LocalScale = NitroxVector3.One;
         test.Scenario.EntityRegistry.AddEntity(collision);
+        Assert.IsFalse(test.Scenario.Manager.IsScannerCamera(cameraId),
+            "A directly restored registration must begin outside runtime dock/control paths.");
 
-        Assert.AreEqual(1, WorldService.SeedLoadedMapRoomCameraLifecycles(
-            test.Scenario.EntityRegistry.GetEntities<MapRoomEntity>(),
-            test.Scenario.ControlLifecycle));
-        Assert.IsTrue(test.Scenario.ControlLifecycle.IsKnown(cameraId));
+        // What the server does once the saved world is in the registry.
+        test.Scenario.Manager.WorldLoaded();
+        Assert.IsTrue(test.Scenario.Manager.IsScannerCamera(cameraId));
         Assert.IsTrue(test.Scenario.Ownership.TryAcquire(
             cameraId, test.Scenario.PlayerA, SimulationLockType.TRANSIENT));
 
         using ManualResetEventSlim processingStarted = new();
         Task processing;
         bool completedWhileRoomLocked;
-        lock (test.Scenario.Room)
+        using (test.Scenario.Manager.HoldGateAsync().GetAwaiter().GetResult())
         {
             processing = Task.Run(async () =>
             {
@@ -354,7 +349,7 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
         MapRoomCameraControl control = await test.Scenario.ControlAsync(
             test.Scenario.PlayerA, cameraId, 0, true);
         Assert.IsTrue(control.Granted);
-        Assert.IsTrue(test.Scenario.ControlLifecycle.IsActiveController(
+        Assert.IsTrue(test.Scenario.IsController(
             cameraId, test.Scenario.PlayerA.SessionId));
         SimpleMovementData movement = CreateMovement(cameraId, 7.5f);
 
@@ -368,10 +363,7 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
         Assert.AreEqual(1534d, forwarded.RealTime);
         Assert.IsFalse(test.Scenario.EntityRegistry.GetEntityById(cameraId).HasValue,
             "Relaying bootstrap movement must not create or persist a phantom camera entity.");
-        lock (test.Scenario.Room)
-        {
-            Assert.AreEqual(cameraId, test.Scenario.Room.GetCameraRecord(cameraId)?.CameraId);
-        }
+        Assert.AreEqual(cameraId, test.Scenario.Room.GetCameraRecord(cameraId)?.CameraId);
     }
 
     [TestMethod]
@@ -382,7 +374,7 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
         RegisterCameraWithoutWorldEntity(test, test.Scenario.Room, cameraId, 1, dockingSlot: 0);
         Assert.IsTrue(test.Scenario.Ownership.TryAcquire(
             cameraId, test.Scenario.PlayerA, SimulationLockType.EXCLUSIVE));
-        Assert.IsFalse(test.Scenario.ControlLifecycle.IsActiveController(
+        Assert.IsFalse(test.Scenario.IsController(
             cameraId, test.Scenario.PlayerA.SessionId));
 
         await test.Processor.Process(
@@ -405,7 +397,7 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
             ScannerRoomScenarioFixture.RoomParentId,
             new NitroxInt3(5, -2, 9));
         duplicateRoom.GetOrAssignCameraNumber(ambiguousId, 1);
-        test.Scenario.EntityRegistry.AddEntity(duplicateRoom);
+        test.Scenario.AddRoom(duplicateRoom);
         Assert.IsTrue(test.Scenario.Ownership.TryAcquire(unknownId, test.Scenario.PlayerA, SimulationLockType.EXCLUSIVE));
         Assert.IsTrue((await test.Scenario.ControlAsync(
             test.Scenario.PlayerA, ambiguousId, 0, true)).Granted);
@@ -522,13 +514,10 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
         NitroxId cameraId, int cameraNumber, int? dockingSlot = null)
     {
         Assert.IsTrue(test.Scenario.EntityRegistry.RemoveEntity(cameraId).HasValue);
-        lock (room)
+        Assert.AreEqual(cameraNumber, room.GetOrAssignCameraNumber(cameraId, cameraNumber));
+        if (dockingSlot.HasValue)
         {
-            Assert.AreEqual(cameraNumber, room.GetOrAssignCameraNumber(cameraId, cameraNumber));
-            if (dockingSlot.HasValue)
-            {
-                room.SetDockedCamera(dockingSlot.Value, cameraId);
-            }
+            room.SetDockedCamera(dockingSlot.Value, cameraId);
         }
         Assert.IsFalse(test.Scenario.EntityRegistry.GetEntityById(cameraId).HasValue);
     }
@@ -566,7 +555,7 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
                 entity.Transform.LocalRotation = NitroxQuaternion.Identity;
                 entity.Transform.LocalScale = NitroxVector3.One;
             }
-            Processor = new(Scenario.EntityRegistry, Scenario.Ownership, Scenario.ControlLifecycle,
+            Processor = new(Scenario.EntityRegistry, Scenario.Ownership, Scenario.Manager,
                 new DiscardingLogger<VehicleMovementsPacketProcessor>());
         }
 

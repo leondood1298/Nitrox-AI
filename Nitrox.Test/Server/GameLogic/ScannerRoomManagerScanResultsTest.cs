@@ -6,12 +6,12 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Packets;
 using Microsoft.Extensions.Logging.Abstractions;
-using Nitrox.Server.Subnautica.Models.Packets.Processors;
+using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 
-namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities;
+namespace Nitrox.Server.Subnautica.Models.GameLogic;
 
 [TestClass]
-public sealed class MapRoomScanResultAuthorityTest
+public sealed class ScannerRoomManagerScanResultsTest
 {
     private static readonly NitroxTechType quartz = new("Quartz");
     private static readonly NitroxTechType titanium = new("Titanium");
@@ -79,12 +79,12 @@ public sealed class MapRoomScanResultAuthorityTest
             new MapRoomScanResultRecord("second", quartz, new NitroxVector3(2f, 0f, 0f))
         ], NitroxVector3.Zero, 300f);
 
-        Assert.IsTrue(MapRoomScanResultAuthority.TryApplySnapshot(room, snapshot, [], NitroxVector3.Zero, out List<MapRoomScanResultRecord> accepted, out long acceptedRevision));
+        Assert.IsTrue(ScannerRoomManager.TryApplyScanSnapshot(room, snapshot, [], NitroxVector3.Zero, out List<MapRoomScanResultRecord> accepted, out long acceptedRevision));
 
         CollectionAssert.AreEqual(new[] { "first", "second" }, accepted.Select(result => result.ResourceId).ToArray());
         Assert.AreEqual(revision + 1, acceptedRevision);
         Assert.AreEqual(2, room.ScanResults.Count);
-        Assert.IsTrue(MapRoomScanResultAuthority.TryApplySnapshot(room, snapshot, [], NitroxVector3.Zero, out List<MapRoomScanResultRecord> replay, out long replayRevision));
+        Assert.IsTrue(ScannerRoomManager.TryApplyScanSnapshot(room, snapshot, [], NitroxVector3.Zero, out List<MapRoomScanResultRecord> replay, out long replayRevision));
         Assert.AreEqual(acceptedRevision, replayRevision);
         CollectionAssert.AreEqual(accepted.Select(result => result.ResourceId).ToArray(), replay.Select(result => result.ResourceId).ToArray());
     }
@@ -96,9 +96,9 @@ public sealed class MapRoomScanResultAuthorityTest
         List<MapRoomScanResultRecord> duplicate = [new("same", quartz, NitroxVector3.Zero), new("same", quartz, NitroxVector3.One)];
         List<MapRoomScanResultRecord> wrongTarget = [new("wrong", titanium, NitroxVector3.Zero)];
 
-        Assert.IsFalse(MapRoomScanResultAuthority.TryApplySnapshot(room, Snapshot(room, duplicate), [], NitroxVector3.Zero, out _, out _));
-        Assert.IsFalse(MapRoomScanResultAuthority.TryApplySnapshot(room, Snapshot(room, wrongTarget), [], NitroxVector3.Zero, out _, out _));
-        Assert.IsFalse(MapRoomScanResultAuthority.TryApplySnapshot(room, Snapshot(room, [], generation: 4), [], NitroxVector3.Zero, out _, out _));
+        Assert.IsFalse(ScannerRoomManager.TryApplyScanSnapshot(room, Snapshot(room, duplicate), [], NitroxVector3.Zero, out _, out _));
+        Assert.IsFalse(ScannerRoomManager.TryApplyScanSnapshot(room, Snapshot(room, wrongTarget), [], NitroxVector3.Zero, out _, out _));
+        Assert.IsFalse(ScannerRoomManager.TryApplyScanSnapshot(room, Snapshot(room, [], generation: 4), [], NitroxVector3.Zero, out _, out _));
         Assert.AreEqual(0, room.ScanResults.Count);
     }
 
@@ -113,7 +113,7 @@ public sealed class MapRoomScanResultAuthorityTest
             new("nan", quartz, new NitroxVector3(0f, 0f, float.NaN))
         ];
 
-        Assert.IsFalse(MapRoomScanResultAuthority.TryApplySnapshot(room, Snapshot(room, invalid), [], NitroxVector3.Zero, out _, out _));
+        Assert.IsFalse(ScannerRoomManager.TryApplyScanSnapshot(room, Snapshot(room, invalid), [], NitroxVector3.Zero, out _, out _));
         Assert.AreEqual(0, room.ScanResults.Count);
     }
 
@@ -124,7 +124,7 @@ public sealed class MapRoomScanResultAuthorityTest
         MapRoomScanResultChanged valid = new(room.Id, 5, "valid", quartz, new NitroxVector3(100f, 0f, 0f),
             scanOrigin: NitroxVector3.Zero, scanRange: 300f);
 
-        Assert.IsFalse(MapRoomScanResultAuthority.TryApply(room, valid, Registry(), null, out _));
+        Assert.IsFalse(ScannerRoomManager.TryApplyScanResult(room, valid, Registry(), null, out _));
         Assert.IsTrue(Apply(room, valid));
         Assert.IsFalse(Apply(room, new MapRoomScanResultChanged(room.Id, 5, "outside", quartz, new NitroxVector3(301f, 0f, 0f),
             scanOrigin: NitroxVector3.Zero, scanRange: 300f)));
@@ -141,7 +141,7 @@ public sealed class MapRoomScanResultAuthorityTest
     public void DeltaAdditionCapRejectsNewIdButAllowsExistingUpdate()
     {
         MapRoomEntity room = CreateRoom();
-        room.ScanResults = Enumerable.Range(0, MapRoomScanResultAuthority.MAX_SNAPSHOT_RESULTS)
+        room.ScanResults = Enumerable.Range(0, ScannerRoomManager.MAX_SNAPSHOT_RESULTS)
                                      .Select(index => new MapRoomScanResultRecord($"resource-{index}", quartz, NitroxVector3.Zero))
                                      .ToList();
 
@@ -149,7 +149,7 @@ public sealed class MapRoomScanResultAuthorityTest
             scanOrigin: NitroxVector3.Zero, scanRange: 300f)));
         Assert.IsTrue(Apply(room, new MapRoomScanResultChanged(room.Id, 5, "resource-0", quartz, new NitroxVector3(2f, 0f, 0f),
             scanOrigin: NitroxVector3.Zero, scanRange: 300f)));
-        Assert.AreEqual(MapRoomScanResultAuthority.MAX_SNAPSHOT_RESULTS, room.ScanResults.Count);
+        Assert.AreEqual(ScannerRoomManager.MAX_SNAPSHOT_RESULTS, room.ScanResults.Count);
         Assert.AreEqual(new NitroxVector3(2f, 0f, 0f), room.ScanResults[0].Position);
     }
 
@@ -184,17 +184,17 @@ public sealed class MapRoomScanResultAuthorityTest
         MapRoomScanResultChanged unload = new(room.Id, 5, exactId.ToString(), quartz, new NitroxVector3(10f, 0f, 0f),
             removed: true, scanOrigin: NitroxVector3.Zero, scanRange: 300f);
 
-        Assert.IsFalse(MapRoomScanResultAuthority.TryApply(room, unload, exactRegistry, NitroxVector3.Zero, out bool correctionRequired));
+        Assert.IsFalse(ScannerRoomManager.TryApplyScanResult(room, unload, exactRegistry, NitroxVector3.Zero, out bool correctionRequired));
         Assert.IsTrue(correctionRequired);
         Assert.AreEqual(1, room.ScanResults.Count);
-        MapRoomScanResultSnapshot correction = MapRoomScanResultChangedProcessor.CreateCorrectionSnapshot(room, unload);
+        MapRoomScanResultSnapshot correction = ScannerRoomManager.CreateCorrectionSnapshot(room, unload);
         Assert.IsTrue(correction.IsServerResponse && correction.Granted);
         Assert.AreEqual(room.ScanResultRevision, correction.Revision);
         CollectionAssert.AreEqual(new[] { exactId.ToString() }, correction.Results.Select(result => result.ResourceId).ToArray());
 
         MapRoomScanResultChanged invalidQuery = new(room.Id, 5, exactId.ToString(), quartz, new NitroxVector3(10f, 0f, 0f),
             removed: true, scanOrigin: new NitroxVector3(513f, 0f, 0f), scanRange: 300f);
-        Assert.IsFalse(MapRoomScanResultAuthority.TryApply(room, invalidQuery, exactRegistry, NitroxVector3.Zero, out bool invalidCorrection));
+        Assert.IsFalse(ScannerRoomManager.TryApplyScanResult(room, invalidQuery, exactRegistry, NitroxVector3.Zero, out bool invalidCorrection));
         Assert.IsFalse(invalidCorrection);
 
         EntityRegistry overrideRegistry = Registry(World(exactId, titanium, new NitroxVector3(10f, 0f, 0f)));
@@ -212,7 +212,7 @@ public sealed class MapRoomScanResultAuthorityTest
         MapRoomScanResultChanged removal = new(room.Id, 5, exactId.ToString(), quartz, new NitroxVector3(10f, 0f, 0f),
             removed: true, scanOrigin: NitroxVector3.Zero, scanRange: 300f);
 
-        Assert.IsTrue(MapRoomScanResultAuthority.TryApply(room, removal, registry, NitroxVector3.Zero, out bool correctionRequired));
+        Assert.IsTrue(ScannerRoomManager.TryApplyScanResult(room, removal, registry, NitroxVector3.Zero, out bool correctionRequired));
         Assert.IsFalse(correctionRequired);
         Assert.AreEqual(0, room.ScanResults.Count);
     }
@@ -232,12 +232,12 @@ public sealed class MapRoomScanResultAuthorityTest
         room.TryApplyScanResult(5, new MapRoomScanResultRecord(insideId.ToString(), quartz, new NitroxVector3(100f, 0f, 0f)));
         EntityRegistry insideRegistry = Registry(World(insideId, quartz, new NitroxVector3(100f, 0f, 0f)));
         MapRoomScanResultChanged rejectedInside = RangeExit(room, insideId.ToString(), new NitroxVector3(301f, 0f, 0f));
-        Assert.IsFalse(MapRoomScanResultAuthority.TryApply(room, rejectedInside, insideRegistry, NitroxVector3.Zero,
+        Assert.IsFalse(ScannerRoomManager.TryApplyScanResult(room, rejectedInside, insideRegistry, NitroxVector3.Zero,
             out bool correctionRequired));
         Assert.IsTrue(correctionRequired);
         MapRoomScanResultChanged invalidQuery = RangeExit(room, insideId.ToString(), new NitroxVector3(301f, 0f, 0f),
             scanOrigin: new NitroxVector3(513f, 0f, 0f));
-        Assert.IsFalse(MapRoomScanResultAuthority.TryApply(room, invalidQuery, insideRegistry, NitroxVector3.Zero,
+        Assert.IsFalse(ScannerRoomManager.TryApplyScanResult(room, invalidQuery, insideRegistry, NitroxVector3.Zero,
             out bool invalidCorrection));
         Assert.IsFalse(invalidCorrection);
         Assert.IsFalse(Apply(room, RangeExit(room, insideId.ToString(), new NitroxVector3(301f, 0f, 0f)), insideRegistry));
@@ -270,7 +270,7 @@ public sealed class MapRoomScanResultAuthorityTest
             World(new NitroxId(), quartz, new NitroxVector3(301f, 0f, 0f))
         ];
 
-        Assert.IsTrue(MapRoomScanResultAuthority.TryApplySnapshot(room, Snapshot(room, ownerResults), worldEntities, NitroxVector3.Zero,
+        Assert.IsTrue(ScannerRoomManager.TryApplyScanSnapshot(room, Snapshot(room, ownerResults), worldEntities, NitroxVector3.Zero,
             out List<MapRoomScanResultRecord> accepted, out _));
 
         CollectionAssert.AreEqual(new[] { exactId.ToString(), "override-result" }, accepted.Select(result => result.ResourceId).ToArray());
@@ -283,9 +283,9 @@ public sealed class MapRoomScanResultAuthorityTest
         room.Metadata = new MapRoomMetadata(NitroxTechType.None, 0, 5, 9);
         List<WorldEntity> worldEntities = [World(new NitroxId(), NitroxTechType.None, new NitroxVector3(10f, 0f, 0f))];
 
-        Assert.IsTrue(MapRoomScanResultAuthority.TryApplySnapshot(room, Snapshot(room, []), worldEntities, NitroxVector3.Zero,
+        Assert.IsTrue(ScannerRoomManager.TryApplyScanSnapshot(room, Snapshot(room, []), worldEntities, NitroxVector3.Zero,
             out List<MapRoomScanResultRecord> accepted, out _));
-        Assert.IsFalse(MapRoomScanResultAuthority.TryApplySnapshot(room,
+        Assert.IsFalse(ScannerRoomManager.TryApplyScanSnapshot(room,
             Snapshot(room, [new MapRoomScanResultRecord("forged-none", NitroxTechType.None, new NitroxVector3(1f, 0f, 0f))]),
             worldEntities, NitroxVector3.Zero, out _, out _));
         Assert.IsFalse(Apply(room, new MapRoomScanResultChanged(room.Id, 5, "delta-none", NitroxTechType.None,
@@ -300,23 +300,23 @@ public sealed class MapRoomScanResultAuthorityTest
     {
         MapRoomEntity room = CreateRoom();
 
-        Assert.IsFalse(MapRoomScanResultAuthority.TryApplySnapshot(room,
+        Assert.IsFalse(ScannerRoomManager.TryApplyScanSnapshot(room,
             new MapRoomScanResultSnapshot(room.Id, 5, [], new NitroxVector3(float.NaN, 0f, 0f), 300f), [], NitroxVector3.Zero, out _, out _));
-        Assert.IsFalse(MapRoomScanResultAuthority.TryApplySnapshot(room,
+        Assert.IsFalse(ScannerRoomManager.TryApplyScanSnapshot(room,
             new MapRoomScanResultSnapshot(room.Id, 5, [], NitroxVector3.Zero, 299f), [], NitroxVector3.Zero, out _, out _));
-        Assert.IsFalse(MapRoomScanResultAuthority.TryApplySnapshot(room,
+        Assert.IsFalse(ScannerRoomManager.TryApplyScanSnapshot(room,
             new MapRoomScanResultSnapshot(room.Id, 5, [], new NitroxVector3(513f, 0f, 0f), 300f), [], NitroxVector3.Zero, out _, out _));
-        Assert.IsFalse(MapRoomScanResultAuthority.TryApplySnapshot(room,
+        Assert.IsFalse(ScannerRoomManager.TryApplyScanSnapshot(room,
             new MapRoomScanResultSnapshot(room.Id, 5, [], NitroxVector3.Zero, 350f), [], NitroxVector3.Zero, out _, out _));
         room.ChildEntities.Add(RangeUpgrade());
-        Assert.IsTrue(MapRoomScanResultAuthority.TryApplySnapshot(room,
+        Assert.IsTrue(ScannerRoomManager.TryApplyScanSnapshot(room,
             new MapRoomScanResultSnapshot(room.Id, 5, [], NitroxVector3.Zero, 350.005f), [], NitroxVector3.Zero, out _, out _));
-        Assert.IsFalse(MapRoomScanResultAuthority.TryApplySnapshot(room,
+        Assert.IsFalse(ScannerRoomManager.TryApplyScanSnapshot(room,
             new MapRoomScanResultSnapshot(room.Id, 5, [], NitroxVector3.Zero, 400f), [], NitroxVector3.Zero, out _, out _));
         room.ChildEntities.AddRange([RangeUpgrade(), RangeUpgrade(), RangeUpgrade()]);
-        Assert.IsTrue(MapRoomScanResultAuthority.TryApplySnapshot(room,
+        Assert.IsTrue(ScannerRoomManager.TryApplyScanSnapshot(room,
             new MapRoomScanResultSnapshot(room.Id, 5, [], NitroxVector3.Zero, 500f), [], NitroxVector3.Zero, out _, out _));
-        Assert.IsFalse(MapRoomScanResultAuthority.TryApplySnapshot(room,
+        Assert.IsFalse(ScannerRoomManager.TryApplyScanSnapshot(room,
             Snapshot(room, [new MapRoomScanResultRecord("outside", quartz, new NitroxVector3(301f, 0f, 0f))]), [], NitroxVector3.Zero, out _, out _));
     }
 
@@ -332,7 +332,7 @@ public sealed class MapRoomScanResultAuthorityTest
         unaffected.TryApplyScanResult(5, new MapRoomScanResultRecord("other", quartz, NitroxVector3.Zero));
         long firstRevision = first.ScanResultRevision;
 
-        List<MapRoomScanResultChanged> removals = MapRoomScanResultAuthority.InvalidateResource([first, second, unaffected], resourceId);
+        List<MapRoomScanResultChanged> removals = ScannerRoomManager.InvalidateScanResult([first, second, unaffected], resourceId);
 
         Assert.AreEqual(2, removals.Count);
         Assert.AreEqual(firstRevision + 1, first.ScanResultRevision);
@@ -350,7 +350,7 @@ public sealed class MapRoomScanResultAuthorityTest
         room.TryApplyScanResult(5, new MapRoomScanResultRecord("known", quartz, NitroxVector3.Zero));
         long revision = room.ScanResultRevision;
 
-        List<MapRoomScanResultChanged> removals = MapRoomScanResultAuthority.InvalidateResource([room], new NitroxId());
+        List<MapRoomScanResultChanged> removals = ScannerRoomManager.InvalidateScanResult([room], new NitroxId());
 
         Assert.AreEqual(0, removals.Count);
         Assert.AreEqual(revision, room.ScanResultRevision);
@@ -377,7 +377,7 @@ public sealed class MapRoomScanResultAuthorityTest
 
     private static bool Apply(MapRoomEntity room, MapRoomScanResultChanged change, EntityRegistry? registry = null,
         NitroxVector3? scanAnchor = null) =>
-        MapRoomScanResultAuthority.TryApply(room, change, registry ?? Registry(), scanAnchor ?? (!change.Removed ? NitroxVector3.Zero : null), out _);
+        ScannerRoomManager.TryApplyScanResult(room, change, registry ?? Registry(), scanAnchor ?? (!change.Removed ? NitroxVector3.Zero : null), out _);
 
     private static EntityRegistry Registry(params WorldEntity[] entities)
     {

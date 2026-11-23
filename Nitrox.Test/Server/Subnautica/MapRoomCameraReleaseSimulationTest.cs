@@ -3,7 +3,6 @@ using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.GameLogic;
-using Nitrox.Server.Subnautica.Models.Packets.Core;
 using Nitrox.Server.Subnautica.Models.Packets.Processors;
 using Packet = Nitrox.Model.Packets.Packet;
 using ServerPlayer = Nitrox.Server.Subnautica.Models.Player;
@@ -33,7 +32,7 @@ public sealed class MapRoomCameraReleaseSimulationTest
         Assert.AreEqual(cameraId, announced.Id);
         Assert.AreEqual(scenario.PlayerA.SessionId, announced.SessionId);
         Assert.AreEqual(SimulationLockType.TRANSIENT, announced.LockType);
-        Assert.IsFalse(scenario.ControlLifecycle.HasActiveController(cameraId), "Control itself has ended.");
+        Assert.IsFalse(scenario.HasController(cameraId), "Control itself has ended.");
     }
 
     [TestMethod]
@@ -42,12 +41,11 @@ public sealed class MapRoomCameraReleaseSimulationTest
         ScannerRoomScenarioFixture scenario = new();
         Assert.IsTrue((await scenario.ControlLooseAsync(scenario.PlayerA, cameraId, true)).Granted);
         await scenario.ControlPacketsAsync(scenario.PlayerA, Release(cameraId));
-        MapRoomCameraComponentStateProcessor processor = new(scenario.Ownership, scenario.EntityRegistry, scenario.Diagnostics, scenario.LooseCameraState);
-        ScannerRoomScenarioFixture.RecordingPacketSender sender = new();
+        MapRoomCameraComponentStateProcessor processor = new(scenario.Manager);
 
-        await processor.Process(new AuthProcessorContext(scenario.PlayerA, sender), new MapRoomCameraComponentState(cameraId, 60f, 250f));
+        await processor.Process(scenario.Context(scenario.PlayerA), new MapRoomCameraComponentState(cameraId, 60f, 250f));
 
-        Assert.IsTrue(sender.Single<MapRoomCameraComponentState>().Granted,
+        Assert.IsTrue(scenario.Sent<MapRoomCameraComponentState>().Single().Granted,
             "Someone has to be able to report a repair or damage to a camera nobody is controlling.");
     }
 

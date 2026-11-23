@@ -4,13 +4,13 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.Packets;
-using Nitrox.Server.Subnautica.Models.GameLogic.Bases;
+using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 
-namespace Nitrox.Test.Server.GameLogic.Bases;
+namespace Nitrox.Test.Server.GameLogic;
 
 [TestClass]
-public sealed class MapRoomTopologyAuthorityTest
+public sealed class ScannerRoomManagerTopologyTest
 {
     [TestMethod]
     public void AllowsNewlyBuiltRoomBeforeItReplacesGhostInRegistry()
@@ -23,7 +23,7 @@ public sealed class MapRoomTopologyAuthorityTest
         entityRegistry.AddEntity(CreateGhost(ghostId, baseId));
         UpdateBase update = CreateUpdate(baseId, ghostId, builtRoom, new Dictionary<NitroxId, NitroxInt3> { [ghostId] = cell });
 
-        Assert.IsTrue(MapRoomTopologyAuthority.Validate(entityRegistry, update));
+        Assert.IsTrue(ScannerRoomManager.IsValidRoomTopology(entityRegistry, update));
     }
 
     [TestMethod]
@@ -38,7 +38,7 @@ public sealed class MapRoomTopologyAuthorityTest
         entityRegistry.AddEntity(CreateGhost(ghostId, baseId));
         UpdateBase update = CreateUpdate(baseId, ghostId, builtRoom, new Dictionary<NitroxId, NitroxInt3> { [roomId] = cell });
 
-        Assert.IsFalse(MapRoomTopologyAuthority.Validate(entityRegistry, update));
+        Assert.IsFalse(ScannerRoomManager.IsValidRoomTopology(entityRegistry, update));
     }
 
     [TestMethod]
@@ -51,7 +51,7 @@ public sealed class MapRoomTopologyAuthorityTest
         entityRegistry.AddEntity(CreateGhost(ghostId, baseId));
         UpdateBase update = CreateUpdate(baseId, ghostId, builtRoom, new Dictionary<NitroxId, NitroxInt3> { [ghostId] = new(4, 5, 6) });
 
-        Assert.IsFalse(MapRoomTopologyAuthority.Validate(entityRegistry, update));
+        Assert.IsFalse(ScannerRoomManager.IsValidRoomTopology(entityRegistry, update));
     }
 
     [TestMethod]
@@ -66,7 +66,7 @@ public sealed class MapRoomTopologyAuthorityTest
         entityRegistry.AddEntity(CreateGhost(ghostId, baseId));
         UpdateBase update = CreateUpdate(baseId, ghostId, builtRoom, new Dictionary<NitroxId, NitroxInt3> { [ghostId] = cell });
 
-        Assert.IsFalse(MapRoomTopologyAuthority.Validate(entityRegistry, update));
+        Assert.IsFalse(ScannerRoomManager.IsValidRoomTopology(entityRegistry, update));
     }
 
     [TestMethod]
@@ -83,7 +83,7 @@ public sealed class MapRoomTopologyAuthorityTest
                                          new Dictionary<NitroxId, NitroxInt3> { [ghostId] = cell },
                                          (sourceBaseId, targetBaseId));
 
-        Assert.IsFalse(MapRoomTopologyAuthority.Validate(entityRegistry, update));
+        Assert.IsFalse(ScannerRoomManager.IsValidRoomTopology(entityRegistry, update));
     }
 
     [TestMethod]
@@ -96,7 +96,7 @@ public sealed class MapRoomTopologyAuthorityTest
         entityRegistry.AddEntity(CreateGhost(ghostId, baseId));
         UpdateBase update = CreateUpdate(baseId, ghostId, builtRoom, new Dictionary<NitroxId, NitroxInt3>());
 
-        Assert.IsFalse(MapRoomTopologyAuthority.Validate(entityRegistry, update));
+        Assert.IsFalse(ScannerRoomManager.IsValidRoomTopology(entityRegistry, update));
     }
 
     [TestMethod]
@@ -110,7 +110,7 @@ public sealed class MapRoomTopologyAuthorityTest
         entityRegistry.AddEntity(CreateGhost(ghostId, baseId, "BaseCorridor"));
         UpdateBase update = CreateUpdate(baseId, ghostId, builtRoom, new Dictionary<NitroxId, NitroxInt3> { [ghostId] = cell });
 
-        Assert.IsFalse(MapRoomTopologyAuthority.Validate(entityRegistry, update));
+        Assert.IsFalse(ScannerRoomManager.IsValidRoomTopology(entityRegistry, update));
     }
 
     [TestMethod]
@@ -123,7 +123,7 @@ public sealed class MapRoomTopologyAuthorityTest
         entityRegistry.AddEntity(new MapRoomEntity(roomId, baseId, cell));
         UpdateBase update = CreateUpdate(baseId, new NitroxId(), null, new Dictionary<NitroxId, NitroxInt3> { [roomId] = cell });
 
-        Assert.IsTrue(MapRoomTopologyAuthority.Validate(entityRegistry, update));
+        Assert.IsTrue(ScannerRoomManager.IsValidRoomTopology(entityRegistry, update));
     }
 
     [TestMethod]
@@ -139,7 +139,7 @@ public sealed class MapRoomTopologyAuthorityTest
                                          new Dictionary<NitroxId, NitroxInt3> { [roomId] = cell },
                                          (sourceBaseId, targetBaseId));
 
-        Assert.IsTrue(MapRoomTopologyAuthority.Validate(entityRegistry, update));
+        Assert.IsTrue(ScannerRoomManager.IsValidRoomTopology(entityRegistry, update));
     }
 
     [TestMethod]
@@ -158,14 +158,14 @@ public sealed class MapRoomTopologyAuthorityTest
             [secondRoomId] = cell
         });
 
-        Assert.IsFalse(MapRoomTopologyAuthority.Validate(entityRegistry, update));
+        Assert.IsFalse(ScannerRoomManager.IsValidRoomTopology(entityRegistry, update));
     }
 
     [TestMethod]
     public void AllowsExistingBaseChild()
     {
         NitroxId baseId = new();
-        Assert.IsTrue(MapRoomTopologyAuthority.IsAllowedParent(baseId, baseId, (null, null)));
+        Assert.IsTrue(ScannerRoomManager.IsAllowedRoomParent(baseId, baseId, (null, null)));
     }
 
     [TestMethod]
@@ -173,7 +173,7 @@ public sealed class MapRoomTopologyAuthorityTest
     {
         NitroxId source = new();
         NitroxId target = new();
-        Assert.IsTrue(MapRoomTopologyAuthority.IsAllowedParent(source, target, (source, target)));
+        Assert.IsTrue(ScannerRoomManager.IsAllowedRoomParent(source, target, (source, target)));
     }
 
     [TestMethod]
@@ -183,9 +183,9 @@ public sealed class MapRoomTopologyAuthorityTest
         NitroxId target = new();
         NitroxId unrelated = new();
 
-        Assert.IsFalse(MapRoomTopologyAuthority.IsAllowedParent(unrelated, target, (source, target)));
-        Assert.IsFalse(MapRoomTopologyAuthority.IsAllowedParent(source, target, (target, source)));
-        Assert.IsFalse(MapRoomTopologyAuthority.IsAllowedParent(null, target, (source, target)));
+        Assert.IsFalse(ScannerRoomManager.IsAllowedRoomParent(unrelated, target, (source, target)));
+        Assert.IsFalse(ScannerRoomManager.IsAllowedRoomParent(source, target, (target, source)));
+        Assert.IsFalse(ScannerRoomManager.IsAllowedRoomParent(null, target, (source, target)));
     }
 
     private static GhostEntity CreateGhost(NitroxId ghostId, NitroxId parentId, string techType = "BaseMapRoom")

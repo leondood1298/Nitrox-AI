@@ -5,10 +5,15 @@ using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
+using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 
-namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities;
+namespace Nitrox.Server.Subnautica.Models.GameLogic;
 
-internal static class MapRoomWorldResourceIndex
+/// <summary>
+///     The geometry of a scan: where a room may scan from, how far, and how what its simulating player reports is
+///     merged with the entities the server knows itself. Nothing in here holds or changes state.
+/// </summary>
+internal sealed partial class ScannerRoomManager
 {
     internal const float DEFAULT_SCAN_RANGE = 300f;
     internal const float SCAN_RANGE_PER_MODULE = 50f;
@@ -20,7 +25,7 @@ internal static class MapRoomWorldResourceIndex
     private const int MAX_RANGE_UPGRADE_COUNT = 4;
     private static readonly NitroxTechType rangeUpgradeTechType = new("MapRoomUpgradeScanRange");
 
-    public static bool TryResolveScanAnchor(EntityRegistry entityRegistry, MapRoomEntity room, out NitroxVector3 scanAnchor)
+    internal static bool TryResolveScanAnchor(EntityRegistry entityRegistry, MapRoomEntity room, out NitroxVector3 scanAnchor)
     {
         scanAnchor = NitroxVector3.Zero;
         if (room.ParentId == null || !entityRegistry.TryGetEntityById(room.ParentId, out WorldEntity parent) || parent.Transform == null)
@@ -32,7 +37,7 @@ internal static class MapRoomWorldResourceIndex
         return IsFinite(scanAnchor);
     }
 
-    public static bool TryNormalizeQuery(NitroxVector3 requestedOrigin, float requestedRange, NitroxVector3 scanAnchor,
+    internal static bool TryNormalizeScanQuery(NitroxVector3 requestedOrigin, float requestedRange, NitroxVector3 scanAnchor,
         out NitroxVector3 scanOrigin, out float scanRange)
     {
         scanOrigin = NitroxVector3.Zero;
@@ -66,13 +71,13 @@ internal static class MapRoomWorldResourceIndex
         return true;
     }
 
-    public static float GetMaximumScanRange(MapRoomEntity room) =>
+    internal static float GetMaximumScanRange(MapRoomEntity room) =>
         Math.Min(MAX_SCAN_RANGE, DEFAULT_SCAN_RANGE + CountRangeUpgrades(room.ChildEntities) * SCAN_RANGE_PER_MODULE);
 
-    public static bool IsRangeAllowed(MapRoomEntity room, float scanRange) =>
+    internal static bool IsScanRangeAllowed(MapRoomEntity room, float scanRange) =>
         scanRange <= GetMaximumScanRange(room) + MIN_SCAN_RANGE_TOLERANCE;
 
-    public static List<MapRoomScanResultRecord> MergeResults(IEnumerable<MapRoomScanResultRecord> ownerResults,
+    internal static List<MapRoomScanResultRecord> MergeScanResults(IEnumerable<MapRoomScanResultRecord> ownerResults,
         IEnumerable<WorldEntity> worldEntities, NitroxTechType target, NitroxVector3 scanOrigin, float scanRange, int maxResults)
     {
         Dictionary<string, MapRoomScanResultRecord> byId = new(StringComparer.Ordinal);
@@ -111,7 +116,7 @@ internal static class MapRoomWorldResourceIndex
         return OrderAndCap(byId.Values, ownerIds, scanOrigin, maxResults);
     }
 
-    public static List<NitroxTechType> MergeScanTypes(IEnumerable<NitroxTechType> ownerTypes,
+    internal static List<NitroxTechType> MergeScanTypes(IEnumerable<NitroxTechType> ownerTypes,
         IEnumerable<NitroxTechType> detectableTypes, IEnumerable<WorldEntity> worldEntities, NitroxVector3 scanOrigin, float scanRange)
     {
         HashSet<NitroxTechType> merged = new(ownerTypes);

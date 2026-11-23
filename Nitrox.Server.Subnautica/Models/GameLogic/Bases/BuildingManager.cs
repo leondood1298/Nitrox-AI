@@ -17,17 +17,17 @@ internal sealed class BuildingManager
     private readonly EntityRegistry entityRegistry;
     private readonly WorldEntityManager worldEntityManager;
     private readonly IOptions<SubnauticaServerOptions> options;
-    private readonly MapRoomRevisionFloors mapRoomRevisionFloors;
+    private readonly ScannerRoomManager scannerRoomManager;
     private readonly ILogger<BuildingManager> logger;
 
     public BuildingManager(IPacketSender packetSender, EntityRegistry entityRegistry, WorldEntityManager worldEntityManager, IOptions<SubnauticaServerOptions> options,
-        MapRoomRevisionFloors mapRoomRevisionFloors, ILogger<BuildingManager> logger)
+        ScannerRoomManager scannerRoomManager, ILogger<BuildingManager> logger)
     {
         this.packetSender = packetSender;
         this.entityRegistry = entityRegistry;
         this.worldEntityManager = worldEntityManager;
         this.options = options;
-        this.mapRoomRevisionFloors = mapRoomRevisionFloors;
+        this.scannerRoomManager = scannerRoomManager;
         this.logger = logger;
     }
 
@@ -163,7 +163,7 @@ internal sealed class BuildingManager
         worldEntityManager.RemoveGlobalRootEntity(entity.Id);
         foreach (MapRoomEntity mapRoom in placeBase.BuildEntity.ChildEntities.OfType<MapRoomEntity>())
         {
-            mapRoomRevisionFloors.RaiseAbove(mapRoom);
+            scannerRoomManager.RoomBuilt(mapRoom);
         }
         worldEntityManager.AddOrUpdateGlobalRootEntity(placeBase.BuildEntity);
         // A Scanner Room can be the first piece of a base. It then arrives nested in the base instead of as the built
@@ -201,7 +201,7 @@ internal sealed class BuildingManager
             return false;
         }
 
-        if (!MapRoomTopologyAuthority.Validate(entityRegistry, updateBase))
+        if (!ScannerRoomManager.IsValidRoomTopology(entityRegistry, updateBase))
         {
             logger.ZLogWarning($"Rejected invalid Scanner Room topology update for base {updateBase.BaseId} from [{player.Name}]");
             NotifyPlayerDesync(player);
@@ -226,22 +226,13 @@ internal sealed class BuildingManager
                 childEntity.Cell = updatedMoonpool.Value;
             }
         }
-        foreach (KeyValuePair<NitroxId, NitroxInt3> updatedMapRoom in updateBase.UpdatedMapRooms)
-        {
-            if (entityRegistry.TryGetEntityById(updatedMapRoom.Key, out MapRoomEntity childEntity))
-            {
-                lock (childEntity)
-                {
-                    childEntity.Cell = updatedMapRoom.Value;
-                }
-            }
-        }
+        scannerRoomManager.MoveRooms(updateBase.UpdatedMapRooms);
 
         if (updateBase.BuiltPieceEntity != null && updateBase.BuiltPieceEntity is GlobalRootEntity builtPieceEntity)
         {
             if (builtPieceEntity is MapRoomEntity builtMapRoom)
             {
-                mapRoomRevisionFloors.RaiseAbove(builtMapRoom);
+                scannerRoomManager.RoomBuilt(builtMapRoom);
             }
             worldEntityManager.AddOrUpdateGlobalRootEntity(builtPieceEntity);
         }

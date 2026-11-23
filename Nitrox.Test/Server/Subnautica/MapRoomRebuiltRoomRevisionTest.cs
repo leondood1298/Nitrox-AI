@@ -4,7 +4,6 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.Packets;
-using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 
 namespace Nitrox.Test.Server.Subnautica;
 
@@ -77,39 +76,41 @@ public sealed class MapRoomRebuiltRoomRevisionTest
 
         await scenario.DestroyAsync(scenario.PlayerA, cameraId);
         Assert.IsNull(scenario.Room.GetCameraRecord(cameraId));
-        MapRoomCameraRecord again = new(cameraId, 1);
-        scenario.RevisionFloors.RaiseAbove(again);
+        // The room's simulating player reports the camera in a dock again, which gives it a new record.
+        Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.RoomId, scenario.PlayerA, SimulationLockType.TRANSIENT));
+        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, cameraId, 0, true, establishAuthority: false)).Granted);
+        MapRoomCameraRecord again = scenario.Room.GetCameraRecord(cameraId)!;
 
         Assert.AreEqual(3, again.LightRevision);
         Assert.AreEqual(18, again.ComponentRevision);
     }
 
     [TestMethod]
-    public void IdsThatWereNeverRemovedStartAtZero()
+    public async Task IdsThatWereNeverRemovedStartAtZero()
     {
-        MapRoomRevisionFloors floors = new();
+        ScannerRoomScenarioFixture scenario = new();
         MapRoomEntity room = new(roomId, baseId, cell);
-        MapRoomCameraRecord record = new(defaultCameraId, 1);
 
-        floors.RaiseAbove(room);
-        floors.RaiseAbove(record);
+        scenario.Manager.RoomBuilt(room);
+        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
 
+        MapRoomCameraRecord record = scenario.Room.GetCameraRecord(ScannerRoomScenarioFixture.CameraAId)!;
         Assert.AreEqual(0, room.DockingRevision);
         Assert.AreEqual(0, record.LightRevision);
         Assert.AreEqual(0, record.ComponentRevision);
     }
 
     [TestMethod]
-    public void FloorOnlyEverRises()
+    public async Task FloorOnlyEverRises()
     {
-        MapRoomRevisionFloors floors = new();
+        ScannerRoomScenarioFixture scenario = new();
         MapRoomEntity longLived = new(roomId, baseId, cell) { DockingRevision = 9 };
         MapRoomEntity shortLived = new(roomId, baseId, cell) { DockingRevision = 2 };
-        floors.Remember(longLived);
-        floors.Remember(shortLived);
+        await scenario.CleanupAsync(longLived);
+        await scenario.CleanupAsync(shortLived);
         MapRoomEntity rebuilt = new(roomId, baseId, cell);
 
-        floors.RaiseAbove(rebuilt);
+        scenario.Manager.RoomBuilt(rebuilt);
 
         Assert.AreEqual(10, rebuilt.DockingRevision);
     }

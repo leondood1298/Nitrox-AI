@@ -1,6 +1,4 @@
 using System.Threading.Tasks;
-using Microsoft.Extensions.Logging.Abstractions;
-using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Packets;
@@ -9,9 +7,6 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Packets;
-using Nitrox.Server.Subnautica.Models.GameLogic;
-using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
-using Nitrox.Server.Subnautica.Models.Packets.Core;
 using Nitrox.Server.Subnautica.Models.Packets.Processors;
 
 namespace Nitrox.Test.Server.Subnautica;
@@ -33,16 +28,16 @@ public sealed class MapRoomScanResultChangedProcessorTest
         scenario.EntityRegistry.AddEntity(new WorldEntity(new NitroxVector3(10f, 0f, 0f), NitroxQuaternion.Identity,
             NitroxVector3.One, quartz, 0, resourceId.ToString(), true, resourceId, null));
         Assert.IsTrue(scenario.Ownership.TryAcquire(scenario.Room.Id, scenario.PlayerA, SimulationLockType.TRANSIENT));
-        MapRoomScanResultChangedProcessor processor = new(scenario.EntityRegistry, scenario.Ownership, null!, new MapRoomScanResultSubscriptions());
-        RecordingSender sender = new();
+        MapRoomScanResultChangedProcessor processor = new(scenario.Manager);
         MapRoomScanResultChanged unload = new(scenario.Room.Id, 5, resourceId.ToString(), quartz, new NitroxVector3(10f, 0f, 0f),
             removed: true, isRangeExit: false, scanOrigin: NitroxVector3.Zero, scanRange: 300f);
 
-        await processor.Process(new AuthProcessorContext(scenario.PlayerA, sender), unload);
+        await processor.Process(scenario.Context(scenario.PlayerA), unload);
+        List<Packet> replies = scenario.SentTo<Packet>(scenario.PlayerA);
 
-        Assert.AreEqual(1, sender.Replies.Count);
-        Assert.IsInstanceOfType<MapRoomScanResultSnapshot>(sender.Replies[0]);
-        MapRoomScanResultSnapshot correction = (MapRoomScanResultSnapshot)sender.Replies[0];
+        Assert.AreEqual(1, replies.Count);
+        Assert.IsInstanceOfType<MapRoomScanResultSnapshot>(replies[0]);
+        MapRoomScanResultSnapshot correction = (MapRoomScanResultSnapshot)replies[0];
         Assert.IsTrue(correction.IsServerResponse && correction.Granted);
         Assert.AreEqual(5, correction.Generation);
         Assert.AreEqual(revision, correction.Revision);
@@ -64,17 +59,16 @@ public sealed class MapRoomScanResultChangedProcessorTest
         scenario.EntityRegistry.AddEntity(new WorldEntity(new NitroxVector3(301f, 0f, 0f), NitroxQuaternion.Identity,
             NitroxVector3.One, quartz, 0, resourceId.ToString(), true, resourceId, null));
         Assert.IsTrue(scenario.Ownership.TryAcquire(scenario.Room.Id, scenario.PlayerA, SimulationLockType.TRANSIENT));
-        PlayerManager playerManager = new(null!, null!, null!, NullLogger<PlayerManager>.Instance);
-        MapRoomScanResultChangedProcessor processor = new(scenario.EntityRegistry, scenario.Ownership, playerManager, new MapRoomScanResultSubscriptions());
-        RecordingSender sender = new();
+        MapRoomScanResultChangedProcessor processor = new(scenario.Manager);
         MapRoomScanResultChanged unload = new(scenario.Room.Id, 5, resourceId.ToString(), quartz, new NitroxVector3(10f, 0f, 0f),
             removed: true, isRangeExit: false, scanOrigin: NitroxVector3.Zero, scanRange: 300f);
 
-        await processor.Process(new AuthProcessorContext(scenario.PlayerA, sender), unload);
+        await processor.Process(scenario.Context(scenario.PlayerA), unload);
+        List<Packet> replies = scenario.SentTo<Packet>(scenario.PlayerA);
 
-        Assert.AreEqual(1, sender.Replies.Count);
-        Assert.IsInstanceOfType<MapRoomScanResultChanged>(sender.Replies[0]);
-        MapRoomScanResultChanged accepted = (MapRoomScanResultChanged)sender.Replies[0];
+        Assert.AreEqual(1, replies.Count);
+        Assert.IsInstanceOfType<MapRoomScanResultChanged>(replies[0]);
+        MapRoomScanResultChanged accepted = (MapRoomScanResultChanged)replies[0];
         Assert.IsTrue(accepted.IsServerResponse && accepted.Granted && accepted.Removed && !accepted.IsRangeExit);
         Assert.AreEqual(revision + 1, accepted.Revision);
         Assert.AreEqual(revision + 1, scenario.Room.ScanResultRevision);
@@ -95,16 +89,16 @@ public sealed class MapRoomScanResultChangedProcessorTest
         scenario.EntityRegistry.AddEntity(new WorldEntity(new NitroxVector3(100f, 0f, 0f), NitroxQuaternion.Identity,
             NitroxVector3.One, quartz, 0, resourceId.ToString(), true, resourceId, null));
         Assert.IsTrue(scenario.Ownership.TryAcquire(scenario.Room.Id, scenario.PlayerA, SimulationLockType.TRANSIENT));
-        MapRoomScanResultChangedProcessor processor = new(scenario.EntityRegistry, scenario.Ownership, null!, new MapRoomScanResultSubscriptions());
-        RecordingSender sender = new();
+        MapRoomScanResultChangedProcessor processor = new(scenario.Manager);
         MapRoomScanResultChanged rangeExit = new(scenario.Room.Id, 5, resourceId.ToString(), quartz, new NitroxVector3(301f, 0f, 0f),
             removed: true, isRangeExit: true, scanOrigin: NitroxVector3.Zero, scanRange: 300f);
 
-        await processor.Process(new AuthProcessorContext(scenario.PlayerA, sender), rangeExit);
+        await processor.Process(scenario.Context(scenario.PlayerA), rangeExit);
+        List<Packet> replies = scenario.SentTo<Packet>(scenario.PlayerA);
 
-        Assert.AreEqual(1, sender.Replies.Count);
-        Assert.IsInstanceOfType<MapRoomScanResultSnapshot>(sender.Replies[0]);
-        MapRoomScanResultSnapshot correction = (MapRoomScanResultSnapshot)sender.Replies[0];
+        Assert.AreEqual(1, replies.Count);
+        Assert.IsInstanceOfType<MapRoomScanResultSnapshot>(replies[0]);
+        MapRoomScanResultSnapshot correction = (MapRoomScanResultSnapshot)replies[0];
         Assert.IsTrue(correction.IsServerResponse && correction.Granted);
         Assert.AreEqual(revision, correction.Revision);
         Assert.AreEqual(revision, scenario.Room.ScanResultRevision);
@@ -116,20 +110,5 @@ public sealed class MapRoomScanResultChangedProcessorTest
         scenario.EntityRegistry.AddEntity(new WorldEntity(NitroxVector3.Zero, NitroxQuaternion.Identity, NitroxVector3.One,
             new NitroxTechType("Base"), 0, ScannerRoomScenarioFixture.RoomParentId.ToString(), true,
             ScannerRoomScenarioFixture.RoomParentId, null));
-    }
-
-    private sealed class RecordingSender : IPacketSender
-    {
-        internal List<Packet> Replies { get; } = [];
-
-        public ValueTask SendPacketAsync<T>(T packet, SessionId sessionId) where T : Packet
-        {
-            Replies.Add(packet);
-            return ValueTask.CompletedTask;
-        }
-
-        public ValueTask SendPacketToAllAsync<T>(T packet) where T : Packet => ValueTask.CompletedTask;
-
-        public ValueTask SendPacketToOthersAsync<T>(T packet, SessionId excludedSessionId) where T : Packet => ValueTask.CompletedTask;
     }
 }

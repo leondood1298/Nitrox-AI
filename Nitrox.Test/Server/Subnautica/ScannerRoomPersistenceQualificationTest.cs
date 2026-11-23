@@ -83,31 +83,21 @@ public sealed class ScannerRoomPersistenceQualificationTest
 
         EntityRegistry entityRegistry = new(NullLogger<EntityRegistry>.Instance);
         ScannerRoomDiagnostics diagnostics = new(NullLogger<ScannerRoomDiagnostics>.Instance);
-        WorldEntityManager worldEntityManager = new(
-            null!,
-            entityRegistry,
-            null!,
-            null!,
-            new MapRoomScanResultSubscriptions(),
-            diagnostics,
-            null!,
-            NullLogger<WorldEntityManager>.Instance);
+        WorldEntityManager worldEntityManager = new(null!, entityRegistry, null!, null!, null!, NullLogger<WorldEntityManager>.Instance);
+        ScannerRoomManager manager = ScannerRoomScenarioFixture.CreateManager(entityRegistry, new SimulationOwnershipData(), diagnostics,
+            worldEntityManager: worldEntityManager);
 
         foreach (GlobalRootEntity root in restoredData.Entities)
         {
             worldEntityManager.AddOrUpdateGlobalRootEntity(root);
         }
 
-        long dockingRevisionAsLoaded = restoredRoom.DockingRevision;
-        AssertInitialSyncRoots(worldEntityManager.GetInitialSyncGlobalRootEntities(rootOnly: true), $"{serializerName} sync before recovery");
-        Assert.AreEqual(dockingRevisionAsLoaded, restoredRoom.DockingRevision,
-            $"{serializerName}: building a joining player's sync must not change dock state; connected players would not be told.");
         Assert.IsNull(restoredRoom.RightDockCameraId, $"{serializerName}: the orphaned camera is only docked by the recovery after loading.");
         Assert.AreEqual(0, diagnostics.GetHistory().Count);
 
         // What the server does once after loading the world, before anybody is connected.
-        worldEntityManager.RestoreOrphanedMapRoomCameras();
-        List<GlobalRootEntity> initialSync = worldEntityManager.GetInitialSyncGlobalRootEntities(rootOnly: true);
+        manager.WorldLoaded();
+        List<GlobalRootEntity> initialSync = manager.GetInitialSyncEntities(worldEntityManager.GetGlobalRootEntities(true));
 
         AssertInitialSyncRoots(initialSync, serializerName);
         Assert.IsTrue(entityRegistry.TryGetEntityById(cameraAId, out GlobalRootEntity _),
@@ -125,25 +115,36 @@ public sealed class ScannerRoomPersistenceQualificationTest
         ScannerRoomStateSnapshot recoveredSnapshot = ScannerRoomStateFingerprint.Create(restoredRoom);
         AssertEquivalentFingerprint(ScannerRoomStateFingerprint.Create(expectedAfterRecovery), recoveredSnapshot,
             $"{serializerName} initial sync recovery");
+        AssertEquivalentFingerprint(recoveredSnapshot, ScannerRoomStateFingerprint.Create(GetSyncedRoom(initialSync)),
+            $"{serializerName}: the joining player is sent the room as it is after recovery");
         CollectionAssert.AreEqual(
             new[] { 1, 2, 7 },
             restoredRoom.CameraRegistry.OrderBy(record => record.CameraNumber).Select(record => record.CameraNumber).ToArray(),
             $"{serializerName}: recovery must preserve stable camera registration numbers.");
 
-        IReadOnlyList<ScannerRoomDiagnosticEntry> recoveryDiagnostics = diagnostics.GetHistory();
-        Assert.AreEqual(1, recoveryDiagnostics.Count, $"{serializerName}: recovery should emit one bounded diagnostic.");
-        Assert.AreEqual("orphan_recovery", recoveryDiagnostics[0].EventName);
+        ScannerRoomDiagnosticEntry[] recoveryDiagnostics = diagnostics.GetHistory().Where(entry => entry.EventName == "orphan_recovery").ToArray();
+        Assert.AreEqual(1, recoveryDiagnostics.Length, $"{serializerName}: recovery should emit one bounded diagnostic.");
         Assert.AreEqual(ScannerRoomDiagnosticOutcome.INVARIANT_FAILURE, recoveryDiagnostics[0].Outcome);
         Assert.AreEqual("restored_1", recoveryDiagnostics[0].Reason);
 
-        worldEntityManager.RestoreOrphanedMapRoomCameras();
-        List<GlobalRootEntity> repeatedInitialSync = worldEntityManager.GetInitialSyncGlobalRootEntities(rootOnly: true);
+        // A camera whose entity disappears later is not put back into a dock by building a joining player's sync:
+        // that would change dock state without telling the players who are connected.
+        long dockingRevisionAfterRecovery = restoredRoom.DockingRevision;
+        int diagnosticsAfterRecovery = diagnostics.GetHistory().Count;
+        restoredRoom.TryClearDockedCamera(cameraBId, out _);
+        long dockingRevisionBeforeSync = restoredRoom.DockingRevision;
+        List<GlobalRootEntity> repeatedInitialSync = manager.GetInitialSyncEntities(worldEntityManager.GetGlobalRootEntities(true));
         AssertInitialSyncRoots(repeatedInitialSync, $"{serializerName} repeated sync");
-        AssertEquivalentFingerprint(recoveredSnapshot, ScannerRoomStateFingerprint.Create(restoredRoom),
-            $"{serializerName} repeated sync");
-        Assert.AreEqual(1, diagnostics.GetHistory().Count,
-            $"{serializerName}: idempotent initial sync must not emit duplicate recovery diagnostics.");
+        Assert.IsTrue(dockingRevisionBeforeSync > dockingRevisionAfterRecovery);
+        Assert.AreEqual(dockingRevisionBeforeSync, restoredRoom.DockingRevision,
+            $"{serializerName}: building a joining player's sync must not change dock state; connected players would not be told.");
+        Assert.IsNull(restoredRoom.RightDockCameraId, $"{serializerName}: an orphaned camera is only docked by the recovery after loading.");
+        Assert.AreEqual(diagnosticsAfterRecovery, diagnostics.GetHistory().Count,
+            $"{serializerName}: building a sync must not emit recovery diagnostics.");
     }
+
+    private static MapRoomEntity GetSyncedRoom(IEnumerable<GlobalRootEntity> roots) =>
+        roots.Single(root => root.Id == baseId).ChildEntities.OfType<MapRoomEntity>().Single(entity => entity.Id == roomId);
 
     private static GlobalRootData RoundTrip(IServerSerializer serializer, GlobalRootData data, string serializerName)
     {

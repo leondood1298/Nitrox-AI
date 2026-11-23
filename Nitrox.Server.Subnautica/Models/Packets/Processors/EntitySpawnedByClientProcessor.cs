@@ -9,7 +9,7 @@ using Nitrox.Server.Subnautica.Models.Packets.Core;
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
 internal sealed class EntitySpawnedByClientProcessor(PlayerManager playerManager, EntityRegistry entityRegistry, WorldEntityManager worldEntityManager, EntitySimulation entitySimulation,
-    MapRoomLooseCameraState looseCameraState)
+    ScannerRoomManager scannerRoomManager)
     : IAuthPacketProcessor<EntitySpawnedByClient>
 {
     private readonly PlayerManager playerManager = playerManager;
@@ -23,7 +23,7 @@ internal sealed class EntitySpawnedByClientProcessor(PlayerManager playerManager
 
         // If the entity already exists in the registry, it is fine to update.  This is a normal case as the player
         // may have an item in their inventory (that the registry knows about) then wants to spawn it into the world.
-        looseCameraState.KeepStateOnReplacement(entity);
+        scannerRoomManager.KeepCameraStateOnReplacement(entity);
         entityRegistry.AddOrUpdate(entity);
 
         List<SimulatedEntity> simulatedEntities = null;

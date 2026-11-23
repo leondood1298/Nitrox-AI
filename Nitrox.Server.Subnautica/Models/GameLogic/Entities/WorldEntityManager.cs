@@ -7,7 +7,6 @@ using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
-using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Helper;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities.Spawning;
@@ -28,8 +27,6 @@ internal sealed class WorldEntityManager
     private readonly BatchEntitySpawner batchEntitySpawner;
     private readonly ConcurrentDictionary<NitroxInt3, Lazy<Task<int>>> batchRegistrationTasks = new();
     private readonly EntityRegistry entityRegistry;
-    private readonly MapRoomScanResultSubscriptions mapRoomScanResultSubscriptions;
-    private readonly ScannerRoomDiagnostics scannerRoomDiagnostics;
 
     private readonly Lock globalRootEntitiesLock = new();
     private readonly ILogger<WorldEntityManager> logger;
@@ -49,14 +46,12 @@ internal sealed class WorldEntityManager
     /// </summary>
     internal Dictionary<AbsoluteEntityCell, Dictionary<NitroxId, WorldEntity>> worldEntitiesByCell = [];
 
-    public WorldEntityManager(IPacketSender packetSender, EntityRegistry entityRegistry, BatchEntitySpawner batchEntitySpawner, PlayerManager playerManager, MapRoomScanResultSubscriptions mapRoomScanResultSubscriptions, ScannerRoomDiagnostics scannerRoomDiagnostics, IProgressReporter progressReporter, ILogger<WorldEntityManager> logger)
+    public WorldEntityManager(IPacketSender packetSender, EntityRegistry entityRegistry, BatchEntitySpawner batchEntitySpawner, PlayerManager playerManager, IProgressReporter progressReporter, ILogger<WorldEntityManager> logger)
     {
         this.packetSender = packetSender;
         this.entityRegistry = entityRegistry;
         this.batchEntitySpawner = batchEntitySpawner;
         this.playerManager = playerManager;
-        this.mapRoomScanResultSubscriptions = mapRoomScanResultSubscriptions;
-        this.scannerRoomDiagnostics = scannerRoomDiagnostics;
         this.logger = logger;
         this.progressReporter = progressReporter;
     }
@@ -77,47 +72,6 @@ internal sealed class WorldEntityManager
             return new(globalRootEntitiesById.Values.OfType<T>());
         }
     }
-
-    /// <summary>
-    ///     Puts every camera that a Scanner Room still has a record for, but that exists nowhere (in no dock and as no
-    ///     entity), back into a free dock of that room. This changes dock state without a packet, so it runs once after
-    ///     the world is loaded, when no player is connected who would have to be told. It used to run whenever the
-    ///     initial sync of a joining player was built, which docked a camera for the joining player alone.
-    /// </summary>
-    public void RestoreOrphanedMapRoomCameras()
-    {
-        foreach (MapRoomEntity mapRoom in entityRegistry.GetEntities<MapRoomEntity>())
-        {
-            int restored = MapRoomCameraPersistence.RestoreOrphanedRegistrations(mapRoom, id => entityRegistry.TryGetEntityById(id, out Entity _));
-            if (restored > 0)
-            {
-                scannerRoomDiagnostics.RecordInvariantFailure("orphan_recovery", mapRoom, reason: $"restored_{restored}");
-            }
-        }
-    }
-
-    public List<GlobalRootEntity> GetInitialSyncGlobalRootEntities(bool rootOnly = false)
-    {
-        HashSet<NitroxId> dockedCameraIds = [];
-        foreach (MapRoomEntity mapRoom in entityRegistry.GetEntities<MapRoomEntity>())
-        {
-            lock (mapRoom)
-            {
-                if (mapRoom.LeftDockCameraId != null)
-                {
-                    dockedCameraIds.Add(mapRoom.LeftDockCameraId);
-                }
-                if (mapRoom.RightDockCameraId != null)
-                {
-                    dockedCameraIds.Add(mapRoom.RightDockCameraId);
-                }
-            }
-        }
-        return GetGlobalRootEntities(rootOnly).Where(entity => ShouldIncludeInInitialSync(entity.Id, dockedCameraIds)).ToList();
-    }
-
-    internal static bool ShouldIncludeInInitialSync(NitroxId entityId, ISet<NitroxId> dockedCameraIds) =>
-        !dockedCameraIds.Contains(entityId);
 
     public List<GlobalRootEntity> GetPersistentGlobalRootEntities()
     {
@@ -383,7 +337,6 @@ internal sealed class WorldEntityManager
 
     public void StopTrackingEntity(WorldEntity entity)
     {
-        InvalidateMapRoomScanResults(entity.Id);
         if (entity is GlobalRootEntity)
         {
             RemoveGlobalRootEntity(entity.Id, false);
@@ -409,23 +362,8 @@ internal sealed class WorldEntityManager
         {
             StopTrackingEntity(worldEntity);
         }
-        else
-        {
-            InvalidateMapRoomScanResults(entityId);
-        }
 
         return true;
-    }
-
-    private void InvalidateMapRoomScanResults(NitroxId entityId)
-    {
-        foreach (MapRoomScanResultChanged removal in MapRoomScanResultAuthority.InvalidateResource(entityRegistry.GetEntities<MapRoomEntity>(), entityId))
-        {
-            foreach (Player player in playerManager.GetConnectedPlayers().Where(player => mapRoomScanResultSubscriptions.Contains(removal.MapRoomId, player.SessionId)))
-            {
-                packetSender.SendPacketAsync(removal, player.SessionId);
-            }
-        }
     }
 
     /// <summary>

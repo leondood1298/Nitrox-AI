@@ -105,9 +105,9 @@ public sealed class EntitySimulationLockProtectionTest
         Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
         Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
 
-        Assert.IsTrue(scenario.EntitySimulation.IsControlledScannerCamera(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA));
-        Assert.IsFalse(scenario.EntitySimulation.IsControlledScannerCamera(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerB));
-        Assert.IsFalse(scenario.EntitySimulation.IsControlledScannerCamera(vehicleId, scenario.PlayerA), "Only Scanner Room cameras are covered.");
+        Assert.IsTrue(scenario.Manager.IsControlledBy(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA));
+        Assert.IsFalse(scenario.Manager.IsControlledBy(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerB));
+        Assert.IsFalse(scenario.Manager.IsControlledBy(vehicleId, scenario.PlayerA), "Only Scanner Room cameras are covered.");
     }
 
     [TestMethod]

@@ -12,80 +12,70 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic;
 ///     Produces a deterministic digest of the canonical Scanner Room state used for multiplayer synchronization.
 ///     The canonical text intentionally excludes rendering and transient movement state.
 /// </summary>
+/// <remarks>
+///     The room handed in must not change while it is read: it is either the copy in a
+///     <see cref="ScannerRoomSnapshot" />, or the live room read by <see cref="ScannerRoomManager" /> inside its gate.
+/// </remarks>
 internal static class ScannerRoomStateFingerprint
 {
     private static readonly CultureInfo invariantCulture = CultureInfo.InvariantCulture;
+
+    public static string? Validate(MapRoomEntity room)
+    {
+        ArgumentNullException.ThrowIfNull(room);
+        if (room.DockingRevision < 0 || room.ScanResultGeneration < 0 || room.ScanResultRevision < 0 ||
+            room.AvailableScanTypesRevision < 0)
+        {
+            return "negative_revision";
+        }
+
+        NitroxId?[] docked = [room.LeftDockCameraId, room.RightDockCameraId];
+        NitroxId[] dockedIds = docked.Where(id => id != null).Select(id => id!).ToArray();
+        if (dockedIds.Distinct().Count() != dockedIds.Length)
+        {
+            return "duplicate_dock";
+        }
+
+        MapRoomCameraRecord[] records = room.CameraRegistry?.Where(record => record != null).ToArray() ?? [];
+        if (records.Length != (room.CameraRegistry?.Count ?? 0))
+        {
+            return "null_camera_record";
+        }
+        if (records.Select(record => record.CameraId).Distinct().Count() != records.Length)
+        {
+            return "duplicate_camera_registration";
+        }
+        if (records.Any(record => record.CameraNumber <= 0) ||
+            records.Select(record => record.CameraNumber).Distinct().Count() != records.Length)
+        {
+            return "invalid_camera_number";
+        }
+        if (dockedIds.Any(id => records.All(record => record.CameraId != id)))
+        {
+            return "dock_without_registration";
+        }
+
+        foreach (MapRoomCameraRecord record in records)
+        {
+            if (!float.IsFinite(record.Energy) || record.Energy is < 0f or > MapRoomCameraRecord.MAX_ENERGY ||
+                !float.IsFinite(record.Health) || record.Health is < 0f or > MapRoomCameraRecord.MAX_HEALTH ||
+                record.LightRevision < 0 || record.ComponentRevision < 0)
+            {
+                return "invalid_camera_component";
+            }
+        }
+
+        if (room.Metadata is MapRoomMetadata metadata && (metadata.Generation < 0 || metadata.Revision < 0 || metadata.NumNodesScanned < 0))
+        {
+            return "invalid_scan_metadata";
+        }
+        return null;
+    }
 
     public static ScannerRoomStateSnapshot Create(MapRoomEntity room)
     {
         ArgumentNullException.ThrowIfNull(room);
 
-        lock (room)
-        {
-            return CreateLocked(room);
-        }
-    }
-
-    public static string? Validate(MapRoomEntity room)
-    {
-        ArgumentNullException.ThrowIfNull(room);
-        lock (room)
-        {
-            if (room.DockingRevision < 0 || room.ScanResultGeneration < 0 || room.ScanResultRevision < 0 ||
-                room.AvailableScanTypesRevision < 0)
-            {
-                return "negative_revision";
-            }
-
-            NitroxId?[] docked = [room.LeftDockCameraId, room.RightDockCameraId];
-            NitroxId[] dockedIds = docked.Where(id => id != null).Select(id => id!).ToArray();
-            if (dockedIds.Distinct().Count() != dockedIds.Length)
-            {
-                return "duplicate_dock";
-            }
-
-            MapRoomCameraRecord[] records = room.CameraRegistry?.Where(record => record != null).ToArray() ?? [];
-            if (records.Length != (room.CameraRegistry?.Count ?? 0))
-            {
-                return "null_camera_record";
-            }
-            if (records.Select(record => record.CameraId).Distinct().Count() != records.Length)
-            {
-                return "duplicate_camera_registration";
-            }
-            if (records.Any(record => record.CameraNumber <= 0) ||
-                records.Select(record => record.CameraNumber).Distinct().Count() != records.Length)
-            {
-                return "invalid_camera_number";
-            }
-            if (dockedIds.Any(id => records.All(record => record.CameraId != id)))
-            {
-                return "dock_without_registration";
-            }
-
-            foreach (MapRoomCameraRecord record in records)
-            {
-                lock (record)
-                {
-                    if (!float.IsFinite(record.Energy) || record.Energy is < 0f or > MapRoomCameraRecord.MAX_ENERGY ||
-                        !float.IsFinite(record.Health) || record.Health is < 0f or > MapRoomCameraRecord.MAX_HEALTH ||
-                        record.LightRevision < 0 || record.ComponentRevision < 0)
-                    {
-                        return "invalid_camera_component";
-                    }
-                }
-            }
-
-            if (room.Metadata is MapRoomMetadata metadata && (metadata.Generation < 0 || metadata.Revision < 0 || metadata.NumNodesScanned < 0))
-            {
-                return "invalid_scan_metadata";
-            }
-            return null;
-        }
-    }
-
-    private static ScannerRoomStateSnapshot CreateLocked(MapRoomEntity room)
-    {
         MapRoomCameraRecord?[] cameras = room.CameraRegistry?.Select(static camera => (MapRoomCameraRecord?)camera).ToArray() ?? [];
         MapRoomScanResultRecord?[] scanResults = room.ScanResults?.Select(static result => (MapRoomScanResultRecord?)result).ToArray() ?? [];
         string?[] scanTypes = room.AvailableScanTypes?.Select(static type => type?.Name).ToArray() ?? [];
@@ -146,18 +136,15 @@ internal static class ScannerRoomStateFingerprint
             return "null";
         }
 
-        lock (camera)
-        {
-            StringBuilder canonical = new(160);
-            AppendField(canonical, "id", FormatId(camera.CameraId));
-            AppendField(canonical, "number", Format(camera.CameraNumber));
-            AppendField(canonical, "light", camera.LightOn ? "1" : "0");
-            AppendField(canonical, "lightRevision", Format(camera.LightRevision));
-            AppendField(canonical, "energy", Format(camera.Energy));
-            AppendField(canonical, "health", Format(camera.Health));
-            AppendField(canonical, "componentRevision", Format(camera.ComponentRevision));
-            return canonical.ToString();
-        }
+        StringBuilder canonical = new(160);
+        AppendField(canonical, "id", FormatId(camera.CameraId));
+        AppendField(canonical, "number", Format(camera.CameraNumber));
+        AppendField(canonical, "light", camera.LightOn ? "1" : "0");
+        AppendField(canonical, "lightRevision", Format(camera.LightRevision));
+        AppendField(canonical, "energy", Format(camera.Energy));
+        AppendField(canonical, "health", Format(camera.Health));
+        AppendField(canonical, "componentRevision", Format(camera.ComponentRevision));
+        return canonical.ToString();
     }
 
     private static string CanonicalCrafter(CrafterMetadata? metadata)

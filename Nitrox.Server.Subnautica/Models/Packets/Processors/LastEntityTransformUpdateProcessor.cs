@@ -10,7 +10,7 @@ using static Nitrox.Model.Subnautica.Packets.EntityTransformUpdates;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
-internal sealed class LastEntityTransformUpdateProcessor(WorldEntityManager worldEntityManager, SimulationOwnershipData simulationOwnershipData, PlayerManager playerManager, EntitySimulation entitySimulation) : IAuthPacketProcessor<LastEntityTransformUpdate>
+internal sealed class LastEntityTransformUpdateProcessor(WorldEntityManager worldEntityManager, SimulationOwnershipData simulationOwnershipData, PlayerManager playerManager, EntitySimulation entitySimulation, ScannerRoomManager scannerRoomManager) : IAuthPacketProcessor<LastEntityTransformUpdate>
 {
     private readonly WorldEntityManager worldEntityManager = worldEntityManager;
     private readonly SimulationOwnershipData simulationOwnershipData = simulationOwnershipData;
@@ -20,7 +20,7 @@ internal sealed class LastEntityTransformUpdateProcessor(WorldEntityManager worl
     public async Task Process(AuthProcessorContext context, LastEntityTransformUpdate packet)
     {
         EntityTransformUpdate lastUpdate = packet.LastUpdate;
-        if (entitySimulation.IsControlledScannerCamera(lastUpdate.Id, context.Sender))
+        if (scannerRoomManager.IsControlledBy(lastUpdate.Id, context.Sender))
         {
             return;
         }

@@ -59,7 +59,7 @@ public sealed class BasePowerDiagnosticsTest
         CapturingLogger<BasePowerDiagnostics> diagnosticsLog = new();
         BasePowerDiagnostics diagnostics = new(diagnosticsLog, scenario.Ownership);
         EntityMetadataUpdateProcessor processor = new(new PlayerManager(null!, null!, null!, NullLogger<PlayerManager>.Instance), scenario.EntityRegistry,
-            scenario.Ownership, scenario.Diagnostics, CreateManager(scenario, diagnostics), processorLog);
+            scenario.Ownership, scenario.Manager, CreateManager(scenario, diagnostics), processorLog);
 
         // Player B wrongly believes it simulates the source and reports its level once a second.
         for (int report = 0; report < 40; report++)
