@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using Nitrox.Model.Core;
 using NitroxClient.Communication.Abstract;
 using NitroxClient.MonoBehaviours;
+using NitroxClient.MonoBehaviours.CinematicController;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.Packets;
@@ -42,6 +43,17 @@ public class PlayerCinematics
         {
             packetSender.Send(new PlayerCinematicControllerCall(sessionId, controllerID, controllerNameHash, key, false));
         }
+    }
+
+    /// <summary>
+    ///     Whether another player is in the middle of the cinematic of <paramref name="cinematicController" />, as seen in
+    ///     this game.
+    /// </summary>
+    public bool IsUsedByOtherPlayer(PlayerCinematicController cinematicController)
+    {
+        return cinematicController &&
+               cinematicController.TryGetComponent(out MultiplayerCinematicController multiplayerController) &&
+               multiplayerController.IsRemoteCinematicActive();
     }
 
     public void SetLocalIntroCinematicMode(IntroCinematicMode introCinematicMode)

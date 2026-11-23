@@ -57,6 +57,7 @@ namespace Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 [ProtoInclude(206, typeof(CreatureMetadata))]
 [ProtoInclude(207, typeof(PlayerTimeCapsuleMetadata))]
 [ProtoInclude(208, typeof(FiltrationMachineMetadata))]
+[ProtoInclude(212, typeof(FireMetadata))]
 public abstract class EntityMetadata
 {
 }
