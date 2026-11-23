@@ -2,6 +2,7 @@ using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using NitroxClient.GameLogic.Spawning.Metadata.Processor.Abstract;
 using NitroxClient.Communication;
+using NitroxClient.MonoBehaviours;
 using Nitrox.Model.Subnautica.Packets;
 using UnityEngine;
 
@@ -31,7 +32,12 @@ public class EscapePodMetadataProcessor : EntityMetadataProcessor<EscapePodMetad
             pod.healthScalar = 1;
             pod.damageEffectsShowing = true;
             pod.UpdateDamagedEffects();
-            pod.OnRepair();
+            // Not EscapePod.OnRepair: the repairing player's game triggers the repair goal, which reaches every game. A
+            // joining player or one still in the intro is given the stored state, which is no repair to announce.
+            if (EscapePodRepairState.IsRepairToAnnounce(Multiplayer.Main && Multiplayer.Main.InitialSyncCompleted, Resolve<LocalPlayer>().IntroCinematicMode))
+            {
+                pod.fixPanelPowerUp.Play();
+            }
         }
 
         if (!pod.radioSpawner.spawnedObj.TryGetComponent(out Radio radio))
