@@ -148,7 +148,18 @@ public sealed partial class uGUI_SceneIntro_IntroSequence_Patch : NitroxPatch, I
     // ReSharper disable once UnusedMethodReturnValue.Local
     private static bool IsWorldSettledAndInitialSyncCompleted()
     {
-        return LargeWorldStreamer.main.IsWorldSettled() && Multiplayer.Main && Multiplayer.Main.InitialSyncCompleted;
+        bool ready = LargeWorldStreamer.main.IsWorldSettled() && Multiplayer.Main && Multiplayer.Main.InitialSyncCompleted;
+        if (!ready)
+        {
+            // The intro of this session has not begun. What is left of the intro of an earlier session in the same game
+            // process must go: with packetSend still set, a new player would never tell the server that they wait, and
+            // would sit in front of a black screen.
+            partner = null;
+            callbackRun = false;
+            packetSend = false;
+            IsWaitingForPartner = false;
+        }
+        return ready;
     }
 
     // ReSharper disable once UnusedMethodReturnValue.Local
