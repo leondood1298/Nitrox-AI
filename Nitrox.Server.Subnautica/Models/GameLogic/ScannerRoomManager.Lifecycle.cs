@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using System.Linq;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
-using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
@@ -301,9 +300,8 @@ internal sealed partial class ScannerRoomManager
         RememberCameras(mapRoom);
         // The room keeps its id if it is built again.
         RememberFloor(mapRoom);
-        mapRoom.BeginScanResultGeneration(mapRoom.ScanResultGeneration + 1);
-        MapRoomScanResultSnapshot clearedResults = new(mapRoom.Id, mapRoom.ScanResultGeneration, [], NitroxVector3.Zero, 0f, mapRoom.ScanResultRevision, true, true);
-        await SendToSubscribersAsync(mapRoom.Id, clearedResults);
+        // Nobody is told that the results are gone: every client drops them together with its own copy of the room.
+        scansByRoomId.Remove(mapRoom.Id);
         subscribers.RemoveWhere(subscriber => subscriber.RoomId == mapRoom.Id);
 
         // The room may have been removed together with its base, which only stops tracking the base itself. A room
@@ -365,14 +363,6 @@ internal sealed partial class ScannerRoomManager
 
     private bool IsRegisteredWithAnotherLiveRoom(MapRoomEntity deconstructingRoom, NitroxId cameraId) =>
         GetRooms().Exists(room => !ReferenceEquals(room, deconstructingRoom) && room.Id != deconstructingRoom.Id && room.GetCameraRecord(cameraId) != null);
-
-    private async Task RemoveFromScanResultsAsync(NitroxId entityId)
-    {
-        foreach (MapRoomScanResultChanged removal in InvalidateScanResult(GetRooms(), entityId))
-        {
-            await SendToSubscribersAsync(removal.MapRoomId, removal);
-        }
-    }
 
     /// <summary>
     ///     In how many rooms an id has a camera record and in how many docks it sits.

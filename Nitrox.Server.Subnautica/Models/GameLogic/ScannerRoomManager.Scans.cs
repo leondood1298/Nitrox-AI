@@ -12,8 +12,10 @@ using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 namespace Nitrox.Server.Subnautica.Models.GameLogic;
 
 /// <summary>
-///     What a room scans for, what it found, which types it could scan for, and its fabricator. The room's simulating
-///     player runs the scan and reports; the server merges in what it knows about the world itself.
+///     What a room scans for, what it found, which types it could scan for, and its fabricator. The target and the
+///     progress are the room's metadata. What the scan found and the types are held here, in memory only, as in the
+///     game, which saves the target and the progress and scans again when it starts. The room's simulating player runs
+///     the scan and reports; the server adds what it knows of the world itself and tells the subscribers.
 /// </summary>
 internal sealed partial class ScannerRoomManager
 {
@@ -22,16 +24,21 @@ internal sealed partial class ScannerRoomManager
     private const int MAX_SCAN_TYPES = 512;
 
     /// <summary>
-    ///     The players who have a room's scanner screen open and are sent its results as they change.
+    ///     What every room's scan has found. Empty after a server start, until the room's simulating player reports.
+    /// </summary>
+    private readonly Dictionary<NitroxId, RoomScan> scansByRoomId = [];
+
+    /// <summary>
+    ///     The players who are sent a room's results and types as they change.
     /// </summary>
     private readonly HashSet<(NitroxId RoomId, SessionId SessionId)> subscribers = [];
 
     /// <summary>
     ///     The gate for a room's scan target and scan progress. Any player who sees the room may choose a target; only
-    ///     its simulating player reports progress. What is accepted is stored and goes to everyone, the sender
-    ///     included, because the server sets the generation and revision. A sender that is refused has already applied
-    ///     its request locally, and with the generation and revision it holds every later request would be refused as
-    ///     stale too, so it is given the room's real state.
+    ///     its simulating player reports progress. A new target goes to everyone, the sender included, because the
+    ///     server sets its generation; progress only goes to the others. A sender that is refused has already applied
+    ///     its request locally, and with the generation it holds every later request would be refused as outdated too,
+    ///     so it is given the room's real state.
     /// </summary>
     public MetadataUpdateResult AcceptRoomMetadata(Player sender, Entity target, MapRoomMetadata requested)
     {
@@ -62,10 +69,15 @@ internal sealed partial class ScannerRoomManager
             return MetadataUpdateResult.RejectAndCorrect(stored);
         }
 
-        if (previous == null || !Equals(previous.TypeToScan, accepted.TypeToScan) || previous.Generation != accepted.Generation)
+        if (previous != null && Equals(previous.TypeToScan, accepted.TypeToScan) && previous.Generation == accepted.Generation)
         {
-            diagnostics.RecordAccepted("scan_target", room, sessionId: sender.SessionId, reason: accepted.TypeToScan?.Name ?? "none");
+            return MetadataUpdateResult.Accept(accepted);
         }
+        if (scansByRoomId.TryGetValue(room.Id, out RoomScan? scan))
+        {
+            scan.Begin(accepted.Generation);
+        }
+        diagnostics.RecordAccepted("scan_target", room, sessionId: sender.SessionId, reason: accepted.TypeToScan?.Name ?? "none");
         return MetadataUpdateResult.AcceptAndEcho(accepted);
     }
 
@@ -103,130 +115,118 @@ internal sealed partial class ScannerRoomManager
     }
 
     /// <summary>
-    ///     Handles the full list of scan results a room's simulating player reports, and passes the list the server
-    ///     settles on to that player and to everyone who has the room's scanner screen open.
+    ///     Handles the full list of scan results a room's simulating player reports. The list the server settles on
+    ///     goes back to that player, whose own list lacks what its game has not loaded, and to the subscribers if it
+    ///     differs from what they were told before.
     /// </summary>
-    public async Task ReportScanAsync(Player sender, MapRoomScanResultSnapshot packet)
+    public async Task ReportScanAsync(Player sender, MapRoomScanReport packet)
     {
         // Read before the gate is entered: this walks every entity of the world.
         List<WorldEntity>? worldEntities = IsSimulatedBy(packet.MapRoomId, sender) ? entityRegistry.GetEntities<WorldEntity>() : null;
         using Hold held = await EnterAsync();
-        MapRoomScanResultSnapshot denial = new(packet.MapRoomId, packet.Generation, [], packet.ScanOrigin, packet.ScanRange, 0, true, false);
         if (!TryGetRoom(packet.MapRoomId, out MapRoomEntity? room))
         {
             diagnostics.RecordRejected("scan_snapshot", sessionId: sender.SessionId, reason: "unknown_room");
-            await ReplyAsync(sender, denial);
             return;
         }
         if (worldEntities == null || !IsSimulatedBy(room.Id, sender))
         {
             diagnostics.RecordRejected("scan_snapshot", room, sessionId: sender.SessionId, reason: "non_owner");
-            await ReplyAsync(sender, denial);
             return;
         }
         if (!TryResolveScanAnchor(entityRegistry, room, out NitroxVector3 scanAnchor))
         {
             diagnostics.RecordRejected("scan_snapshot", room, sessionId: sender.SessionId, reason: "invalid_anchor");
-            await ReplyAsync(sender, denial);
             return;
         }
-        if (!TryApplyScanSnapshot(room, packet, worldEntities, scanAnchor, out List<MapRoomScanResultRecord> results, out long revision))
+        RoomScan scan = GetScan(room);
+        if (!TryApplyScanReport(room, scan, packet, worldEntities, scanAnchor, out bool changed))
         {
-            diagnostics.RecordRejected("scan_snapshot", room, sessionId: sender.SessionId, reason: $"stale_or_invalid_gen_{packet.Generation}_room_gen_{room.ScanResultGeneration}");
-            await ReplyAsync(sender, denial);
+            diagnostics.RecordRejected("scan_snapshot", room, sessionId: sender.SessionId, reason: $"stale_or_invalid_gen_{packet.Generation}_room_gen_{scan.Generation}");
             return;
         }
-        MapRoomScanResultSnapshot response = new(packet.MapRoomId, packet.Generation, results, packet.ScanOrigin, packet.ScanRange, revision, true, true);
-        diagnostics.RecordAccepted("scan_snapshot", room, sessionId: sender.SessionId, reason: $"results_{results.Count}");
-        await ReplyAsync(sender, response);
-        await SendToSubscribersAsync(room.Id, response, sender);
+        diagnostics.RecordAccepted("scan_snapshot", room, sessionId: sender.SessionId, reason: $"results_{scan.Results.Count}");
+        MapRoomScanSnapshot snapshot = CreateSnapshot(room, scan);
+        await ReplyAsync(sender, snapshot);
+        if (changed)
+        {
+            await SendToSubscribersAsync(room.Id, snapshot, sender);
+        }
     }
 
     /// <summary>
-    ///     Handles one scan result a room's simulating player reports as found or gone, and passes it on to everyone
-    ///     who has the room's scanner screen open.
+    ///     Handles one scan result a room's simulating player reports as found or gone, and passes it on to the
+    ///     subscribers. A report the server knows better than (the resource still exists and is in range) is answered
+    ///     with the full list, because the sender's own list has drifted.
     /// </summary>
-    public async Task ReportScanResultAsync(Player sender, MapRoomScanResultChanged packet)
+    public async Task ReportScanResultAsync(Player sender, MapRoomScanResultReport packet)
     {
         using Hold held = await EnterAsync();
         if (!TryGetRoom(packet.MapRoomId, out MapRoomEntity? room) || !IsSimulatedBy(room.Id, sender))
         {
-            await ReplyAsync(sender, CreateScanResultResponse(packet, null, false));
+            diagnostics.RecordRejected("scan_snapshot", room, sessionId: sender.SessionId, reason: room == null ? "result_unknown_room" : "result_non_owner");
             return;
         }
-        NitroxVector3? scanAnchor = null;
-        if (packet.IsRangeExit || !packet.Removed)
+        NitroxVector3? scanAnchor = TryResolveScanAnchor(entityRegistry, room, out NitroxVector3 resolvedAnchor) ? resolvedAnchor : null;
+        RoomScan scan = GetScan(room);
+        switch (ApplyScanResultReport(room, scan, packet, entityRegistry, scanAnchor, out MapRoomScanResultRecord? accepted))
         {
-            if (!TryResolveScanAnchor(entityRegistry, room, out NitroxVector3 resolvedAnchor))
-            {
-                await ReplyAsync(sender, CreateScanResultResponse(packet, null, false));
-                return;
-            }
-            scanAnchor = resolvedAnchor;
+            case ScanResultOutcome.CHANGED:
+                MapRoomScanResultChanged change = new(room.Id, scan.Generation, accepted!, packet.Removed);
+                await ReplyAsync(sender, change);
+                await SendToSubscribersAsync(room.Id, change, sender);
+                break;
+            case ScanResultOutcome.CORRECTION_REQUIRED:
+                await ReplyAsync(sender, CreateSnapshot(room, scan));
+                break;
+            case ScanResultOutcome.REFUSED:
+                diagnostics.RecordRejected("scan_snapshot", room, sessionId: sender.SessionId, reason: $"result_stale_or_invalid_gen_{packet.Generation}_room_gen_{scan.Generation}");
+                break;
         }
-        else if (TryResolveScanAnchor(entityRegistry, room, out NitroxVector3 removalAnchor))
-        {
-            // Owner-only removals do not require an anchor, but exact server-backed removals use it to distinguish
-            // an ordinary cell unload from a resource that is genuinely outside the current scanner query.
-            scanAnchor = removalAnchor;
-        }
-        if (!TryApplyScanResult(room, packet, entityRegistry, scanAnchor, out bool canonicalCorrectionRequired))
-        {
-            if (canonicalCorrectionRequired)
-            {
-                await ReplyAsync(sender, CreateCorrectionSnapshot(room, packet));
-            }
-            else
-            {
-                await ReplyAsync(sender, CreateScanResultResponse(packet, null, false));
-            }
-            return;
-        }
-        MapRoomScanResultChanged response = CreateScanResultResponse(packet, room, true);
-        await ReplyAsync(sender, response);
-        await SendToSubscribersAsync(room.Id, response, sender);
     }
 
     /// <summary>
-    ///     Handles the list of types a room's simulating player reports as available to scan for, and tells everyone
-    ///     the list the server settles on.
+    ///     Handles the list of types a room's simulating player reports as available to scan for. The list the server
+    ///     settles on goes back to that player and, if it changed, to the subscribers.
     /// </summary>
-    public async Task ReportScanTypesAsync(Player sender, MapRoomScanTypesSnapshot packet)
+    public async Task ReportScanTypesAsync(Player sender, MapRoomScanTypesReport packet)
     {
         // Read before the gate is entered: this walks every entity of the world.
         List<WorldEntity>? worldEntities = IsSimulatedBy(packet.MapRoomId, sender) ? entityRegistry.GetEntities<WorldEntity>() : null;
         using Hold held = await EnterAsync();
-        MapRoomScanTypesSnapshot denial = new(packet.MapRoomId, [], [], packet.ScanOrigin, packet.ScanRange, 0, true, false);
         if (!TryGetRoom(packet.MapRoomId, out MapRoomEntity? room))
         {
             diagnostics.RecordRejected("scan_types", sessionId: sender.SessionId, reason: "unknown_room");
-            await ReplyAsync(sender, denial);
             return;
         }
         if (worldEntities == null || !IsSimulatedBy(room.Id, sender))
         {
             diagnostics.RecordRejected("scan_types", room, sessionId: sender.SessionId, reason: "non_owner");
-            await ReplyAsync(sender, denial);
             return;
         }
         if (!TryResolveScanAnchor(entityRegistry, room, out NitroxVector3 scanAnchor))
         {
             diagnostics.RecordRejected("scan_types", room, sessionId: sender.SessionId, reason: "invalid_anchor");
-            await ReplyAsync(sender, denial);
             return;
         }
-        if (!TryApplyScanTypes(room, packet, worldEntities, scanAnchor, out List<NitroxTechType> accepted, out long revision))
+        RoomScan scan = GetScan(room);
+        if (!TryApplyScanTypesReport(room, scan, packet, worldEntities, scanAnchor, out bool changed))
         {
             diagnostics.RecordRejected("scan_types", room, sessionId: sender.SessionId, reason: "stale_or_invalid");
-            await ReplyAsync(sender, denial);
             return;
         }
-        diagnostics.RecordAccepted("scan_types", room, sessionId: sender.SessionId, reason: $"types_{accepted.Count}", stateRevision: revision);
-        await SendToAllAsync(new MapRoomScanTypesSnapshot(packet.MapRoomId, accepted, [], packet.ScanOrigin, packet.ScanRange, revision, true, true));
+        diagnostics.RecordAccepted("scan_types", room, sessionId: sender.SessionId, reason: $"types_{scan.AvailableTypes.Count}", stateRevision: scan.AvailableTypesVersion);
+        MapRoomScanTypesChanged types = new(room.Id, [.. scan.AvailableTypes]);
+        await ReplyAsync(sender, types);
+        if (changed)
+        {
+            await SendToSubscribersAsync(room.Id, types, sender);
+        }
     }
 
     /// <summary>
-    ///     Starts or stops sending a room's scan results to a player. A player who starts is sent the current results.
+    ///     Starts or stops sending a room's scan results and types to a player. A player who starts is sent what the
+    ///     server holds, which is nothing after a server start until the room's simulating player has reported.
     /// </summary>
     public async Task SetSubscriptionAsync(Player player, NitroxId roomId, bool subscribed)
     {
@@ -241,8 +241,7 @@ internal sealed partial class ScannerRoomManager
             return;
         }
         subscribers.Add((roomId, player.SessionId));
-        await ReplyAsync(player, new MapRoomScanResultSnapshot(room.Id, room.ScanResultGeneration, CloneResults(room.ScanResults), NitroxVector3.Zero, 0f,
-            room.ScanResultRevision, true, true));
+        await ReplyAsync(player, CreateSnapshot(room, GetScan(room)));
     }
 
     internal static bool IsScanProgress(MapRoomMetadata? current, MapRoomMetadata requested) =>
@@ -258,27 +257,27 @@ internal sealed partial class ScannerRoomManager
             return false;
         }
         room.Metadata = accepted;
-        room.BeginScanResultGeneration(accepted.Generation);
         return true;
     }
 
     /// <summary>
-    ///     A request is only accepted if it was made against the state the room is in. A new target starts a new
-    ///     generation, which empties the results; more nodes scanned of the same target is progress.
+    ///     A request is only accepted if it was made against the target the room has now, which its generation tells.
+    ///     A new target starts a new generation, with nothing scanned yet; more nodes scanned of the same target is
+    ///     progress.
     /// </summary>
     internal static bool TryAcceptScanMetadata(MapRoomMetadata? current, MapRoomMetadata requested, out MapRoomMetadata accepted)
     {
         current ??= new MapRoomMetadata(NitroxTechType.None, 0);
         accepted = current;
 
-        if (requested.Generation != current.Generation || requested.Revision != current.Revision)
+        if (requested.Generation != current.Generation)
         {
             return false;
         }
 
         if (!requested.TypeToScan.Equals(current.TypeToScan))
         {
-            accepted = new MapRoomMetadata(requested.TypeToScan, 0, current.Generation + 1, current.Revision + 1);
+            accepted = new MapRoomMetadata(requested.TypeToScan, 0, current.Generation + 1);
             return true;
         }
 
@@ -287,17 +286,21 @@ internal sealed partial class ScannerRoomManager
             return false;
         }
 
-        accepted = new MapRoomMetadata(current.TypeToScan, requested.NumNodesScanned, current.Generation, current.Revision + 1);
+        accepted = new MapRoomMetadata(current.TypeToScan, requested.NumNodesScanned, current.Generation);
         return true;
     }
 
-    internal static bool TryApplyScanSnapshot(MapRoomEntity room, MapRoomScanResultSnapshot requested, IEnumerable<WorldEntity> worldEntities, NitroxVector3 scanAnchor,
-        out List<MapRoomScanResultRecord> acceptedResults, out long revision)
+    /// <summary>
+    ///     Checks a full list of results against the room's target and scan range, adds the matching entities the
+    ///     server knows in range, and stores the outcome.
+    /// </summary>
+    /// <param name="changed">Whether the stored list differs from the one before.</param>
+    internal static bool TryApplyScanReport(MapRoomEntity room, RoomScan scan, MapRoomScanReport requested, IEnumerable<WorldEntity> worldEntities, NitroxVector3 scanAnchor,
+        out bool changed)
     {
-        acceptedResults = [];
-        revision = room.ScanResultRevision;
-        if (requested.IsServerResponse || requested.MapRoomId != room.Id || requested.Generation != room.ScanResultGeneration || requested.Results == null || requested.Results.Count > MAX_SNAPSHOT_RESULTS ||
-            worldEntities == null || room.Metadata is not MapRoomMetadata metadata ||
+        changed = false;
+        if (requested.MapRoomId != room.Id || room.Metadata is not MapRoomMetadata metadata || requested.Generation != metadata.Generation ||
+            requested.Results == null || requested.Results.Count > MAX_SNAPSHOT_RESULTS || worldEntities == null ||
             !TryNormalizeScanQuery(requested.ScanOrigin, requested.ScanRange, scanAnchor, out NitroxVector3 scanOrigin, out float scanRange))
         {
             return false;
@@ -320,132 +323,93 @@ internal sealed partial class ScannerRoomManager
             }
         }
 
-        List<MapRoomScanResultRecord> merged = MergeScanResults(requested.Results, worldEntities, metadata.TypeToScan, scanOrigin, scanRange, MAX_SNAPSHOT_RESULTS);
-        if (ResultsEqual(room.ScanResults, merged))
-        {
-            acceptedResults = CloneResults(room.ScanResults);
-            return true;
-        }
-        room.ScanResults = CloneResults(merged);
-        room.ScanResultRevision++;
-        revision = room.ScanResultRevision;
-        acceptedResults = CloneResults(room.ScanResults);
+        scan.Begin(metadata.Generation);
+        changed = scan.TryReplace(MergeScanResults(requested.Results, worldEntities, metadata.TypeToScan, scanOrigin, scanRange, MAX_SNAPSHOT_RESULTS));
         return true;
     }
 
-    internal static bool TryApplyScanResult(MapRoomEntity room, MapRoomScanResultChanged requested, EntityRegistry entityRegistry, NitroxVector3? scanAnchor,
-        out bool canonicalCorrectionRequired)
+    /// <summary>
+    ///     Checks one found or lost result against the room's target and scan range, and against the entity the server
+    ///     has for it, and stores it.
+    /// </summary>
+    /// <param name="accepted">The result as stored or removed. Its position is the server's where the server has the entity.</param>
+    internal static ScanResultOutcome ApplyScanResultReport(MapRoomEntity room, RoomScan scan, MapRoomScanResultReport requested, EntityRegistry entityRegistry,
+        NitroxVector3? scanAnchor, out MapRoomScanResultRecord? accepted)
     {
-        canonicalCorrectionRequired = false;
-        if (requested.IsServerResponse || requested.MapRoomId != room.Id || !IsValidResourceId(requested.ResourceId) || requested.TechType == null ||
-            requested.Generation != room.ScanResultGeneration || (!requested.Removed && !IsFinite(requested.Position)) ||
-            requested.IsRangeExit && !requested.Removed || entityRegistry == null || room.Metadata is not MapRoomMetadata metadata ||
-            metadata.TypeToScan.Equals(NitroxTechType.None) || !requested.TechType.Equals(metadata.TypeToScan))
+        accepted = null;
+        MapRoomScanResultRecord? reported = requested.Result;
+        if (requested.MapRoomId != room.Id || reported == null || !IsValidResourceId(reported.ResourceId) || reported.TechType == null ||
+            room.Metadata is not MapRoomMetadata metadata || requested.Generation != metadata.Generation || (!requested.Removed && !IsFinite(reported.Position)) ||
+            requested.IsRangeExit && !requested.Removed || entityRegistry == null ||
+            metadata.TypeToScan.Equals(NitroxTechType.None) || !reported.TechType.Equals(metadata.TypeToScan))
         {
-            return false;
+            return ScanResultOutcome.REFUSED;
         }
+        scan.Begin(metadata.Generation);
+        bool hasLiveExactEntity = TryGetLiveExactWorldEntity(entityRegistry, reported.ResourceId, metadata.TypeToScan, out WorldEntity liveExactEntity);
+        bool hasQuery = TryGetScanQuery(room, requested.ScanOrigin, requested.ScanRange, scanAnchor, out NitroxVector3 scanOrigin, out float scanRange);
         if (requested.Removed)
         {
-            MapRoomScanResultRecord? current = room.ScanResults.Find(result => result.ResourceId == requested.ResourceId);
-            if (current == null || !current.TechType.Equals(metadata.TypeToScan))
+            MapRoomScanResultRecord? current = scan.Results.Find(result => result.ResourceId == reported.ResourceId);
+            if (current == null)
             {
-                return false;
+                return ScanResultOutcome.UNCHANGED;
+            }
+            if (!requested.IsRangeExit && !hasLiveExactEntity)
+            {
+                // Only the sender ever knew this resource, so the server takes its word that it is gone.
+                return Remove(scan, current, out accepted);
+            }
+            if (!hasQuery)
+            {
+                // Without a valid scan query the server cannot tell an unloaded resource from one out of range, and
+                // an invalid request is not answered with a full list.
+                return ScanResultOutcome.REFUSED;
             }
 
-            bool hasLiveExactEntity = TryGetLiveExactWorldEntity(entityRegistry, requested.ResourceId, metadata.TypeToScan, out WorldEntity liveExactEntity);
-            if (!requested.IsRangeExit)
-            {
-                // A local ResourceTracker can unregister when its cell unloads. The server registry remains canonical
-                // for exact-TechType supplements, while owner-only override mappings retain vanilla removal behavior.
-                if (hasLiveExactEntity)
-                {
-                    if (!scanAnchor.HasValue ||
-                        !TryNormalizeScanQuery(requested.ScanOrigin, requested.ScanRange, scanAnchor.Value, out NitroxVector3 removalScanOrigin, out float removalScanRange) ||
-                        !IsScanRangeAllowed(room, removalScanRange) ||
-                        !IsFinite(liveExactEntity.Transform.Position))
-                    {
-                        // Do not amplify an invalid request into a full corrective snapshot.
-                        return false;
-                    }
-                    if (IsWithinRange(removalScanOrigin, liveExactEntity.Transform.Position, removalScanRange))
-                    {
-                        canonicalCorrectionRequired = true;
-                        return false;
-                    }
-                    return room.TryRemoveScanResult(requested.Generation, requested.ResourceId);
-                }
-                return room.TryRemoveScanResult(requested.Generation, requested.ResourceId);
-            }
-
-            if (!scanAnchor.HasValue ||
-                !TryNormalizeScanQuery(requested.ScanOrigin, requested.ScanRange, scanAnchor.Value, out NitroxVector3 scanOrigin, out float scanRange) ||
-                !IsScanRangeAllowed(room, scanRange))
-            {
-                return false;
-            }
-
-            NitroxVector3 position = hasLiveExactEntity ? liveExactEntity.Transform.Position : requested.Position;
+            NitroxVector3 position = hasLiveExactEntity ? liveExactEntity.Transform.Position : reported.Position;
             if (!IsFinite(position))
             {
-                return false;
+                return ScanResultOutcome.REFUSED;
             }
-            if (IsWithinRange(scanOrigin, position, scanRange))
+            if (!IsWithinRange(scanOrigin, position, scanRange))
             {
-                // Vanilla has already removed an outside-reported node locally. Restore exact server-backed nodes
-                // when the authoritative transform still belongs to this scanner query.
-                canonicalCorrectionRequired = hasLiveExactEntity;
-                return false;
+                return Remove(scan, current, out accepted);
             }
-            return room.TryRemoveScanResult(requested.Generation, requested.ResourceId);
+            // A resource the server has, in range, is still there: the sender's game unloaded its cell, or reported
+            // it outside from a position the server does not share. The sender has already dropped it and gets the
+            // list back.
+            return hasLiveExactEntity ? ScanResultOutcome.CORRECTION_REQUIRED : ScanResultOutcome.REFUSED;
         }
-        if (!scanAnchor.HasValue ||
-            !TryNormalizeScanQuery(requested.ScanOrigin, requested.ScanRange, scanAnchor.Value, out NitroxVector3 addedScanOrigin, out float addedScanRange) ||
-            !IsScanRangeAllowed(room, addedScanRange))
+
+        if (!hasQuery)
         {
-            return false;
+            return ScanResultOutcome.REFUSED;
         }
-        NitroxVector3 acceptedPosition = TryGetLiveExactWorldEntity(entityRegistry, requested.ResourceId, metadata.TypeToScan,
-            out WorldEntity authoritativeEntity) ? authoritativeEntity.Transform.Position : requested.Position;
-        if (!IsFinite(acceptedPosition) || !IsWithinRange(addedScanOrigin, acceptedPosition, addedScanRange))
+        NitroxVector3 acceptedPosition = hasLiveExactEntity ? liveExactEntity.Transform.Position : reported.Position;
+        if (!IsFinite(acceptedPosition) || !IsWithinRange(scanOrigin, acceptedPosition, scanRange))
         {
-            return false;
+            return ScanResultOutcome.REFUSED;
         }
-        bool isNewResult = room.ScanResults.TrueForAll(result => result.ResourceId != requested.ResourceId);
-        if (isNewResult && room.ScanResults.Count >= MAX_SNAPSHOT_RESULTS)
+        bool isNewResult = scan.Results.TrueForAll(result => result.ResourceId != reported.ResourceId);
+        if (isNewResult && scan.Results.Count >= MAX_SNAPSHOT_RESULTS)
         {
-            return false;
+            return ScanResultOutcome.REFUSED;
         }
-        return room.TryApplyScanResult(requested.Generation, new MapRoomScanResultRecord(requested.ResourceId, requested.TechType, acceptedPosition));
+        accepted = new MapRoomScanResultRecord(reported.ResourceId, reported.TechType, acceptedPosition);
+        return scan.TryApply(accepted) ? ScanResultOutcome.CHANGED : ScanResultOutcome.UNCHANGED;
     }
 
     /// <summary>
-    ///     Takes an entity that left the world out of the scan results of every room that had found it.
+    ///     Checks a list of available scan types, adds the types of the entities the server knows in range, and stores
+    ///     the outcome.
     /// </summary>
-    /// <returns>What the players who watch those rooms have to be told.</returns>
-    internal static List<MapRoomScanResultChanged> InvalidateScanResult(IEnumerable<MapRoomEntity> rooms, NitroxId resourceId)
+    /// <param name="changed">Whether the stored list differs from the one before, or is the first one.</param>
+    internal static bool TryApplyScanTypesReport(MapRoomEntity room, RoomScan scan, MapRoomScanTypesReport requested, IEnumerable<WorldEntity> worldEntities,
+        NitroxVector3 scanAnchor, out bool changed)
     {
-        string id = resourceId.ToString();
-        List<MapRoomScanResultChanged> removals = [];
-        foreach (MapRoomEntity room in rooms)
-        {
-            MapRoomScanResultRecord? result = room.ScanResults.Find(record => record.ResourceId == id);
-            if (result == null || !room.TryRemoveScanResult(room.ScanResultGeneration, id))
-            {
-                continue;
-            }
-            removals.Add(new MapRoomScanResultChanged(room.Id, room.ScanResultGeneration, id, result.TechType, result.Position,
-                removed: true, isRangeExit: false, scanOrigin: NitroxVector3.Zero, scanRange: 0f,
-                revision: room.ScanResultRevision, isServerResponse: true, granted: true));
-        }
-        return removals;
-    }
-
-    internal static bool TryApplyScanTypes(MapRoomEntity room, MapRoomScanTypesSnapshot requested, IEnumerable<WorldEntity> worldEntities, NitroxVector3 scanAnchor,
-        out List<NitroxTechType> accepted, out long revision)
-    {
-        accepted = [];
-        revision = room.AvailableScanTypesRevision;
-        if (requested.IsServerResponse || requested.MapRoomId != room.Id || requested.TechTypes == null || requested.TechTypes.Count > MAX_SCAN_TYPES ||
+        changed = false;
+        if (requested.MapRoomId != room.Id || requested.TechTypes == null || requested.TechTypes.Count > MAX_SCAN_TYPES ||
             requested.DetectableTechTypes == null || requested.DetectableTechTypes.Count > MAX_SCAN_TYPES || worldEntities == null ||
             !TryNormalizeScanQuery(requested.ScanOrigin, requested.ScanRange, scanAnchor, out NitroxVector3 scanOrigin, out float scanRange))
         {
@@ -471,46 +435,67 @@ internal sealed partial class ScannerRoomManager
                 return false;
             }
         }
-        List<NitroxTechType> normalized = MergeScanTypes(unique, detectable, worldEntities, scanOrigin, scanRange);
-        if (room.AvailableScanTypesRevision > 0 && room.AvailableScanTypes.SequenceEqual(normalized))
-        {
-            accepted = room.AvailableScanTypes.ToList();
-            return true;
-        }
-        room.AvailableScanTypes = normalized;
-        room.AvailableScanTypesRevision++;
-        revision = room.AvailableScanTypesRevision;
-        accepted = room.AvailableScanTypes.ToList();
+        changed = scan.TrySetAvailableTypes(MergeScanTypes(unique, detectable, worldEntities, scanOrigin, scanRange));
         return true;
     }
 
-    /// <summary>
-    ///     The full result list for the room's simulating player, whose own list has drifted from the server's.
-    /// </summary>
-    internal static MapRoomScanResultSnapshot CreateCorrectionSnapshot(MapRoomEntity room, MapRoomScanResultChanged request) =>
-        new(room.Id, room.ScanResultGeneration, CloneResults(room.ScanResults), request.ScanOrigin, request.ScanRange, room.ScanResultRevision, true, true);
-
-    private static MapRoomScanResultChanged CreateScanResultResponse(MapRoomScanResultChanged packet, MapRoomEntity? room, bool granted)
+    private static ScanResultOutcome Remove(RoomScan scan, MapRoomScanResultRecord current, out MapRoomScanResultRecord? removed)
     {
-        NitroxVector3 position = packet.Position;
-        long revision = 0;
-        if (room != null)
+        removed = current;
+        return scan.TryRemove(current.ResourceId) ? ScanResultOutcome.CHANGED : ScanResultOutcome.UNCHANGED;
+    }
+
+    private static bool TryGetScanQuery(MapRoomEntity room, NitroxVector3 requestedOrigin, float requestedRange, NitroxVector3? scanAnchor, out NitroxVector3 scanOrigin,
+        out float scanRange)
+    {
+        scanOrigin = NitroxVector3.Zero;
+        scanRange = 0f;
+        return scanAnchor.HasValue && TryNormalizeScanQuery(requestedOrigin, requestedRange, scanAnchor.Value, out scanOrigin, out scanRange) &&
+               IsScanRangeAllowed(room, scanRange);
+    }
+
+    /// <summary>
+    ///     What the server holds for a room's scan, for the generation of the target the room has now.
+    /// </summary>
+    private RoomScan GetScan(MapRoomEntity room)
+    {
+        if (!scansByRoomId.TryGetValue(room.Id, out RoomScan? scan))
         {
-            revision = room.ScanResultRevision;
-            if (granted && !packet.Removed)
+            scan = new RoomScan();
+            scansByRoomId[room.Id] = scan;
+        }
+        scan.Begin((room.Metadata as MapRoomMetadata)?.Generation ?? 0);
+        return scan;
+    }
+
+    private static MapRoomScanSnapshot CreateSnapshot(MapRoomEntity room, RoomScan scan) =>
+        new(room.Id, scan.Generation, CloneResults(scan.Results), [.. scan.AvailableTypes]);
+
+    /// <summary>
+    ///     Takes an entity that left the world out of the scan results of every room that had found it, and tells the
+    ///     players who are sent those rooms' results.
+    /// </summary>
+    private async Task RemoveFromScanResultsAsync(NitroxId entityId)
+    {
+        string resourceId = entityId.ToString();
+        foreach (MapRoomEntity room in GetRooms())
+        {
+            if (!scansByRoomId.ContainsKey(room.Id))
             {
-                MapRoomScanResultRecord? canonical = room.ScanResults.Find(result => result.ResourceId == packet.ResourceId);
-                position = canonical?.Position ?? position;
+                continue;
+            }
+            RoomScan scan = GetScan(room);
+            if (scan.Results.Find(result => result.ResourceId == resourceId) is { } found && scan.TryRemove(resourceId))
+            {
+                await SendToSubscribersAsync(room.Id, new MapRoomScanResultChanged(room.Id, scan.Generation, found, true));
             }
         }
-        return new MapRoomScanResultChanged(packet.MapRoomId, packet.Generation, packet.ResourceId, packet.TechType, position,
-            packet.Removed, packet.IsRangeExit, packet.ScanOrigin, packet.ScanRange, revision, true, granted);
     }
 
     private bool IsSimulatedBy(NitroxId? roomId, Player player) => roomId != null && simulationOwnershipData.GetPlayerForLock(roomId) == player;
 
     /// <summary>
-    ///     Sends a room's scan change to the connected players who have its scanner screen open.
+    ///     Sends a room's scan change to the connected players who subscribed to it.
     /// </summary>
     private async Task SendToSubscribersAsync<T>(NitroxId roomId, T packet, Player? except = null) where T : Packet
     {
@@ -529,10 +514,6 @@ internal sealed partial class ScannerRoomManager
 
     private static bool IsValidResourceId(string resourceId) => !string.IsNullOrEmpty(resourceId) && resourceId.Length <= MAX_RESOURCE_ID_LENGTH;
 
-    private static bool ResultsEqual(IReadOnlyList<MapRoomScanResultRecord> current, IReadOnlyList<MapRoomScanResultRecord> requested) =>
-        current.Count == requested.Count && current.Zip(requested, (left, right) =>
-            left.ResourceId == right.ResourceId && left.TechType.Equals(right.TechType) && left.Position.Equals(right.Position)).All(equal => equal);
-
     private static List<MapRoomScanResultRecord> CloneResults(IEnumerable<MapRoomScanResultRecord> results) =>
         results.Select(result => new MapRoomScanResultRecord(result.ResourceId, result.TechType, result.Position)).ToList();
 
@@ -542,5 +523,96 @@ internal sealed partial class ScannerRoomManager
         return Guid.TryParse(resourceId, out Guid guid) &&
                entityRegistry.TryGetEntityById(new NitroxId(guid), out worldEntity!) &&
                worldEntity.TechType != null && worldEntity.TechType.Equals(target) && worldEntity.Transform != null;
+    }
+
+    /// <summary>
+    ///     What became of one reported scan result.
+    /// </summary>
+    internal enum ScanResultOutcome
+    {
+        /// <summary>Stored; the subscribers are told.</summary>
+        CHANGED,
+
+        /// <summary>Nothing new: the server already held this, or never held what was reported gone.</summary>
+        UNCHANGED,
+
+        /// <summary>Not allowed or not valid, and dropped.</summary>
+        REFUSED,
+
+        /// <summary>Dropped, and the sender's own list is now wrong and has to be replaced.</summary>
+        CORRECTION_REQUIRED
+    }
+
+    /// <summary>
+    ///     What one room's scan has found for the target it has now, and the types it offers to scan for.
+    /// </summary>
+    internal sealed class RoomScan
+    {
+        /// <summary>
+        ///     The generation of the scan target the results belong to.
+        /// </summary>
+        public long Generation { get; private set; }
+
+        public List<MapRoomScanResultRecord> Results { get; private set; } = [];
+
+        public List<NitroxTechType> AvailableTypes { get; private set; } = [];
+
+        /// <summary>
+        ///     Counts how often the list of types changed. 0 as long as nobody has reported one.
+        /// </summary>
+        public long AvailableTypesVersion { get; private set; }
+
+        /// <summary>
+        ///     Starts over for another scan target. The results of the previous one are of no use to it.
+        /// </summary>
+        public void Begin(long generation)
+        {
+            if (generation != Generation)
+            {
+                Generation = generation;
+                Results = [];
+            }
+        }
+
+        public bool TryReplace(List<MapRoomScanResultRecord> results)
+        {
+            if (Results.Count == results.Count && Results.Zip(results, (left, right) =>
+                    left.ResourceId == right.ResourceId && left.TechType.Equals(right.TechType) && left.Position.Equals(right.Position)).All(equal => equal))
+            {
+                return false;
+            }
+            Results = CloneResults(results);
+            return true;
+        }
+
+        public bool TryApply(MapRoomScanResultRecord result)
+        {
+            MapRoomScanResultRecord? current = Results.Find(record => record.ResourceId == result.ResourceId);
+            if (current == null)
+            {
+                Results.Add(result);
+                return true;
+            }
+            if (current.TechType.Equals(result.TechType) && current.Position.Equals(result.Position))
+            {
+                return false;
+            }
+            current.TechType = result.TechType;
+            current.Position = result.Position;
+            return true;
+        }
+
+        public bool TryRemove(string resourceId) => Results.RemoveAll(record => record.ResourceId == resourceId) > 0;
+
+        public bool TrySetAvailableTypes(List<NitroxTechType> types)
+        {
+            if (AvailableTypesVersion > 0 && AvailableTypes.SequenceEqual(types))
+            {
+                return false;
+            }
+            AvailableTypes = types;
+            AvailableTypesVersion++;
+            return true;
+        }
     }
 }

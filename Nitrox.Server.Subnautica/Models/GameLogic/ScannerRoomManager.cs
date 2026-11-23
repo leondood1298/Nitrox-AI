@@ -16,7 +16,8 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic;
 ///     Everything the server knows and decides about Scanner Rooms and their cameras: which camera sits in which dock,
 ///     who controls a camera, the light, battery and health of every camera, a room's scan target, scan results and
 ///     available scan types, and who is subscribed to its results. Packet processors and the other services hand a
-///     request to one method here; it validates, changes the state and sends the answer.
+///     request to one method here; it validates, changes the state and sends the answer. Scan results, available
+///     types and subscriptions are not part of any entity: they are neither saved nor sent to a joining player.
 /// </summary>
 /// <remarks>
 ///     <para>
@@ -123,7 +124,7 @@ internal sealed partial class ScannerRoomManager(IPacketSender packetSender, Ent
     public ScannerRoomSnapshot? GetSnapshot(NitroxId roomId)
     {
         using Hold held = Enter();
-        return TryGetRoom(roomId, out MapRoomEntity? room) ? new ScannerRoomSnapshot(CopyRoom(room)) : null;
+        return TryGetRoom(roomId, out MapRoomEntity? room) ? Capture(room) : null;
     }
 
     /// <summary>
@@ -132,7 +133,7 @@ internal sealed partial class ScannerRoomManager(IPacketSender packetSender, Ent
     public IReadOnlyList<ScannerRoomSnapshot> GetSnapshots()
     {
         using Hold held = Enter();
-        return [.. GetRooms().OrderBy(room => room.Id.ToString(), StringComparer.Ordinal).Select(room => new ScannerRoomSnapshot(CopyRoom(room)))];
+        return [.. GetRooms().OrderBy(room => room.Id.ToString(), StringComparer.Ordinal).Select(Capture)];
     }
 
     /// <summary>
@@ -194,7 +195,7 @@ internal sealed partial class ScannerRoomManager(IPacketSender packetSender, Ent
         return dockedCameraIds;
     }
 
-    private static List<GlobalRootEntity> DetachRoomsInGate(IEnumerable<GlobalRootEntity> entities, out IReadOnlyList<ScannerRoomSnapshot> rooms)
+    private List<GlobalRootEntity> DetachRoomsInGate(IEnumerable<GlobalRootEntity> entities, out IReadOnlyList<ScannerRoomSnapshot> rooms)
     {
         List<ScannerRoomSnapshot> copies = [];
         List<GlobalRootEntity> detached = [];
@@ -220,11 +221,17 @@ internal sealed partial class ScannerRoomManager(IPacketSender packetSender, Ent
         return detached;
     }
 
-    private static MapRoomEntity Detach(MapRoomEntity room, List<ScannerRoomSnapshot> copies)
+    private MapRoomEntity Detach(MapRoomEntity room, List<ScannerRoomSnapshot> copies)
     {
-        MapRoomEntity copy = CopyRoom(room);
-        copies.Add(new ScannerRoomSnapshot(copy));
-        return copy;
+        ScannerRoomSnapshot snapshot = Capture(room);
+        copies.Add(snapshot);
+        return snapshot.Room;
+    }
+
+    private ScannerRoomSnapshot Capture(MapRoomEntity room)
+    {
+        scansByRoomId.TryGetValue(room.Id, out RoomScan? scan);
+        return new ScannerRoomSnapshot(CopyRoom(room), scan?.Results.Count ?? 0, scan?.AvailableTypes.Count ?? 0);
     }
 
     /// <summary>
@@ -245,11 +252,6 @@ internal sealed partial class ScannerRoomManager(IPacketSender packetSender, Ent
         DockingRevision = room.DockingRevision,
         CameraRegistry = [.. room.CameraRegistry.Select(record => record == null ? null! : new MapRoomCameraRecord(record.CameraId, record.CameraNumber, record.LightOn,
             record.LightRevision, record.Energy, record.Health, record.ComponentRevision))],
-        ScanResultGeneration = room.ScanResultGeneration,
-        ScanResultRevision = room.ScanResultRevision,
-        ScanResults = [.. room.ScanResults.Select(result => result == null ? null! : new MapRoomScanResultRecord(result.ResourceId, result.TechType, result.Position))],
-        AvailableScanTypesRevision = room.AvailableScanTypesRevision,
-        AvailableScanTypes = [.. room.AvailableScanTypes],
         FabricatorMetadata = room.FabricatorMetadata
     };
 

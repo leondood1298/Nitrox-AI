@@ -198,7 +198,6 @@ public sealed class ScannerRoomDiagnosticsTest
         ScannerRoomDiagnostics diagnostics = new(NullLogger<ScannerRoomDiagnostics>.Instance);
         MapRoomEntity room = CreateRoom();
         room.CameraRegistry = null!;
-        room.ScanResults = null!;
 
         Action record = () =>
         {
@@ -309,8 +308,6 @@ public sealed class ScannerRoomDiagnosticsTest
         MapRoomEntity first = CreateRoom();
         MapRoomEntity reordered = CreateRoom();
         reordered.CameraRegistry.Reverse();
-        reordered.ScanResults.Reverse();
-        reordered.AvailableScanTypes.Reverse();
 
         ScannerRoomStateFingerprint.Create(first).Fingerprint.Should().Be(ScannerRoomStateFingerprint.Create(reordered).Fingerprint);
 
@@ -320,7 +317,7 @@ public sealed class ScannerRoomDiagnosticsTest
         ScannerRoomStateFingerprint.Create(first).Fingerprint.Should().NotBe(ScannerRoomStateFingerprint.Create(reordered).Fingerprint);
 
         MapRoomEntity metadataChanged = CreateRoom();
-        metadataChanged.Metadata = new MapRoomMetadata(new NitroxTechType("Quartz"), 8, 10, 13);
+        metadataChanged.Metadata = new MapRoomMetadata(new NitroxTechType("Quartz"), 8, 10);
         ScannerRoomStateFingerprint.Create(first).Fingerprint.Should().NotBe(ScannerRoomStateFingerprint.Create(metadataChanged).Fingerprint);
 
         MapRoomEntity crafterChanged = CreateRoom();
@@ -337,7 +334,7 @@ public sealed class ScannerRoomDiagnosticsTest
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
             MapRoomEntity room = CreateRoom();
             room.CameraRegistry[0].Energy = 12.5f;
-            room.ScanResults[0].Position = new NitroxVector3(1.25f, 2.5f, 3.75f);
+            room.CameraRegistry[0].Health = 1.25f;
 
             string canonical = ScannerRoomStateFingerprint.Create(room).CanonicalState;
 
@@ -383,7 +380,7 @@ public sealed class ScannerRoomDiagnosticsTest
         NitroxId secondCameraId = new("44444444-4444-4444-4444-444444444444");
         return new MapRoomEntity(roomId, parentId, new NitroxInt3(1, 2, 3))
         {
-            Metadata = new MapRoomMetadata(new NitroxTechType("Gold"), 7, 9, 12),
+            Metadata = new MapRoomMetadata(new NitroxTechType("Gold"), 7, 9),
             LeftDockCameraId = firstCameraId,
             RightDockCameraId = secondCameraId,
             DockingRevision = 7,
@@ -392,15 +389,6 @@ public sealed class ScannerRoomDiagnosticsTest
                 new MapRoomCameraRecord(firstCameraId, 1, true, 4, 80f, 90f, 6),
                 new MapRoomCameraRecord(secondCameraId, 2, false, 3, 70f, 85f, 5)
             ],
-            ScanResultGeneration = 9,
-            ScanResultRevision = 10,
-            ScanResults =
-            [
-                new MapRoomScanResultRecord("resource-b", new NitroxTechType("Silver"), new NitroxVector3(4f, 5f, 6f)),
-                new MapRoomScanResultRecord("resource-a", new NitroxTechType("Gold"), new NitroxVector3(1f, 2f, 3f))
-            ],
-            AvailableScanTypesRevision = 11,
-            AvailableScanTypes = [new NitroxTechType("Silver"), new NitroxTechType("Gold")],
             FabricatorMetadata = new CrafterMetadata(new NitroxTechType("MapRoomHUDChip"), 10f, 2f, 1, 0)
         };
     }

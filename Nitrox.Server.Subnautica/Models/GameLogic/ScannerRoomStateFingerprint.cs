@@ -9,8 +9,10 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 namespace Nitrox.Server.Subnautica.Models.GameLogic;
 
 /// <summary>
-///     Produces a deterministic digest of the canonical Scanner Room state used for multiplayer synchronization.
-///     The canonical text intentionally excludes rendering and transient movement state.
+///     Produces a deterministic digest of the Scanner Room state that the server saves and sends to joining players:
+///     the docks, the cameras, the scan target with its progress, and the fabricator. Two rooms with the same digest
+///     are saved identically. What a scan found and the types it offers are left out on purpose: the server only holds
+///     them in memory, and a digest that changed with them would differ between a save and the same save loaded again.
 /// </summary>
 /// <remarks>
 ///     The room handed in must not change while it is read: it is either the copy in a
@@ -23,8 +25,7 @@ internal static class ScannerRoomStateFingerprint
     public static string? Validate(MapRoomEntity room)
     {
         ArgumentNullException.ThrowIfNull(room);
-        if (room.DockingRevision < 0 || room.ScanResultGeneration < 0 || room.ScanResultRevision < 0 ||
-            room.AvailableScanTypesRevision < 0)
+        if (room.DockingRevision < 0)
         {
             return "negative_revision";
         }
@@ -65,7 +66,7 @@ internal static class ScannerRoomStateFingerprint
             }
         }
 
-        if (room.Metadata is MapRoomMetadata metadata && (metadata.Generation < 0 || metadata.Revision < 0 || metadata.NumNodesScanned < 0))
+        if (room.Metadata is MapRoomMetadata metadata && (metadata.Generation < 0 || metadata.NumNodesScanned < 0))
         {
             return "invalid_scan_metadata";
         }
@@ -77,12 +78,10 @@ internal static class ScannerRoomStateFingerprint
         ArgumentNullException.ThrowIfNull(room);
 
         MapRoomCameraRecord?[] cameras = room.CameraRegistry?.Select(static camera => (MapRoomCameraRecord?)camera).ToArray() ?? [];
-        MapRoomScanResultRecord?[] scanResults = room.ScanResults?.Select(static result => (MapRoomScanResultRecord?)result).ToArray() ?? [];
-        string?[] scanTypes = room.AvailableScanTypes?.Select(static type => type?.Name).ToArray() ?? [];
         MapRoomMetadata? metadata = room.Metadata as MapRoomMetadata;
 
         StringBuilder canonical = new(512);
-        AppendField(canonical, "version", "1");
+        AppendField(canonical, "version", "2");
         AppendField(canonical, "room", FormatId(room.Id));
         AppendField(canonical, "parent", FormatId(room.ParentId));
         AppendField(canonical, "cellX", Format(room.Cell.X));
@@ -101,32 +100,13 @@ internal static class ScannerRoomStateFingerprint
         AppendField(canonical, "target", metadata?.TypeToScan?.Name);
         AppendField(canonical, "nodesScanned", Format(metadata?.NumNodesScanned ?? 0));
         AppendField(canonical, "metadataGeneration", Format(metadata?.Generation ?? 0));
-        AppendField(canonical, "metadataRevision", Format(metadata?.Revision ?? 0));
-
-        AppendField(canonical, "scanGeneration", Format(room.ScanResultGeneration));
-        AppendField(canonical, "scanRevision", Format(room.ScanResultRevision));
-        AppendField(canonical, "scanResultCount", Format(scanResults.Length));
-        foreach (string scanResult in scanResults.Select(CanonicalScanResult).Order(StringComparer.Ordinal))
-        {
-            AppendField(canonical, "scanResult", scanResult);
-        }
-
-        AppendField(canonical, "scanTypesRevision", Format(room.AvailableScanTypesRevision));
-        AppendField(canonical, "scanTypeCount", Format(scanTypes.Length));
-        foreach (string? scanType in scanTypes.Order(StringComparer.Ordinal))
-        {
-            AppendField(canonical, "scanType", scanType);
-        }
-
         AppendField(canonical, "fabricator", CanonicalCrafter(room.FabricatorMetadata));
 
         string canonicalState = canonical.ToString();
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(canonicalState));
         string fingerprint = Convert.ToHexString(hash.AsSpan(0, 8)).ToLowerInvariant();
-        return new ScannerRoomStateSnapshot(fingerprint, canonicalState, cameras.Length, scanResults.Length, scanTypes.Length,
-            room.DockingRevision, metadata?.TypeToScan?.Name ?? "", metadata?.NumNodesScanned ?? 0,
-            metadata?.Generation ?? 0, metadata?.Revision ?? 0, room.FabricatorMetadata != null,
-            room.LeftDockCameraId, room.RightDockCameraId, room.ScanResultGeneration, room.ScanResultRevision, room.AvailableScanTypesRevision);
+        return new ScannerRoomStateSnapshot(fingerprint, canonicalState, cameras.Length, room.DockingRevision, metadata?.TypeToScan?.Name ?? "",
+            metadata?.NumNodesScanned ?? 0, metadata?.Generation ?? 0, room.FabricatorMetadata != null, room.LeftDockCameraId, room.RightDockCameraId);
     }
 
     private static string CanonicalCamera(MapRoomCameraRecord? camera)
@@ -162,22 +142,6 @@ internal static class ScannerRoomStateFingerprint
         return canonical.ToString();
     }
 
-    private static string CanonicalScanResult(MapRoomScanResultRecord? result)
-    {
-        if (result is null)
-        {
-            return "null";
-        }
-
-        StringBuilder canonical = new(160);
-        AppendField(canonical, "resource", result.ResourceId);
-        AppendField(canonical, "type", result.TechType?.Name);
-        AppendField(canonical, "x", Format(result.Position.X));
-        AppendField(canonical, "y", Format(result.Position.Y));
-        AppendField(canonical, "z", Format(result.Position.Z));
-        return canonical.ToString();
-    }
-
     private static void AppendField(StringBuilder builder, string name, string? value)
     {
         value ??= "";
@@ -199,16 +163,10 @@ internal readonly record struct ScannerRoomStateSnapshot(
     string Fingerprint,
     string CanonicalState,
     int CameraCount,
-    int ScanResultCount,
-    int ScanTypeCount,
     long DockingRevision,
     string ScanTarget,
     int NodesScanned,
     long MetadataGeneration,
-    long MetadataRevision,
     bool FabricatorActive,
     NitroxId? LeftDockCameraId = null,
-    NitroxId? RightDockCameraId = null,
-    long ScanResultGeneration = 0,
-    long ScanResultRevision = 0,
-    long ScanTypesRevision = 0);
+    NitroxId? RightDockCameraId = null);

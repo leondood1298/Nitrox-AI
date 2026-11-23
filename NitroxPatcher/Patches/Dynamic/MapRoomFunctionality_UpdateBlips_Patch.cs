@@ -1,9 +1,12 @@
 using System.Reflection;
-using Nitrox.Model.DataStructures;
 using NitroxClient.GameLogic;
 
 namespace NitroxPatcher.Patches.Dynamic;
 
+/// <summary>
+///     The game reveals one more of the room's results every scan interval. The room's simulating player reports how
+///     far it has got.
+/// </summary>
 public sealed partial class MapRoomFunctionality_UpdateBlips_Patch : NitroxPatch, IDynamicPatch
 {
     private static readonly MethodInfo TARGET_METHOD = Reflect.Method((MapRoomFunctionality t) => t.UpdateBlips());
@@ -15,9 +18,9 @@ public sealed partial class MapRoomFunctionality_UpdateBlips_Patch : NitroxPatch
 
     public static void Postfix(MapRoomFunctionality __instance, int __state)
     {
-        if (__instance.numNodesScanned != __state && __instance.TryGetNitroxId(out NitroxId roomId) && Resolve<SimulationOwnership>().HasAnyLockType(roomId))
+        if (__instance.numNodesScanned != __state)
         {
-            Resolve<Entities>().EntityMetadataChangedThrottled(__instance, roomId);
+            Resolve<MapRoomScans>().NodeScanned(__instance);
         }
     }
 }

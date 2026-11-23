@@ -200,46 +200,59 @@ public sealed class EntityMetadataUpdateProcessorTest
     [TestMethod]
     public async Task ScanTargetFromAnyPlayerIsStoredAndSentToEveryoneWithTheSender()
     {
-        // The server sets the generation and revision, which the sender does not have yet.
-        MapRoomEntity room = AddRoom(new MapRoomMetadata(quartz, 4, 2, 6), simulator);
+        // The server sets the generation, which the sender does not have yet.
+        MapRoomEntity room = AddRoom(new MapRoomMetadata(quartz, 4, 2), simulator);
 
-        await Send(otherPlayer, room, new MapRoomMetadata(titanium, 0, 2, 6));
+        await Send(otherPlayer, room, new MapRoomMetadata(titanium, 0, 2));
 
         MapRoomMetadata stored = (MapRoomMetadata)room.Metadata;
         Assert.AreEqual(titanium, stored.TypeToScan);
         Assert.AreEqual(0, stored.NumNodesScanned);
         Assert.AreEqual(3, stored.Generation);
-        Assert.AreEqual(7, stored.Revision);
-        Assert.AreEqual(3, room.ScanResultGeneration, "A new target starts a new generation of results.");
         foreach (Player receiver in new[] { simulator, otherPlayer, thirdPlayer })
         {
             MapRoomMetadata sent = (MapRoomMetadata)ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, receiver).Single().NewValue;
             Assert.AreEqual(titanium, sent.TypeToScan);
             Assert.AreEqual(3, sent.Generation);
-            Assert.AreEqual(7, sent.Revision);
         }
     }
 
     [TestMethod]
-    public async Task ScanProgressFromTheSimulatingPlayerIsStoredAndSentToEveryone()
+    public async Task StoppingAScanIsATargetLikeAnyOther()
     {
-        MapRoomEntity room = AddRoom(new MapRoomMetadata(quartz, 4, 2, 6), simulator);
+        MapRoomEntity room = AddRoom(new MapRoomMetadata(quartz, 4, 2), simulator);
 
-        await Send(simulator, room, new MapRoomMetadata(quartz, 5, 2, 6));
+        await Send(thirdPlayer, room, new MapRoomMetadata(NitroxTechType.None, 4, 2));
+
+        MapRoomMetadata stored = (MapRoomMetadata)room.Metadata;
+        Assert.AreEqual(NitroxTechType.None, stored.TypeToScan);
+        Assert.AreEqual(0, stored.NumNodesScanned);
+        Assert.AreEqual(3, stored.Generation);
+        Assert.AreEqual(3, packetSender.ReceivedCalls().Count());
+    }
+
+    [TestMethod]
+    public async Task ScanProgressFromTheSimulatingPlayerIsStoredAndSentToTheOthers()
+    {
+        // The simulating player's scan has gone on since it sent this. Its own number sent back would set it back.
+        MapRoomEntity room = AddRoom(new MapRoomMetadata(quartz, 4, 2), simulator);
+
+        await Send(simulator, room, new MapRoomMetadata(quartz, 5, 2));
 
         MapRoomMetadata stored = (MapRoomMetadata)room.Metadata;
         Assert.AreEqual(5, stored.NumNodesScanned);
         Assert.AreEqual(2, stored.Generation);
-        Assert.AreEqual(7, stored.Revision);
-        Assert.AreEqual(3, packetSender.ReceivedCalls().Count());
+        Assert.AreEqual(0, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, simulator).Count);
+        Assert.AreEqual(5, ((MapRoomMetadata)ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, otherPlayer).Single().NewValue).NumNodesScanned);
+        Assert.AreEqual(2, packetSender.ReceivedCalls().Count());
     }
 
     [TestMethod]
     public async Task ScanProgressFromAPlayerWhoDoesNotSimulateTheRoomIsAnsweredWithTheStoredState()
     {
-        MapRoomEntity room = AddRoom(new MapRoomMetadata(quartz, 4, 2, 6), simulator);
+        MapRoomEntity room = AddRoom(new MapRoomMetadata(quartz, 4, 2), simulator);
 
-        await Send(otherPlayer, room, new MapRoomMetadata(quartz, 9, 2, 6));
+        await Send(otherPlayer, room, new MapRoomMetadata(quartz, 9, 2));
 
         Assert.AreEqual(4, ((MapRoomMetadata)room.Metadata).NumNodesScanned);
         Assert.AreEqual(4, ((MapRoomMetadata)ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, otherPlayer).Single().NewValue).NumNodesScanned,
@@ -248,17 +261,29 @@ public sealed class EntityMetadataUpdateProcessorTest
     }
 
     [TestMethod]
-    public async Task ScanRequestBasedOnAnOutdatedStateIsAnsweredWithTheStoredState()
+    public async Task ScanTargetChosenAgainstAnOlderTargetIsAnsweredWithTheStoredState()
     {
-        MapRoomEntity room = AddRoom(new MapRoomMetadata(quartz, 4, 2, 6), simulator);
+        MapRoomEntity room = AddRoom(new MapRoomMetadata(quartz, 4, 2), simulator);
 
-        await Send(otherPlayer, room, new MapRoomMetadata(titanium, 0, 1, 3));
+        await Send(otherPlayer, room, new MapRoomMetadata(titanium, 0, 1));
 
         Assert.AreEqual(quartz, ((MapRoomMetadata)room.Metadata).TypeToScan);
         MapRoomMetadata correction = (MapRoomMetadata)ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, otherPlayer).Single().NewValue;
         Assert.AreEqual(quartz, correction.TypeToScan);
-        Assert.AreEqual(2, correction.Generation, "With the generation and revision it is given, its next request can be accepted.");
-        Assert.AreEqual(6, correction.Revision);
+        Assert.AreEqual(4, correction.NumNodesScanned);
+        Assert.AreEqual(2, correction.Generation, "With the generation it is given, its next request can be accepted.");
+        Assert.AreEqual(1, packetSender.ReceivedCalls().Count(), "Nobody else is told: for them nothing changed.");
+    }
+
+    [TestMethod]
+    public async Task ScanProgressThatIsNoNewsIsAnsweredWithTheStoredState()
+    {
+        MapRoomEntity room = AddRoom(new MapRoomMetadata(quartz, 4, 2), simulator);
+
+        await Send(simulator, room, new MapRoomMetadata(quartz, 3, 2));
+
+        Assert.AreEqual(4, ((MapRoomMetadata)room.Metadata).NumNodesScanned);
+        Assert.AreEqual(4, ((MapRoomMetadata)ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, simulator).Single().NewValue).NumNodesScanned);
         Assert.AreEqual(1, packetSender.ReceivedCalls().Count());
     }
 
@@ -276,7 +301,7 @@ public sealed class EntityMetadataUpdateProcessorTest
     [TestMethod]
     public async Task FabricatorStateFromTheSimulatingPlayerIsStoredWithTheRoomAndSentToTheOthers()
     {
-        MapRoomEntity room = AddRoom(new MapRoomMetadata(quartz, 4, 2, 6), simulator);
+        MapRoomEntity room = AddRoom(new MapRoomMetadata(quartz, 4, 2), simulator);
         CrafterMetadata crafting = new(new NitroxTechType("MapRoomHUDChip"), 12.5f, 4f, 1, 0);
 
         await Send(simulator, room, crafting);
@@ -291,7 +316,7 @@ public sealed class EntityMetadataUpdateProcessorTest
     [TestMethod]
     public async Task FabricatorStateFromAPlayerWhoDoesNotSimulateTheRoomIsNotStoredAndNobodyIsTold()
     {
-        MapRoomEntity room = AddRoom(new MapRoomMetadata(quartz, 4, 2, 6), simulator);
+        MapRoomEntity room = AddRoom(new MapRoomMetadata(quartz, 4, 2), simulator);
 
         await Send(otherPlayer, room, new CrafterMetadata(new NitroxTechType("MapRoomHUDChip"), 12.5f, 4f, 1, 0));
 
@@ -319,7 +344,6 @@ public sealed class EntityMetadataUpdateProcessorTest
     private MapRoomEntity AddRoom(MapRoomMetadata scanState, Player simulatedBy)
     {
         MapRoomEntity room = new(new NitroxId(), new NitroxId(), new NitroxInt3(1, 0, 2)) { Metadata = scanState };
-        room.BeginScanResultGeneration(scanState.Generation);
         entityRegistry.AddEntity(room);
         Assert.IsTrue(simulationOwnershipData.TryAcquire(room.Id, simulatedBy, SimulationLockType.TRANSIENT));
         return room;

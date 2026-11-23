@@ -9,6 +9,12 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 
 namespace Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 
+/// <summary>
+///     A Scanner Room: its camera docks, the cameras that belong to it and what its fabricator is crafting. What it
+///     scans for and how far the scan has got is its metadata (<see cref="MapRoomMetadata" />). What the scan has found
+///     is no part of the entity. It is neither saved nor sent to a joining player with the room; the room's simulating
+///     player reports it and the server sends it to the players who subscribe.
+/// </summary>
 [Serializable, DataContract]
 public class MapRoomEntity : GlobalRootEntity
 {
@@ -35,21 +41,6 @@ public class MapRoomEntity : GlobalRootEntity
     public List<MapRoomCameraRecord> CameraRegistry { get; set; } = [];
 
     [DataMember(Order = 6)]
-    public long ScanResultGeneration { get; set; }
-
-    [DataMember(Order = 7)]
-    public long ScanResultRevision { get; set; }
-
-    [DataMember(Order = 8)]
-    public List<MapRoomScanResultRecord> ScanResults { get; set; } = [];
-
-    [DataMember(Order = 9)]
-    public long AvailableScanTypesRevision { get; set; }
-
-    [DataMember(Order = 10)]
-    public List<NitroxTechType> AvailableScanTypes { get; set; } = [];
-
-    [DataMember(Order = 11)]
     public CrafterMetadata? FabricatorMetadata { get; set; }
 
     [IgnoreConstructor]
@@ -71,7 +62,7 @@ public class MapRoomEntity : GlobalRootEntity
     /// Used for deserialization.
     /// <see cref="WorldEntity.SpawnedByServer"/> is set to true because this entity is meant to receive simulation locks
     /// </remarks>
-    public MapRoomEntity(NitroxInt3 cell, NitroxId? leftDockCameraId, NitroxId? rightDockCameraId, long dockingRevision, List<MapRoomCameraRecord> cameraRegistry, long scanResultGeneration, long scanResultRevision, List<MapRoomScanResultRecord> scanResults, long availableScanTypesRevision, List<NitroxTechType> availableScanTypes, CrafterMetadata? fabricatorMetadata, NitroxTransform transform, int level, string classId, bool spawnedByServer, NitroxId id, NitroxTechType techType, EntityMetadata metadata, NitroxId parentId, List<Entity> childEntities) :
+    public MapRoomEntity(NitroxInt3 cell, NitroxId? leftDockCameraId, NitroxId? rightDockCameraId, long dockingRevision, List<MapRoomCameraRecord> cameraRegistry, CrafterMetadata? fabricatorMetadata, NitroxTransform transform, int level, string classId, bool spawnedByServer, NitroxId id, NitroxTechType techType, EntityMetadata metadata, NitroxId parentId, List<Entity> childEntities) :
         base(transform, level, classId, true, id, techType, metadata, parentId, childEntities)
     {
         Cell = cell;
@@ -79,14 +70,7 @@ public class MapRoomEntity : GlobalRootEntity
         RightDockCameraId = rightDockCameraId;
         DockingRevision = dockingRevision;
         CameraRegistry = cameraRegistry ?? [];
-        ScanResultRevision = scanResultRevision;
-        ScanResults = scanResults ?? [];
-        AvailableScanTypesRevision = availableScanTypesRevision;
-        AvailableScanTypes = availableScanTypes ?? [];
         FabricatorMetadata = fabricatorMetadata;
-        ScanResultGeneration = scanResultGeneration == 0 && ScanResults.Count == 0 && metadata is MapRoomMetadata mapRoomMetadata
-            ? mapRoomMetadata.Generation
-            : scanResultGeneration;
         NormalizeCameraState();
     }
 
@@ -204,58 +188,8 @@ public class MapRoomEntity : GlobalRootEntity
         return clearedDock || removedRecord;
     }
 
-    public bool TryApplyScanResult(long generation, MapRoomScanResultRecord result)
-    {
-        if (generation != ScanResultGeneration || string.IsNullOrEmpty(result.ResourceId))
-        {
-            return false;
-        }
-        MapRoomScanResultRecord? current = ScanResults.Find(record => record.ResourceId == result.ResourceId);
-        if (current == null)
-        {
-            ScanResults.Add(result);
-        }
-        else
-        {
-            if (current.TechType.Equals(result.TechType) && current.Position.Equals(result.Position))
-            {
-                return false;
-            }
-            current.TechType = result.TechType;
-            current.Position = result.Position;
-        }
-        ScanResultRevision++;
-        return true;
-    }
-
-    public bool TryRemoveScanResult(long generation, string resourceId)
-    {
-        if (generation != ScanResultGeneration)
-        {
-            return false;
-        }
-        int removed = ScanResults.RemoveAll(record => record.ResourceId == resourceId);
-        if (removed == 0)
-        {
-            return false;
-        }
-        ScanResultRevision++;
-        return true;
-    }
-
-    public void BeginScanResultGeneration(long generation)
-    {
-        if (generation <= ScanResultGeneration)
-        {
-            return;
-        }
-        ScanResultGeneration = generation;
-        ScanResultRevision++;
-        ScanResults.Clear();
-    }
-
     public override string ToString()
     {
-        return $"[MapRoomEntity Id: {Id}, Cell: {Cell}, LeftDockCameraId: {LeftDockCameraId}, RightDockCameraId: {RightDockCameraId}, DockingRevision: {DockingRevision}, RegisteredCameras: {CameraRegistry.Count}, ScanResultGeneration: {ScanResultGeneration}, ScanResultRevision: {ScanResultRevision}, ScanResults: {ScanResults.Count}]";
+        return $"[MapRoomEntity Id: {Id}, Cell: {Cell}, LeftDockCameraId: {LeftDockCameraId}, RightDockCameraId: {RightDockCameraId}, DockingRevision: {DockingRevision}, RegisteredCameras: {CameraRegistry.Count}]";
     }
 }

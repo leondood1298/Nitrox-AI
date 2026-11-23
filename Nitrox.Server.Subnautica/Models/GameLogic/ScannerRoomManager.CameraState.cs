@@ -287,8 +287,8 @@ internal sealed partial class ScannerRoomManager
     ///     deconstructed and built again keeps its id, and the ids of its two default cameras are derived from it.
     ///     Clients keep the highest docking, light and component revision they saw per id for as long as they are
     ///     connected and discard anything lower, so a new room or camera record starting at zero would be ignored by
-    ///     every player who saw the old one. Scan state needs no floor: clients keep it on the room object, which is
-    ///     rebuilt too. Kept in memory only: after a restart every client reconnects with nothing remembered.
+    ///     every player who saw the old one. Scan state needs no floor: clients forget it when their copy of the
+    ///     room is destroyed. Kept in memory only: after a restart every client reconnects with nothing remembered.
     /// </summary>
     private void RememberFloor(MapRoomEntity removedRoom) =>
         dockingRevisionFloors[removedRoom.Id] = Math.Max(dockingRevisionFloors.GetValueOrDefault(removedRoom.Id), removedRoom.DockingRevision);

@@ -10,7 +10,7 @@ namespace Nitrox.Test.Server.Subnautica;
 /// <summary>
 ///     A client applies its own scan target or progress before the server has seen it. When the server refuses the
 ///     request, the client has to be told what the room's state really is: nobody else's update will, and with a stale
-///     generation or revision all its later requests would be refused as well.
+///     generation all its later requests would be refused as well.
 /// </summary>
 [TestClass]
 public sealed class MapRoomMetadataRefusalReplyTest
@@ -19,7 +19,7 @@ public sealed class MapRoomMetadataRefusalReplyTest
     private static readonly NitroxTechType shale = new("ShaleChunk");
 
     [TestMethod]
-    public async Task RequestWithAStaleRevisionIsAnsweredWithTheRoomsRealState()
+    public async Task RequestWithAStaleGenerationIsAnsweredWithTheRoomsRealState()
     {
         ScannerRoomScenarioFixture scenario = new();
         Assert.AreEqual(0, (await scenario.UpdateMetadataAsync(scenario.PlayerA, ScannerRoomScenarioFixture.RoomId, new MapRoomMetadata(limestone, 0))).Count,
@@ -33,7 +33,6 @@ public sealed class MapRoomMetadataRefusalReplyTest
         MapRoomMetadata canonical = (MapRoomMetadata)reply.NewValue;
         Assert.AreEqual(limestone, canonical.TypeToScan);
         Assert.AreEqual(1, canonical.Generation);
-        Assert.AreEqual(1, canonical.Revision);
         Assert.AreEqual(limestone, ((MapRoomMetadata)scenario.Room.Metadata).TypeToScan, "The refused request changed nothing.");
     }
 
@@ -46,7 +45,7 @@ public sealed class MapRoomMetadataRefusalReplyTest
         MapRoomMetadata canonical = (MapRoomMetadata)replies.OfType<EntityMetadataUpdate>().Single().NewValue;
 
         await scenario.UpdateMetadataAsync(scenario.PlayerB, ScannerRoomScenarioFixture.RoomId,
-            new MapRoomMetadata(shale, 0, canonical.Generation, canonical.Revision));
+            new MapRoomMetadata(shale, 0, canonical.Generation));
 
         Assert.AreEqual(shale, ((MapRoomMetadata)scenario.Room.Metadata).TypeToScan);
     }
@@ -59,7 +58,7 @@ public sealed class MapRoomMetadataRefusalReplyTest
         await scenario.UpdateMetadataAsync(scenario.PlayerA, ScannerRoomScenarioFixture.RoomId, new MapRoomMetadata(limestone, 0));
 
         IReadOnlyList<Packet> replies = await scenario.UpdateMetadataAsync(scenario.PlayerB, ScannerRoomScenarioFixture.RoomId,
-            new MapRoomMetadata(limestone, 7, 1, 1));
+            new MapRoomMetadata(limestone, 7, 1));
 
         MapRoomMetadata canonical = (MapRoomMetadata)replies.OfType<EntityMetadataUpdate>().Single().NewValue;
         Assert.AreEqual(0, canonical.NumNodesScanned);
@@ -72,11 +71,10 @@ public sealed class MapRoomMetadataRefusalReplyTest
         ScannerRoomScenarioFixture scenario = new();
 
         IReadOnlyList<Packet> replies = await scenario.UpdateMetadataAsync(scenario.PlayerB, ScannerRoomScenarioFixture.RoomId,
-            new MapRoomMetadata(shale, 0, 5, 9));
+            new MapRoomMetadata(shale, 0, 5));
 
         MapRoomMetadata canonical = (MapRoomMetadata)replies.OfType<EntityMetadataUpdate>().Single().NewValue;
         Assert.AreEqual(NitroxTechType.None, canonical.TypeToScan);
         Assert.AreEqual(0, canonical.Generation);
-        Assert.AreEqual(0, canonical.Revision);
     }
 }

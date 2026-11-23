@@ -1,111 +1,114 @@
+using System.Threading.Tasks;
+using Microsoft.Extensions.Logging.Abstractions;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.Unity;
+using Nitrox.Model.Packets;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Packets;
-using Microsoft.Extensions.Logging.Abstractions;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
+using Nitrox.Test.Server.Helper;
+using Nitrox.Test.Server.Subnautica;
+using static Nitrox.Server.Subnautica.Models.GameLogic.ScannerRoomManager;
 
 namespace Nitrox.Server.Subnautica.Models.GameLogic;
 
+/// <summary>
+///     What a room's scan has found: the rules for what the simulating player reports, and what the manager stores and
+///     sends.
+/// </summary>
 [TestClass]
 public sealed class ScannerRoomManagerScanResultsTest
 {
+    private const long GENERATION = 5;
     private static readonly NitroxTechType quartz = new("Quartz");
     private static readonly NitroxTechType titanium = new("Titanium");
+
+    private readonly MapRoomEntity room = new(new NitroxId(), new NitroxId(), new NitroxInt3()) { Metadata = new MapRoomMetadata(quartz, 0, GENERATION) };
+    private readonly RoomScan scan = new();
+
+    [TestInitialize]
+    public void Init() => scan.Begin(GENERATION);
 
     [TestMethod]
     public void AddUpdateRemoveMutateCanonicalResults()
     {
-        MapRoomEntity room = CreateRoom();
-
-        Assert.IsTrue(Apply(room, Change(room, "resource", 1f)));
-        Assert.IsTrue(Apply(room, Change(room, "resource", 2f)));
-        Assert.AreEqual(1, room.ScanResults.Count);
-        Assert.AreEqual(new NitroxVector3(2f, 0f, 0f), room.ScanResults[0].Position);
-        Assert.IsTrue(Apply(room, Change(room, "resource", 0f, removed: true)));
-        Assert.AreEqual(0, room.ScanResults.Count);
+        Assert.AreEqual(ScanResultOutcome.CHANGED, Apply(Found("resource", 1f)));
+        Assert.AreEqual(ScanResultOutcome.CHANGED, Apply(Found("resource", 2f)));
+        Assert.AreEqual(1, scan.Results.Count);
+        Assert.AreEqual(new NitroxVector3(2f, 0f, 0f), scan.Results[0].Position);
+        Assert.AreEqual(ScanResultOutcome.CHANGED, Apply(Gone("resource")));
+        Assert.AreEqual(0, scan.Results.Count);
     }
 
     [TestMethod]
-    public void RejectsStaleGenerationWrongTargetAndDuplicateReplay()
+    public void RejectsStaleGenerationAndWrongTargetAndIgnoresDuplicateReplay()
     {
-        MapRoomEntity room = CreateRoom();
-        MapRoomScanResultChanged accepted = Change(room, "resource", 1f);
-        Assert.IsTrue(Apply(room, accepted));
+        MapRoomScanResultReport accepted = Found("resource", 1f);
+        Assert.AreEqual(ScanResultOutcome.CHANGED, Apply(accepted));
 
-        Assert.IsFalse(Apply(room, accepted));
-        Assert.IsFalse(Apply(room, new MapRoomScanResultChanged(room.Id, 4, "stale", quartz, NitroxVector3.Zero)));
-        Assert.IsFalse(Apply(room, new MapRoomScanResultChanged(room.Id, 5, "wrong", titanium, NitroxVector3.Zero)));
-        Assert.AreEqual(1, room.ScanResults.Count);
+        Assert.AreEqual(ScanResultOutcome.UNCHANGED, Apply(accepted));
+        Assert.AreEqual(ScanResultOutcome.REFUSED, Apply(Found("stale", 0f, generation: 4)));
+        Assert.AreEqual(ScanResultOutcome.REFUSED, Apply(Report(new MapRoomScanResultRecord("wrong", titanium, NitroxVector3.Zero))));
+        Assert.AreEqual(1, scan.Results.Count);
     }
 
     [TestMethod]
-    public void RejectsEmptyIdServerResponseAndUnknownRemoval()
+    public void RejectsEmptyIdAndWrongRoomAndIgnoresUnknownRemoval()
     {
-        MapRoomEntity room = CreateRoom();
-
-        Assert.IsFalse(Apply(room, Change(room, "", 1f)));
-        Assert.IsFalse(Apply(room, new MapRoomScanResultChanged(new NitroxId(), 5, "wrong-room", quartz, NitroxVector3.Zero)));
-        Assert.IsFalse(Apply(room, new MapRoomScanResultChanged(room.Id, 5, "server", quartz, NitroxVector3.Zero, isServerResponse: true)));
-        Assert.IsFalse(Apply(room, Change(room, "missing", 0f, removed: true)));
+        Assert.AreEqual(ScanResultOutcome.REFUSED, Apply(Found("", 1f)));
+        Assert.AreEqual(ScanResultOutcome.REFUSED, Apply(new MapRoomScanResultReport(new NitroxId(), GENERATION,
+            new MapRoomScanResultRecord("wrong-room", quartz, NitroxVector3.Zero), false, false, NitroxVector3.Zero, 300f)));
+        Assert.AreEqual(ScanResultOutcome.UNCHANGED, Apply(Gone("missing")));
     }
 
     [TestMethod]
     public void RejectsOversizedIdsAndNonFinitePositions()
     {
-        MapRoomEntity room = CreateRoom();
-        string oversizedId = new('x', 257);
-
-        Assert.IsFalse(Apply(room, new MapRoomScanResultChanged(room.Id, 5, oversizedId, quartz, NitroxVector3.Zero)));
-        Assert.IsFalse(Apply(room, new MapRoomScanResultChanged(room.Id, 5, "nan", quartz, new NitroxVector3(float.NaN, 0f, 0f))));
-        Assert.IsFalse(Apply(room, new MapRoomScanResultChanged(room.Id, 5, "infinity", quartz, new NitroxVector3(0f, float.PositiveInfinity, 0f))));
-        Assert.IsTrue(Apply(room, new MapRoomScanResultChanged(room.Id, 5, "remove", quartz, NitroxVector3.Zero)));
-        Assert.IsTrue(Apply(room, new MapRoomScanResultChanged(room.Id, 5, "remove", quartz, new NitroxVector3(float.NaN, 0f, 0f), removed: true)));
-        Assert.AreEqual(0, room.ScanResults.Count);
+        Assert.AreEqual(ScanResultOutcome.REFUSED, Apply(Found(new string('x', 257), 0f)));
+        Assert.AreEqual(ScanResultOutcome.REFUSED, Apply(Report(new MapRoomScanResultRecord("nan", quartz, new NitroxVector3(float.NaN, 0f, 0f)))));
+        Assert.AreEqual(ScanResultOutcome.REFUSED, Apply(Report(new MapRoomScanResultRecord("infinity", quartz, new NitroxVector3(0f, float.PositiveInfinity, 0f)))));
+        Assert.AreEqual(ScanResultOutcome.CHANGED, Apply(Found("remove", 0f)));
+        Assert.AreEqual(ScanResultOutcome.CHANGED, Apply(Report(new MapRoomScanResultRecord("remove", quartz, new NitroxVector3(float.NaN, 0f, 0f)), removed: true)));
+        Assert.AreEqual(0, scan.Results.Count);
     }
 
     [TestMethod]
-    public void SnapshotAtomicallyReplacesResultsWithOneRevision()
+    public void FullReportReplacesResultsAndAReplayChangesNothing()
     {
-        MapRoomEntity room = CreateRoom();
-        room.TryApplyScanResult(5, new MapRoomScanResultRecord("old", quartz, NitroxVector3.Zero));
-        long revision = room.ScanResultRevision;
-        MapRoomScanResultSnapshot snapshot = new(room.Id, 5,
+        scan.TryApply(new MapRoomScanResultRecord("old", quartz, NitroxVector3.Zero));
+        MapRoomScanReport report = FullReport(
         [
             new MapRoomScanResultRecord("first", quartz, new NitroxVector3(1f, 0f, 0f)),
             new MapRoomScanResultRecord("second", quartz, new NitroxVector3(2f, 0f, 0f))
-        ], NitroxVector3.Zero, 300f);
+        ]);
 
-        Assert.IsTrue(ScannerRoomManager.TryApplyScanSnapshot(room, snapshot, [], NitroxVector3.Zero, out List<MapRoomScanResultRecord> accepted, out long acceptedRevision));
+        Assert.IsTrue(TryApplyScanReport(room, scan, report, [], NitroxVector3.Zero, out bool changed));
+        Assert.IsTrue(changed);
+        CollectionAssert.AreEqual(new[] { "first", "second" }, scan.Results.Select(result => result.ResourceId).ToArray());
 
-        CollectionAssert.AreEqual(new[] { "first", "second" }, accepted.Select(result => result.ResourceId).ToArray());
-        Assert.AreEqual(revision + 1, acceptedRevision);
-        Assert.AreEqual(2, room.ScanResults.Count);
-        Assert.IsTrue(ScannerRoomManager.TryApplyScanSnapshot(room, snapshot, [], NitroxVector3.Zero, out List<MapRoomScanResultRecord> replay, out long replayRevision));
-        Assert.AreEqual(acceptedRevision, replayRevision);
-        CollectionAssert.AreEqual(accepted.Select(result => result.ResourceId).ToArray(), replay.Select(result => result.ResourceId).ToArray());
+        Assert.IsTrue(TryApplyScanReport(room, scan, report, [], NitroxVector3.Zero, out bool changedAgain));
+        Assert.IsFalse(changedAgain);
+        CollectionAssert.AreEqual(new[] { "first", "second" }, scan.Results.Select(result => result.ResourceId).ToArray());
     }
 
     [TestMethod]
-    public void SnapshotRejectsDuplicatesWrongTargetAndStaleGenerationWithoutMutation()
+    public void FullReportRejectsDuplicatesWrongTargetAndStaleGenerationWithoutMutation()
     {
-        MapRoomEntity room = CreateRoom();
         List<MapRoomScanResultRecord> duplicate = [new("same", quartz, NitroxVector3.Zero), new("same", quartz, NitroxVector3.One)];
         List<MapRoomScanResultRecord> wrongTarget = [new("wrong", titanium, NitroxVector3.Zero)];
 
-        Assert.IsFalse(ScannerRoomManager.TryApplyScanSnapshot(room, Snapshot(room, duplicate), [], NitroxVector3.Zero, out _, out _));
-        Assert.IsFalse(ScannerRoomManager.TryApplyScanSnapshot(room, Snapshot(room, wrongTarget), [], NitroxVector3.Zero, out _, out _));
-        Assert.IsFalse(ScannerRoomManager.TryApplyScanSnapshot(room, Snapshot(room, [], generation: 4), [], NitroxVector3.Zero, out _, out _));
-        Assert.AreEqual(0, room.ScanResults.Count);
+        Assert.IsFalse(TryApplyScanReport(room, scan, FullReport(duplicate), [], NitroxVector3.Zero, out _));
+        Assert.IsFalse(TryApplyScanReport(room, scan, FullReport(wrongTarget), [], NitroxVector3.Zero, out _));
+        Assert.IsFalse(TryApplyScanReport(room, scan, FullReport([], generation: 4), [], NitroxVector3.Zero, out _));
+        Assert.AreEqual(0, scan.Results.Count);
     }
 
     [TestMethod]
-    public void SnapshotRejectsInvalidIdsAndPositionsWithoutPartialMutation()
+    public void FullReportRejectsInvalidIdsAndPositionsWithoutPartialMutation()
     {
-        MapRoomEntity room = CreateRoom();
         List<MapRoomScanResultRecord> invalid =
         [
             new("valid", quartz, NitroxVector3.Zero),
@@ -113,154 +116,122 @@ public sealed class ScannerRoomManagerScanResultsTest
             new("nan", quartz, new NitroxVector3(0f, 0f, float.NaN))
         ];
 
-        Assert.IsFalse(ScannerRoomManager.TryApplyScanSnapshot(room, Snapshot(room, invalid), [], NitroxVector3.Zero, out _, out _));
-        Assert.AreEqual(0, room.ScanResults.Count);
+        Assert.IsFalse(TryApplyScanReport(room, scan, FullReport(invalid), [], NitroxVector3.Zero, out _));
+        Assert.AreEqual(0, scan.Results.Count);
     }
 
     [TestMethod]
-    public void DeltaAdditionRequiresValidatedInstalledRangeQuery()
+    public void AdditionRequiresValidatedInstalledRangeQuery()
     {
-        MapRoomEntity room = CreateRoom();
-        MapRoomScanResultChanged valid = new(room.Id, 5, "valid", quartz, new NitroxVector3(100f, 0f, 0f),
-            scanOrigin: NitroxVector3.Zero, scanRange: 300f);
+        MapRoomScanResultReport valid = Found("valid", 100f);
 
-        Assert.IsFalse(ScannerRoomManager.TryApplyScanResult(room, valid, Registry(), null, out _));
-        Assert.IsTrue(Apply(room, valid));
-        Assert.IsFalse(Apply(room, new MapRoomScanResultChanged(room.Id, 5, "outside", quartz, new NitroxVector3(301f, 0f, 0f),
-            scanOrigin: NitroxVector3.Zero, scanRange: 300f)));
-        Assert.IsFalse(Apply(room, new MapRoomScanResultChanged(room.Id, 5, "remote", quartz, new NitroxVector3(600f, 0f, 0f),
-            scanOrigin: new NitroxVector3(513f, 0f, 0f), scanRange: 300f)));
-        Assert.IsFalse(Apply(room, new MapRoomScanResultChanged(room.Id, 5, "uninstalled-range", quartz, new NitroxVector3(340f, 0f, 0f),
-            scanOrigin: NitroxVector3.Zero, scanRange: 350f)));
+        Assert.AreEqual(ScanResultOutcome.REFUSED, ApplyScanResultReport(room, scan, valid, Registry(), null, out _));
+        Assert.AreEqual(ScanResultOutcome.CHANGED, Apply(valid));
+        Assert.AreEqual(ScanResultOutcome.REFUSED, Apply(Found("outside", 301f)));
+        Assert.AreEqual(ScanResultOutcome.REFUSED, Apply(Report(new MapRoomScanResultRecord("remote", quartz, new NitroxVector3(600f, 0f, 0f)),
+            scanOrigin: new NitroxVector3(513f, 0f, 0f))));
+        Assert.AreEqual(ScanResultOutcome.REFUSED, Apply(Found("uninstalled-range", 340f, scanRange: 350f)));
         room.ChildEntities.Add(RangeUpgrade());
-        Assert.IsTrue(Apply(room, new MapRoomScanResultChanged(room.Id, 5, "installed-range", quartz, new NitroxVector3(340f, 0f, 0f),
-            scanOrigin: NitroxVector3.Zero, scanRange: 350f)));
+        Assert.AreEqual(ScanResultOutcome.CHANGED, Apply(Found("installed-range", 340f, scanRange: 350f)));
     }
 
     [TestMethod]
-    public void DeltaAdditionCapRejectsNewIdButAllowsExistingUpdate()
+    public void AdditionCapRejectsNewIdButAllowsExistingUpdate()
     {
-        MapRoomEntity room = CreateRoom();
-        room.ScanResults = Enumerable.Range(0, ScannerRoomManager.MAX_SNAPSHOT_RESULTS)
-                                     .Select(index => new MapRoomScanResultRecord($"resource-{index}", quartz, NitroxVector3.Zero))
-                                     .ToList();
+        scan.TryReplace(Enumerable.Range(0, MAX_SNAPSHOT_RESULTS)
+                                  .Select(index => new MapRoomScanResultRecord($"resource-{index}", quartz, NitroxVector3.Zero))
+                                  .ToList());
 
-        Assert.IsFalse(Apply(room, new MapRoomScanResultChanged(room.Id, 5, "overflow", quartz, new NitroxVector3(1f, 0f, 0f),
-            scanOrigin: NitroxVector3.Zero, scanRange: 300f)));
-        Assert.IsTrue(Apply(room, new MapRoomScanResultChanged(room.Id, 5, "resource-0", quartz, new NitroxVector3(2f, 0f, 0f),
-            scanOrigin: NitroxVector3.Zero, scanRange: 300f)));
-        Assert.AreEqual(ScannerRoomManager.MAX_SNAPSHOT_RESULTS, room.ScanResults.Count);
-        Assert.AreEqual(new NitroxVector3(2f, 0f, 0f), room.ScanResults[0].Position);
+        Assert.AreEqual(ScanResultOutcome.REFUSED, Apply(Found("overflow", 1f)));
+        Assert.AreEqual(ScanResultOutcome.CHANGED, Apply(Found("resource-0", 2f)));
+        Assert.AreEqual(MAX_SNAPSHOT_RESULTS, scan.Results.Count);
+        Assert.AreEqual(new NitroxVector3(2f, 0f, 0f), scan.Results[0].Position);
     }
 
     [TestMethod]
-    public void ExactDeltaUsesAuthoritativeWorldPositionWhileOverrideUsesReportedPosition()
+    public void ExactAdditionUsesAuthoritativeWorldPositionWhileOverrideUsesReportedPosition()
     {
-        MapRoomEntity room = CreateRoom();
         NitroxId exactId = new();
         EntityRegistry registry = Registry(World(exactId, quartz, new NitroxVector3(25f, 0f, 0f)));
 
-        Assert.IsTrue(Apply(room, new MapRoomScanResultChanged(room.Id, 5, exactId.ToString(), quartz,
-            new NitroxVector3(900f, 0f, 0f), scanOrigin: NitroxVector3.Zero, scanRange: 300f), registry));
-        Assert.AreEqual(new NitroxVector3(25f, 0f, 0f), room.ScanResults.Single().Position);
+        Assert.AreEqual(ScanResultOutcome.CHANGED, ApplyScanResultReport(room, scan, Found(exactId.ToString(), 900f), registry, NitroxVector3.Zero,
+            out MapRoomScanResultRecord? accepted));
+        Assert.AreEqual(new NitroxVector3(25f, 0f, 0f), scan.Results.Single().Position);
+        Assert.AreEqual(new NitroxVector3(25f, 0f, 0f), accepted!.Position, "The subscribers are told the server's position, not the reported one.");
 
         NitroxId outsideId = new();
         registry.AddEntity(World(outsideId, quartz, new NitroxVector3(301f, 0f, 0f)));
-        Assert.IsFalse(Apply(room, new MapRoomScanResultChanged(room.Id, 5, outsideId.ToString(), quartz,
-            new NitroxVector3(10f, 0f, 0f), scanOrigin: NitroxVector3.Zero, scanRange: 300f), registry));
+        Assert.AreEqual(ScanResultOutcome.REFUSED, Apply(Found(outsideId.ToString(), 10f), registry));
 
-        Assert.IsTrue(Apply(room, new MapRoomScanResultChanged(room.Id, 5, "override", quartz,
-            new NitroxVector3(40f, 0f, 0f), scanOrigin: NitroxVector3.Zero, scanRange: 300f), registry));
-        Assert.AreEqual(new NitroxVector3(40f, 0f, 0f), room.ScanResults.Single(result => result.ResourceId == "override").Position);
+        Assert.AreEqual(ScanResultOutcome.CHANGED, Apply(Found("override", 40f), registry));
+        Assert.AreEqual(new NitroxVector3(40f, 0f, 0f), scan.Results.Single(result => result.ResourceId == "override").Position);
     }
 
     [TestMethod]
     public void TrackerUnloadCannotRemoveLiveExactResultButOwnerOnlyOverrideCanBeRemoved()
     {
-        MapRoomEntity room = CreateRoom();
         NitroxId exactId = new();
-        room.TryApplyScanResult(5, new MapRoomScanResultRecord(exactId.ToString(), quartz, new NitroxVector3(10f, 0f, 0f)));
+        scan.TryApply(new MapRoomScanResultRecord(exactId.ToString(), quartz, new NitroxVector3(10f, 0f, 0f)));
         EntityRegistry exactRegistry = Registry(World(exactId, quartz, new NitroxVector3(10f, 0f, 0f)));
-        MapRoomScanResultChanged unload = new(room.Id, 5, exactId.ToString(), quartz, new NitroxVector3(10f, 0f, 0f),
-            removed: true, scanOrigin: NitroxVector3.Zero, scanRange: 300f);
 
-        Assert.IsFalse(ScannerRoomManager.TryApplyScanResult(room, unload, exactRegistry, NitroxVector3.Zero, out bool correctionRequired));
-        Assert.IsTrue(correctionRequired);
-        Assert.AreEqual(1, room.ScanResults.Count);
-        MapRoomScanResultSnapshot correction = ScannerRoomManager.CreateCorrectionSnapshot(room, unload);
-        Assert.IsTrue(correction.IsServerResponse && correction.Granted);
-        Assert.AreEqual(room.ScanResultRevision, correction.Revision);
-        CollectionAssert.AreEqual(new[] { exactId.ToString() }, correction.Results.Select(result => result.ResourceId).ToArray());
+        Assert.AreEqual(ScanResultOutcome.CORRECTION_REQUIRED, Apply(Gone(exactId.ToString(), 10f), exactRegistry, NitroxVector3.Zero));
+        Assert.AreEqual(1, scan.Results.Count);
 
-        MapRoomScanResultChanged invalidQuery = new(room.Id, 5, exactId.ToString(), quartz, new NitroxVector3(10f, 0f, 0f),
-            removed: true, scanOrigin: new NitroxVector3(513f, 0f, 0f), scanRange: 300f);
-        Assert.IsFalse(ScannerRoomManager.TryApplyScanResult(room, invalidQuery, exactRegistry, NitroxVector3.Zero, out bool invalidCorrection));
-        Assert.IsFalse(invalidCorrection);
+        MapRoomScanResultReport invalidQuery = Report(new MapRoomScanResultRecord(exactId.ToString(), quartz, new NitroxVector3(10f, 0f, 0f)), removed: true,
+            scanOrigin: new NitroxVector3(513f, 0f, 0f));
+        Assert.AreEqual(ScanResultOutcome.REFUSED, Apply(invalidQuery, exactRegistry, NitroxVector3.Zero), "An invalid request is not answered with the full list.");
 
         EntityRegistry overrideRegistry = Registry(World(exactId, titanium, new NitroxVector3(10f, 0f, 0f)));
-        Assert.IsTrue(Apply(room, Change(room, exactId.ToString(), 10f, removed: true), overrideRegistry));
-        Assert.AreEqual(0, room.ScanResults.Count);
+        Assert.AreEqual(ScanResultOutcome.CHANGED, Apply(Gone(exactId.ToString(), 10f), overrideRegistry));
+        Assert.AreEqual(0, scan.Results.Count);
     }
 
     [TestMethod]
     public void OrdinaryExactRemovalOutsideValidatedRangeRemovesCanonicalResult()
     {
-        MapRoomEntity room = CreateRoom();
         NitroxId exactId = new();
-        room.TryApplyScanResult(5, new MapRoomScanResultRecord(exactId.ToString(), quartz, new NitroxVector3(10f, 0f, 0f)));
+        scan.TryApply(new MapRoomScanResultRecord(exactId.ToString(), quartz, new NitroxVector3(10f, 0f, 0f)));
         EntityRegistry registry = Registry(World(exactId, quartz, new NitroxVector3(301f, 0f, 0f)));
-        MapRoomScanResultChanged removal = new(room.Id, 5, exactId.ToString(), quartz, new NitroxVector3(10f, 0f, 0f),
-            removed: true, scanOrigin: NitroxVector3.Zero, scanRange: 300f);
 
-        Assert.IsTrue(ScannerRoomManager.TryApplyScanResult(room, removal, registry, NitroxVector3.Zero, out bool correctionRequired));
-        Assert.IsFalse(correctionRequired);
-        Assert.AreEqual(0, room.ScanResults.Count);
+        Assert.AreEqual(ScanResultOutcome.CHANGED, Apply(Gone(exactId.ToString(), 10f), registry, NitroxVector3.Zero));
+        Assert.AreEqual(0, scan.Results.Count);
     }
 
     [TestMethod]
     public void RangeExitUsesAuthoritativeExactPositionAndRejectsForgedQuery()
     {
-        MapRoomEntity room = CreateRoom();
         NitroxId outsideId = new();
-        room.TryApplyScanResult(5, new MapRoomScanResultRecord(outsideId.ToString(), quartz, new NitroxVector3(250f, 0f, 0f)));
+        scan.TryApply(new MapRoomScanResultRecord(outsideId.ToString(), quartz, new NitroxVector3(250f, 0f, 0f)));
         EntityRegistry outsideRegistry = Registry(World(outsideId, quartz, new NitroxVector3(301f, 0f, 0f)));
 
-        Assert.IsTrue(Apply(room, RangeExit(room, outsideId.ToString(), new NitroxVector3(1f, 0f, 0f)), outsideRegistry, NitroxVector3.Zero));
-        Assert.AreEqual(0, room.ScanResults.Count);
+        Assert.AreEqual(ScanResultOutcome.CHANGED, Apply(RangeExit(outsideId.ToString(), new NitroxVector3(1f, 0f, 0f)), outsideRegistry, NitroxVector3.Zero));
+        Assert.AreEqual(0, scan.Results.Count);
 
         NitroxId insideId = new();
-        room.TryApplyScanResult(5, new MapRoomScanResultRecord(insideId.ToString(), quartz, new NitroxVector3(100f, 0f, 0f)));
+        scan.TryApply(new MapRoomScanResultRecord(insideId.ToString(), quartz, new NitroxVector3(100f, 0f, 0f)));
         EntityRegistry insideRegistry = Registry(World(insideId, quartz, new NitroxVector3(100f, 0f, 0f)));
-        MapRoomScanResultChanged rejectedInside = RangeExit(room, insideId.ToString(), new NitroxVector3(301f, 0f, 0f));
-        Assert.IsFalse(ScannerRoomManager.TryApplyScanResult(room, rejectedInside, insideRegistry, NitroxVector3.Zero,
-            out bool correctionRequired));
-        Assert.IsTrue(correctionRequired);
-        MapRoomScanResultChanged invalidQuery = RangeExit(room, insideId.ToString(), new NitroxVector3(301f, 0f, 0f),
-            scanOrigin: new NitroxVector3(513f, 0f, 0f));
-        Assert.IsFalse(ScannerRoomManager.TryApplyScanResult(room, invalidQuery, insideRegistry, NitroxVector3.Zero,
-            out bool invalidCorrection));
-        Assert.IsFalse(invalidCorrection);
-        Assert.IsFalse(Apply(room, RangeExit(room, insideId.ToString(), new NitroxVector3(301f, 0f, 0f)), insideRegistry));
-        Assert.AreEqual(1, room.ScanResults.Count);
+        Assert.AreEqual(ScanResultOutcome.CORRECTION_REQUIRED, Apply(RangeExit(insideId.ToString(), new NitroxVector3(301f, 0f, 0f)), insideRegistry, NitroxVector3.Zero));
+        Assert.AreEqual(ScanResultOutcome.REFUSED, Apply(RangeExit(insideId.ToString(), new NitroxVector3(301f, 0f, 0f), scanOrigin: new NitroxVector3(513f, 0f, 0f)),
+            insideRegistry, NitroxVector3.Zero));
+        Assert.AreEqual(ScanResultOutcome.REFUSED, Apply(RangeExit(insideId.ToString(), new NitroxVector3(301f, 0f, 0f)), insideRegistry));
+        Assert.AreEqual(1, scan.Results.Count);
     }
 
     [TestMethod]
     public void OwnerOnlyRangeExitUsesReportedPositionAndInstalledRange()
     {
-        MapRoomEntity room = CreateRoom();
         string overrideId = "override-result";
-        room.TryApplyScanResult(5, new MapRoomScanResultRecord(overrideId, quartz, new NitroxVector3(250f, 0f, 0f)));
+        scan.TryApply(new MapRoomScanResultRecord(overrideId, quartz, new NitroxVector3(250f, 0f, 0f)));
 
-        Assert.IsFalse(Apply(room, RangeExit(room, overrideId, new NitroxVector3(100f, 0f, 0f)), scanAnchor: NitroxVector3.Zero));
-        Assert.IsFalse(Apply(room, RangeExit(room, overrideId, new NitroxVector3(351f, 0f, 0f), scanRange: 350f), scanAnchor: NitroxVector3.Zero));
-        Assert.IsTrue(Apply(room, RangeExit(room, overrideId, new NitroxVector3(301f, 0f, 0f)), scanAnchor: NitroxVector3.Zero));
-        Assert.AreEqual(0, room.ScanResults.Count);
+        Assert.AreEqual(ScanResultOutcome.REFUSED, Apply(RangeExit(overrideId, new NitroxVector3(100f, 0f, 0f)), scanAnchor: NitroxVector3.Zero));
+        Assert.AreEqual(ScanResultOutcome.REFUSED, Apply(RangeExit(overrideId, new NitroxVector3(351f, 0f, 0f), scanRange: 350f), scanAnchor: NitroxVector3.Zero));
+        Assert.AreEqual(ScanResultOutcome.CHANGED, Apply(RangeExit(overrideId, new NitroxVector3(301f, 0f, 0f)), scanAnchor: NitroxVector3.Zero));
+        Assert.AreEqual(0, scan.Results.Count);
     }
 
     [TestMethod]
-    public void SnapshotMergesExactWorldTypesAndKeepsOwnerOnlyResults()
+    public void FullReportMergesExactWorldTypesAndKeepsOwnerOnlyResults()
     {
-        MapRoomEntity room = CreateRoom();
         NitroxId exactId = new("00000000-0000-0000-0000-000000000001");
         List<MapRoomScanResultRecord> ownerResults = [new("override-result", quartz, new NitroxVector3(20f, 0f, 0f))];
         List<WorldEntity> worldEntities =
@@ -270,114 +241,229 @@ public sealed class ScannerRoomManagerScanResultsTest
             World(new NitroxId(), quartz, new NitroxVector3(301f, 0f, 0f))
         ];
 
-        Assert.IsTrue(ScannerRoomManager.TryApplyScanSnapshot(room, Snapshot(room, ownerResults), worldEntities, NitroxVector3.Zero,
-            out List<MapRoomScanResultRecord> accepted, out _));
+        Assert.IsTrue(TryApplyScanReport(room, scan, FullReport(ownerResults), worldEntities, NitroxVector3.Zero, out _));
 
-        CollectionAssert.AreEqual(new[] { exactId.ToString(), "override-result" }, accepted.Select(result => result.ResourceId).ToArray());
+        CollectionAssert.AreEqual(new[] { exactId.ToString(), "override-result" }, scan.Results.Select(result => result.ResourceId).ToArray());
     }
 
     [TestMethod]
-    public void StopSnapshotNeverSupplementsWorldEntitiesWithNoneTechType()
+    public void StoppedScanNeverSupplementsWorldEntitiesWithNoneTechType()
     {
-        MapRoomEntity room = CreateRoom();
-        room.Metadata = new MapRoomMetadata(NitroxTechType.None, 0, 5, 9);
+        room.Metadata = new MapRoomMetadata(NitroxTechType.None, 0, GENERATION);
         List<WorldEntity> worldEntities = [World(new NitroxId(), NitroxTechType.None, new NitroxVector3(10f, 0f, 0f))];
 
-        Assert.IsTrue(ScannerRoomManager.TryApplyScanSnapshot(room, Snapshot(room, []), worldEntities, NitroxVector3.Zero,
-            out List<MapRoomScanResultRecord> accepted, out _));
-        Assert.IsFalse(ScannerRoomManager.TryApplyScanSnapshot(room,
-            Snapshot(room, [new MapRoomScanResultRecord("forged-none", NitroxTechType.None, new NitroxVector3(1f, 0f, 0f))]),
-            worldEntities, NitroxVector3.Zero, out _, out _));
-        Assert.IsFalse(Apply(room, new MapRoomScanResultChanged(room.Id, 5, "delta-none", NitroxTechType.None,
-            new NitroxVector3(1f, 0f, 0f), scanOrigin: NitroxVector3.Zero, scanRange: 300f)));
+        Assert.IsTrue(TryApplyScanReport(room, scan, FullReport([]), worldEntities, NitroxVector3.Zero, out _));
+        Assert.IsFalse(TryApplyScanReport(room, scan,
+            FullReport([new MapRoomScanResultRecord("forged-none", NitroxTechType.None, new NitroxVector3(1f, 0f, 0f))]), worldEntities, NitroxVector3.Zero, out _));
+        Assert.AreEqual(ScanResultOutcome.REFUSED, Apply(Report(new MapRoomScanResultRecord("delta-none", NitroxTechType.None, new NitroxVector3(1f, 0f, 0f)))));
 
-        Assert.AreEqual(0, accepted.Count);
-        Assert.AreEqual(0, room.ScanResults.Count);
+        Assert.AreEqual(0, scan.Results.Count);
     }
 
     [TestMethod]
-    public void SnapshotRejectsInvalidQueryAndOwnerResultOutsideRange()
+    public void FullReportRejectsInvalidQueryAndOwnerResultOutsideRange()
     {
-        MapRoomEntity room = CreateRoom();
-
-        Assert.IsFalse(ScannerRoomManager.TryApplyScanSnapshot(room,
-            new MapRoomScanResultSnapshot(room.Id, 5, [], new NitroxVector3(float.NaN, 0f, 0f), 300f), [], NitroxVector3.Zero, out _, out _));
-        Assert.IsFalse(ScannerRoomManager.TryApplyScanSnapshot(room,
-            new MapRoomScanResultSnapshot(room.Id, 5, [], NitroxVector3.Zero, 299f), [], NitroxVector3.Zero, out _, out _));
-        Assert.IsFalse(ScannerRoomManager.TryApplyScanSnapshot(room,
-            new MapRoomScanResultSnapshot(room.Id, 5, [], new NitroxVector3(513f, 0f, 0f), 300f), [], NitroxVector3.Zero, out _, out _));
-        Assert.IsFalse(ScannerRoomManager.TryApplyScanSnapshot(room,
-            new MapRoomScanResultSnapshot(room.Id, 5, [], NitroxVector3.Zero, 350f), [], NitroxVector3.Zero, out _, out _));
+        Assert.IsFalse(TryApplyScanReport(room, scan, new MapRoomScanReport(room.Id, GENERATION, new NitroxVector3(float.NaN, 0f, 0f), 300f, []), [], NitroxVector3.Zero, out _));
+        Assert.IsFalse(TryApplyScanReport(room, scan, new MapRoomScanReport(room.Id, GENERATION, NitroxVector3.Zero, 299f, []), [], NitroxVector3.Zero, out _));
+        Assert.IsFalse(TryApplyScanReport(room, scan, new MapRoomScanReport(room.Id, GENERATION, new NitroxVector3(513f, 0f, 0f), 300f, []), [], NitroxVector3.Zero, out _));
+        Assert.IsFalse(TryApplyScanReport(room, scan, new MapRoomScanReport(room.Id, GENERATION, NitroxVector3.Zero, 350f, []), [], NitroxVector3.Zero, out _));
         room.ChildEntities.Add(RangeUpgrade());
-        Assert.IsTrue(ScannerRoomManager.TryApplyScanSnapshot(room,
-            new MapRoomScanResultSnapshot(room.Id, 5, [], NitroxVector3.Zero, 350.005f), [], NitroxVector3.Zero, out _, out _));
-        Assert.IsFalse(ScannerRoomManager.TryApplyScanSnapshot(room,
-            new MapRoomScanResultSnapshot(room.Id, 5, [], NitroxVector3.Zero, 400f), [], NitroxVector3.Zero, out _, out _));
+        Assert.IsTrue(TryApplyScanReport(room, scan, new MapRoomScanReport(room.Id, GENERATION, NitroxVector3.Zero, 350.005f, []), [], NitroxVector3.Zero, out _));
+        Assert.IsFalse(TryApplyScanReport(room, scan, new MapRoomScanReport(room.Id, GENERATION, NitroxVector3.Zero, 400f, []), [], NitroxVector3.Zero, out _));
         room.ChildEntities.AddRange([RangeUpgrade(), RangeUpgrade(), RangeUpgrade()]);
-        Assert.IsTrue(ScannerRoomManager.TryApplyScanSnapshot(room,
-            new MapRoomScanResultSnapshot(room.Id, 5, [], NitroxVector3.Zero, 500f), [], NitroxVector3.Zero, out _, out _));
-        Assert.IsFalse(ScannerRoomManager.TryApplyScanSnapshot(room,
-            Snapshot(room, [new MapRoomScanResultRecord("outside", quartz, new NitroxVector3(301f, 0f, 0f))]), [], NitroxVector3.Zero, out _, out _));
+        Assert.IsTrue(TryApplyScanReport(room, scan, new MapRoomScanReport(room.Id, GENERATION, NitroxVector3.Zero, 500f, []), [], NitroxVector3.Zero, out _));
+        Assert.IsFalse(TryApplyScanReport(room, scan,
+            FullReport([new MapRoomScanResultRecord("outside", quartz, new NitroxVector3(301f, 0f, 0f))]), [], NitroxVector3.Zero, out _));
     }
 
     [TestMethod]
-    public void EntityRemovalInvalidatesMatchingResultsAcrossRooms()
+    public void NewTargetStartsWithNoResults()
     {
-        NitroxId resourceId = new();
-        MapRoomEntity first = CreateRoom();
-        MapRoomEntity second = CreateRoom();
-        MapRoomEntity unaffected = CreateRoom();
-        first.TryApplyScanResult(5, new MapRoomScanResultRecord(resourceId.ToString(), quartz, NitroxVector3.Zero));
-        second.TryApplyScanResult(5, new MapRoomScanResultRecord(resourceId.ToString(), quartz, NitroxVector3.One));
-        unaffected.TryApplyScanResult(5, new MapRoomScanResultRecord("other", quartz, NitroxVector3.Zero));
-        long firstRevision = first.ScanResultRevision;
+        scan.TryApply(new MapRoomScanResultRecord("found", quartz, NitroxVector3.Zero));
 
-        List<MapRoomScanResultChanged> removals = ScannerRoomManager.InvalidateScanResult([first, second, unaffected], resourceId);
+        scan.Begin(GENERATION);
+        Assert.AreEqual(1, scan.Results.Count, "The same target keeps what was found for it.");
+        scan.Begin(GENERATION + 1);
 
-        Assert.AreEqual(2, removals.Count);
-        Assert.AreEqual(firstRevision + 1, first.ScanResultRevision);
-        Assert.IsTrue(removals.All(packet => packet.Removed && !packet.IsRangeExit && packet.IsServerResponse && packet.Granted &&
-            packet.ResourceId == resourceId.ToString()));
-        Assert.AreEqual(0, first.ScanResults.Count);
-        Assert.AreEqual(0, second.ScanResults.Count);
-        Assert.AreEqual(1, unaffected.ScanResults.Count);
+        Assert.AreEqual(0, scan.Results.Count);
+        Assert.AreEqual(GENERATION + 1, scan.Generation);
     }
 
     [TestMethod]
-    public void UnknownEntityRemovalDoesNotMutateResultsOrRevisions()
+    public async Task FullReportIsAnsweredWithTheMergedListAndPassedOnToSubscribers()
     {
-        MapRoomEntity room = CreateRoom();
-        room.TryApplyScanResult(5, new MapRoomScanResultRecord("known", quartz, NitroxVector3.Zero));
-        long revision = room.ScanResultRevision;
+        ConnectedPlayers players = new();
+        ScannerRoomScenarioFixture scenario = new(playerManager: players.PlayerManager);
+        Player simulator = players.Connect("Simulator");
+        Player watcher = players.Connect("Watcher");
+        Player stranger = players.Connect("Stranger");
+        NitroxId known = new("00000000-0000-0000-0000-000000000301");
+        scenario.StartScan(simulator, scenario.Room, quartz);
+        scenario.EntityRegistry.AddEntity(World(known, quartz, new NitroxVector3(10f, 0f, 0f)));
+        await scenario.Manager.SetSubscriptionAsync(watcher, scenario.Room.Id, true);
 
-        List<MapRoomScanResultChanged> removals = ScannerRoomManager.InvalidateScanResult([room], new NitroxId());
+        IReadOnlyList<Packet> sent = await scenario.ReportScanAsync(simulator, scenario.Room, new MapRoomScanResultRecord("only-the-simulator-has-it", quartz, new NitroxVector3(20f, 0f, 0f)));
 
-        Assert.AreEqual(0, removals.Count);
-        Assert.AreEqual(revision, room.ScanResultRevision);
-        Assert.AreEqual(1, room.ScanResults.Count);
+        Assert.AreEqual(2, sent.Count);
+        MapRoomScanSnapshot answer = scenario.SentTo<MapRoomScanSnapshot>(simulator).Single();
+        Assert.AreEqual(GENERATION, answer.Generation);
+        CollectionAssert.AreEqual(new[] { known.ToString(), "only-the-simulator-has-it" }, answer.Results.Select(result => result.ResourceId).ToArray(),
+            "The simulating player is sent what the server added, which its own game has not loaded.");
+        Assert.AreSame(answer, scenario.SentTo<MapRoomScanSnapshot>(watcher).Last());
+        Assert.AreEqual(0, scenario.SentTo<MapRoomScanSnapshot>(stranger).Count, "A player who did not subscribe is sent nothing.");
+        Assert.AreEqual(2, scenario.Manager.GetSnapshot(scenario.Room.Id)!.ScanResultCount);
     }
 
-    private static MapRoomEntity CreateRoom()
+    [TestMethod]
+    public async Task ReportThatChangesNothingIsOnlyAnsweredToItsSender()
     {
-        MapRoomEntity room = new(new NitroxId(), new NitroxId(), new NitroxInt3())
-        {
-            Metadata = new MapRoomMetadata(quartz, 0, 5, 9)
-        };
-        room.BeginScanResultGeneration(5);
-        return room;
+        ConnectedPlayers players = new();
+        ScannerRoomScenarioFixture scenario = new(playerManager: players.PlayerManager);
+        Player simulator = players.Connect("Simulator");
+        Player watcher = players.Connect("Watcher");
+        MapRoomScanResultRecord found = new("found", quartz, new NitroxVector3(20f, 0f, 0f));
+        scenario.StartScan(simulator, scenario.Room, quartz);
+        await scenario.ReportScanAsync(simulator, scenario.Room, found);
+        await scenario.Manager.SetSubscriptionAsync(watcher, scenario.Room.Id, true);
+        int watcherHad = scenario.SentTo<MapRoomScanSnapshot>(watcher).Count;
+
+        IReadOnlyList<Packet> sent = await scenario.ReportScanAsync(simulator, scenario.Room, found);
+
+        Assert.AreEqual(1, sent.Count, "The simulating player reports again whenever its own list was rebuilt.");
+        Assert.AreEqual(2, scenario.SentTo<MapRoomScanSnapshot>(simulator).Count);
+        Assert.AreEqual(watcherHad, scenario.SentTo<MapRoomScanSnapshot>(watcher).Count);
     }
 
-    private static MapRoomScanResultChanged Change(MapRoomEntity room, string resourceId, float x, bool removed = false) =>
-        new(room.Id, 5, resourceId, quartz, new NitroxVector3(x, 0f, 0f), removed);
+    [TestMethod]
+    public async Task ReportIsDroppedUnlessItComesFromTheSimulatingPlayerForTheCurrentTarget()
+    {
+        ScannerRoomScenarioFixture scenario = new();
+        MapRoomScanResultRecord found = new("found", quartz, new NitroxVector3(20f, 0f, 0f));
+        scenario.StartScan(scenario.PlayerA, scenario.Room, quartz);
 
-    private static MapRoomScanResultChanged RangeExit(MapRoomEntity room, string resourceId, NitroxVector3 position,
-        NitroxVector3? scanOrigin = null, float scanRange = 300f) =>
-        new(room.Id, 5, resourceId, quartz, position, removed: true, isRangeExit: true,
-            scanOrigin: scanOrigin ?? NitroxVector3.Zero, scanRange: scanRange);
+        IReadOnlyList<Packet> fromAnotherPlayer = await scenario.ReportScanAsync(scenario.PlayerB, scenario.Room, found);
+        IReadOnlyList<Packet> forAnOlderTarget = await scenario.SentDuringAsync(() => scenario.Manager.ReportScanAsync(scenario.PlayerA,
+            new MapRoomScanReport(scenario.Room.Id, GENERATION - 1, NitroxVector3.Zero, 300f, [found])));
+        IReadOnlyList<Packet> resultFromAnotherPlayer = await scenario.SentDuringAsync(() => scenario.Manager.ReportScanResultAsync(scenario.PlayerB,
+            new MapRoomScanResultReport(scenario.Room.Id, GENERATION, found, false, false, NitroxVector3.Zero, 300f)));
 
-    private static bool Apply(MapRoomEntity room, MapRoomScanResultChanged change, EntityRegistry? registry = null,
-        NitroxVector3? scanAnchor = null) =>
-        ScannerRoomManager.TryApplyScanResult(room, change, registry ?? Registry(), scanAnchor ?? (!change.Removed ? NitroxVector3.Zero : null), out _);
+        Assert.AreEqual(0, fromAnotherPlayer.Count + forAnOlderTarget.Count + resultFromAnotherPlayer.Count, "A refused report is not answered.");
+        Assert.AreEqual(0, scenario.Manager.GetSnapshot(scenario.Room.Id)!.ScanResultCount);
+        CollectionAssert.AreEqual(new[] { "non_owner", "stale_or_invalid_gen_4_room_gen_5", "result_non_owner" },
+            scenario.Diagnostics.GetHistory().Where(entry => entry.EventName == "scan_snapshot").Select(entry => entry.Reason).ToArray());
+    }
+
+    [TestMethod]
+    public async Task AcceptedResultGoesToTheSimulatingPlayerAndTheOtherSubscribers()
+    {
+        ConnectedPlayers players = new();
+        ScannerRoomScenarioFixture scenario = new(playerManager: players.PlayerManager);
+        Player simulator = players.Connect("Simulator");
+        Player watcher = players.Connect("Watcher");
+        scenario.StartScan(simulator, scenario.Room, quartz);
+        await scenario.Manager.SetSubscriptionAsync(simulator, scenario.Room.Id, true);
+        await scenario.Manager.SetSubscriptionAsync(watcher, scenario.Room.Id, true);
+
+        await scenario.Manager.ReportScanResultAsync(simulator, new MapRoomScanResultReport(scenario.Room.Id, GENERATION,
+            new MapRoomScanResultRecord("found", quartz, new NitroxVector3(20f, 0f, 0f)), false, false, NitroxVector3.Zero, 300f));
+
+        MapRoomScanResultChanged toSimulator = scenario.SentTo<MapRoomScanResultChanged>(simulator).Single();
+        Assert.AreEqual("found", toSimulator.Result.ResourceId);
+        Assert.IsFalse(toSimulator.Removed);
+        Assert.AreEqual(GENERATION, toSimulator.Generation);
+        Assert.AreSame(toSimulator, scenario.SentTo<MapRoomScanResultChanged>(watcher).Single());
+    }
+
+    [TestMethod]
+    public async Task UnloadOfAResourceTheServerStillHasInRangeIsAnsweredWithTheFullList()
+    {
+        ScannerRoomScenarioFixture scenario = new();
+        NitroxId resourceId = new("00000000-0000-0000-0000-000000000301");
+        scenario.StartScan(scenario.PlayerA, scenario.Room, quartz);
+        scenario.EntityRegistry.AddEntity(World(resourceId, quartz, new NitroxVector3(10f, 0f, 0f)));
+        await scenario.ReportScanAsync(scenario.PlayerA, scenario.Room);
+
+        IReadOnlyList<Packet> replies = await scenario.SentDuringAsync(() => scenario.Manager.ReportScanResultAsync(scenario.PlayerA,
+            new MapRoomScanResultReport(scenario.Room.Id, GENERATION, new MapRoomScanResultRecord(resourceId.ToString(), quartz, new NitroxVector3(10f, 0f, 0f)), true, false,
+                NitroxVector3.Zero, 300f)));
+
+        MapRoomScanSnapshot correction = (MapRoomScanSnapshot)replies.Single();
+        Assert.AreEqual(GENERATION, correction.Generation);
+        CollectionAssert.AreEqual(new[] { resourceId.ToString() }, correction.Results.Select(result => result.ResourceId).ToArray());
+        Assert.AreEqual(1, scenario.Manager.GetSnapshot(scenario.Room.Id)!.ScanResultCount);
+    }
+
+    [TestMethod]
+    public async Task RemovalOfAResourceTheServerHasOutOfRangeIsPassedOn()
+    {
+        ScannerRoomScenarioFixture scenario = new();
+        MapRoomScanResultRecord reported = new("00000000-0000-0000-0000-000000000302", quartz, new NitroxVector3(10f, 0f, 0f));
+        scenario.StartScan(scenario.PlayerA, scenario.Room, quartz);
+        await scenario.Manager.ReportScanResultAsync(scenario.PlayerA, new MapRoomScanResultReport(scenario.Room.Id, GENERATION, reported, false, false, NitroxVector3.Zero, 300f));
+        scenario.EntityRegistry.AddEntity(World(new NitroxId(reported.ResourceId), quartz, new NitroxVector3(301f, 0f, 0f)));
+
+        IReadOnlyList<Packet> replies = await scenario.SentDuringAsync(() => scenario.Manager.ReportScanResultAsync(scenario.PlayerA,
+            new MapRoomScanResultReport(scenario.Room.Id, GENERATION, reported, true, false, NitroxVector3.Zero, 300f)));
+
+        MapRoomScanResultChanged accepted = (MapRoomScanResultChanged)replies.Single();
+        Assert.IsTrue(accepted.Removed);
+        Assert.AreEqual(reported.ResourceId, accepted.Result.ResourceId);
+        Assert.AreEqual(0, scenario.Manager.GetSnapshot(scenario.Room.Id)!.ScanResultCount);
+    }
+
+    [TestMethod]
+    public async Task RangeExitOfAResourceTheServerHasInRangeIsAnsweredWithTheFullList()
+    {
+        ScannerRoomScenarioFixture scenario = new();
+        NitroxId resourceId = new("00000000-0000-0000-0000-000000000303");
+        scenario.StartScan(scenario.PlayerA, scenario.Room, quartz);
+        scenario.EntityRegistry.AddEntity(World(resourceId, quartz, new NitroxVector3(100f, 0f, 0f)));
+        await scenario.ReportScanAsync(scenario.PlayerA, scenario.Room);
+
+        IReadOnlyList<Packet> replies = await scenario.SentDuringAsync(() => scenario.Manager.ReportScanResultAsync(scenario.PlayerA,
+            new MapRoomScanResultReport(scenario.Room.Id, GENERATION, new MapRoomScanResultRecord(resourceId.ToString(), quartz, new NitroxVector3(301f, 0f, 0f)), true, true,
+                NitroxVector3.Zero, 300f)));
+
+        MapRoomScanSnapshot correction = (MapRoomScanSnapshot)replies.Single();
+        CollectionAssert.AreEqual(new[] { resourceId.ToString() }, correction.Results.Select(result => result.ResourceId).ToArray());
+    }
+
+    [TestMethod]
+    public async Task EntityRemovalTakesTheResultOutOfEveryRoomThatFoundIt()
+    {
+        ScannerRoomScenarioFixture scenario = new();
+        MapRoomEntity second = scenario.AddRoom(new MapRoomEntity(new NitroxId("00000000-0000-0000-0000-000000000110"), ScannerRoomScenarioFixture.RoomParentId, new NitroxInt3(5, -2, 9)));
+        NitroxId resourceId = new("00000000-0000-0000-0000-000000000304");
+        scenario.EntityRegistry.AddEntity(World(resourceId, quartz, new NitroxVector3(10f, 0f, 0f)));
+        scenario.StartScan(scenario.PlayerA, scenario.Room, quartz);
+        scenario.StartScan(scenario.PlayerA, second, quartz);
+        await scenario.ReportScanAsync(scenario.PlayerA, scenario.Room, new MapRoomScanResultRecord("other", quartz, NitroxVector3.Zero));
+        await scenario.ReportScanAsync(scenario.PlayerA, second);
+        Assert.AreEqual(2, scenario.Manager.GetSnapshot(scenario.Room.Id)!.ScanResultCount);
+
+        await scenario.Manager.EntityRemovedAsync(scenario.PlayerA, new NitroxId());
+        Assert.AreEqual(2, scenario.Manager.GetSnapshot(scenario.Room.Id)!.ScanResultCount, "An entity no room has found changes nothing.");
+        await scenario.Manager.EntityRemovedAsync(scenario.PlayerA, resourceId);
+
+        Assert.AreEqual(1, scenario.Manager.GetSnapshot(scenario.Room.Id)!.ScanResultCount);
+        Assert.AreEqual(0, scenario.Manager.GetSnapshot(second.Id)!.ScanResultCount);
+    }
+
+    private ScanResultOutcome Apply(MapRoomScanResultReport report, EntityRegistry? registry = null, NitroxVector3? scanAnchor = null) =>
+        ApplyScanResultReport(room, scan, report, registry ?? Registry(), scanAnchor ?? (!report.Removed ? NitroxVector3.Zero : null), out _);
+
+    private MapRoomScanResultReport Found(string resourceId, float x, long generation = GENERATION, float scanRange = 300f) =>
+        new(room.Id, generation, new MapRoomScanResultRecord(resourceId, quartz, new NitroxVector3(x, 0f, 0f)), false, false, NitroxVector3.Zero, scanRange);
+
+    private MapRoomScanResultReport Gone(string resourceId, float x = 0f) => Report(new MapRoomScanResultRecord(resourceId, quartz, new NitroxVector3(x, 0f, 0f)), removed: true);
+
+    private MapRoomScanResultReport RangeExit(string resourceId, NitroxVector3 position, NitroxVector3? scanOrigin = null, float scanRange = 300f) =>
+        new(room.Id, GENERATION, new MapRoomScanResultRecord(resourceId, quartz, position), true, true, scanOrigin ?? NitroxVector3.Zero, scanRange);
+
+    private MapRoomScanResultReport Report(MapRoomScanResultRecord result, bool removed = false, NitroxVector3? scanOrigin = null) =>
+        new(room.Id, GENERATION, result, removed, false, scanOrigin ?? NitroxVector3.Zero, 300f);
+
+    private MapRoomScanReport FullReport(List<MapRoomScanResultRecord> results, long generation = GENERATION) => new(room.Id, generation, NitroxVector3.Zero, 300f, results);
 
     private static EntityRegistry Registry(params WorldEntity[] entities)
     {
@@ -385,9 +471,6 @@ public sealed class ScannerRoomManagerScanResultsTest
         registry.AddEntities(entities);
         return registry;
     }
-
-    private static MapRoomScanResultSnapshot Snapshot(MapRoomEntity room, List<MapRoomScanResultRecord> results, long generation = 5) =>
-        new(room.Id, generation, results, NitroxVector3.Zero, 300f);
 
     private static WorldEntity World(NitroxId id, NitroxTechType techType, NitroxVector3 position) =>
         new(position, NitroxQuaternion.Identity, NitroxVector3.One, techType, 0, id.ToString(), true, id, null);

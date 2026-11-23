@@ -48,6 +48,31 @@ public sealed class ScannerRoomManagerSnapshotTest
     }
 
     [TestMethod]
+    public async Task ScanResultsAreCountedWithTheCopyButAreNoPartOfTheSaveOrTheFingerprint()
+    {
+        ScannerRoomScenarioFixture scenario = new();
+        scenario.StartScan(scenario.PlayerA, scenario.Room, quartz);
+        string fingerprintBefore = ScannerRoomStateFingerprint.Create(scenario.Manager.GetSnapshot(scenario.Room.Id)!.Room).Fingerprint;
+
+        await scenario.ReportScanAsync(scenario.PlayerA, scenario.Room, new MapRoomScanResultRecord("found", quartz, new NitroxVector3(1f, 2f, 3f)));
+        await scenario.Manager.ReportScanTypesAsync(scenario.PlayerA, new MapRoomScanTypesReport(scenario.Room.Id, [quartz], [quartz], NitroxVector3.Zero, 300f));
+
+        ScannerRoomSnapshot withResults = scenario.Manager.GetSnapshot(scenario.Room.Id)!;
+        Assert.AreEqual(1, withResults.ScanResultCount);
+        Assert.AreEqual(1, withResults.ScanTypeCount);
+        Assert.AreEqual(fingerprintBefore, ScannerRoomStateFingerprint.Create(withResults.Room).Fingerprint,
+            "A world that is saved and loaded again has no scan results. Its rooms must still have the fingerprint they were saved with.");
+
+        // What is saved of a scan is in the fingerprint.
+        await scenario.UpdateMetadataAsync(scenario.PlayerA, scenario.Room.Id, new MapRoomMetadata(quartz, 1, 5));
+        string afterProgress = ScannerRoomStateFingerprint.Create(scenario.Manager.GetSnapshot(scenario.Room.Id)!.Room).Fingerprint;
+        await scenario.UpdateMetadataAsync(scenario.PlayerA, scenario.Room.Id, new MapRoomMetadata(NitroxTechType.None, 0, 5));
+        string afterStop = ScannerRoomStateFingerprint.Create(scenario.Manager.GetSnapshot(scenario.Room.Id)!.Room).Fingerprint;
+        Assert.AreNotEqual(fingerprintBefore, afterProgress);
+        Assert.AreNotEqual(afterProgress, afterStop);
+    }
+
+    [TestMethod]
     public void SnapshotsFollowRoomsThatAreBuiltReplacedAndRemoved()
     {
         ScannerRoomScenarioFixture scenario = new();
@@ -121,14 +146,14 @@ public sealed class ScannerRoomManagerSnapshotTest
         ScannerRoomScenarioFixture scenario = new(new NopPacketSender());
         BuildEntity baseEntity = AddBase(scenario);
         Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.RoomId, scenario.PlayerA, SimulationLockType.TRANSIENT));
-        scenario.Room.Metadata = new MapRoomMetadata(quartz, 0, 1, 1);
-        scenario.Room.BeginScanResultGeneration(1);
+        scenario.Room.Metadata = new MapRoomMetadata(quartz, 0, 1);
         long dockingRevisionAtStart = scenario.Room.DockingRevision;
-        long scanRevisionAtStart = scenario.Room.ScanResultRevision;
+        long scanReports = 0;
         using CancellationTokenSource stop = new();
 
-        // Every dock or undock moves the dock, the revision and the camera record together; every scan change moves
-        // the result list and its revision together. A copy taken in the middle of one would show them apart.
+        // Every dock or undock moves the dock, the revision and the camera record together. A copy taken in the middle
+        // of one would show them apart. The scan results change all the while; they are counted with the copy, at the
+        // same moment, and are no part of it.
         Task docking = Task.Run(async () =>
         {
             for (bool dock = true; !stop.IsCancellationRequested; dock = !dock)
@@ -141,8 +166,9 @@ public sealed class ScannerRoomManagerSnapshotTest
         {
             for (bool found = true; !stop.IsCancellationRequested; found = !found)
             {
-                await scenario.Manager.ReportScanResultAsync(scenario.PlayerA, new MapRoomScanResultChanged(ScannerRoomScenarioFixture.RoomId, 1, "node", quartz,
-                    new NitroxVector3(10f, 0f, 0f), removed: !found, scanOrigin: NitroxVector3.Zero, scanRange: 300f));
+                await scenario.Manager.ReportScanResultAsync(scenario.PlayerA, new MapRoomScanResultReport(ScannerRoomScenarioFixture.RoomId, 1,
+                    new MapRoomScanResultRecord("node", quartz, new NitroxVector3(10f, 0f, 0f)), !found, false, NitroxVector3.Zero, 300f));
+                Interlocked.Increment(ref scanReports);
             }
         });
 
@@ -154,9 +180,10 @@ public sealed class ScannerRoomManagerSnapshotTest
         while ((dockChangesSeen < 200 || scanChangesSeen < 200) && !docking.IsCompleted && !scanning.IsCompleted && DateTime.UtcNow < deadline)
         {
             scenario.Manager.DetachRooms([baseEntity], out IReadOnlyList<ScannerRoomSnapshot> savedRooms);
-            MapRoomEntity copy = savedRooms.Single().Room;
+            ScannerRoomSnapshot saved = savedRooms.Single();
+            MapRoomEntity copy = saved.Room;
             dockChangesSeen = copy.DockingRevision - dockingRevisionAtStart;
-            scanChangesSeen = copy.ScanResultRevision - scanRevisionAtStart;
+            scanChangesSeen = Interlocked.Read(ref scanReports);
             bool docked = copy.LeftDockCameraId == ScannerRoomScenarioFixture.CameraAId;
             if (ScannerRoomStateFingerprint.Validate(copy) is { } violation)
             {
@@ -170,9 +197,9 @@ public sealed class ScannerRoomManagerSnapshotTest
             {
                 inconsistencies.Add("docked camera without record");
             }
-            if (copy.ScanResults.Count != (copy.ScanResultRevision - scanRevisionAtStart) % 2)
+            if (saved.ScanResultCount is not (0 or 1))
             {
-                inconsistencies.Add($"{copy.ScanResults.Count} scan result(s) at scan revision {copy.ScanResultRevision}");
+                inconsistencies.Add($"{saved.ScanResultCount} scan results of the one resource that is reported");
             }
             await Task.Yield();
         }
