@@ -43,7 +43,7 @@ public sealed class BasePowerSources(IPacketSender packetSender, SimulationOwner
     public readonly record struct Broadcast(float Time, float Power, float FuelConsumed);
 
     /// <summary>
-    ///     True while this client replaces its bases with the server's copy (see <see cref="CanSimulate" />).
+    ///     True while this client replaces its bases with the server's copy (see <see cref="CanSimulate(bool, bool, bool)" />).
     /// </summary>
     public static bool IsRebuildingBases() => BuildingHandler.Main && BuildingHandler.Main.Resyncing;
 
@@ -186,6 +186,41 @@ public sealed class BasePowerSources(IPacketSender packetSender, SimulationOwner
             thermalPlant = component.GetComponentInParent<ThermalPlant>();
         }
         return thermalPlant ? thermalPlant.temperature : 0f;
+    }
+
+    /// <inheritdoc cref="CanSimulate(bool, bool, bool)" />
+    /// <param name="owner">The solar panel, thermal plant or reactor component, which carries the Nitrox id.</param>
+    public bool CanSimulate(Component owner)
+    {
+        bool hasId = owner.TryGetNitroxId(out NitroxId sourceId);
+        return CanSimulate(hasId, hasId && simulationOwnership.HasAnyLockType(sourceId), IsRebuildingBases());
+    }
+
+    /// <summary>
+    ///     Stands in for PowerSource.ModifyPower where the game would ignore an addition that has to be applied (see
+    ///     <see cref="MustGenerateWithoutPowerRequirement" />).
+    /// </summary>
+    /// <param name="consumed">Set to what the game's method gives out.</param>
+    /// <param name="result">Set to what the game's method returns.</param>
+    /// <returns>False if the game's own method has to run.</returns>
+    public bool TryGenerateWithoutPowerRequirement(PowerSource source, float amount, ref float consumed, ref bool result)
+    {
+        // Checked first: nearly every player's mode requires power, and then the game does all of this itself
+        if (GameModeUtils.RequiresPower())
+        {
+            return false;
+        }
+        bool simulatedLocally = amount > 0f && source.TryGetNitroxId(out NitroxId sourceId) && simulationOwnership.HasAnyLockType(sourceId);
+        if (!MustGenerateWithoutPowerRequirement(false, simulatedLocally, amount))
+        {
+            return false;
+        }
+
+        // What the game returns in a mode without power requirements, so that its callers behave as they do there
+        result = amount <= source.maxPower - source.power;
+        consumed = amount;
+        source.power = LevelAfterGenerating(source.power, source.maxPower, amount);
+        return true;
     }
 
     /// <summary>
