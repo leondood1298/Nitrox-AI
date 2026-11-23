@@ -29,7 +29,8 @@ internal ref struct DeduplicateInterpolatedStringHandler
     {
         if (!InnerHandler.IsLoggerEnabled)
         {
-            DisposeLogState(ref InnerHandler);
+            // A handler for a disabled logger never rented any state, so there is nothing to give back; asking for
+            // it throws.
             return false;
         }
         bool isUnique;
