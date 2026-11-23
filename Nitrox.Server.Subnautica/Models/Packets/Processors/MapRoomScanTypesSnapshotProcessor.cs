@@ -38,7 +38,7 @@ internal sealed class MapRoomScanTypesSnapshotProcessor(EntityRegistry entityReg
             await context.ReplyAsync(new MapRoomScanTypesSnapshot(packet.MapRoomId, [], [], packet.ScanOrigin, packet.ScanRange, 0, true, false));
             return;
         }
-        diagnostics.RecordAccepted("scan_types", room, sessionId: context.Sender.SessionId, reason: $"types_{accepted.Count}");
+        diagnostics.RecordAccepted("scan_types", room, sessionId: context.Sender.SessionId, reason: $"types_{accepted.Count}", stateRevision: revision);
         await context.SendToAllAsync(new MapRoomScanTypesSnapshot(packet.MapRoomId, accepted, [], packet.ScanOrigin, packet.ScanRange, revision, true, true));
     }
 }

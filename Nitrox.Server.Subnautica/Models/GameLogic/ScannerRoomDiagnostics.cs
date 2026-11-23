@@ -40,12 +40,14 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
     internal const int REJECTION_LINES_PER_WINDOW = 128;
 
     private const int REJECTION_KEY_CAPACITY = 256;
+    private const int STATE_REVISION_CAPACITY = 256;
 
     internal static readonly TimeSpan REJECTION_WINDOW = TimeSpan.FromSeconds(60);
 
     private readonly Queue<ScannerRoomDiagnosticEntry> history = new(HISTORY_CAPACITY);
     private readonly object sync = new();
     private readonly DiagnosticRepeatSampler rejectionSampler = new(REJECTION_KEY_CAPACITY);
+    private readonly Dictionary<string, long> lastStateRevisions = new(StringComparer.Ordinal);
     private readonly string epoch = DiagnosticLineFormat.NewEpoch();
     private readonly TimeProvider timeProvider = timeProvider ?? TimeProvider.System;
     private bool epochAnnounced;
@@ -60,8 +62,14 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
     private int rejectionLinesInWindow;
     private long rejectionsMutedInWindow;
     private long ownFailures;
+    private long unchangedRepeats;
 
     internal string Epoch => epoch;
+
+    /// <summary>
+    ///     How many accepted requests were not recorded because they left the state at the revision already recorded.
+    /// </summary>
+    internal long UnchangedRepeats => Interlocked.Read(ref unchangedRepeats);
 
     /// <summary>
     ///     How often recording or writing a line failed. Such a failure is swallowed, because these calls sit in the
@@ -69,9 +77,15 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
     /// </summary>
     internal long OwnFailures => Interlocked.Read(ref ownFailures);
 
+    /// <param name="stateRevision">
+    ///     The revision of the state the request was accepted into, for requests a client repeats on a timer (the
+    ///     available scan types are republished every few seconds). When it is the revision already recorded for
+    ///     this event and room, nothing changed and nothing is recorded: one such request per room would otherwise
+    ///     add a line every few seconds and push every real transition out of the history.
+    /// </param>
     public ScannerRoomDiagnosticEntry RecordAccepted(string eventName, MapRoomEntity? room = null, NitroxId? cameraId = null,
-        SessionId? sessionId = null, int? slot = null, string? reason = null) =>
-        Record(ScannerRoomDiagnosticOutcome.Accepted, eventName, room, cameraId, sessionId, slot, reason);
+        SessionId? sessionId = null, int? slot = null, string? reason = null, long? stateRevision = null) =>
+        Record(ScannerRoomDiagnosticOutcome.Accepted, eventName, room, cameraId, sessionId, slot, reason, stateRevision: stateRevision);
 
     public ScannerRoomDiagnosticEntry RecordRejected(string eventName, MapRoomEntity? room = null, NitroxId? cameraId = null,
         SessionId? sessionId = null, int? slot = null, string? reason = null) =>
@@ -143,15 +157,40 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
 
     private ScannerRoomDiagnosticEntry Record(ScannerRoomDiagnosticOutcome outcome, string eventName, MapRoomEntity? room,
         NitroxId? cameraId = null, SessionId? sessionId = null, int? slot = null, string? reason = null,
-        ScannerRoomStateSnapshot? capturedSnapshot = null)
+        ScannerRoomStateSnapshot? capturedSnapshot = null, long? stateRevision = null)
     {
         try
         {
+            if (stateRevision is { } revision && IsUnchangedState(eventName, room, revision))
+            {
+                Interlocked.Increment(ref unchangedRepeats);
+                return new ScannerRoomDiagnosticEntry(0, epoch, DiagnosticLineFormat.Token(eventName, 32), outcome, sessionId,
+                    DiagnosticLineFormat.ShortId(room?.Id, false), DiagnosticLineFormat.NOT_APPLICABLE, slot, null, null, null, "unchanged");
+            }
             return RecordCore(outcome, eventName, room, cameraId, sessionId, slot, reason, capturedSnapshot);
         }
         catch (Exception exception)
         {
             return ReportOwnFailure(exception, outcome, eventName, sessionId);
+        }
+    }
+
+    private bool IsUnchangedState(string eventName, MapRoomEntity? room, long stateRevision)
+    {
+        string key = $"{eventName}|{room?.Id}";
+        lock (sync)
+        {
+            if (lastStateRevisions.TryGetValue(key, out long recorded) && recorded == stateRevision)
+            {
+                return true;
+            }
+            if (lastStateRevisions.Count >= STATE_REVISION_CAPACITY)
+            {
+                // Rooms that were deconstructed never leave on their own. Forgetting everything costs one extra line per room.
+                lastStateRevisions.Clear();
+            }
+            lastStateRevisions[key] = stateRevision;
+            return false;
         }
     }
 
