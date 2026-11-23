@@ -186,9 +186,10 @@ namespace Nitrox.Server.Subnautica.Models
         {
             PlayerTeleported playerTeleported = new(Name, Position, destination, subRootID);
 
-            Position = playerTeleported.DestinationTo;
+            // "back" returns to where the player was, so it needs the sub the player was in, not the one of the destination
             LastStoredPosition = playerTeleported.DestinationFrom;
-            LastStoredSubRootID = subRootID;
+            LastStoredSubRootID = SubRootId;
+            Position = playerTeleported.DestinationTo;
             packetSender.SendPacketAsync(playerTeleported, SessionId);
         }
 

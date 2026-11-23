@@ -27,6 +27,11 @@ internal sealed class PlayerTeleportedProcessor : IClientPacketProcessor<PlayerT
             Player.main.SetCurrentSub(subRoot, true);
             return Task.CompletedTask;
         }
+        // Teleported out of a base or Cyclops: the player would otherwise still count as indoors in open water
+        if (Player.main.currentSub)
+        {
+            Player.main.SetCurrentSub(null, true);
+        }
 
         // Freeze the player while it's loading its new position
         Player.main.cinematicModeActive = true;
