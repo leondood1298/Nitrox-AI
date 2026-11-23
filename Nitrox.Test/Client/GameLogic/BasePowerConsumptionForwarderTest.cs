@@ -1,5 +1,4 @@
 using Nitrox.Model.DataStructures;
-using Nitrox.Model.Packets;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication.Abstract;
 using NSubstitute;
@@ -9,7 +8,7 @@ namespace NitroxClient.GameLogic;
 [TestClass]
 public sealed class BasePowerConsumptionForwarderTest
 {
-    private readonly RecordingPacketSender packetSender = new();
+    private readonly IPacketSender packetSender = Substitute.For<IPacketSender>();
     private readonly SimulationOwnership simulationOwnership;
     private readonly BasePowerConsumptionForwarder forwarder;
 
@@ -31,9 +30,8 @@ public sealed class BasePowerConsumptionForwarderTest
         forwarder.Flush(10f);
         forwarder.Flush(20f);
 
-        BasePowerSourceConsume report = packetSender.Sent.OfType<BasePowerSourceConsume>().Single();
-        Assert.AreEqual(reactor, report.SourceId);
-        Assert.AreEqual(5f, report.Amount);
+        packetSender.Received(1).Send(Arg.Is<BasePowerSourceConsume>(report => report.SourceId.Equals(reactor) && report.Amount == 5f));
+        Assert.AreEqual(1, packetSender.ReceivedCalls().Count());
     }
 
     [TestMethod]
@@ -48,7 +46,7 @@ public sealed class BasePowerConsumptionForwarderTest
         forwarder.ExitConsumer();
         forwarder.Flush(10f);
 
-        Assert.AreEqual(0, packetSender.Sent.Count);
+        Assert.AreEqual(0, packetSender.ReceivedCalls().Count());
     }
 
     [TestMethod]
@@ -58,7 +56,7 @@ public sealed class BasePowerConsumptionForwarderTest
         forwarder.RecordConsumption(new NitroxId(), 2f);
         forwarder.Flush(10f);
 
-        Assert.AreEqual(0, packetSender.Sent.Count);
+        Assert.AreEqual(0, packetSender.ReceivedCalls().Count());
     }
 
     [TestMethod]
@@ -90,16 +88,5 @@ public sealed class BasePowerConsumptionForwarderTest
     {
         Assert.AreEqual(SharedConsumerDraw.LOCAL_ONLY, BasePowerConsumptionForwarder.GetSharedConsumerDraw(hasId: false, simulatedLocally: false));
         Assert.AreEqual(SharedConsumerDraw.LOCAL_ONLY, BasePowerConsumptionForwarder.GetSharedConsumerDraw(hasId: false, simulatedLocally: true));
-    }
-
-    private sealed class RecordingPacketSender : IPacketSender
-    {
-        internal List<Packet> Sent { get; } = [];
-
-        public bool Send<T>(T packet) where T : Packet
-        {
-            Sent.Add(packet);
-            return true;
-        }
     }
 }

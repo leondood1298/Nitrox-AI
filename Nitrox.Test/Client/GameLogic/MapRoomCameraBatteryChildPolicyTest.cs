@@ -10,7 +10,7 @@ public sealed class MapRoomCameraBatteryChildPolicyTest
     public void ExcludesOnlyMapRoomCameraBatteryMetadata()
     {
         BatteryMetadata battery = new(99f);
-        PowerSourceMetadata powerSource = new(50f, 75f, BasePowerSourceType.SOLAR, 1);
+        PowerSourceMetadata powerSource = new(50f, 0f, BasePowerSourceType.SOLAR);
 
         Assert.IsTrue(MapRoomCameraBatteryChildPolicy.IsRedundant(true, battery));
         Assert.IsFalse(MapRoomCameraBatteryChildPolicy.IsRedundant(false, battery));

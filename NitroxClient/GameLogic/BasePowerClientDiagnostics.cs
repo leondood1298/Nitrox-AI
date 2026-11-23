@@ -16,9 +16,9 @@ namespace NitroxClient.GameLogic;
 ///     <c>[BPD1] n= ep= side=C sid= ev= out= base= source= power=current/max initial= wait= reason=</c>. <c>sid</c> is
 ///     this client's own session id. <c>initial</c> and <c>wait</c> say whether the initial sync had completed and
 ///     whether the loading screen was still up, because the source applies and voice transitions are only of
-///     interest while a player joins; that trace stops at a fixed number of lines and says so. Updates this client
-///     dropped as outdated (<c>out=stale</c>) and reports the server refused (<c>out=reject</c>) are recorded for the
-///     whole session instead, thinned out when they repeat (<c>rep=</c> counts the repeats).
+///     interest while a player joins; that trace stops at a fixed number of lines and says so. Reports the server
+///     refused (<c>out=reject</c>) are recorded for the whole session instead, thinned out when they repeat
+///     (<c>rep=</c> counts the repeats).
 /// </summary>
 public sealed class BasePowerClientDiagnostics
 {
@@ -73,8 +73,9 @@ public sealed class BasePowerClientDiagnostics
     internal string? RecordSourceApply(NitroxId? sourceId, PowerSourceMetadata metadata, bool objectFound,
         bool initialSyncCompleted, bool waitScreenWaiting, string reason)
     {
-        return Record(false, "source_apply", objectFound ? "ok" : "missing", null, sourceId, metadata.Power, metadata.MaxPower,
-            initialSyncCompleted, waitScreenWaiting, $"{reason}_{metadata.SourceType}_{metadata.Revision}");
+        BasePowerSourceTypes.TryGetMaxPower(metadata.SourceType, out float maxPower);
+        return Record(false, "source_apply", objectFound ? "ok" : "missing", null, sourceId, metadata.Power, maxPower,
+            initialSyncCompleted, waitScreenWaiting, $"{reason}_{metadata.SourceType}");
     }
 
     public string? RecordAudioTransition(string eventName, bool suppressed, NitroxId? baseId, float power, float maxPower,
@@ -85,26 +86,16 @@ public sealed class BasePowerClientDiagnostics
     }
 
     /// <summary>
-    ///     Records a source state from the server that this client dropped because it already holds a newer revision.
-    ///     The server keeps a revision floor per source id so that revisions never start over, not even for a source
-    ///     that was rebuilt. Should that fail, this is all that is left of every later update: the source stays at
-    ///     the level it had. Not limited to the join phase, thinned out by repeat instead, because it lasts for as
-    ///     long as the source does.
-    /// </summary>
-    internal string? RecordSourceStale(NitroxId sourceId, PowerSourceMetadata incoming, PowerSourceMetadata held) =>
-        RecordProblem("source_apply", "stale", sourceId, incoming, $"rev_{incoming.Revision}_held_{held.Revision}", "stale", true);
-
-    /// <summary>
     ///     Records that the server refused a level this client reported for a source it believes it simulates. A
     ///     client reports once a second until it learns who simulates the source, so repeats are thinned out and the
     ///     line is information, not a warning.
     /// </summary>
     /// <param name="canonical">The state the server told this client to restore.</param>
     internal string? RecordSourceRejected(NitroxId sourceId, PowerSourceMetadata canonical, string? reason) =>
-        RecordProblem("source_update", "reject", sourceId, canonical, reason, WithoutDigits(reason), false);
+        RecordProblem("source_update", "reject", sourceId, canonical, reason, WithoutDigits(reason));
 
     /// <summary>
-    ///     The newest stale and rejected lines. Kept apart from the join trace, which stops at its capacity.
+    ///     The newest rejected lines. Kept apart from the join trace, which stops at its capacity.
     /// </summary>
     internal IReadOnlyList<string> GetProblems()
     {
@@ -198,12 +189,12 @@ public sealed class BasePowerClientDiagnostics
         return line;
     }
 
-    private string? RecordProblem(string eventName, string outcome, NitroxId sourceId, PowerSourceMetadata shown, string? reason, string repeatKey,
-        bool warning)
+    private string? RecordProblem(string eventName, string outcome, NitroxId sourceId, PowerSourceMetadata shown, string? reason, string repeatKey)
     {
         try
         {
             SessionId? sessionId = ReadLocalSessionId();
+            BasePowerSourceTypes.TryGetMaxPower(shown.SourceType, out float maxPower);
             string line;
             string? marker = null;
             lock (sync)
@@ -218,7 +209,7 @@ public sealed class BasePowerClientDiagnostics
                     marker = $"{DiagnosticLineFormat.Header(DiagnosticLineFormat.BASE_POWER_TAG, null, epoch, DiagnosticLineFormat.CLIENT_SIDE, sessionId, "epoch", "info")} utc={ReadUtcStamp()} reason=client_diagnostics_started";
                 }
                 line = FormattableString.Invariant(
-                    $"{DiagnosticLineFormat.Header(DiagnosticLineFormat.BASE_POWER_TAG, ++nextSequence, epoch, DiagnosticLineFormat.CLIENT_SIDE, sessionId, eventName, outcome)} base={DiagnosticLineFormat.NOT_APPLICABLE} source={DiagnosticLineFormat.ShortId(sourceId, true)} power={shown.Power:F2}/{shown.MaxPower:F2} initial={DiagnosticLineFormat.NOT_APPLICABLE} wait={DiagnosticLineFormat.NOT_APPLICABLE}{(occurrences > 1 ? $" rep={DiagnosticLineFormat.Number(occurrences)}" : "")} reason={DiagnosticLineFormat.Token($"{shown.SourceType}_{reason}", 64)}");
+                    $"{DiagnosticLineFormat.Header(DiagnosticLineFormat.BASE_POWER_TAG, ++nextSequence, epoch, DiagnosticLineFormat.CLIENT_SIDE, sessionId, eventName, outcome)} base={DiagnosticLineFormat.NOT_APPLICABLE} source={DiagnosticLineFormat.ShortId(sourceId, true)} power={shown.Power:F2}/{maxPower:F2} initial={DiagnosticLineFormat.NOT_APPLICABLE} wait={DiagnosticLineFormat.NOT_APPLICABLE}{(occurrences > 1 ? $" rep={DiagnosticLineFormat.Number(occurrences)}" : "")} reason={DiagnosticLineFormat.Token($"{shown.SourceType}_{reason}", 64)}");
                 if (problems.Count == PROBLEM_CAPACITY)
                 {
                     problems.Dequeue();
@@ -229,7 +220,7 @@ public sealed class BasePowerClientDiagnostics
             {
                 Write(marker);
             }
-            Write(line, warning);
+            Write(line);
             return line;
         }
         catch (Exception)
@@ -288,18 +279,11 @@ public sealed class BasePowerClientDiagnostics
     /// <summary>
     ///     Writes a line without letting a failing log sink undo the bookkeeping already done for the event.
     /// </summary>
-    private void Write(string line, bool warning = false)
+    private void Write(string line)
     {
         try
         {
-            if (warning)
-            {
-                Log.Warn(line);
-            }
-            else
-            {
-                Log.Info(line);
-            }
+            Log.Info(line);
         }
         catch (Exception)
         {

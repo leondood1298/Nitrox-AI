@@ -6,7 +6,6 @@ using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Helper;
-using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 
 namespace Nitrox.Server.Subnautica.Models.GameLogic;
 
@@ -17,7 +16,7 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic;
 ///     and writes the few events worth a log line.
 ///     <p />
 ///     Line shape (see <see cref="DiagnosticLineFormat" />):
-///     <c>[BPD1] n= ep= side=S sid= ev= out= source= type= power=current/max rev= owner= amount= total= reason=</c>.
+///     <c>[BPD1] n= ep= side=S sid= ev= out= source= type= power=current/max owner= amount= total= reason=</c>.
 ///     <c>sid</c> is the player the packet came from, <c>owner</c> who simulates the source at that moment
 ///     (<c>none</c>: nobody). <c>n</c> counts every update and consumption packet, also those without a line.
 /// </summary>
@@ -77,8 +76,8 @@ internal sealed class BasePowerDiagnostics(ILogger<BasePowerDiagnostics>? logger
     public void RecordRejected() => Interlocked.Increment(ref rejectedUpdates);
 
     /// <summary>
-    ///     Records an update the source's owner got accepted. Only the first update of an owner and a revision that
-    ///     did not advance get a line: an owner reports about once a second per source.
+    ///     Records an update the source's owner got accepted. Only the first update of an owner gets a line: an owner
+    ///     reports about once a second per source.
     /// </summary>
     public void RecordAccepted(NitroxId sourceId, SessionId ownerSessionId, PowerSourceMetadata accepted)
     {
@@ -95,7 +94,6 @@ internal sealed class BasePowerDiagnostics(ILogger<BasePowerDiagnostics>? logger
                 }
 
                 bool hadUpdate = state.HasAcceptedUpdate;
-                long previousRevision = state.Revision;
                 SessionId? previousOwner = state.LastOwner;
                 state.Apply(accepted);
                 state.HasAcceptedUpdate = true;
@@ -109,17 +107,6 @@ internal sealed class BasePowerDiagnostics(ILogger<BasePowerDiagnostics>? logger
                         ? $"owner_changed_from_{DiagnosticLineFormat.Session(previous)}"
                         : "first_update";
                     Write(LogLevel.Information, FormatLine(sequence, ownerSessionId, "source_update", "ok", state, null, null, 1, reason));
-                }
-                if (hadUpdate && accepted.Revision <= previousRevision)
-                {
-                    // Clients drop anything older than the revision they hold, so from here on they ignore this source.
-                    // The authority keeps a revision floor per id to rule this out; this line means the floor failed.
-                    state.RevisionRegressions++;
-                    if (repeatSampler.Observe($"regress|{sourceId}", out long occurrences))
-                    {
-                        Write(LogLevel.Warning, FormatLine(sequence, ownerSessionId, "source_update", "invariant", state, null, null, occurrences,
-                            $"revision_{accepted.Revision}_after_{previousRevision}"));
-                    }
                 }
             }
         }
@@ -198,13 +185,13 @@ internal sealed class BasePowerDiagnostics(ILogger<BasePowerDiagnostics>? logger
 
                 string outcome = route switch
                 {
-                    ConsumptionRoute.FORWARD_TO_OWNER => "forward",
+                    ConsumptionRoute.FORWARD_TO_SIMULATOR => "forward",
                     ConsumptionRoute.APPLIED_BY_SERVER => "server",
                     _ => "reject"
                 };
                 string reason = route switch
                 {
-                    ConsumptionRoute.FORWARD_TO_OWNER => "sent_to_owner_to_apply",
+                    ConsumptionRoute.FORWARD_TO_SIMULATOR => "sent_to_owner_to_apply",
                     ConsumptionRoute.APPLIED_BY_SERVER => "no_owner_applied_to_stored_power",
                     _ => rejectionReason ?? ""
                 };
@@ -303,10 +290,8 @@ internal sealed class BasePowerDiagnostics(ILogger<BasePowerDiagnostics>? logger
             long rejectedConsumption = 0;
             float forwardedAmount = 0f;
             float serverAppliedAmount = 0f;
-            long regressions = 0;
             foreach (SourceState state in sources.Values)
             {
-                regressions += state.RevisionRegressions;
                 foreach (ConsumerState consumer in state.Consumers.Values)
                 {
                     forwarded += consumer.Forwarded;
@@ -317,7 +302,7 @@ internal sealed class BasePowerDiagnostics(ILogger<BasePowerDiagnostics>? logger
                 }
             }
             return new BasePowerDiagnosticTotals(nextSequence, AcceptedUpdates, RejectedUpdates, forwarded, forwardedAmount, serverApplied,
-                serverAppliedAmount, rejectedConsumption, regressions, Interlocked.Read(ref untrackedSourceEvents));
+                serverAppliedAmount, rejectedConsumption, Interlocked.Read(ref untrackedSourceEvents));
         }
     }
 
@@ -365,13 +350,13 @@ internal sealed class BasePowerDiagnostics(ILogger<BasePowerDiagnostics>? logger
         NitroxId? id = state?.Id ?? sourceId;
         BasePowerSourceType type = shown?.SourceType ?? state?.Type ?? BasePowerSourceType.UNKNOWN;
         float power = shown?.Power ?? state?.Power ?? 0f;
-        float maxPower = shown?.MaxPower ?? state?.MaxPower ?? 0f;
-        long revision = shown?.Revision ?? state?.Revision ?? 0;
+        // A source's capacity follows from its type; zero for a type the server does not know
+        BasePowerSourceTypes.TryGetMaxPower(type, out float maxPower);
         string amount = consumption is { } consumed
             ? FormattableString.Invariant($"{consumed.Amount:F3} total={consumed.Total:F3}")
             : $"{DiagnosticLineFormat.NOT_APPLICABLE} total={DiagnosticLineFormat.NOT_APPLICABLE}";
         return FormattableString.Invariant(
-            $"{DiagnosticLineFormat.Header(PREFIX, sequence, epoch, DiagnosticLineFormat.SERVER_SIDE, sessionId, eventName, outcome)} source={DiagnosticLineFormat.ShortId(id, true)} type={DiagnosticLineFormat.Token(type.ToString())} power={power:F2}/{maxPower:F2} rev={revision} owner={(id == null ? DiagnosticLineFormat.NOT_APPLICABLE : DescribeOwner(id))} amount={amount}{(occurrences > 1 ? $" rep={DiagnosticLineFormat.Number(occurrences)}" : "")} reason={DiagnosticLineFormat.Token(reason, REASON_LENGTH)}");
+            $"{DiagnosticLineFormat.Header(PREFIX, sequence, epoch, DiagnosticLineFormat.SERVER_SIDE, sessionId, eventName, outcome)} source={DiagnosticLineFormat.ShortId(id, true)} type={DiagnosticLineFormat.Token(type.ToString())} power={power:F2}/{maxPower:F2} owner={(id == null ? DiagnosticLineFormat.NOT_APPLICABLE : DescribeOwner(id))} amount={amount}{(occurrences > 1 ? $" rep={DiagnosticLineFormat.Number(occurrences)}" : "")} reason={DiagnosticLineFormat.Token(reason, REASON_LENGTH)}");
     }
 
     private string FormatMarker(string eventName, string reason) =>
@@ -419,15 +404,12 @@ internal sealed class BasePowerDiagnostics(ILogger<BasePowerDiagnostics>? logger
         public NitroxId Id { get; } = id;
         public BasePowerSourceType Type { get; private set; }
         public float Power { get; private set; }
-        public float MaxPower { get; private set; }
-        public long Revision { get; private set; }
         public bool HasAcceptedUpdate { get; set; }
         public SessionId? LastOwner { get; set; }
         public long LastAcceptedTimestamp { get; set; }
         public long AcceptedUpdates { get; set; }
         public long RejectedUpdates { get; set; }
         public string? LastRejection { get; set; }
-        public long RevisionRegressions { get; set; }
         public long HandBacks { get; set; }
         public Dictionary<SessionId, ConsumerState> Consumers { get; } = [];
 
@@ -435,8 +417,6 @@ internal sealed class BasePowerDiagnostics(ILogger<BasePowerDiagnostics>? logger
         {
             Type = metadata.SourceType;
             Power = metadata.Power;
-            MaxPower = metadata.MaxPower;
-            Revision = metadata.Revision;
         }
 
         public ConsumerState? GetOrAddConsumer(SessionId sessionId)
@@ -460,7 +440,6 @@ internal sealed class BasePowerDiagnostics(ILogger<BasePowerDiagnostics>? logger
             AcceptedUpdates,
             RejectedUpdates,
             LastRejection,
-            RevisionRegressions,
             Consumers.OrderBy(pair => pair.Key)
                      .Select(pair => new BasePowerConsumerDiagnostics(pair.Key, pair.Value.Forwarded, pair.Value.ForwardedAmount,
                          pair.Value.ServerApplied, pair.Value.ServerAppliedAmount, pair.Value.Rejected))
@@ -483,7 +462,7 @@ internal sealed class BasePowerDiagnostics(ILogger<BasePowerDiagnostics>? logger
             float accepted = float.IsFinite(amount) && amount > 0f ? amount : 0f;
             switch (route)
             {
-                case ConsumptionRoute.FORWARD_TO_OWNER:
+                case ConsumptionRoute.FORWARD_TO_SIMULATOR:
                     Forwarded++;
                     ForwardedAmount += accepted;
                     return ForwardedAmount;
@@ -510,7 +489,6 @@ internal readonly record struct BasePowerSourceDiagnostics(
     long AcceptedUpdates,
     long RejectedUpdates,
     string? LastRejection,
-    long RevisionRegressions,
     IReadOnlyList<BasePowerConsumerDiagnostics> Consumers,
     long HandBacks = 0);
 
@@ -531,5 +509,4 @@ internal readonly record struct BasePowerDiagnosticTotals(
     long ConsumptionAppliedByServer,
     float ConsumptionAppliedByServerAmount,
     long ConsumptionRejected,
-    long RevisionRegressions,
     long UntrackedSourceEvents);
