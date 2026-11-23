@@ -151,14 +151,3 @@ internal static class ScannerRoomStateFingerprint
     private static string Format(long value) => value.ToString(invariantCulture);
     private static string Format(float value) => value.ToString("R", invariantCulture);
 }
-
-internal readonly record struct ScannerRoomStateSnapshot(
-    string Fingerprint,
-    string CanonicalState,
-    int CameraCount,
-    string ScanTarget,
-    int NodesScanned,
-    long MetadataGeneration,
-    bool FabricatorActive,
-    NitroxId? LeftDockCameraId = null,
-    NitroxId? RightDockCameraId = null);

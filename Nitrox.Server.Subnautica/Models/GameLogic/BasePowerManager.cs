@@ -317,10 +317,3 @@ internal sealed class BasePowerManager(EntityRegistry entityRegistry, Simulation
 
     internal readonly record struct SourceSnapshot(Entity Source, PowerSourceMetadata State, Player? Simulator);
 }
-
-internal enum ConsumptionRoute
-{
-    REJECTED,
-    FORWARD_TO_SIMULATOR,
-    APPLIED_BY_SERVER
-}

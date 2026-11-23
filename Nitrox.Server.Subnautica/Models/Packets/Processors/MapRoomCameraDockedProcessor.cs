@@ -3,7 +3,7 @@ using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
-internal sealed class MapRoomCameraDockingProcessor(ScannerRoomManager scannerRoomManager) : IAuthPacketProcessor<MapRoomCameraDocked>
+internal sealed class MapRoomCameraDockedProcessor(ScannerRoomManager scannerRoomManager) : IAuthPacketProcessor<MapRoomCameraDocked>
 {
     public async Task Process(AuthProcessorContext context, MapRoomCameraDocked packet)
     {
