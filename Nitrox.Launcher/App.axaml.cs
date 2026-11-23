@@ -117,7 +117,7 @@ internal class App : Application
             if (OperatingSystem.IsWindows())
             {
                 hostBuilder.WebHost.ConfigureKestrel(options => 
-                    options.ListenNamedPipe(LauncherConstants.GRPC_NAMED_PIPE_NAME, o => o.Protocols = HttpProtocols.Http2));
+                    options.ListenNamedPipe(LauncherConstants.GetNamedPipeName(NitroxUser.ExecutableRootPath), o => o.Protocols = HttpProtocols.Http2));
             }
             else
             {
