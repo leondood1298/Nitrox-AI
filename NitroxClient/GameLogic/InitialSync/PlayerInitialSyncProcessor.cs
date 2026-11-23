@@ -5,7 +5,9 @@ using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using NitroxClient.GameLogic.InitialSync.Abstract;
+using Nitrox.Model.DataStructures.Unity;
 using NitroxClient.MonoBehaviours;
+using NitroxClient.MonoBehaviours.Gui.InGame;
 using UnityEngine;
 
 namespace NitroxClient.GameLogic.InitialSync;
@@ -47,6 +49,18 @@ public sealed class PlayerInitialSyncProcessor : InitialSyncProcessor
         AddStep(sync => SetUsedItems(sync.UsedItems));
         AddStep(sync => SetPlayerGameMode(sync.GameMode));
         AddStep(sync => ApplySettings(sync.KeepInventoryOnDeath, sync.SessionSettings.FastHatch, sync.SessionSettings.FastGrow, sync.MarkDeathPointsWithBeacon));
+        AddStep(sync => RestoreDeathBeacons(sync.DeathMarkers));
+    }
+
+    /// <summary>
+    ///     The beacons where this player died and has not been back since; they used to vanish when the player left.
+    /// </summary>
+    private void RestoreDeathBeacons(List<NitroxVector3> deathMarkers)
+    {
+        foreach (NitroxVector3 marker in deathMarkers)
+        {
+            DeathBeacon.SpawnDeathBeacon(marker, localPlayer.PlayerName);
+        }
     }
 
     private void SetPlayerPermissions(Perms permissions)

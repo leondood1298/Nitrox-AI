@@ -6,6 +6,7 @@ using NitroxClient.GameLogic.PlayerLogic.PlayerModel.Abstract;
 using NitroxClient.MonoBehaviours;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.GameLogic;
+using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.GameLogic.PlayerAnimation;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.MultiplayerSession;
@@ -114,6 +115,14 @@ public class LocalPlayer : ILocalNitroxPlayer
         {
             packetSender.Send(new PlayerDeathEvent(SessionId.Value, deathPosition.ToDto()));
         }
+    }
+
+    /// <summary>
+    ///     The player reached one of their death beacons, which is then gone for their next sessions too.
+    /// </summary>
+    public void DeathMarkerReached(NitroxVector3 position)
+    {
+        packetSender.Send(new DeathMarkerReached(position));
     }
 
     public void BroadcastSubrootChange(Optional<NitroxId> subrootId)

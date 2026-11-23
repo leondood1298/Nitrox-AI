@@ -1,4 +1,5 @@
 using Nitrox.Model.DataStructures.Unity;
+using NitroxClient.GameLogic;
 using UnityEngine;
 
 namespace NitroxClient.MonoBehaviours.Gui.InGame;
@@ -18,15 +19,19 @@ internal sealed class DeathBeacon : MonoBehaviour
         }
 
         Log.Debug($"{nameof(DeathBeacon)} '{name}' despawn trigger entered by {collider.name}");
+        // The server keeps the beacon for the player's next session until then
+        this.Resolve<LocalPlayer>().DeathMarkerReached(location);
         Destroy(gameObject);
     }
+
+    private NitroxVector3 location;
 
     public static void SpawnDeathBeacon(NitroxVector3 location, string playerName)
     {
         GameObject beacon = new($"{playerName}{nameof(DeathBeacon)}");
         beacon.transform.position = location.ToUnity();
         beacon.layer = LayerID.Trigger | LayerID.OnlyVehicle;
-        beacon.AddComponent<DeathBeacon>();
+        beacon.AddComponent<DeathBeacon>().location = location;
         PingInstance signal = beacon.AddComponent<PingInstance>();
         signal.IsLocalOnly = true;
         signal.pingType = PingType.Signal;

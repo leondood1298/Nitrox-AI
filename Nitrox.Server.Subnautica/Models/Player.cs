@@ -77,6 +77,12 @@ namespace Nitrox.Server.Subnautica.Models
         ///     until it is done, so players who are already in the world are preferred.
         /// </summary>
         public bool HasFinishedInitialSync { get; set; }
+
+        /// <summary>
+        ///     Where this player died and has not been back since, each shown to them alone as a beacon. Kept so that the
+        ///     beacons are still there after the player rejoins.
+        /// </summary>
+        public ThreadSafeList<NitroxVector3> DeathMarkers { get; } = new();
         public bool InPrecursor { get; set; }
         public bool DisplaySurfaceWater { get; set; }
 

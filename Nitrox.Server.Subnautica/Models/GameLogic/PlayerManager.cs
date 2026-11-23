@@ -116,7 +116,8 @@ internal sealed partial class PlayerManager(SessionManager sessionManager, BanSe
         string playerName = authenticationContext.Username;
 
         allPlayersByName.TryGetValue(playerName, out Player? player);
-        if (player?.IsPermaDeath == true && options.Value.IsHardcore())
+        // The player's own game mode, as for the death itself (PlayerDeaths)
+        if (player?.IsPermaDeath == true && PlayerDeaths.IsPermanent(player))
         {
             MultiplayerSessionReservationState rejectedState = MultiplayerSessionReservationState.REJECTED | MultiplayerSessionReservationState.HARDCORE_PLAYER_DEAD;
             return new MultiplayerSessionReservation(sessionId, rejectedState);

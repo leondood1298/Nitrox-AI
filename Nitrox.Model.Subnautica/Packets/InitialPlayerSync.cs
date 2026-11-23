@@ -50,6 +50,11 @@ namespace Nitrox.Model.Subnautica.Packets
         public List<PdaNotification> UnreadPdaNotifications { get; }
         public List<CollectedTimeCapsule> CollectedTimeCapsules { get; }
 
+        /// <summary>
+        ///     Where the joining player died and has not been back since; each gets a beacon only that player sees.
+        /// </summary>
+        public List<NitroxVector3> DeathMarkers { get; }
+
         public InitialPlayerSync(NitroxId playerGameObjectId,
             bool firstTimeConnecting,
             NitroxId assignedEscapePodId,
@@ -79,8 +84,10 @@ namespace Nitrox.Model.Subnautica.Packets
             bool markDeathPointsWithBeacon,
             IEnumerable<string> activeTeleporters,
             IEnumerable<PdaNotification> unreadPdaNotifications,
-            IEnumerable<CollectedTimeCapsule> collectedTimeCapsules)
+            IEnumerable<CollectedTimeCapsule> collectedTimeCapsules,
+            IEnumerable<NitroxVector3> deathMarkers)
         {
+            DeathMarkers = deathMarkers.ToList();
             AssignedEscapePodId = assignedEscapePodId;
             PlayerGameObjectId = playerGameObjectId;
             FirstTimeConnecting = firstTimeConnecting;
@@ -144,8 +151,10 @@ namespace Nitrox.Model.Subnautica.Packets
             bool markDeathPointsWithBeacon,
             List<string> activeTeleporters,
             List<PdaNotification> unreadPdaNotifications,
-            List<CollectedTimeCapsule> collectedTimeCapsules)
+            List<CollectedTimeCapsule> collectedTimeCapsules,
+            List<NitroxVector3> deathMarkers)
         {
+            DeathMarkers = deathMarkers;
             AssignedEscapePodId = assignedEscapePodId;
             PlayerGameObjectId = playerGameObjectId;
             FirstTimeConnecting = firstTimeConnecting;

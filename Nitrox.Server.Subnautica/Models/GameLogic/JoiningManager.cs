@@ -282,7 +282,8 @@ internal sealed class JoiningManager(
             options.Value.MarkDeathPointsWithBeacon,
             activeTeleporters.GetAll(),
             player.UnreadPdaNotifications.ToList(),
-            collectedTimeCapsules.GetAll()
+            collectedTimeCapsules.GetAll(),
+            player.DeathMarkers.ToList()
         );
 
         await packetSender.SendPacketAsync(initialPlayerSync, player.SessionId);

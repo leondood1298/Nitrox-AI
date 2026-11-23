@@ -55,6 +55,11 @@ internal sealed class PersistedPlayerData
 
     public List<PdaNotification> UnreadPdaNotifications { get; set; } = [];
 
+    /// <summary>
+    ///     The player's death beacons not yet reached.
+    /// </summary>
+    public List<NitroxVector3> DeathMarkers { get; set; } = [];
+
     public Player ToPlayer()
     {
         Player player = new(Id,
@@ -82,6 +87,10 @@ internal sealed class PersistedPlayerData
             player.UnreadPdaNotifications.Add(notification);
         }
         player.IdentityKeyHash = IdentityKeyHash;
+        foreach (NitroxVector3 marker in DeathMarkers ?? [])
+        {
+            player.DeathMarkers.Add(marker);
+        }
         return player;
     }
 
@@ -107,7 +116,8 @@ internal sealed class PersistedPlayerData
             PlayerPreferences = new(player.PingInstancePreferences.ToDictionary(m => m.Key, m => m.Value), player.PinnedRecipePreferences.ToList()),
             InPrecursor = player.InPrecursor,
             DisplaySurfaceWater = player.DisplaySurfaceWater,
-            UnreadPdaNotifications = player.UnreadPdaNotifications.ToList()
+            UnreadPdaNotifications = player.UnreadPdaNotifications.ToList(),
+            DeathMarkers = player.DeathMarkers.ToList()
         };
     }
 }

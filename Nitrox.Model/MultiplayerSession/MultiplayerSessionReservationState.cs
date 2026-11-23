@@ -20,7 +20,7 @@ namespace Nitrox.Model.MultiplayerSession
         [Description("The password that you provided for the server is incorrect.")]
         AUTHENTICATION_FAILED = 1 << 3,
 
-        [Description("The server is using hardcore gamemode, player is dead.")]
+        [Description("This player died in hardcore mode and can no longer join this world.")]
         HARDCORE_PLAYER_DEAD = 1 << 4,
 
         [Description("The player name is invalid, It must not contain any space or doubtful characters\n Allowed characters : A-Z a-z 0-9 _ . -\nLength : [3, 25]")]
