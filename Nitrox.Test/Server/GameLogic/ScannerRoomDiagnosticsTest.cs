@@ -14,6 +14,8 @@ using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Extensions;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.Packets.Processors;
+using Nitrox.Test.Server.Helper;
+using NSubstitute;
 
 namespace Nitrox.Test.Server.GameLogic;
 
@@ -31,8 +33,8 @@ public sealed class ScannerRoomDiagnosticsTest
     [TestMethod]
     public void EmitsStableSingleLineFormatAndTracksOutcomes()
     {
-        CapturingLogger<ScannerRoomDiagnostics> logger = new();
-        ScannerRoomDiagnostics diagnostics = new(logger);
+        List<(LogLevel Level, string Message)> logged = [];
+        ScannerRoomDiagnostics diagnostics = new(LogSubstitute.Capturing<ScannerRoomDiagnostics>(logged));
         MapRoomEntity room = CreateRoom();
         NitroxId cameraId = firstCameraId;
 
@@ -46,24 +48,24 @@ public sealed class ScannerRoomDiagnosticsTest
         rejected.Format().Should().NotContain("\r").And.NotContain("\n");
         accepted.StateFingerprint.Should().BeNull("transition logging must stay O(1) even with large scan result sets");
 
-        logger.Entries.Should().HaveCount(3, "the first event of a run is preceded by its epoch marker");
-        logger.Entries[1].Should().Be((LogLevel.Information, accepted.Format()));
-        logger.Entries[2].Should().Be((LogLevel.Warning, rejected.Format()));
+        logged.Should().HaveCount(3, "the first event of a run is preceded by its epoch marker");
+        logged[1].Should().Be((LogLevel.Information, accepted.Format()));
+        logged[2].Should().Be((LogLevel.Warning, rejected.Format()));
         diagnostics.GetCounters().Should().Be(new ScannerRoomDiagnosticCounters(2, 1, 1, 0, 0));
     }
 
     [TestMethod]
     public void FirstEventIsPrecededByOneEpochMarkerWithUtcTime()
     {
-        CapturingLogger<ScannerRoomDiagnostics> logger = new();
+        List<(LogLevel Level, string Message)> logged = [];
         ManualTimeProvider time = new(new DateTimeOffset(2026, 11, 23, 15, 4, 5, TimeSpan.FromHours(1)));
-        ScannerRoomDiagnostics diagnostics = new(logger, timeProvider: time);
+        ScannerRoomDiagnostics diagnostics = new(LogSubstitute.Capturing<ScannerRoomDiagnostics>(logged), timeProvider: time);
 
         diagnostics.RecordAccepted("dock");
         diagnostics.RecordAccepted("undock");
 
-        logger.Entries.Should().HaveCount(3);
-        logger.Entries[0].Should().Be((LogLevel.Information,
+        logged.Should().HaveCount(3);
+        logged[0].Should().Be((LogLevel.Information,
             $"[SRD1] n=- ep={diagnostics.Epoch} side=S sid=- ev=epoch out=info utc=2026-11-23T14:04:05Z reason=server_diagnostics_started"));
         diagnostics.GetCounters().Recorded.Should().Be(2, "a marker is not an event and must not leave a gap in the numbering");
         diagnostics.GetHistory().Should().HaveCount(2);
@@ -107,8 +109,8 @@ public sealed class ScannerRoomDiagnosticsTest
     [TestMethod]
     public void DuplicateWarningsAreSampledButEveryRejectionIsCounted()
     {
-        CapturingLogger<ScannerRoomDiagnostics> logger = new();
-        ScannerRoomDiagnostics diagnostics = new(logger);
+        List<(LogLevel Level, string Message)> logged = [];
+        ScannerRoomDiagnostics diagnostics = new(LogSubstitute.Capturing<ScannerRoomDiagnostics>(logged));
 
         for (int index = 0; index < 300; index++)
         {
@@ -120,15 +122,15 @@ public sealed class ScannerRoomDiagnosticsTest
         counters.Recorded.Should().Be(300);
         counters.Rejected.Should().Be(300);
         counters.SuppressedWarnings.Should().BeGreaterThan(280);
-        logger.Entries.Should().HaveCountLessThan(20);
+        logged.Should().HaveCountLessThan(20);
     }
 
     [TestMethod]
     public void RejectionsAreLoggedAgainAfterABurstHasPassed()
     {
-        CapturingLogger<ScannerRoomDiagnostics> logger = new();
+        List<(LogLevel Level, string Message)> logged = [];
         ManualTimeProvider time = new(DateTimeOffset.UnixEpoch);
-        ScannerRoomDiagnostics diagnostics = new(logger, timeProvider: time);
+        ScannerRoomDiagnostics diagnostics = new(LogSubstitute.Capturing<ScannerRoomDiagnostics>(logged), timeProvider: time);
         for (int index = 0; index < 300; index++)
         {
             diagnostics.RecordRejected("control", cameraId: new NitroxId("55555555-5555-5555-5555-555555555555"),
@@ -139,16 +141,16 @@ public sealed class ScannerRoomDiagnosticsTest
         ScannerRoomDiagnosticEntry later = diagnostics.RecordRejected("dock", cameraId: new NitroxId("66666666-6666-6666-6666-666666666666"),
             sessionId: (SessionId)(ushort)3, reason: "non_owner");
 
-        logger.Entries.Should().Contain((LogLevel.Warning, later.Format()),
+        logged.Should().Contain((LogLevel.Warning, later.Format()),
             "a rejection minutes after a burst is exactly the line a tester is looking for");
     }
 
     [TestMethod]
     public void MutedRejectionsAreAnnouncedAndSummedUpInTheLog()
     {
-        CapturingLogger<ScannerRoomDiagnostics> logger = new();
+        List<(LogLevel Level, string Message)> logged = [];
         ManualTimeProvider time = new(DateTimeOffset.UnixEpoch);
-        ScannerRoomDiagnostics diagnostics = new(logger, timeProvider: time);
+        ScannerRoomDiagnostics diagnostics = new(LogSubstitute.Capturing<ScannerRoomDiagnostics>(logged), timeProvider: time);
 
         for (int index = 0; index < 200; index++)
         {
@@ -157,7 +159,7 @@ public sealed class ScannerRoomDiagnosticsTest
         time.Advance(TimeSpan.FromMinutes(2));
         diagnostics.RecordAccepted("dock");
 
-        string[] lines = logger.Entries.Select(entry => entry.Message).ToArray();
+        string[] lines = logged.Select(entry => entry.Message).ToArray();
         lines.Count(line => line.Contains(" out=reject ")).Should().Be(128);
         lines.Should().ContainSingle(line => line.Contains(" ev=log_budget ") && line.EndsWith(" reason=rejections_muted_after_128_lines_in_60s"),
             "a reader must be able to tell that lines are missing from here on");
@@ -169,15 +171,15 @@ public sealed class ScannerRoomDiagnosticsTest
     [TestMethod]
     public void RepeatedRejectionSaysHowOftenItHappened()
     {
-        CapturingLogger<ScannerRoomDiagnostics> logger = new();
-        ScannerRoomDiagnostics diagnostics = new(logger);
+        List<(LogLevel Level, string Message)> logged = [];
+        ScannerRoomDiagnostics diagnostics = new(LogSubstitute.Capturing<ScannerRoomDiagnostics>(logged));
 
         for (int index = 0; index < 9; index++)
         {
             diagnostics.RecordRejected("component", sessionId: (SessionId)(ushort)2, reason: "non_owner");
         }
 
-        string[] rejections = logger.Entries.Select(entry => entry.Message).Where(line => line.Contains(" out=reject ")).ToArray();
+        string[] rejections = logged.Select(entry => entry.Message).Where(line => line.Contains(" out=reject ")).ToArray();
         rejections.Should().HaveCount(4, "the first two and then every power of two are written");
         rejections[0].Should().EndWith(" fp=- reason=non_owner");
         rejections[1].Should().EndWith(" fp=- rep=2 reason=non_owner");
@@ -187,7 +189,7 @@ public sealed class ScannerRoomDiagnosticsTest
     [TestMethod]
     public void FailingLoggerCannotBreakTheCodeBeingObserved()
     {
-        ScannerRoomDiagnostics diagnostics = new(new ThrowingLogger());
+        ScannerRoomDiagnostics diagnostics = new(LogSubstitute.Throwing<ScannerRoomDiagnostics>());
         MapRoomEntity room = CreateRoom();
 
         Action record = () =>
@@ -233,21 +235,21 @@ public sealed class ScannerRoomDiagnosticsTest
     [TestMethod]
     public void InvariantAfterRejectionBurstIsNeverSuppressed()
     {
-        CapturingLogger<ScannerRoomDiagnostics> logger = new();
-        ScannerRoomDiagnostics diagnostics = new(logger);
+        List<(LogLevel Level, string Message)> logged = [];
+        ScannerRoomDiagnostics diagnostics = new(LogSubstitute.Capturing<ScannerRoomDiagnostics>(logged));
 
         for (int index = 0; index < 300; index++)
         {
             diagnostics.RecordRejected("control", cameraId: new NitroxId("55555555-5555-5555-5555-555555555555"),
                 sessionId: (SessionId)(ushort)9, reason: "non_owner");
         }
-        int warningCountBeforeInvariant = logger.Entries.Count;
+        int warningCountBeforeInvariant = logged.Count;
         long suppressedBeforeInvariant = diagnostics.GetCounters().SuppressedWarnings;
 
         ScannerRoomDiagnosticEntry invariant = diagnostics.RecordInvariantFailure("control_revoke", reason: "duplicate_registration");
 
-        logger.Entries.Should().HaveCount(warningCountBeforeInvariant + 1);
-        logger.Entries[^1].Should().Be((LogLevel.Warning, invariant.Format()));
+        logged.Should().HaveCount(warningCountBeforeInvariant + 1);
+        logged[^1].Should().Be((LogLevel.Warning, invariant.Format()));
         diagnostics.GetCounters().InvariantFailures.Should().Be(1);
         diagnostics.GetCounters().SuppressedWarnings.Should().Be(suppressedBeforeInvariant);
     }
@@ -518,12 +520,12 @@ public sealed class ScannerRoomDiagnosticsTest
     [TestMethod]
     public async Task ScanProgressFromAPlayerWhoDoesNotSimulateTheRoomIsThinnedOut()
     {
-        CapturingLogger<ScannerRoomDiagnostics> diagnosticsLog = new();
-        CapturingLogger<EntityMetadataUpdateProcessor> processorLog = new();
-        ScannerRoomScenarioFixture scenario = new(diagnosticsLog: diagnosticsLog);
+        List<(LogLevel Level, string Message)> diagnosticsLog = [];
+        List<(LogLevel Level, string Message)> processorLog = [];
+        ScannerRoomScenarioFixture scenario = new(diagnosticsLog: LogSubstitute.Capturing<ScannerRoomDiagnostics>(diagnosticsLog));
         scenario.Room.Metadata = new MapRoomMetadata(quartz, 5, 1);
         ScannerRoomDiagnostics diagnostics = scenario.Diagnostics;
-        EntityMetadataUpdateProcessor processor = CreateMetadataProcessor(scenario, processorLog);
+        EntityMetadataUpdateProcessor processor = CreateMetadataProcessor(scenario, LogSubstitute.Capturing<EntityMetadataUpdateProcessor>(processorLog));
 
         // Nobody simulates the room, so every client keeps counting scanned nodes and reports each one.
         for (int node = 6; node < 46; node++)
@@ -532,7 +534,7 @@ public sealed class ScannerRoomDiagnosticsTest
                 new EntityMetadataUpdate(ScannerRoomScenarioFixture.RoomId, new MapRoomMetadata(quartz, node, 1)));
         }
 
-        string[] warnings = processorLog.Entries.Concat(diagnosticsLog.Entries).Where(entry => entry.Level == LogLevel.Warning)
+        string[] warnings = processorLog.Concat(diagnosticsLog).Where(entry => entry.Level == LogLevel.Warning)
                                         .Select(entry => entry.Message).ToArray();
         warnings.Should().HaveCountLessThan(10, "one warning per scanned node buries everything else");
         warnings[0].Should().Contain(" sid=2 ev=scan_progress out=reject ").And.Contain(" roomLock=none ").And.EndWith(" reason=non_owner");
@@ -544,7 +546,7 @@ public sealed class ScannerRoomDiagnosticsTest
     {
         ScannerRoomScenarioFixture scenario = CreateScenarioWithOwnedRoom();
         scenario.Room.Metadata = new MapRoomMetadata(quartz, 5, 3);
-        EntityMetadataUpdateProcessor processor = CreateMetadataProcessor(scenario, new CapturingLogger<EntityMetadataUpdateProcessor>());
+        EntityMetadataUpdateProcessor processor = CreateMetadataProcessor(scenario, Substitute.For<ILogger<EntityMetadataUpdateProcessor>>());
 
         // Player B still holds generation 2 (another player's target has not reached it yet) and picks another target.
         await processor.Process(scenario.Context(scenario.PlayerB),
@@ -561,7 +563,7 @@ public sealed class ScannerRoomDiagnosticsTest
     {
         ScannerRoomScenarioFixture scenario = CreateScenarioWithOwnedRoom();
         scenario.Room.Metadata = new MapRoomMetadata(quartz, 5, 3);
-        EntityMetadataUpdateProcessor processor = CreateMetadataProcessor(scenario, new CapturingLogger<EntityMetadataUpdateProcessor>());
+        EntityMetadataUpdateProcessor processor = CreateMetadataProcessor(scenario, Substitute.For<ILogger<EntityMetadataUpdateProcessor>>());
 
         // The throttled progress report can repeat a count the server already has.
         await processor.Process(scenario.Context(scenario.PlayerA),
@@ -642,25 +644,5 @@ public sealed class ScannerRoomDiagnosticsTest
         public override long GetTimestamp() => now.UtcTicks;
 
         public void Advance(TimeSpan duration) => now += duration;
-    }
-
-    private sealed class ThrowingLogger : ILogger<ScannerRoomDiagnostics>
-    {
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
-            Func<TState, Exception?, string> formatter) => throw new InvalidOperationException("log sink is gone");
-    }
-
-    private sealed class CapturingLogger<T> : ILogger<T>
-    {
-        public List<(LogLevel Level, string Message)> Entries { get; } = [];
-
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
-            Func<TState, Exception?, string> formatter) => Entries.Add((logLevel, formatter(state, exception)));
     }
 }

@@ -5,6 +5,7 @@ using Nitrox.Server.Subnautica.Models.Commands;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Test.Server.GameLogic;
+using Nitrox.Test.Server.Helper;
 
 namespace Nitrox.Test.Server.Commands;
 
@@ -18,18 +19,18 @@ public sealed class ScannerMarkCommandTest
     [TestMethod]
     public async Task ScannerMarkWritesAMarkerWithoutAnyScannerRoom()
     {
-        CapturingLogger<ScannerRoomDiagnostics> scannerLog = new();
-        CapturingLogger<BasePowerDiagnostics> powerLog = new();
-        ScannerRoomDiagnostics diagnostics = new(scannerLog);
+        List<(LogLevel Level, string Message)> scannerLog = [];
+        List<(LogLevel Level, string Message)> powerLog = [];
+        ScannerRoomDiagnostics diagnostics = new(LogSubstitute.Capturing<ScannerRoomDiagnostics>(scannerLog));
         ScannerRoomManager noRooms = ScannerRoomScenarioFixture.CreateManager(new EntityRegistry(NullLogger<EntityRegistry>.Instance), new SimulationOwnershipData(), diagnostics);
-        ScannerMarkCommand command = new(noRooms, diagnostics, new BasePowerDiagnostics(powerLog));
+        ScannerMarkCommand command = new(noRooms, diagnostics, new BasePowerDiagnostics(LogSubstitute.Capturing<BasePowerDiagnostics>(powerLog)));
         RecordingCommandContext context = new();
 
         await command.Execute(context, "T1 Start");
 
-        scannerLog.Entries.Should().Contain(entry => entry.Message.StartsWith("[SRD1] n=- ") && entry.Message.Contains(" ev=mark out=info ") && entry.Message.EndsWith(" reason=t1_start"),
+        scannerLog.Should().Contain(entry => entry.Message.StartsWith("[SRD1] n=- ") && entry.Message.Contains(" ev=mark out=info ") && entry.Message.EndsWith(" reason=t1_start"),
             "a test step must be markable before the first room is built");
-        powerLog.Entries.Should().Contain(entry => entry.Message.StartsWith("[BPD1] n=- ") && entry.Message.EndsWith(" reason=t1_start"));
+        powerLog.Should().Contain(entry => entry.Message.StartsWith("[BPD1] n=- ") && entry.Message.EndsWith(" reason=t1_start"));
         context.Replies.Single().Should().Contain("reason=t1_start").And.Contain("no Scanner Rooms to checkpoint");
         diagnostics.GetCounters().Recorded.Should().Be(0);
     }
@@ -49,16 +50,5 @@ public sealed class ScannerMarkCommandTest
         checkpoint.Format().Should().Contain(" ev=manual out=checkpoint ");
         checkpoint.Reason.Should().Be("d1-before-restart");
         context.Replies[1].Should().Contain($"1 Scanner Room checkpoint(s): {ScannerRoomScenarioFixture.RoomId}={checkpoint.StateFingerprint}");
-    }
-
-    private sealed class CapturingLogger<T> : ILogger<T>
-    {
-        public List<(LogLevel Level, string Message)> Entries { get; } = [];
-
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
-            Func<TState, Exception?, string> formatter) => Entries.Add((logLevel, formatter(state, exception)));
     }
 }

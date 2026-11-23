@@ -9,9 +9,8 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Extensions;
 using Nitrox.Server.Subnautica.Models.GameLogic;
-using Nitrox.Server.Subnautica.Models.Packets.Core;
 using Nitrox.Server.Subnautica.Models.Packets.Processors;
-using Packet = Nitrox.Model.Packets.Packet;
+using Nitrox.Test.Server.Helper;
 
 namespace Nitrox.Test.Server.GameLogic;
 
@@ -27,20 +26,20 @@ public sealed class BasePowerDiagnosticsTest
     {
         ScannerRoomScenarioFixture scenario = new();
         ModuleEntity source = AddSolarPanel(scenario);
-        CapturingLogger<BasePowerSourceConsumeProcessor> processorLog = new();
-        CapturingLogger<BasePowerDiagnostics> diagnosticsLog = new();
-        BasePowerDiagnostics diagnostics = new(diagnosticsLog, scenario.Ownership);
-        BasePowerSourceConsumeProcessor processor = new(scenario.EntityRegistry, CreateManager(scenario, diagnostics), diagnostics, processorLog);
+        List<(LogLevel Level, string Message)> processorLog = [];
+        List<(LogLevel Level, string Message)> diagnosticsLog = [];
+        BasePowerDiagnostics diagnostics = new(LogSubstitute.Capturing<BasePowerDiagnostics>(diagnosticsLog), scenario.Ownership);
+        BasePowerSourceConsumeProcessor processor = new(scenario.EntityRegistry, CreateManager(scenario, diagnostics), diagnostics, LogSubstitute.Capturing<BasePowerSourceConsumeProcessor>(processorLog));
 
         // A consumer reports four times a second, each time a slightly different amount. Nobody simulates the
         // source and it has no stored power yet, so every report is rejected.
         for (int report = 0; report < 40; report++)
         {
-            await processor.Process(new AuthProcessorContext(scenario.PlayerB, new DiscardingPacketSender()),
+            await processor.Process(scenario.Context(scenario.PlayerB),
                 new BasePowerSourceConsume(source.Id, 0.25f + report * 0.001f));
         }
 
-        (LogLevel Level, string Message)[] rejections = processorLog.Entries.Concat(diagnosticsLog.Entries).Where(entry => entry.Message.Contains("reject")).ToArray();
+        (LogLevel Level, string Message)[] rejections = processorLog.Concat(diagnosticsLog).Where(entry => entry.Message.Contains("reject")).ToArray();
         rejections.Should().HaveCountLessThan(10, "ten seconds of a rejected consumer must not cost forty lines");
         rejections[0].Message.Should().Contain(" sid=2 ev=consume out=reject ").And.Contain(" owner=none ")
                 .And.EndWith(" reason=source_has_no_stored_power_state_and_no_simulation_owner");
@@ -54,20 +53,20 @@ public sealed class BasePowerDiagnosticsTest
         ModuleEntity source = AddSolarPanel(scenario);
         source.Metadata = new PowerSourceMetadata(30f, 0f, BasePowerSourceType.SOLAR);
         Assert.IsTrue(scenario.Ownership.TryAcquire(source.Id, scenario.PlayerA, SimulationLockType.TRANSIENT));
-        CapturingLogger<EntityMetadataUpdateProcessor> processorLog = new();
-        CapturingLogger<BasePowerDiagnostics> diagnosticsLog = new();
-        BasePowerDiagnostics diagnostics = new(diagnosticsLog, scenario.Ownership);
+        List<(LogLevel Level, string Message)> processorLog = [];
+        List<(LogLevel Level, string Message)> diagnosticsLog = [];
+        BasePowerDiagnostics diagnostics = new(LogSubstitute.Capturing<BasePowerDiagnostics>(diagnosticsLog), scenario.Ownership);
         EntityMetadataUpdateProcessor processor = new(new PlayerManager(null!, null!, null!, NullLogger<PlayerManager>.Instance), scenario.EntityRegistry,
-            scenario.Ownership, scenario.Manager, CreateManager(scenario, diagnostics), processorLog);
+            scenario.Ownership, scenario.Manager, CreateManager(scenario, diagnostics), LogSubstitute.Capturing<EntityMetadataUpdateProcessor>(processorLog));
 
         // Player B wrongly believes it simulates the source and reports its level once a second.
         for (int report = 0; report < 40; report++)
         {
-            await processor.Process(new AuthProcessorContext(scenario.PlayerB, new DiscardingPacketSender()),
+            await processor.Process(scenario.Context(scenario.PlayerB),
                 new EntityMetadataUpdate(source.Id, new PowerSourceMetadata(10f + report, 0f, BasePowerSourceType.SOLAR)));
         }
 
-        (LogLevel Level, string Message)[] rejections = processorLog.Entries.Concat(diagnosticsLog.Entries).Where(entry => entry.Message.Contains("reject")).ToArray();
+        (LogLevel Level, string Message)[] rejections = processorLog.Concat(diagnosticsLog).Where(entry => entry.Message.Contains("reject")).ToArray();
         rejections.Should().HaveCountLessThan(10);
         rejections[0].Message.Should().Contain(" sid=2 ev=source_update out=reject ").And.Contain(" type=solar power=30.00/75.00 owner=1 ")
                 .And.EndWith(" reason=sender_does_not_own_source_simulation");
@@ -85,17 +84,17 @@ public sealed class BasePowerDiagnosticsTest
         ModuleEntity source = AddSolarPanel(scenario);
         source.Metadata = new PowerSourceMetadata(60f, 0f, BasePowerSourceType.SOLAR);
         Assert.IsTrue(scenario.Ownership.TryAcquire(source.Id, scenario.PlayerA, SimulationLockType.TRANSIENT));
-        CapturingLogger<BasePowerDiagnostics> log = new();
-        BasePowerDiagnostics diagnostics = new(log, scenario.Ownership);
+        List<(LogLevel Level, string Message)> log = [];
+        BasePowerDiagnostics diagnostics = new(LogSubstitute.Capturing<BasePowerDiagnostics>(log), scenario.Ownership);
         SimulationOwnershipReleaseProcessor processor = new(new PlayerManager(null!, null!, null!, NullLogger<PlayerManager>.Instance),
             scenario.EntitySimulation, scenario.EntityRegistry, diagnostics);
 
         // Player A does not have the source's object and gives its simulation back; nobody else is connected.
-        await processor.Process(new AuthProcessorContext(scenario.PlayerA, new DiscardingPacketSender()), new SimulationOwnershipRelease(source.Id));
+        await processor.Process(scenario.Context(scenario.PlayerA), new SimulationOwnershipRelease(source.Id));
         // Player B never held it.
-        await processor.Process(new AuthProcessorContext(scenario.PlayerB, new DiscardingPacketSender()), new SimulationOwnershipRelease(source.Id));
+        await processor.Process(scenario.Context(scenario.PlayerB), new SimulationOwnershipRelease(source.Id));
 
-        string[] lines = log.Entries.Select(entry => entry.Message).Where(line => line.Contains(" ev=source_handback ")).ToArray();
+        string[] lines = log.Select(entry => entry.Message).Where(line => line.Contains(" ev=source_handback ")).ToArray();
         lines.Should().HaveCount(2);
         lines[0].Should().Contain(" sid=1 ev=source_handback out=ok ").And.Contain(" type=solar power=60.00/75.00 owner=none ")
                 .And.EndWith(" reason=nobody_else_can_simulate");
@@ -107,22 +106,22 @@ public sealed class BasePowerDiagnosticsTest
     public void HandBackOfSomethingThatIsNoPowerSourceIsNotBasePower()
     {
         ScannerRoomScenarioFixture scenario = new();
-        CapturingLogger<BasePowerDiagnostics> log = new();
-        BasePowerDiagnostics diagnostics = new(log, scenario.Ownership);
+        List<(LogLevel Level, string Message)> log = [];
+        BasePowerDiagnostics diagnostics = new(LogSubstitute.Capturing<BasePowerDiagnostics>(log), scenario.Ownership);
 
         diagnostics.RecordHandBack(scenario.Room, scenario.PlayerA.SessionId, true, true);
         diagnostics.RecordHandBack(AddSolarPanel(scenario), scenario.PlayerA.SessionId, true, true);
 
-        log.Entries.Should().BeEmpty("the hand-back request is the same for every entity; only power sources belong in this log");
+        log.Should().BeEmpty("the hand-back request is the same for every entity; only power sources belong in this log");
         diagnostics.GetSources().Should().BeEmpty();
     }
 
     [TestMethod]
     public void OnlyTheFirstUpdateOfAnOwnerGetsALine()
     {
-        CapturingLogger<BasePowerDiagnostics> log = new();
+        List<(LogLevel Level, string Message)> log = [];
         ManualTimeProvider time = new(new DateTimeOffset(2026, 11, 23, 14, 4, 5, TimeSpan.Zero));
-        BasePowerDiagnostics diagnostics = new(log, timeProvider: time);
+        BasePowerDiagnostics diagnostics = new(LogSubstitute.Capturing<BasePowerDiagnostics>(log), timeProvider: time);
 
         for (int report = 1; report <= 100; report++)
         {
@@ -130,7 +129,7 @@ public sealed class BasePowerDiagnosticsTest
         }
         diagnostics.RecordAccepted(sourceId, consumer, new PowerSourceMetadata(50f, 0f, BasePowerSourceType.SOLAR));
 
-        log.Entries.Select(entry => entry.Message).Should().Equal(
+        log.Select(entry => entry.Message).Should().Equal(
             $"[BPD1] n=- ep={diagnostics.Epoch} side=S sid=- ev=epoch out=info utc=2026-11-23T14:04:05Z reason=server_diagnostics_started",
             $"[BPD1] n=1 ep={diagnostics.Epoch} side=S sid=1 ev=source_update out=ok source=99e1d312.8c30 type=solar power=0.50/75.00 owner=? amount=- total=- reason=first_update",
             $"[BPD1] n=101 ep={diagnostics.Epoch} side=S sid=2 ev=source_update out=ok source=99e1d312.8c30 type=solar power=50.00/75.00 owner=? amount=- total=- reason=owner_changed_from_1");
@@ -140,8 +139,8 @@ public sealed class BasePowerDiagnosticsTest
     [TestMethod]
     public void ConsumptionIsAddedUpPerConsumerAndRoute()
     {
-        CapturingLogger<BasePowerDiagnostics> log = new();
-        BasePowerDiagnostics diagnostics = new(log);
+        List<(LogLevel Level, string Message)> log = [];
+        BasePowerDiagnostics diagnostics = new(LogSubstitute.Capturing<BasePowerDiagnostics>(log));
         PowerSourceMetadata stored = new(60f, 0f, BasePowerSourceType.SOLAR);
         SessionId secondConsumer = (SessionId)(ushort)3;
 
@@ -162,10 +161,10 @@ public sealed class BasePowerDiagnosticsTest
         totals.ConsumptionForwardedAmount.Should().Be(4.5f);
         totals.ConsumptionAppliedByServer.Should().Be(1);
         totals.ConsumptionRejected.Should().Be(1);
-        string[] forwardLines = log.Entries.Select(entry => entry.Message).Where(line => line.Contains(" sid=2 ev=consume out=forward ")).ToArray();
+        string[] forwardLines = log.Select(entry => entry.Message).Where(line => line.Contains(" sid=2 ev=consume out=forward ")).ToArray();
         forwardLines.Should().HaveCount(4, "the first two reports and then every power of two get a line");
         forwardLines[^1].Should().Contain(" amount=0.500 total=4.000 rep=8 reason=sent_to_owner_to_apply");
-        log.Entries.Select(entry => entry.Message).Should().ContainSingle(line => line.Contains(" ev=consume out=server ") && line.Contains(" power=58.00/75.00 "));
+        log.Select(entry => entry.Message).Should().ContainSingle(line => line.Contains(" ev=consume out=server ") && line.Contains(" power=58.00/75.00 "));
     }
 
     [TestMethod]
@@ -202,7 +201,7 @@ public sealed class BasePowerDiagnosticsTest
     [TestMethod]
     public void FailingLoggerCannotBreakTheCodeBeingObserved()
     {
-        BasePowerDiagnostics diagnostics = new(new ThrowingLogger());
+        BasePowerDiagnostics diagnostics = new(LogSubstitute.Throwing<BasePowerDiagnostics>());
 
         Action record = () =>
         {
@@ -253,34 +252,5 @@ public sealed class BasePowerDiagnosticsTest
         public override long GetTimestamp() => now.UtcTicks;
 
         public void Advance(TimeSpan duration) => now += duration;
-    }
-
-    private sealed class DiscardingPacketSender : IPacketSender
-    {
-        public ValueTask SendPacketAsync<T>(T packet, SessionId sessionId) where T : Packet => ValueTask.CompletedTask;
-
-        public ValueTask SendPacketToAllAsync<T>(T packet) where T : Packet => ValueTask.CompletedTask;
-
-        public ValueTask SendPacketToOthersAsync<T>(T packet, SessionId excludedSessionId) where T : Packet => ValueTask.CompletedTask;
-    }
-
-    private sealed class ThrowingLogger : ILogger<BasePowerDiagnostics>
-    {
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
-            Func<TState, Exception?, string> formatter) => throw new InvalidOperationException("log sink is gone");
-    }
-
-    private sealed class CapturingLogger<T> : ILogger<T>
-    {
-        public List<(LogLevel Level, string Message)> Entries { get; } = [];
-
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
-            Func<TState, Exception?, string> formatter) => Entries.Add((logLevel, formatter(state, exception)));
     }
 }
