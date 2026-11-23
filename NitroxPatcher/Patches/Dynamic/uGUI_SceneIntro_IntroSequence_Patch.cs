@@ -102,7 +102,22 @@ public sealed partial class uGUI_SceneIntro_IntroSequence_Patch : NitroxPatch, I
         float radioHealthBefore = radioLiveMixin.health;
         float playerHealthBefore = Player.main.liveMixin.health;
 
+        // EscapePod.StopIntroCinematic also spawns the flock of birds that greets a new arrival. A game loaded from a
+        // save has none: EscapePod.Start spawns them only in a new game whose intro is skipped. PrefabSpawnBase.SpawnManual
+        // spawns only while the spawner holds no object, so it is given one for the moment of the call.
+        PrefabSpawnBase birdsSpawner = EscapePod.main.birdsSpawner;
+        bool keepBirdsAway = !wasNewPlayer && birdsSpawner && !birdsSpawner.spawnedObj;
+        if (keepBirdsAway)
+        {
+            birdsSpawner.spawnedObj = birdsSpawner.gameObject;
+        }
+
         uGuiSceneIntro.Stop(true);
+
+        if (keepBirdsAway)
+        {
+            birdsSpawner.spawnedObj = null;
+        }
 
         if (!wasNewPlayer)
         {
