@@ -5,7 +5,7 @@ namespace NitroxPatcher.Patches.Dynamic;
 
 /// <summary>
 ///     MedicalCabinet.Update makes the next medkit once its time has come. The server stores that the cabinet holds one,
-///     so that a player who joins later finds it there.
+///     so that a player who joins later finds it there, and the timer the first game reports for a cabinet.
 /// </summary>
 public sealed partial class MedicalCabinet_Update_Patch : NitroxPatch, IDynamicPatch
 {
@@ -18,9 +18,6 @@ public sealed partial class MedicalCabinet_Update_Patch : NitroxPatch, IDynamicP
 
     public static void Postfix(MedicalCabinet __instance, bool __state)
     {
-        if (!__state && __instance.hasMedKit)
-        {
-            Resolve<MedicalCabinets>().BroadcastState(__instance);
-        }
+        Resolve<MedicalCabinets>().Updated(__instance, __state);
     }
 }
