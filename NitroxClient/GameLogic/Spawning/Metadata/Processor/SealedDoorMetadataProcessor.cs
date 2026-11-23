@@ -10,15 +10,22 @@ public class SealedDoorMetadataProcessor : EntityMetadataProcessor<SealedDoorMet
     {
         Log.Info($"Received door metadata change for {gameObject.name} with data of {metadata}");
 
-        Sealed door = gameObject.GetComponent<Sealed>();
-        door._sealed = metadata.Sealed;
-        door.openedAmount = metadata.OpenedAmount;
+        ApplySealedState(gameObject.GetComponent<Sealed>(), metadata.Sealed, metadata.OpenedAmount);
+    }
 
-        LaserCutObject laseredObject = gameObject.GetComponent<LaserCutObject>();
+    /// <summary>
+    ///     Applies the cut state of an object that has to be laser cut open, alone or as part of a door's metadata.
+    /// </summary>
+    public static void ApplySealedState(Sealed sealedObject, bool isSealed, float openedAmount)
+    {
+        sealedObject._sealed = isSealed;
+        sealedObject.openedAmount = openedAmount;
 
-        if (laseredObject && door._sealed)
+        LaserCutObject laseredObject = sealedObject.GetComponent<LaserCutObject>();
+
+        if (laseredObject && isSealed)
         {
-            laseredObject.lastCutValue = door.openedAmount;
+            laseredObject.lastCutValue = openedAmount;
             laseredObject.ActivateFX();
         }
     }
