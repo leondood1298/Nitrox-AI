@@ -48,6 +48,31 @@ public sealed class ScannerRoomManagerSnapshotTest
     }
 
     [TestMethod]
+    public async Task ScanResultsAreCountedWithTheCopyButAreNoPartOfTheSaveOrTheFingerprint()
+    {
+        ScannerRoomScenarioFixture scenario = new();
+        scenario.StartScan(scenario.PlayerA, scenario.Room, quartz);
+        string fingerprintBefore = ScannerRoomStateFingerprint.Create(scenario.Manager.GetSnapshot(scenario.Room.Id)!.Room).Fingerprint;
+
+        await scenario.ReportScanAsync(scenario.PlayerA, scenario.Room, new MapRoomScanResultRecord("found", quartz, new NitroxVector3(1f, 2f, 3f)));
+        await scenario.Manager.ReportScanTypesAsync(scenario.PlayerA, new MapRoomScanTypesReport(scenario.Room.Id, [quartz], [quartz], NitroxVector3.Zero, 300f));
+
+        ScannerRoomSnapshot withResults = scenario.Manager.GetSnapshot(scenario.Room.Id)!;
+        Assert.AreEqual(1, withResults.ScanResultCount);
+        Assert.AreEqual(1, withResults.ScanTypeCount);
+        Assert.AreEqual(fingerprintBefore, ScannerRoomStateFingerprint.Create(withResults.Room).Fingerprint,
+            "A world that is saved and loaded again has no scan results. Its rooms must still have the fingerprint they were saved with.");
+
+        // What is saved of a scan is in the fingerprint.
+        await scenario.UpdateMetadataAsync(scenario.PlayerA, scenario.Room.Id, new MapRoomMetadata(quartz, 1, 5));
+        string afterProgress = ScannerRoomStateFingerprint.Create(scenario.Manager.GetSnapshot(scenario.Room.Id)!.Room).Fingerprint;
+        await scenario.UpdateMetadataAsync(scenario.PlayerA, scenario.Room.Id, new MapRoomMetadata(NitroxTechType.None, 0, 5));
+        string afterStop = ScannerRoomStateFingerprint.Create(scenario.Manager.GetSnapshot(scenario.Room.Id)!.Room).Fingerprint;
+        Assert.AreNotEqual(fingerprintBefore, afterProgress);
+        Assert.AreNotEqual(afterProgress, afterStop);
+    }
+
+    [TestMethod]
     public void SnapshotsFollowRoomsThatAreBuiltReplacedAndRemoved()
     {
         ScannerRoomScenarioFixture scenario = new();
