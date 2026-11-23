@@ -126,7 +126,22 @@ namespace NitroxClient.GameLogic
 
         public void BroadcastMetadataUpdateThrottled(NitroxId id, EntityMetadata metadata, float throttleTime = 0.2f)
         {
-            throttledPacketSender.SendThrottled(new EntityMetadataUpdate(id, metadata), packet => packet.Id, throttleTime);
+            // A creature's infection, leash and size updates share this slot: they are merged, not replaced
+            throttledPacketSender.SendThrottled(new EntityMetadataUpdate(id, metadata), packet => packet.Id, throttleTime, CreatureMetadataUpdates.Merge);
+        }
+
+        /// <summary>
+        ///     Sends an update at once, in place of one still waiting to be throttled for the same entity, which would
+        ///     otherwise come after it and undo it. What only the waiting one carried is kept (see <see cref="CreatureMetadataUpdates" />).
+        /// </summary>
+        public void BroadcastMetadataUpdateNow(NitroxId id, EntityMetadata metadata)
+        {
+            EntityMetadataUpdate update = new(id, metadata);
+            if (throttledPacketSender.TryTakePendingPacket(id, out EntityMetadataUpdate pending))
+            {
+                update = CreatureMetadataUpdates.Merge(pending, update);
+            }
+            packetSender.Send(update);
         }
 
         /// <param name="requireSimulation">
