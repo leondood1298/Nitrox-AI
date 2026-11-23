@@ -181,6 +181,7 @@ internal static partial class ServiceCollectionExtensions
                     .AddSingleton<EscapePodManager>()
                     .AddSingleton<IntroCinematicPairing>()
                     .AddSingleton<PdaManager>()
+                    .AddSingleton<PdaNotificationManager>()
                     .AddSingleton<ActiveTeleporters>()
                     .AddSingleton<BatchEntitySpawner>()
                     .AddSingleton<EntityRegistry>()

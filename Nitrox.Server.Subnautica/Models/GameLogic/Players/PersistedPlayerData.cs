@@ -47,9 +47,11 @@ internal sealed class PersistedPlayerData
 
     public bool DisplaySurfaceWater { get; set; }
 
+    public List<PdaNotification> UnreadPdaNotifications { get; set; } = [];
+
     public Player ToPlayer()
     {
-        return new Player(Id,
+        Player player = new(Id,
                           0,
                           Name,
                           IsPermaDeath,
@@ -69,6 +71,11 @@ internal sealed class PersistedPlayerData
                           PlayerPreferences.PinnedTechTypes,
                           InPrecursor,
                           DisplaySurfaceWater);
+        foreach (PdaNotification notification in UnreadPdaNotifications ?? [])
+        {
+            player.UnreadPdaNotifications.Add(notification);
+        }
+        return player;
     }
 
     public static PersistedPlayerData FromPlayer(Player player)
@@ -91,7 +98,8 @@ internal sealed class PersistedPlayerData
             PersonalCompletedGoalsWithTimestamp = new(player.PersonalCompletedGoalsWithTimestamp),
             PlayerPreferences = new(player.PingInstancePreferences.ToDictionary(m => m.Key, m => m.Value), player.PinnedRecipePreferences.ToList()),
             InPrecursor = player.InPrecursor,
-            DisplaySurfaceWater = player.DisplaySurfaceWater
+            DisplaySurfaceWater = player.DisplaySurfaceWater,
+            UnreadPdaNotifications = player.UnreadPdaNotifications.ToList()
         };
     }
 }
