@@ -97,6 +97,29 @@ public sealed class ServerJsonSerializerTest
     }
 
     [TestMethod]
+    public void JsonRoundTripPreservesAFiltrationMachinesTimersAndItsWater()
+    {
+        // The machine is saved as a base's interior piece, what it made as its children.
+        InteriorPieceEntity machine = InteriorPieceEntity.MakeEmpty();
+        machine.Id = new NitroxId();
+        machine.Metadata = new FiltrationMachineMetadata(512.5f, FiltrationMachineMetadata.IDLE);
+        InventoryItemEntity water = new(new NitroxId(), "water-class-id", new NitroxTechType("BigFilteredWater"), null, machine.Id, []);
+        machine.ChildEntities.Add(water);
+
+        using MemoryStream output = new();
+        serializer.Serialize(output, machine);
+        using MemoryStream input = new(output.ToArray());
+        InteriorPieceEntity restored = serializer.Deserialize<InteriorPieceEntity>(input);
+
+        FiltrationMachineMetadata timers = (FiltrationMachineMetadata)restored.Metadata;
+        Assert.AreEqual(512.5f, timers.TimeRemainingWater);
+        Assert.AreEqual(FiltrationMachineMetadata.IDLE, timers.TimeRemainingSalt);
+        InventoryItemEntity restoredWater = restored.ChildEntities.OfType<InventoryItemEntity>().Single();
+        Assert.AreEqual(water.Id, restoredWater.Id);
+        Assert.AreEqual(machine.Id, restoredWater.ParentId);
+    }
+
+    [TestMethod]
     public void JsonRoundTripPreservesAPlainTemperatureReport()
     {
         // What a thermal plant holds until the first level update of the player simulating it.
