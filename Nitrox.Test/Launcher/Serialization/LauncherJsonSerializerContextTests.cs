@@ -36,9 +36,9 @@ public class LauncherJsonSerializerContextTests
     public void SaveFileVersion()
     {
         // Arrange
-        SaveFileVersion version = new(new Version(1, 2, 3, 4));
+        SaveFileVersion version = new(new Version(1, 2, 3, 4), 7);
 
-        const string JSON = """{"Major":1,"Minor":2,"Build":3,"Revision":4}""";
+        const string JSON = """{"Major":1,"Minor":2,"Build":3,"Revision":4,"SaveFormat":7}""";
 
         // Act
         SaveFileVersion? result = JsonSerializer.Deserialize(JSON, LauncherJsonSerializerContext.Default.SaveFileVersion);
@@ -47,6 +47,14 @@ public class LauncherJsonSerializerContextTests
         // Assert
         result.Should().BeEquivalentTo(version);
         serializedJson.Should().Be(JSON);
+    }
+
+    [TestMethod]
+    public void SaveFileVersionFromBeforeTheSaveFormatHasFormatZero()
+    {
+        SaveFileVersion? result = JsonSerializer.Deserialize("""{"Major":1,"Minor":9,"Build":0,"Revision":0}""", LauncherJsonSerializerContext.Default.SaveFileVersion);
+
+        result!.SaveFormat.Should().Be(NitroxSaveFormat.UNKNOWN);
     }
 
     [TestMethod]
