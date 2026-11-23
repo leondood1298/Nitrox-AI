@@ -48,17 +48,33 @@ public class uGUI_PlayerPingEntry : uGUI_PingEntry
     public Sprite TeleportToSprite;
     public Sprite TeleportToMeSprite;
 
+    private MutePlayerProcessor mutePlayerProcessor;
+    private PermsChangedProcessor permsChangedProcessor;
+
     public new void Awake()
     {
-        NitroxServiceLocator.LocateService<MutePlayerProcessor>().OnPlayerMuted += (playerId, _) =>
-        {
-            if (player is RemotePlayer remotePlayer && remotePlayer.SessionId == playerId)
-            {
-                RefreshMuteButton();
-            }
-        };
-        NitroxServiceLocator.LocateService<PermsChangedProcessor>().OnPermissionsChanged += (perms) => RefreshButtonsVisibility();
+        mutePlayerProcessor = NitroxServiceLocator.LocateService<MutePlayerProcessor>();
+        permsChangedProcessor = NitroxServiceLocator.LocateService<PermsChangedProcessor>();
+        mutePlayerProcessor.OnPlayerMuted += OnPlayerMuted;
+        permsChangedProcessor.OnPermissionsChanged += OnPermissionsChanged;
     }
+
+    public void OnDestroy()
+    {
+        // A removed entry would otherwise still be called, on a destroyed object
+        mutePlayerProcessor.OnPlayerMuted -= OnPlayerMuted;
+        permsChangedProcessor.OnPermissionsChanged -= OnPermissionsChanged;
+    }
+
+    private void OnPlayerMuted(SessionId playerId, bool muted)
+    {
+        if (player is RemotePlayer remotePlayer && remotePlayer.SessionId == playerId)
+        {
+            RefreshMuteButton();
+        }
+    }
+
+    private void OnPermissionsChanged(Perms perms) => RefreshButtonsVisibility();
 
     public IEnumerator Start()
     {
