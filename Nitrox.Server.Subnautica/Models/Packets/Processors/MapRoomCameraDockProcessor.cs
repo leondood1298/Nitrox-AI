@@ -64,7 +64,11 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
                 mapRoom.GetDockedCamera(packet.DockingIndex) == null,
                 mapRoom.CameraRegistry.Count);
         }
-        if (!IsKnownCamera(validWorldCamera, registeredCamera) && !canBootstrapRestoredCamera)
+        // Checked before the camera's lifecycle gate is entered: entering it marks the id as a Scanner Room camera for
+        // good, which routes every later simulation request for that id to the camera rules. For the id of a vehicle
+        // that would mean nobody can pilot it again.
+        if ((!IsKnownCamera(validWorldCamera, registeredCamera) && !canBootstrapRestoredCamera) ||
+            !CanBeDocked(packet.IsDocked, entityExists, validWorldCamera))
         {
             diagnostics.RecordRejected(packet.IsDocked ? "dock" : "undock", mapRoom, packet.CameraId, context.Sender.SessionId, packet.DockingIndex, "unknown_camera");
             await context.ReplyAsync(new MapRoomCameraDock(packet.CameraId, packet.MapRoomId, packet.DockingIndex, 0, true, false, packet.IsDocked));
@@ -80,7 +84,8 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
             canBootstrapRestoredCamera = CanBootstrapRestoredCamera(packet.IsDocked, senderOwnsRoom,
                 mapRoom.GetDockedCamera(packet.DockingIndex) == null, mapRoom.CameraRegistry.Count);
         }
-        if (!IsKnownCamera(validWorldCamera, registeredCamera) && !canBootstrapRestoredCamera)
+        if ((!IsKnownCamera(validWorldCamera, registeredCamera) && !canBootstrapRestoredCamera) ||
+            !CanBeDocked(packet.IsDocked, entityExists, validWorldCamera))
         {
             diagnostics.RecordRejected(packet.IsDocked ? "dock" : "undock", mapRoom, packet.CameraId,
                 context.Sender.SessionId, packet.DockingIndex, "association_changed");
@@ -192,6 +197,14 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
     }
 
     internal static bool IsKnownCamera(bool validWorldCamera, bool registeredCamera) => validWorldCamera || registeredCamera;
+
+    /// <summary>
+    ///     Only a camera out in the world, or a default camera that exists as nothing but its room's record, can sit in
+    ///     a dock. A camera in an inventory keeps its room record, and a dock report can cross the pickup on the way to
+    ///     the server; the id of any other kind of entity is never a camera, whoever reports it.
+    /// </summary>
+    internal static bool CanBeDocked(bool isDocked, bool entityExists, bool validWorldCamera) =>
+        !isDocked || !entityExists || validWorldCamera;
     internal static bool CanBootstrapRestoredCamera(bool isDocked, bool senderOwnsRoom, bool slotAvailable, int registeredCameraCount) =>
         isDocked && senderOwnsRoom && slotAvailable && registeredCameraCount is >= 0 and < 2;
     internal static bool ShouldPreserveControlLock(SimulationLockType lockType, bool holderIsActiveController) =>
