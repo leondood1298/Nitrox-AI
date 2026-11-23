@@ -6,7 +6,7 @@ using Nitrox.Server.Subnautica.Services;
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
 internal class PlayerSyncFinishedProcessor(SessionManager sessionManager, JoiningManager joiningManager, HibernateService hibernateService, BedOccupancy bedOccupancy, PlayerAnimationStates animationStates,
-    ScannerRoomManager scannerRoomManager)
+    ScannerRoomManager scannerRoomManager, PlayerHandAndSeatStates handAndSeatStates)
     : IAuthPacketProcessor<PlayerSyncFinished>
 {
     private readonly SessionManager sessionManager = sessionManager;
@@ -37,6 +37,11 @@ internal class PlayerSyncFinishedProcessor(SessionManager sessionManager, Joinin
         foreach (AnimationChangeEvent switchedOn in animationStates.GetAnnouncementsFor(context.Sender.SessionId))
         {
             await context.ReplyAsync(switchedOn);
+        }
+        // And what everyone holds and where they sit.
+        foreach (Packet holdingOrSeated in handAndSeatStates.GetAnnouncementsFor(context.Sender.SessionId))
+        {
+            await context.ReplyAsync(holdingOrSeated);
         }
         // And who is controlling which Scanner Room camera.
         await scannerRoomManager.SendControlGrantsAsync(context.Sender.SessionId);
