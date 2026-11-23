@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
+using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
@@ -46,7 +47,7 @@ internal sealed class BasePowerManager(EntityRegistry entityRegistry, Simulation
     {
         if (TryAccept(sender, source, requested, out PowerSourceMetadata? accepted, out string reason))
         {
-            diagnostics.RecordAccepted();
+            diagnostics.RecordAccepted(source.Id, sender.SessionId, accepted);
             if (diagnostics.TraceEnabled)
             {
                 logger.ZLogInformation($"[BasePower] accepted {accepted.SourceType} source {source.Id}: {accepted.Power:F2}, fuel progress {accepted.FuelConsumed:F2}, simulated by {sender.Name} #{sender.SessionId}");
@@ -54,11 +55,20 @@ internal sealed class BasePowerManager(EntityRegistry entityRegistry, Simulation
             return MetadataUpdateResult.Accept(accepted);
         }
 
-        diagnostics.RecordRejected();
-        // A simulating player sends a source's state up to once a second, so a client that keeps being rejected would
-        // fill the log. The count is in the basepower command.
-        logger.ZLogDebug($"[BasePower] rejected state of source {source.Id} from {sender.Name} #{sender.SessionId}: {reason}");
-        return source.Metadata is PowerSourceMetadata stored ? MetadataUpdateResult.RejectAndCorrect(stored) : MetadataUpdateResult.Reject;
+        PowerSourceMetadata? stored = source.Metadata as PowerSourceMetadata;
+        // A simulating player sends a source's state up to once a second, so the diagnostics thin out the repeats of a
+        // rejection
+        diagnostics.RecordRejected(source.Id, sender.SessionId, stored ?? WithinLimits(requested), reason);
+        return stored != null ? MetadataUpdateResult.RejectAndCorrect(stored) : MetadataUpdateResult.Reject;
+    }
+
+    /// <summary>
+    ///     Records a state sent for a source the server does not have: it was destroyed while the state travelled, or it
+    ///     only exists on that client. There is nothing to store and no stored state to answer with.
+    /// </summary>
+    public void RejectUnknownSource(Player sender, NitroxId sourceId)
+    {
+        diagnostics.RecordRejected(sourceId, sender.SessionId, new PowerSourceMetadata(0f, 0f, BasePowerSourceType.UNKNOWN), "unknown source entity");
     }
 
     /// <summary>
@@ -79,7 +89,6 @@ internal sealed class BasePowerManager(EntityRegistry entityRegistry, Simulation
     /// </summary>
     public MetadataUpdateResult RejectReplacement(Player sender, Entity source, EntityMetadata metadata)
     {
-        diagnostics.RecordRejected();
         logger.ZLogWarning($"[BasePower] Player {sender.Name} tried replacing the power state of source {source.Id} with {metadata.GetType().Name}");
         return MetadataUpdateResult.Reject;
     }
@@ -149,7 +158,9 @@ internal sealed class BasePowerManager(EntityRegistry entityRegistry, Simulation
     /// <param name="accepted">The new stored state when the server applied the consumption.</param>
     public ConsumptionRoute RouteConsumption(Player consumer, Entity source, float amount, out Player? simulator, out PowerSourceMetadata? accepted)
     {
-        string reason;
+        ConsumptionRoute route = ConsumptionRoute.REJECTED;
+        string reason = "";
+        PowerSourceMetadata? stored;
         lock (stateLock)
         {
             simulator = simulationOwnershipData.GetPlayerForLock(source.Id);
@@ -169,23 +180,24 @@ internal sealed class BasePowerManager(EntityRegistry entityRegistry, Simulation
             }
             else if (simulator != null)
             {
-                return ConsumptionRoute.FORWARD_TO_SIMULATOR;
+                route = ConsumptionRoute.FORWARD_TO_SIMULATOR;
             }
             else if (source.Metadata is PowerSourceMetadata current)
             {
                 accepted = current.WithPower(Math.Max(0f, current.Power - amount));
                 source.Metadata = accepted;
-                return ConsumptionRoute.APPLIED_BY_SERVER;
+                route = ConsumptionRoute.APPLIED_BY_SERVER;
             }
             else
             {
-                reason = "source has no stored power state and no simulating player";
+                reason = "source has no stored power state and no simulation owner";
             }
+            stored = source.Metadata as PowerSourceMetadata;
         }
 
-        diagnostics.RecordRejected();
-        logger.ZLogWarningOnce($"[BasePower] rejected consumption of {amount} from source {source.Id} by {consumer.Name} #{consumer.SessionId}: {reason}");
-        return ConsumptionRoute.REJECTED;
+        // A consumer reports several times a second. The diagnostics count every report and thin out the lines.
+        diagnostics.RecordConsumption(source.Id, consumer.SessionId, simulator?.SessionId, amount, route, stored, reason);
+        return route;
     }
 
     /// <summary>
@@ -202,6 +214,17 @@ internal sealed class BasePowerManager(EntityRegistry entityRegistry, Simulation
         }
     }
 
+    /// <summary>
+    ///     What a rejection is recorded with when the source has no stored state yet: the request, cut down to what a
+    ///     source of that type can hold.
+    /// </summary>
+    private static PowerSourceMetadata WithinLimits(PowerSourceMetadata requested)
+    {
+        BasePowerSourceTypes.TryGetMaxPower(requested.SourceType, out float maxPower);
+        float power = float.IsFinite(requested.Power) ? Math.Clamp(requested.Power, 0f, maxPower) : 0f;
+        return new PowerSourceMetadata(power, requested.FuelConsumed, requested.SourceType);
+    }
+
     internal static float GetStoredTemperature(EntityMetadata? metadata) => metadata switch
     {
         PowerSourceMetadata powerSource => powerSource.Temperature,
@@ -215,7 +238,7 @@ internal sealed class BasePowerManager(EntityRegistry entityRegistry, Simulation
         // place of the one the simulating player keeps
         if (simulationOwnershipData.GetPlayerForLock(source.Id) != sender)
         {
-            return "sender does not simulate the source";
+            return "sender does not own source simulation";
         }
         if (!BasePowerSourceTypes.TryGetMaxPower(requested.SourceType, out float maxPower))
         {

@@ -35,8 +35,8 @@ public sealed class BasePowerSourceConsumeProcessorTest
         entityRegistry = new EntityRegistry(NullLogger<EntityRegistry>.Instance);
         simulationOwnershipData = new SimulationOwnershipData();
         BasePowerDiagnostics diagnostics = new();
-        BasePowerManager basePowerManager = new(entityRegistry, simulationOwnershipData, diagnostics, new DiscardingLogger<BasePowerManager>());
-        processor = new BasePowerSourceConsumeProcessor(entityRegistry, basePowerManager, diagnostics, new DiscardingLogger<BasePowerSourceConsumeProcessor>());
+        BasePowerManager basePowerManager = new(entityRegistry, simulationOwnershipData, diagnostics, NullLogger<BasePowerManager>.Instance);
+        processor = new BasePowerSourceConsumeProcessor(entityRegistry, basePowerManager, diagnostics, NullLogger<BasePowerSourceConsumeProcessor>.Instance);
         packetSender = Substitute.For<IPacketSender>();
         simulator = players.Connect("Simulator");
         consumer = players.Connect("Consumer");

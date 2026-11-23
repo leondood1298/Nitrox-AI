@@ -235,6 +235,15 @@ public sealed class BasePowerSourcesTest
     }
 
     [TestMethod]
+    public void StateArrivingForASourceThisClientSimulatesIsTheAnswerToARefusedOne()
+    {
+        // What the server accepts from the simulating player goes to the others only.
+        Assert.IsTrue(BasePowerSources.IsAnswerToRefusedState(simulatedLocally: true, finishedLoading: true));
+        Assert.IsFalse(BasePowerSources.IsAnswerToRefusedState(simulatedLocally: false, finishedLoading: true), "The state another player simulates.");
+        Assert.IsFalse(BasePowerSources.IsAnswerToRefusedState(simulatedLocally: true, finishedLoading: false), "The state a source spawns with.");
+    }
+
+    [TestMethod]
     public void DestroyedSourceIsForgotten()
     {
         // What was remembered for it must not hold back the first state of a later entity, or stop that entity from

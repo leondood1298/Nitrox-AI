@@ -1,10 +1,12 @@
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 
 namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 
@@ -82,6 +84,54 @@ internal sealed class MapRoomCameraControlReleaseFactory(EntityRegistry entityRe
         return true;
     }
 
+    /// <summary>
+    ///     The packet that announces control of a camera as it stands now, for a player who was not connected when it
+    ///     was granted. It has the shape of the grant everyone else received, with the camera's current dock and light.
+    /// </summary>
+    public bool TryCreateCurrentGrant(NitroxId cameraId, SessionId controllerSessionId, out MapRoomCameraControl grant)
+    {
+        grant = null!;
+        MapRoomEntity? dockedRoom = null;
+        int dockedSlot = -1;
+        bool hasRecord = false;
+        bool lightOn = false;
+        foreach (MapRoomEntity room in entityRegistry.GetEntities<MapRoomEntity>())
+        {
+            lock (room)
+            {
+                if (room.GetCameraRecord(cameraId) is not { } record)
+                {
+                    continue;
+                }
+                hasRecord = true;
+                lock (record)
+                {
+                    lightOn = record.LightOn;
+                }
+                int slot = room.LeftDockCameraId == cameraId ? 0 : room.RightDockCameraId == cameraId ? 1 : -1;
+                if (slot >= 0)
+                {
+                    dockedRoom = room;
+                    dockedSlot = slot;
+                }
+            }
+        }
+
+        if (!hasRecord)
+        {
+            if (!entityRegistry.TryGetEntityById(cameraId, out WorldEntity worldCamera) || !mapRoomCameraTechType.Equals(worldCamera.TechType))
+            {
+                return false;
+            }
+            lightOn = worldCamera.Metadata is MapRoomCameraMetadata { LightOn: true };
+        }
+
+        Optional<NitroxId> roomId = dockedRoom == null ? Optional.Empty : Optional.Of(dockedRoom.Id);
+        grant = new MapRoomCameraControl(cameraId, roomId, dockedSlot, true, lightOn, true, true, controllerSessionId);
+        diagnostics.RecordAccepted("control_sync", dockedRoom, cameraId, controllerSessionId, dockedSlot, "current_pilot_sent_to_joined_player");
+        return true;
+    }
+
     public bool IsScannerCamera(NitroxId cameraId)
     {
         if (entityRegistry.TryGetEntityById(cameraId, out WorldEntity worldEntity) &&
@@ -101,6 +151,17 @@ internal sealed class MapRoomCameraControlReleaseFactory(EntityRegistry entityRe
             }
         }
         return false;
+    }
+
+    /// <summary>
+    ///     The entity of a camera that is out in the world: a registered world entity that is docked nowhere. Such a
+    ///     camera is simulated by a player like any other loose entity, while a docked camera is only a record of its
+    ///     room and is simulated by nobody.
+    /// </summary>
+    public bool TryGetLooseWorldCamera(NitroxId cameraId, [NotNullWhen(true)] out WorldEntity? camera)
+    {
+        camera = null;
+        return ResolveCameraTopology(cameraId).IsLooseWorldCamera && entityRegistry.TryGetEntityById(cameraId, out camera);
     }
 
     /// <summary>

@@ -221,6 +221,56 @@ public sealed class WorldServiceScannerRoomSnapshotTest
             "Membership must be read before and after lock acquisition, then retried after a change.");
     }
 
+    [TestMethod, Timeout(10_000)]
+    public void RoomCannotChangeWhileAJoiningPlayersSyncIsBuiltAndWritten()
+    {
+        // The initial sync of a joining player is written on the join queue's thread, from the live room entities.
+        MapRoomEntity room = CreateRoom(lowRoomId);
+        NitroxId dockedMeanwhile = new("00000000-0000-0000-0000-000000000298");
+        using ManualResetEventSlim syncStarted = new();
+        using ManualResetEventSlim dockAttempted = new();
+        int dockEnteredImmediately = -1;
+
+        Task dock = Task.Run(() =>
+        {
+            syncStarted.Wait();
+            bool lockTaken = Monitor.TryEnter(room);
+            Volatile.Write(ref dockEnteredImmediately, lockTaken ? 1 : 0);
+            dockAttempted.Set();
+            try
+            {
+                if (!lockTaken)
+                {
+                    Monitor.Enter(room, ref lockTaken);
+                }
+                room.SetDockedCamera(1, dockedMeanwhile);
+            }
+            finally
+            {
+                if (lockTaken)
+                {
+                    Monitor.Exit(room);
+                }
+            }
+        });
+
+        (NitroxId? RightDock, long Revision) written = WorldService.RunWithScannerRoomsLocked(() => [room], rooms =>
+        {
+            MapRoomEntity lockedRoom = rooms.Single();
+            NitroxId? rightDockAtStart = lockedRoom.RightDockCameraId;
+            syncStarted.Set();
+            Assert.IsTrue(dockAttempted.Wait(TimeSpan.FromSeconds(5)), "The dock task did not reach its lock attempt.");
+            return (rightDockAtStart, lockedRoom.DockingRevision);
+        });
+
+        Assert.IsTrue(dock.Wait(TimeSpan.FromSeconds(5)), "The dock did not resume after the sync was written.");
+        Assert.AreEqual(0, Volatile.Read(ref dockEnteredImmediately), "A dock must not enter while the sync reads the room.");
+        Assert.IsNull(written.RightDock);
+        Assert.AreEqual(4, written.Revision, "The dock and its revision are read as one state, here the one before the dock.");
+        Assert.AreEqual(dockedMeanwhile, room.RightDockCameraId);
+        Assert.AreEqual(5, room.DockingRevision);
+    }
+
     [TestMethod]
     public void CapturedCheckpointRetainsCapturedInvariantAfterLiveRepair()
     {

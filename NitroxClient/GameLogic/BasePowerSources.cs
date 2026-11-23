@@ -84,6 +84,16 @@ public sealed class BasePowerSources(IPacketSender packetSender, SimulationOwner
     }
 
     /// <summary>
+    ///     Whether a state that arrived for a source is the server's answer to a state it refused from this client.
+    ///     <para>
+    ///     The player simulating a source is not sent that source's state otherwise: what the server accepts goes to
+    ///     the other players, and the server only changes the level itself while nobody simulates the source. While
+    ///     loading or rebuilding bases the state that arrives is the one the source spawns with.
+    ///     </para>
+    /// </summary>
+    public static bool IsAnswerToRefusedState(bool simulatedLocally, bool finishedLoading) => simulatedLocally && finishedLoading;
+
+    /// <summary>
     ///     The level after another player took <paramref name="amount" /> from a source this client simulates.
     /// </summary>
     public static float LevelAfterDraw(float power, float amount) => Math.Max(0f, power - amount);

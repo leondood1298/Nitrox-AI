@@ -180,6 +180,7 @@ internal static partial class ServiceCollectionExtensions
                     .AddSingleton<MapRoomCameraControlReleaseFactory>()
                     .AddSingleton<MapRoomScanResultSubscriptions>()
                     .AddSingleton<MapRoomLooseCameraState>()
+                    .AddSingleton<MapRoomRevisionFloors>()
                     .AddSingleton<MapRoomDeconstructionCleanup>()
                     .AddSingleton<WorldEntityManager>()
                     .AddSingleton<EntitySimulation>()

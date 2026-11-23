@@ -23,6 +23,7 @@ public sealed class EntityMetadataUpdateProcessorTest
     private ConnectedPlayers players;
     private EntityRegistry entityRegistry;
     private SimulationOwnershipData simulationOwnershipData;
+    private BasePowerDiagnostics diagnostics;
     private EntityMetadataUpdateProcessor processor;
     private IPacketSender packetSender;
     private Player simulator;
@@ -35,9 +36,10 @@ public sealed class EntityMetadataUpdateProcessorTest
         players = new ConnectedPlayers();
         entityRegistry = new EntityRegistry(NullLogger<EntityRegistry>.Instance);
         simulationOwnershipData = new SimulationOwnershipData();
-        BasePowerManager basePowerManager = new(entityRegistry, simulationOwnershipData, new BasePowerDiagnostics(), new DiscardingLogger<BasePowerManager>());
+        diagnostics = new BasePowerDiagnostics();
+        BasePowerManager basePowerManager = new(entityRegistry, simulationOwnershipData, diagnostics, NullLogger<BasePowerManager>.Instance);
         processor = new EntityMetadataUpdateProcessor(players.PlayerManager, entityRegistry, simulationOwnershipData,
-            new ScannerRoomDiagnostics(NullLogger<ScannerRoomDiagnostics>.Instance), basePowerManager, new DiscardingLogger<EntityMetadataUpdateProcessor>());
+            new ScannerRoomDiagnostics(NullLogger<ScannerRoomDiagnostics>.Instance), basePowerManager, NullLogger<EntityMetadataUpdateProcessor>.Instance);
         packetSender = Substitute.For<IPacketSender>();
         simulator = players.Connect("Simulator");
         otherPlayer = players.Connect("Other");
@@ -163,6 +165,17 @@ public sealed class EntityMetadataUpdateProcessorTest
             Assert.AreEqual(BasePowerManager.MAX_THERMAL_TEMPERATURE, ((ThermalPlantMetadata)relayed.NewValue).Temperature);
         }
         Assert.AreEqual(2, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, thirdPlayer).Count);
+    }
+
+    [TestMethod]
+    public async Task StateForASourceTheServerDoesNotHaveIsCountedAndNobodyIsTold()
+    {
+        // The source was destroyed while the state travelled, or it only exists on that client.
+        await processor.Process(new AuthProcessorContext(simulator, packetSender),
+            new EntityMetadataUpdate(new NitroxId(), new PowerSourceMetadata(40f, 0f, BasePowerSourceType.SOLAR)));
+
+        Assert.AreEqual(1L, diagnostics.RejectedUpdates);
+        Assert.AreEqual(0, packetSender.ReceivedCalls().Count());
     }
 
     [TestMethod]

@@ -195,6 +195,7 @@ public class MapRoomCameras
             lastBroadcastLightState[cameraId] = lightOn;
             pendingControl.Add(cameraId);
             packetSender.Send(new MapRoomCameraControl(cameraId, mapRoomId, cameraIndex, isControlling: true, lightOn));
+            diagnostics.Record("control_publish", "ok", cameraId, mapRoomId.HasValue ? mapRoomId.Value : null, slot: cameraIndex, reason: "acquire_requested");
         }
         else if (camera.TryGetNitroxId(out NitroxId cameraId))
         {
@@ -204,6 +205,7 @@ public class MapRoomCameras
             // Release the camera-specific lock before generic movement ownership is relinquished.
             // Otherwise the server can see an already-unlocked camera and fail to notify remote clients.
             packetSender.Send(new MapRoomCameraControl(cameraId, Optional.Empty, -1, isControlling: false, lightOn: false));
+            diagnostics.Record("control_publish", "ok", cameraId, reason: "release_requested");
             MovementBroadcaster.UnregisterWatched(cameraId);
         }
     }
@@ -284,7 +286,7 @@ public class MapRoomCameras
                 simulationOwnership.RequestSimulationLock(packet.CameraId, SimulationLockType.TRANSIENT);
             }
             diagnostics.Record("control_apply", "reject", packet.CameraId, packet.MapRoomId.HasValue ? packet.MapRoomId.Value : null,
-                slot: packet.CameraIndex, reason: isLocalController ? "denied" : "locked_remote");
+                slot: packet.CameraIndex, reason: isLocalController ? "denied" : $"locked_by_{packet.ControllerSessionId}");
             if (!isLocalController)
             {
                 remotelyControlled.Add(packet.CameraId);
@@ -342,7 +344,7 @@ public class MapRoomCameras
             }
             remotelyControlled.Add(packet.CameraId);
             diagnostics.Record("control_apply", "ok", packet.CameraId, packet.MapRoomId.HasValue ? packet.MapRoomId.Value : null,
-                slot: packet.CameraIndex, reason: "remote");
+                slot: packet.CameraIndex, reason: $"remote_pilot_{packet.ControllerSessionId}");
         }
         else if (NitroxEntity.TryGetObjectFrom(packet.CameraId, out GameObject cameraObject) && cameraObject.TryGetComponent(out MapRoomCameraMovementReplicator replicator))
         {
@@ -367,7 +369,7 @@ public class MapRoomCameras
                 MovementBroadcaster.UnregisterWatched(packet.CameraId);
             }
             diagnostics.Record("control_release_apply", "ok", packet.CameraId, packet.MapRoomId.HasValue ? packet.MapRoomId.Value : null,
-                slot: packet.CameraIndex, reason: isLocalController ? "local" : "remote");
+                slot: packet.CameraIndex, reason: isLocalController ? "local" : $"remote_pilot_{packet.ControllerSessionId}");
         }
     }
 
@@ -525,6 +527,7 @@ public class MapRoomCameras
 
     public void ProcessLight(MapRoomCameraLight packet)
     {
+        diagnostics.RecordIfIgnored("light_apply", packet.CameraId, packet.IsServerResponse, packet.Granted, packet.Revision, lightRevisions);
         if (!packet.IsServerResponse || !packet.Granted ||
             lightRevisions.TryGetValue(packet.CameraId, out long revision) && packet.Revision < revision)
         {
@@ -563,6 +566,7 @@ public class MapRoomCameras
 
     public void ProcessComponentState(MapRoomCameraComponentState packet)
     {
+        diagnostics.RecordIfIgnored("component_apply", packet.CameraId, packet.IsServerResponse, packet.Granted, packet.Revision, componentRevisions);
         if (!packet.IsServerResponse || !packet.Granted || componentRevisions.TryGetValue(packet.CameraId, out long revision) && packet.Revision < revision)
         {
             return;

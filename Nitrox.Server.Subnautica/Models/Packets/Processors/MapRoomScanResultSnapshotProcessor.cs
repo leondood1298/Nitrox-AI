@@ -33,7 +33,7 @@ internal sealed class MapRoomScanResultSnapshotProcessor(EntityRegistry entityRe
         }
         if (!MapRoomScanResultAuthority.TryApplySnapshot(room, packet, entityRegistry.GetEntities<WorldEntity>(), scanAnchor, out List<MapRoomScanResultRecord> results, out long revision))
         {
-            diagnostics.RecordRejected("scan_snapshot", room, sessionId: context.Sender.SessionId, reason: "stale_or_invalid");
+            diagnostics.RecordRejected("scan_snapshot", room, sessionId: context.Sender.SessionId, reason: $"stale_or_invalid_gen_{packet.Generation}_room_gen_{room.ScanResultGeneration}");
             await context.ReplyAsync(new MapRoomScanResultSnapshot(packet.MapRoomId, packet.Generation, [], packet.ScanOrigin, packet.ScanRange, 0, true, false));
             return;
         }

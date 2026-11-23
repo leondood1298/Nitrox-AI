@@ -12,7 +12,7 @@ namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, WorldEntityManager worldEntityManager,
     SimulationOwnershipData simulationOwnershipData, MapRoomCameraControlReleaseFactory cameraControlReleaseFactory,
     MapRoomLifecycle roomLifecycle, MapRoomCameraControlLifecycle controlLifecycle, ScannerRoomDiagnostics diagnostics,
-    MapRoomLooseCameraState looseCameraState, ILogger<MapRoomCameraDockProcessor> logger) : IAuthPacketProcessor<MapRoomCameraDock>
+    MapRoomLooseCameraState looseCameraState, MapRoomRevisionFloors revisionFloors, ILogger<MapRoomCameraDockProcessor> logger) : IAuthPacketProcessor<MapRoomCameraDock>
 {
     private const string MAP_ROOM_CAMERA_CLASS_ID = "733fd479-0760-4bc2-a03e-281cbf02bfa4";
     private readonly object dockingLock = new();
@@ -53,7 +53,11 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
                 mapRoom.GetDockedCamera(packet.DockingIndex) == null,
                 mapRoom.CameraRegistry.Count);
         }
-        if (!IsKnownCamera(validWorldCamera, registeredCamera) && !canBootstrapRestoredCamera)
+        // Checked before the camera's lifecycle gate is entered: entering it marks the id as a Scanner Room camera for
+        // good, which routes every later simulation request for that id to the camera rules. For the id of a vehicle
+        // that would mean nobody can pilot it again.
+        if ((!IsKnownCamera(validWorldCamera, registeredCamera) && !canBootstrapRestoredCamera) ||
+            !CanBeDocked(packet.IsDocked, entityExists, validWorldCamera))
         {
             diagnostics.RecordRejected(packet.IsDocked ? "dock" : "undock", mapRoom, packet.CameraId, context.Sender.SessionId, packet.DockingIndex, "unknown_camera");
             await context.ReplyAsync(new MapRoomCameraDock(packet.CameraId, packet.MapRoomId, packet.DockingIndex, 0, true, false, packet.IsDocked));
@@ -69,7 +73,8 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
             canBootstrapRestoredCamera = CanBootstrapRestoredCamera(packet.IsDocked, senderOwnsRoom,
                 mapRoom.GetDockedCamera(packet.DockingIndex) == null, mapRoom.CameraRegistry.Count);
         }
-        if (!IsKnownCamera(validWorldCamera, registeredCamera) && !canBootstrapRestoredCamera)
+        if ((!IsKnownCamera(validWorldCamera, registeredCamera) && !canBootstrapRestoredCamera) ||
+            !CanBeDocked(packet.IsDocked, entityExists, validWorldCamera))
         {
             diagnostics.RecordRejected(packet.IsDocked ? "dock" : "undock", mapRoom, packet.CameraId,
                 context.Sender.SessionId, packet.DockingIndex, "association_changed");
@@ -120,9 +125,10 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
                 {
                     // First registration with a room: the record takes over the state the camera had on its own.
                     looseCameraState.MoveIntoRecord(packet.CameraId, record);
+                    revisionFloors.RaiseAbove(record);
                 }
                 response = new MapRoomCameraDock(packet.CameraId, packet.MapRoomId, packet.DockingIndex, mapRoom.DockingRevision, true, granted, packet.IsDocked, cameraNumber, record?.LightOn ?? false, record?.LightRevision ?? 0, record?.Energy ?? MapRoomCameraRecord.MAX_ENERGY, record?.Health ?? MapRoomCameraRecord.MAX_HEALTH, record?.ComponentRevision ?? 0);
-                diagnosticReason = granted ? alreadyCanonical ? "idempotent" : response.Revision == 0 ? "bootstrap" : "changed" : diagnosticReason;
+                diagnosticReason = granted ? alreadyCanonical ? "idempotent" : existingRecord == null && !validWorldCamera ? "bootstrap" : "changed" : diagnosticReason;
                 if (granted)
                 {
                     diagnostics.RecordAccepted(packet.IsDocked ? "dock" : "undock", mapRoom, packet.CameraId,
@@ -150,24 +156,32 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
             bool preserveControlLock = false;
             if (stateChanged && packet.IsDocked && simulationOwnershipData.TryGetLock(packet.CameraId, out SimulationOwnershipData.PlayerLock playerLock))
             {
+                // Whoever reports the dock: every client whose own physics sees the camera enter the dock does, and
+                // the room owner's report can arrive before the one of the player flying the camera in. That player
+                // keeps control while docked, as in the game.
                 preserveControlLock = ShouldPreserveControlLock(
-                    playerLock.Player == context.Sender,
                     playerLock.LockType,
-                    controlLifecycle.IsActiveController(packet.CameraId, context.Sender.SessionId));
+                    controlLifecycle.IsActiveController(packet.CameraId, playerLock.Player.SessionId));
             }
+            bool lockRevoked = false;
             if (stateChanged && packet.IsDocked && !preserveControlLock &&
-                simulationOwnershipData.RevokeOwnerOfId(packet.CameraId, out SimulationOwnershipData.PlayerLock revokedLock) &&
-                cameraControlReleaseFactory.TryCreate(packet.CameraId, revokedLock, "dock", out MapRoomCameraControl release))
+                simulationOwnershipData.RevokeOwnerOfId(packet.CameraId, out SimulationOwnershipData.PlayerLock revokedLock))
             {
-                controlRelease = release;
-            }
-            else if (stateChanged && packet.IsDocked && !preserveControlLock)
-            {
-                simulationOwnershipData.RevokeOwnerOfId(packet.CameraId);
+                lockRevoked = true;
+                if (cameraControlReleaseFactory.TryCreate(packet.CameraId, revokedLock, "dock", out MapRoomCameraControl release))
+                {
+                    controlRelease = release;
+                }
             }
             if (controlRelease != null)
             {
                 await context.SendToAllAsync(controlRelease);
+            }
+            if (lockRevoked)
+            {
+                // A docked camera is simulated by nobody. The player who simulated it until now (after letting go of
+                // its controls, for example) has to be told, or their client keeps counting the camera as its own.
+                await context.SendToAllAsync(new DropSimulationOwnership([packet.CameraId]));
             }
             await context.SendToAllAsync(response);
         }
@@ -178,11 +192,18 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
     }
 
     internal static bool IsKnownCamera(bool validWorldCamera, bool registeredCamera) => validWorldCamera || registeredCamera;
+
+    /// <summary>
+    ///     Only a camera out in the world, or a default camera that exists as nothing but its room's record, can sit in
+    ///     a dock. A camera in an inventory keeps its room record, and a dock report can cross the pickup on the way to
+    ///     the server; the id of any other kind of entity is never a camera, whoever reports it.
+    /// </summary>
+    internal static bool CanBeDocked(bool isDocked, bool entityExists, bool validWorldCamera) =>
+        !isDocked || !entityExists || validWorldCamera;
     internal static bool CanBootstrapRestoredCamera(bool isDocked, bool senderOwnsRoom, bool slotAvailable, int registeredCameraCount) =>
         isDocked && senderOwnsRoom && slotAvailable && registeredCameraCount is >= 0 and < MapRoomEntity.DOCK_COUNT;
-    internal static bool ShouldPreserveControlLock(bool senderOwnsLock, SimulationLockType lockType,
-        bool senderIsActiveController) =>
-        senderOwnsLock && lockType == SimulationLockType.EXCLUSIVE && senderIsActiveController;
+    internal static bool ShouldPreserveControlLock(SimulationLockType lockType, bool holderIsActiveController) =>
+        lockType == SimulationLockType.EXCLUSIVE && holderIsActiveController;
     internal static bool ShouldPersistLooseCamera(bool isDocked, bool entityExists, bool hasTransform) =>
         !isDocked && !entityExists && hasTransform;
     internal static bool IsRequestedStateCanonical(bool isDocked, NitroxId cameraId, NitroxId? slotCameraId, bool cameraDocked) =>

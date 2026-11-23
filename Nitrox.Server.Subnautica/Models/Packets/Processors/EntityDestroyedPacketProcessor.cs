@@ -11,7 +11,7 @@ namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 internal sealed class EntityDestroyedPacketProcessor(PlayerManager playerManager, EntitySimulation entitySimulation,
     WorldEntityManager worldEntityManager, EntityRegistry entityRegistry,
     MapRoomCameraControlReleaseFactory cameraControlReleaseFactory, MapRoomCameraControlLifecycle controlLifecycle,
-    ScannerRoomDiagnostics diagnostics) : IAuthPacketProcessor<EntityDestroyed>
+    ScannerRoomDiagnostics diagnostics, MapRoomRevisionFloors revisionFloors) : IAuthPacketProcessor<EntityDestroyed>
 {
     private readonly PlayerManager playerManager = playerManager;
     private readonly EntitySimulation entitySimulation = entitySimulation;
@@ -31,6 +31,11 @@ internal sealed class EntityDestroyedPacketProcessor(PlayerManager playerManager
             lock (mapRoom)
             {
                 MapRoomCameraRecord? record = mapRoom.GetCameraRecord(packet.Id);
+                if (record != null)
+                {
+                    // The id of a room's default camera is derived from the room and comes back if the room is rebuilt.
+                    revisionFloors.Remember(record);
+                }
                 if (mapRoom.RemoveCamera(packet.Id, out int dockingIndex) && dockingIndex >= 0)
                 {
                     undock = new MapRoomCameraDock(packet.Id, mapRoom.Id, dockingIndex, mapRoom.DockingRevision, true, true, false,

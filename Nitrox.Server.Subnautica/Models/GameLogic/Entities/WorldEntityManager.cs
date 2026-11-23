@@ -78,9 +78,14 @@ internal sealed class WorldEntityManager
         }
     }
 
-    public List<GlobalRootEntity> GetInitialSyncGlobalRootEntities(bool rootOnly = false)
+    /// <summary>
+    ///     Puts every camera that a Scanner Room still has a record for, but that exists nowhere (in no dock and as no
+    ///     entity), back into a free dock of that room. This changes dock state without a packet, so it runs once after
+    ///     the world is loaded, when no player is connected who would have to be told. It used to run whenever the
+    ///     initial sync of a joining player was built, which docked a camera for the joining player alone.
+    /// </summary>
+    public void RestoreOrphanedMapRoomCameras()
     {
-        HashSet<NitroxId> dockedCameraIds = [];
         foreach (MapRoomEntity mapRoom in entityRegistry.GetEntities<MapRoomEntity>())
         {
             int restored = MapRoomCameraPersistence.RestoreOrphanedRegistrations(mapRoom, id => entityRegistry.TryGetEntityById(id, out Entity _));
@@ -88,6 +93,14 @@ internal sealed class WorldEntityManager
             {
                 scannerRoomDiagnostics.RecordInvariantFailure("orphan_recovery", mapRoom, reason: $"restored_{restored}");
             }
+        }
+    }
+
+    public List<GlobalRootEntity> GetInitialSyncGlobalRootEntities(bool rootOnly = false)
+    {
+        HashSet<NitroxId> dockedCameraIds = [];
+        foreach (MapRoomEntity mapRoom in entityRegistry.GetEntities<MapRoomEntity>())
+        {
             lock (mapRoom)
             {
                 if (mapRoom.LeftDockCameraId != null)

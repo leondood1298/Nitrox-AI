@@ -18,10 +18,11 @@ internal sealed class BasePowerSourceConsumeProcessor(EntityRegistry entityRegis
     {
         if (!entityRegistry.TryGetEntityById(packet.SourceId, out Entity entity))
         {
-            logger.ZLogWarningOnce($"[BasePower] {context.Sender.Name} #{context.Sender.SessionId} consumed from unknown source {packet.SourceId}");
+            diagnostics.RecordConsumption(packet.SourceId, context.Sender.SessionId, null, packet.Amount, ConsumptionRoute.REJECTED, null, "unknown source");
             return;
         }
 
+        // The manager records what became of the report in the diagnostics
         ConsumptionRoute route = basePowerManager.RouteConsumption(context.Sender, entity, packet.Amount, out Player? simulator, out PowerSourceMetadata? accepted);
         switch (route)
         {

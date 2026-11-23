@@ -22,22 +22,36 @@ public class PowerSourceMetadataProcessor : EntityMetadataProcessor<PowerSourceM
             {
                 thermalPlant.temperature = Mathf.Max(thermalPlant.temperature, metadata.Temperature);
             }
-            RecordReconciliationApply(gameObject.TryGetNitroxId(out NitroxId sourceId) ? sourceId : null, metadata, true);
+            RecordApply(gameObject.TryGetNitroxId(out NitroxId sourceId) ? sourceId : null, metadata, true);
         }
         else
         {
             Log.Error($"Could not find PowerSource on {gameObject.name}");
-            RecordReconciliationApply(gameObject.TryGetNitroxId(out NitroxId sourceId) ? sourceId : null, metadata, false);
+            RecordApply(gameObject.TryGetNitroxId(out NitroxId sourceId) ? sourceId : null, metadata, false);
         }
     }
 
-    private void RecordReconciliationApply(NitroxId? sourceId, PowerSourceMetadata metadata, bool objectFound)
+    /// <summary>
+    ///     Diagnostics only: the states applied while this player joins, and afterwards the states the server sent
+    ///     back in place of one it refused.
+    /// </summary>
+    private void RecordApply(NitroxId? sourceId, PowerSourceMetadata metadata, bool objectFound)
     {
+        if (!Multiplayer.Active)
+        {
+            return;
+        }
         bool initialSyncCompleted = Multiplayer.Main && Multiplayer.Main.InitialSyncCompleted;
         bool waitScreenWaiting = WaitScreen.IsWaiting;
-        if (Multiplayer.Active && (!initialSyncCompleted || waitScreenWaiting))
+        if (!initialSyncCompleted || waitScreenWaiting)
         {
             Resolve<BasePowerClientDiagnostics>().RecordSourceApply(sourceId, metadata, objectFound, initialSyncCompleted, waitScreenWaiting, "metadata");
+            return;
+        }
+        if (sourceId != null && BasePowerSources.IsAnswerToRefusedState(Resolve<SimulationOwnership>().HasAnyLockType(sourceId), !BasePowerSources.IsRebuildingBases()))
+        {
+            // The answer carries the stored state and no reason; the server's own line for this source has it
+            Resolve<BasePowerClientDiagnostics>().RecordSourceRejected(sourceId, metadata, "server_restored_stored_state");
         }
     }
 }

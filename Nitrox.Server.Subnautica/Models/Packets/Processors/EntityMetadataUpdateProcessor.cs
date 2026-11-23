@@ -18,6 +18,13 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
     {
         if (!entityRegistry.TryGetEntityById(packet.Id, out Entity entity))
         {
+            if (packet.NewValue is PowerSourceMetadata)
+            {
+                // A client that simulates a source the server does not have sends this up to once a second. The base
+                // power diagnostics thin out the repeats; an error per packet would not.
+                basePowerManager.RejectUnknownSource(context.Sender, packet.Id);
+                return;
+            }
             logger.ZLogError($"Entity metadata {packet.NewValue.GetType()} updated on an entity unknown to the server {packet.Id}");
             return;
         }
@@ -58,6 +65,18 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
                     reason: acceptedCrafterMetadata.TechType?.Name ?? "none");
             }
             await SendUpdateToVisiblePlayersAsync(context, acceptedUpdate, entity, acceptedMetadata is MapRoomMetadata);
+        }
+        else if (packet.NewValue is MapRoomMetadata && entity is MapRoomEntity refusedMapRoom)
+        {
+            // The sender has already applied its request locally: its Scanner Room shows the target or progress it
+            // asked for. Nothing else would tell it that the room is in another state, and with the generation and
+            // revision it holds every later request would be refused as stale too. It is sent the room's real state.
+            MapRoomMetadata canonicalMetadata;
+            lock (refusedMapRoom)
+            {
+                canonicalMetadata = refusedMapRoom.Metadata as MapRoomMetadata ?? new MapRoomMetadata(NitroxTechType.None, 0);
+            }
+            await context.ReplyAsync(new EntityMetadataUpdate(packet.Id, canonicalMetadata));
         }
     }
 
@@ -122,13 +141,14 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
 
             if (MapRoomMetadataAuthority.IsProgressUpdate(entity.Metadata as MapRoomMetadata, requestedMapRoomMetadata) && simulationOwnershipData.GetPlayerForLock(entity.Id) != sendingPlayer)
             {
-                logger.ZLogWarning($"Player {sendingPlayer.Name} tried updating scan progress for Map Room {entity.Id} without simulation ownership");
+                scannerRoomDiagnostics.RecordRejected("scan_progress", mapRoom, sessionId: sendingPlayer.SessionId, reason: "non_owner");
                 return false;
             }
 
             if (!MapRoomMetadataAuthority.TryAcceptAndApply(mapRoom, requestedMapRoomMetadata, out MapRoomMetadata acceptedMapRoomMetadata))
             {
                 logger.ZLogDebug($"Rejected stale or duplicate Map Room metadata for {entity.Id}: requested {requestedMapRoomMetadata}, current {entity.Metadata}");
+                scannerRoomDiagnostics.RecordStaleScanRequest(mapRoom, sendingPlayer.SessionId, requestedMapRoomMetadata);
                 return false;
             }
 

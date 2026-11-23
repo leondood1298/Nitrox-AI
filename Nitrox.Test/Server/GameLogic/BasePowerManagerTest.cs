@@ -7,7 +7,6 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
-using Nitrox.Test.Server.Helper;
 
 namespace Nitrox.Server.Subnautica.Models.GameLogic;
 
@@ -16,6 +15,7 @@ public sealed class BasePowerManagerTest
 {
     private EntityRegistry entityRegistry;
     private SimulationOwnershipData simulationOwnershipData;
+    private BasePowerDiagnostics diagnostics;
     private BasePowerManager manager;
     private Player simulator;
     private Player otherPlayer;
@@ -25,7 +25,8 @@ public sealed class BasePowerManagerTest
     {
         entityRegistry = new EntityRegistry(NullLogger<EntityRegistry>.Instance);
         simulationOwnershipData = new SimulationOwnershipData();
-        manager = new BasePowerManager(entityRegistry, simulationOwnershipData, new BasePowerDiagnostics(), new DiscardingLogger<BasePowerManager>());
+        diagnostics = new BasePowerDiagnostics();
+        manager = new BasePowerManager(entityRegistry, simulationOwnershipData, diagnostics, NullLogger<BasePowerManager>.Instance);
         simulator = CreatePlayer(1);
         otherPlayer = CreatePlayer(2);
     }
@@ -57,7 +58,7 @@ public sealed class BasePowerManagerTest
 
         Assert.IsFalse(manager.TryAccept(otherPlayer, panel, new PowerSourceMetadata(70f, 0f, BasePowerSourceType.SOLAR), out _, out string reason));
 
-        StringAssert.Contains(reason, "does not simulate");
+        StringAssert.Contains(reason, "does not own source simulation");
         Assert.AreEqual(30f, ((PowerSourceMetadata)panel.Metadata).Power);
     }
 
@@ -386,6 +387,63 @@ public sealed class BasePowerManagerTest
 
         Assert.AreEqual(ConsumptionRoute.REJECTED, manager.RouteConsumption(otherPlayer, withoutState, 5f, out _, out _));
         Assert.AreEqual(ConsumptionRoute.REJECTED, manager.RouteConsumption(otherPlayer, vehicle, 5f, out _, out _));
+    }
+
+    [TestMethod]
+    public void AcceptedAndRefusedStatesAreRecordedForTheSource()
+    {
+        // The basepower command reads from these records who reported a source last and what was refused for it.
+        Entity panel = AddSource(BasePowerSourceType.SOLAR, simulator);
+
+        manager.AcceptState(simulator, panel, new PowerSourceMetadata(40f, 0f, BasePowerSourceType.SOLAR));
+        manager.AcceptState(otherPlayer, panel, new PowerSourceMetadata(70f, 0f, BasePowerSourceType.SOLAR));
+
+        BasePowerSourceDiagnostics recorded = diagnostics.GetSources()[panel.Id];
+        Assert.AreEqual(simulator.SessionId, recorded.LastOwner);
+        Assert.AreEqual(1L, recorded.AcceptedUpdates);
+        Assert.AreEqual(1L, recorded.RejectedUpdates);
+        Assert.AreEqual("sender_does_not_own_source_simulation", recorded.LastRejection);
+    }
+
+    [TestMethod]
+    public void RefusedStateForASourceWithoutStoredStateIsRecordedAsThatKindOfSource()
+    {
+        Entity panel = AddSource(BasePowerSourceType.SOLAR, simulator);
+
+        manager.AcceptState(otherPlayer, panel, new PowerSourceMetadata(70f, 0f, BasePowerSourceType.SOLAR));
+
+        Assert.AreEqual(1L, diagnostics.GetSources()[panel.Id].RejectedUpdates);
+        Assert.IsNull(panel.Metadata);
+    }
+
+    [TestMethod]
+    public void StateForASourceTheServerDoesNotHaveIsCountedButNotKept()
+    {
+        manager.RejectUnknownSource(otherPlayer, new NitroxId());
+
+        Assert.AreEqual(1L, diagnostics.RejectedUpdates);
+        Assert.AreEqual(0, diagnostics.GetSources().Count, "A client can make up as many ids as it likes.");
+    }
+
+    [TestMethod]
+    public void ConsumptionIsRecordedWithWhatBecameOfIt()
+    {
+        Entity reactor = AddSource(BasePowerSourceType.NUCLEAR, simulator);
+        reactor.Metadata = new PowerSourceMetadata(900f, 0f, BasePowerSourceType.NUCLEAR);
+        Entity plant = AddSource(BasePowerSourceType.THERMAL, null);
+        plant.Metadata = new PowerSourceMetadata(30f, 0f, BasePowerSourceType.THERMAL);
+
+        manager.RouteConsumption(otherPlayer, reactor, 12.5f, out _, out _);
+        manager.RouteConsumption(otherPlayer, plant, 10f, out _, out _);
+        manager.RouteConsumption(otherPlayer, plant, float.NaN, out _, out _);
+
+        BasePowerDiagnosticTotals totals = diagnostics.GetTotals();
+        Assert.AreEqual(1L, totals.ConsumptionForwarded);
+        Assert.AreEqual(12.5f, totals.ConsumptionForwardedAmount);
+        Assert.AreEqual(1L, totals.ConsumptionAppliedByServer);
+        Assert.AreEqual(10f, totals.ConsumptionAppliedByServerAmount);
+        Assert.AreEqual(1L, totals.ConsumptionRejected);
+        Assert.AreEqual(1L, diagnostics.RejectedUpdates);
     }
 
     [TestMethod]
