@@ -249,6 +249,37 @@ public sealed class ScannerRoomManagerDockingTest
     }
 
     [TestMethod]
+    public async Task DockOrUndockReportedByAPlayerWhoDoesNotSimulateTheCameraNeverEndsAnotherPlayersControlOfIt()
+    {
+        // Every game whose physics sees a camera go into a dock or leave it can report that. Only the report of the
+        // camera's simulating player counts, who is its controller for as long as it is flown.
+        ScannerRoomScenarioFixture scenario = new();
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, cameraA, true)).Granted);
+        // Simulating the room gives no say over a camera either.
+        Assert.IsTrue(scenario.Ownership.TryAcquire(scenario.Room.Id, scenario.PlayerB, SimulationLockType.TRANSIENT));
+
+        ScannerRoomScenarioFixture.DockResult othersDock = await scenario.DockAsync(scenario.PlayerB, cameraA, 0, true, establishAuthority: false);
+
+        Assert.IsFalse(othersDock.Granted);
+        Assert.IsFalse(scenario.IsDocked(cameraA));
+        AssertCorrection(scenario, othersDock, scenario.PlayerB, cameraA, MapRoomCameraMetadata.NOT_DOCKED);
+        AssertLastDiagnostic(scenario, "dock", ScannerRoomDiagnosticOutcome.REJECTED, "non_owner");
+        AssertLock(scenario, cameraA, scenario.PlayerA, SimulationLockType.EXCLUSIVE);
+        Assert.IsTrue(scenario.IsController(cameraA, scenario.PlayerA.SessionId));
+
+        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, cameraA, 0, true, establishAuthority: false)).Granted, "The controller's own report docks the camera.");
+        ScannerRoomScenarioFixture.DockResult othersUndock = await scenario.DockAsync(scenario.PlayerB, cameraA, 0, false, establishAuthority: false);
+
+        Assert.IsFalse(othersUndock.Granted);
+        Assert.AreEqual(cameraA, scenario.DockedCamera(0));
+        AssertCorrection(scenario, othersUndock, scenario.PlayerB, cameraA, 0);
+        AssertLastDiagnostic(scenario, "undock", ScannerRoomDiagnosticOutcome.REJECTED, "non_owner");
+        AssertLock(scenario, cameraA, scenario.PlayerA, SimulationLockType.EXCLUSIVE);
+        Assert.IsTrue(scenario.IsController(cameraA, scenario.PlayerA.SessionId));
+        Assert.AreEqual(0, scenario.Sent<MapRoomCameraControlChanged>().Count(packet => !packet.IsControlling), "Nobody was told that control ended.");
+    }
+
+    [TestMethod]
     public async Task DockTurnsAnExclusiveLockThatIsNoCameraControlIntoOrdinarySimulation()
     {
         // A client takes such a lock while its Stalker carries the camera. It ends when the camera is in a dock.

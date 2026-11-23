@@ -101,6 +101,23 @@ public sealed class ScannerRoomDiagnosticsCallSiteTest
     }
 
     [TestMethod]
+    public async Task TakingBeingRefusedAndGivingUpACameraAreRecordedWithItsDock()
+    {
+        ScannerRoomScenarioFixture scenario = new();
+        NitroxId cameraId = ScannerRoomScenarioFixture.CameraAId;
+        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, cameraId, 0, true)).Granted);
+
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, cameraId, true)).Granted);
+        Assert.IsFalse((await scenario.ControlAsync(scenario.PlayerB, cameraId, true)).Granted);
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, cameraId, false)).Granted);
+
+        scenario.Diagnostics.GetHistory().Skip(1).Select(entry => $"{entry.EventName} {entry.Outcome} sid={entry.SessionId} slot={entry.Slot} {entry.Reason}").Should().Equal(
+            ["control_acquire ACCEPTED sid=1 slot=0 -", "control_acquire REJECTED sid=2 slot=0 locked", "control_release ACCEPTED sid=1 slot=0 -"],
+            "the lock is asked for like the lock on any entity; only these lines say that it was for a camera");
+        scenario.Diagnostics.GetHistory().Should().OnlyContain(entry => entry.RoomId == ScannerRoomScenarioFixture.RoomId.ToString().Substring(0, 8));
+    }
+
+    [TestMethod]
     public async Task PilotsSentToAJoinedPlayerAreRecorded()
     {
         ScannerRoomScenarioFixture scenario = new();

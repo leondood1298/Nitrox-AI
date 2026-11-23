@@ -373,10 +373,16 @@ internal sealed class ScannerRoomScenarioFixture
     internal Task<IReadOnlyList<Packet>> PlaceBaseAsync(ServerPlayer player, PlaceBase packet) =>
         SentDuringAsync(() => placeBaseProcessor.Process(Context(player), packet));
 
-    internal async Task<SimulationOwnershipResponse> RequestOwnershipAsync(ServerPlayer player, NitroxId entityId,
-        SimulationLockType lockType) =>
-        (await SentDuringAsync(() => ownershipRequestProcessor.Process(Context(player), new SimulationOwnershipRequest(player.SessionId, entityId, lockType))))
-        .OfType<SimulationOwnershipResponse>().Single();
+    /// <summary>
+    ///     Asks for a simulation lock the way a client does, through the real lock request processor.
+    /// </summary>
+    /// <returns>The answer to this player, also when another player's request is answered at the same moment.</returns>
+    internal async Task<SimulationOwnershipResponse> RequestOwnershipAsync(ServerPlayer player, NitroxId entityId, SimulationLockType lockType)
+    {
+        int alreadyAnswered = SentTo<SimulationOwnershipResponse>(player).Count;
+        await ownershipRequestProcessor.Process(Context(player), new SimulationOwnershipRequest(player.SessionId, entityId, lockType));
+        return SentTo<SimulationOwnershipResponse>(player).Skip(alreadyAnswered).Single();
+    }
 
     /// <summary>
     ///     Reports a camera's state the way a client does: everything it has for the camera, here what the server

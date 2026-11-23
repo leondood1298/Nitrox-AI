@@ -2,6 +2,7 @@ using System.Threading.Tasks;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.GameLogic;
@@ -453,6 +454,32 @@ public sealed class ScannerRoomManagerCameraStateTest
 
         Assert.AreSame(before, scenario.CameraState(cameraId));
         Assert.IsInstanceOfType<GlobalRootEntity>(Camera(scenario));
+    }
+
+    [TestMethod]
+    public async Task CameraInAnInventoryKeepsItsStateWhenTheRoomItWasDockedInIsDeconstructedAndIsACameraLikeAnyOtherOnceDropped()
+    {
+        ScannerRoomScenarioFixture scenario = new();
+        MapRoomEntity otherRoom = scenario.AddRoom(new MapRoomEntity(new NitroxId("00000000-0000-0000-0000-000000000401"), new NitroxId("00000000-0000-0000-0000-000000000400"), new NitroxInt3(5, -2, 9)));
+        scenario.SetCameraState(cameraId, new MapRoomCameraMetadata(false, 37f, 250f, 1));
+        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, cameraId, 0, true)).Granted);
+        await scenario.PickupAsync(scenario.PlayerB, cameraId);
+        Assert.IsTrue(scenario.EntityRegistry.RemoveEntity(scenario.Room.Id).HasValue);
+
+        IReadOnlyList<Packet> sent = await scenario.CleanupAsync(scenario.Room);
+
+        Assert.AreEqual(0, sent.OfType<EntityDestroyed>().Count(), "Only the cameras that sit in the room's docks go with it.");
+        Assert.IsInstanceOfType<InventoryItemEntity>(Camera(scenario));
+        Assert.AreEqual(new MapRoomCameraMetadata(false, 37f, 250f, 1).ToString(), scenario.CameraState(cameraId).ToString());
+
+        await scenario.DropAsync(scenario.PlayerB, cameraId);
+
+        Assert.IsInstanceOfType<GlobalRootEntity>(Camera(scenario));
+        Assert.AreEqual(new MapRoomCameraMetadata(false, 37f, 250f, 1).ToString(), scenario.CameraState(cameraId).ToString());
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, cameraId, true)).Granted, "It can be flown,");
+        Assert.AreEqual(0, (await scenario.ReportCameraAsync(scenario.PlayerA, cameraId, lightOn: true, energy: 30f)).Count, "its controller sets its light and reports its battery,");
+        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, cameraId, 1, true, establishAuthority: false, roomId: otherRoom.Id)).Granted, "and it goes into a dock of another room.");
+        Assert.AreEqual(new MapRoomCameraMetadata(true, 30f, 250f, 1, 1).ToString(), scenario.CameraState(cameraId).ToString());
     }
 
     private static Entity Camera(ScannerRoomScenarioFixture scenario) => scenario.EntityRegistry.GetEntityById(cameraId).Value;
