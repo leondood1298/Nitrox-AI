@@ -67,7 +67,7 @@ public class PatchesTranspilerTest
         [typeof(LargeRoomWaterPark_OnDeconstructionStart_Patch), 3],
         [typeof(LargeWorldEntity_UpdateCell_Patch), 1],
         [typeof(LaserCutObject_SetCutFxPosition_Patch), 3],
-        [typeof(LaunchRocket_OnHandClick_Patch), -8],
+        [typeof(LaunchRocket_OnHandClick_Patch), -9],
         [typeof(LeakingRadiation_Update_Patch), 0],
         [typeof(MainGameController_StartGame_Patch), 1],
         [typeof(MeleeAttack_CanDealDamageTo_Patch), 7],

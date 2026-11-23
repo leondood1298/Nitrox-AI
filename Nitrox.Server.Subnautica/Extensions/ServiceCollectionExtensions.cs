@@ -183,6 +183,7 @@ internal static partial class ServiceCollectionExtensions
                     .AddSingleton<PdaManager>()
                     .AddSingleton<PdaNotificationManager>()
                     .AddSingleton<ActiveTeleporters>()
+                    .AddSingleton<RocketLaunchManager>()
                     .AddSingleton<BatchEntitySpawner>()
                     .AddSingleton<EntityRegistry>()
                     .AddSingleton<SessionSettings>()

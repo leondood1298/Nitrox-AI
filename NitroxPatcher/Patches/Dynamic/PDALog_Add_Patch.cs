@@ -13,8 +13,9 @@ public sealed partial class PDALog_Add_Patch : NitroxPatch, IDynamicPatch
 
     public static void Postfix(string key, PDALog.EntryData __result)
     {
+        // Single player saves nothing after the launch, so neither does the server for a game playing the ending
         if (IgnoreKeys.RemoveAll(k => string.Equals(k, key, StringComparison.OrdinalIgnoreCase)) > 0 || __result == null ||
-            !PDALog.entries.TryGetValue(key, out PDALog.Entry entry))
+            !PDALog.entries.TryGetValue(key, out PDALog.Entry entry) || LaunchRocket.launchStarted)
         {
             return;
         }

@@ -16,7 +16,8 @@ public sealed partial class StoryGoal_Execute_Patch : NitroxPatch, IDynamicPatch
     public static void Prefix(string key, Story.GoalType goalType, out bool __state)
     {
         __state = false;
-        if (!Multiplayer.Main.InitialSyncCompleted)
+        // Goals the ending completes are not saved in single player, which saves nothing after the launch
+        if (!Multiplayer.Main.InitialSyncCompleted || LaunchRocket.launchStarted)
         {
             return;
         }

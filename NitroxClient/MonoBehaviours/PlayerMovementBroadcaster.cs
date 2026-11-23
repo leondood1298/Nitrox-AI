@@ -32,6 +32,13 @@ public class PlayerMovementBroadcaster : MonoBehaviour
             return;
         }
 
+        // The ending carries the player up with the rocket. As in single player, where nothing is saved after the
+        // launch, the server keeps the position in the cockpit, so the player finds itself there on rejoining.
+        if (LaunchRocket.launchStarted)
+        {
+            return;
+        }
+
         MapRoomCamera scannerCamera = uGUI_CameraDrone.main ? uGUI_CameraDrone.main.GetCamera() : null;
         bool scannerCameraActive = scannerCamera;
         RecordScannerAnchorTransition(scannerCamera);

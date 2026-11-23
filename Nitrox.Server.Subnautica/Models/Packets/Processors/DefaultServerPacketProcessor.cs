@@ -11,7 +11,9 @@ internal sealed class DefaultServerPacketProcessor(ILogger<DefaultServerPacketPr
     private readonly HashSet<Type> defaultPacketProcessorBlacklist =
     [
         typeof(GameModeChanged),
-        typeof(DropSimulationOwnership)
+        typeof(DropSimulationOwnership),
+        // Only the server starts the ending, once everybody is aboard (RocketLaunchRequestProcessor)
+        typeof(RocketLaunch)
     ];
 
     private readonly ILogger<DefaultServerPacketProcessor> logger = logger;
