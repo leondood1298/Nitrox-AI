@@ -1,4 +1,6 @@
+using System.Linq;
 using System.Threading.Tasks;
+using Nitrox.Model.DataStructures.GameLogic;
 using Nitrox.Model.Packets.Core;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Model.Core;
@@ -6,6 +8,7 @@ using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Helper;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
@@ -17,6 +20,11 @@ internal sealed class MapRoomCameraControlProcessor(SimulationOwnershipData simu
     MapRoomCameraControlLifecycle controlLifecycle, MapRoomCameraControlReleaseFactory cameraControlReleaseFactory,
     ScannerRoomDiagnostics diagnostics) : IAuthPacketProcessor<MapRoomCameraControl>
 {
+    /// <summary>
+    ///     The game's GameModeOption.NoEnergy, part of Creative. Nothing needs power in such a game.
+    /// </summary>
+    private const int NO_ENERGY_GAME_MODE_OPTION = 16;
+
     private readonly SimulationOwnershipData simulationOwnershipData = simulationOwnershipData;
     private readonly EntityRegistry entityRegistry = entityRegistry;
     private readonly MapRoomCameraControlLifecycle controlLifecycle = controlLifecycle;
@@ -32,7 +40,12 @@ internal sealed class MapRoomCameraControlProcessor(SimulationOwnershipData simu
             await context.ReplyAsync(CreateResponse(packet, false, context.Sender.SessionId));
             return;
         }
-        using IDisposable lifecycleGate = await controlLifecycle.EnterAsync(packet.CameraId);
+        // A player controls one camera at a time. Taking another one ends control of the previous one here, so that
+        // camera's gate is entered together with the requested camera's.
+        NitroxId[] previousCameraIds = packet.IsControlling
+            ? controlLifecycle.GetCamerasControlledBy(context.Sender.SessionId).Where(cameraId => cameraId != packet.CameraId).ToArray()
+            : [];
+        using IDisposable lifecycleGate = await controlLifecycle.EnterTogetherAsync([packet.CameraId, .. previousCameraIds]);
         if (!IsValidAssociation(packet))
         {
             diagnostics.RecordRejected("control", GetRoom(packet.MapRoomId), packet.CameraId, context.Sender.SessionId,
@@ -43,10 +56,11 @@ internal sealed class MapRoomCameraControlProcessor(SimulationOwnershipData simu
 
         if (packet.IsControlling)
         {
+            string? unusableReason = GetUnusableReason(packet.CameraId, context.Sender.GameMode);
             bool takenFromAnotherPlayer = simulationOwnershipData.TryGetLock(packet.CameraId, out SimulationOwnershipData.PlayerLock previousLock) &&
                                           previousLock.Player != context.Sender;
-            bool granted = simulationOwnershipData.TryAcquire(packet.CameraId, context.Sender, SimulationLockType.EXCLUSIVE);
-            if (!granted && takenFromAnotherPlayer && CanPreempt(previousLock.LockType, controlLifecycle.IsActiveController(packet.CameraId, previousLock.Player.SessionId)))
+            bool granted = unusableReason == null && simulationOwnershipData.TryAcquire(packet.CameraId, context.Sender, SimulationLockType.EXCLUSIVE);
+            if (!granted && unusableReason == null && takenFromAnotherPlayer && CanPreempt(previousLock.LockType, controlLifecycle.IsActiveController(packet.CameraId, previousLock.Player.SessionId)))
             {
                 simulationOwnershipData.ForceAcquire(packet.CameraId, context.Sender, SimulationLockType.EXCLUSIVE);
                 granted = true;
@@ -64,10 +78,14 @@ internal sealed class MapRoomCameraControlProcessor(SimulationOwnershipData simu
                     // simulation bookkeeping of their client. That only ends when they are told who has it now.
                     await context.SendToOthersAsync(new SimulationOwnershipChange(packet.CameraId, context.Sender.SessionId, SimulationLockType.EXCLUSIVE));
                 }
+                foreach (NitroxId previousCameraId in previousCameraIds)
+                {
+                    await EndControlOfPreviousCameraAsync(context, previousCameraId);
+                }
             }
             else
             {
-                diagnostics.RecordRejected("control_acquire", GetRoom(packet.MapRoomId), packet.CameraId, context.Sender.SessionId, packet.CameraIndex, "locked");
+                diagnostics.RecordRejected("control_acquire", GetRoom(packet.MapRoomId), packet.CameraId, context.Sender.SessionId, packet.CameraIndex, unusableReason ?? "locked");
                 await context.ReplyAsync(response);
             }
             return;
@@ -133,11 +151,91 @@ internal sealed class MapRoomCameraControlProcessor(SimulationOwnershipData simu
             SimulationWhitelist.ShouldSimulateEntityMovement(looseCamera));
     }
 
+    /// <summary>
+    ///     The camera the sender controlled before taking another one. Its release may still be on its way, behind a
+    ///     busy gate, or may never come; without this the player would hold several cameras and keep everyone else out
+    ///     of them.
+    /// </summary>
+    private async Task EndControlOfPreviousCameraAsync(AuthProcessorContext context, NitroxId previousCameraId)
+    {
+        if (!controlLifecycle.IsActiveController(previousCameraId, context.Sender.SessionId))
+        {
+            return;
+        }
+        if (!simulationOwnershipData.TryGetLock(previousCameraId, out SimulationOwnershipData.PlayerLock previousLock) || previousLock.Player != context.Sender)
+        {
+            controlLifecycle.EndPreviewAcquisition(previousCameraId, context.Sender.SessionId);
+            return;
+        }
+
+        bool hasRelease = cameraControlReleaseFactory.TryCreate(previousCameraId, previousLock, "switch", out MapRoomCameraControl release);
+        SimulationOwnershipChange? keptSimulation = EndControlLock(previousCameraId, context.Sender);
+        if (hasRelease)
+        {
+            await context.SendToAllAsync(release);
+        }
+        if (keptSimulation != null)
+        {
+            await context.SendToAllAsync(keptSimulation);
+        }
+    }
+
+    /// <summary>
+    ///     Why the game would not let this camera be controlled (MapRoomCamera.CanBeControlled), or null. Battery and
+    ///     health are the values the server holds and every client was told.
+    /// </summary>
+    private string? GetUnusableReason(NitroxId cameraId, SubnauticaGameMode gameMode)
+    {
+        float energy = MapRoomCameraRecord.MAX_ENERGY;
+        float health = MapRoomCameraRecord.MAX_HEALTH;
+        bool hasRecord = false;
+        foreach (MapRoomEntity room in entityRegistry.GetEntities<MapRoomEntity>())
+        {
+            lock (room)
+            {
+                if (room.GetCameraRecord(cameraId) is not { } record)
+                {
+                    continue;
+                }
+                lock (record)
+                {
+                    energy = record.Energy;
+                    health = record.Health;
+                }
+                hasRecord = true;
+                break;
+            }
+        }
+        if (!hasRecord && entityRegistry.TryGetEntityById(cameraId, out Entity camera) && camera.Metadata is MapRoomCameraMetadata ownState)
+        {
+            energy = ownState.Energy;
+            health = ownState.Health;
+        }
+        return GetUnusableReason(energy, health, gameMode);
+    }
+
+    internal static string? GetUnusableReason(float energy, float health, SubnauticaGameMode gameMode)
+    {
+        if (health <= 0f)
+        {
+            return "dead";
+        }
+        bool requiresPower = ((int)gameMode & NO_ENERGY_GAME_MODE_OPTION) == 0;
+        return energy <= 0f && requiresPower ? "empty" : null;
+    }
+
     private bool IsValidAssociation(MapRoomCameraControl packet)
     {
         if (!packet.IsControlling)
         {
             return IsKnownScannerCamera(packet.CameraId);
+        }
+        // A camera in an inventory keeps its room record, and an id can belong to something that is no camera at all.
+        // Only a camera out in the world, or one that exists as a record alone, can be controlled.
+        if (entityRegistry.TryGetEntityById(packet.CameraId, out Entity existingEntity) &&
+            !(existingEntity is WorldEntity && new NitroxTechType("MapRoomCamera").Equals(existingEntity.TechType)))
+        {
+            return false;
         }
         if (packet.MapRoomId.HasValue)
         {

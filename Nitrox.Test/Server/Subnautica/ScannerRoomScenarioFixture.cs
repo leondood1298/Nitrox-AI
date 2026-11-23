@@ -133,7 +133,7 @@ internal sealed class ScannerRoomScenarioFixture
     {
         RecordingPacketSender requestPacketSender = new();
         await controlProcessor.Process(new AuthProcessorContext(player, requestPacketSender), new MapRoomCameraControl(cameraId, RoomId, slot, isControlling, false));
-        return requestPacketSender.Single<MapRoomCameraControl>();
+        return ControlResponse(requestPacketSender, cameraId);
     }
 
     internal async Task<MapRoomCameraControl> ControlLooseAsync(ServerPlayer player, NitroxId cameraId, bool isControlling)
@@ -141,8 +141,14 @@ internal sealed class ScannerRoomScenarioFixture
         RecordingPacketSender requestPacketSender = new();
         await controlProcessor.Process(new AuthProcessorContext(player, requestPacketSender),
             new MapRoomCameraControl(cameraId, Optional.Empty, -1, isControlling, false));
-        return requestPacketSender.Single<MapRoomCameraControl>();
+        return ControlResponse(requestPacketSender, cameraId);
     }
+
+    /// <summary>
+    ///     Taking a camera can also end control of the camera the player had before, which is announced in the same go.
+    /// </summary>
+    private static MapRoomCameraControl ControlResponse(RecordingPacketSender requestPacketSender, NitroxId cameraId) =>
+        requestPacketSender.Packets.OfType<MapRoomCameraControl>().Single(packet => packet.CameraId == cameraId);
 
     /// <summary>
     ///     Everything the server sends in answer to a control packet, for tests that look beyond the control response.
