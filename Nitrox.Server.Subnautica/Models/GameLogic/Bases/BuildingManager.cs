@@ -101,11 +101,21 @@ internal sealed class BuildingManager
         return true;
     }
 
-    public bool ModifyConstructedAmount(ModifyConstructedAmount modifyConstructedAmount)
+    public bool ModifyConstructedAmount(Player player, ModifyConstructedAmount modifyConstructedAmount)
     {
         if (!entityRegistry.TryGetEntityById(modifyConstructedAmount.GhostId, out Entity entity))
         {
             logger.ZLogError($"Trying to modify the constructed amount of a non-registered object (GhostId: {modifyConstructedAmount.GhostId})");
+            return false;
+        }
+
+        // A built piece of a base keeps the id of the ghost it came from. A player whose deconstruction of that piece was
+        // refused (late operation) still has a ghost with this id and goes on unbuilding it; the server's piece is not a
+        // ghost and must not be removed by it, nor would the other players' games remove it.
+        if (IsBuiltBasePart(entity))
+        {
+            logger.ZLogWarning($"Ignoring a constructed amount from [{player.Name}] for {entity.GetType().Name} {entity.Id}, which is no ghost on the server");
+            NotifyPlayerDesync(player);
             return false;
         }
 
@@ -146,6 +156,11 @@ internal sealed class BuildingManager
         }
         return true;
     }
+
+    /// <summary>
+    ///     Whether the entity is a finished part of a base (or the base itself), which only the ordered building packets change.
+    /// </summary>
+    internal static bool IsBuiltBasePart(Entity entity) => entity is BuildEntity or InteriorPieceEntity or MapRoomEntity or MoonpoolEntity;
 
     public bool CreateBase(PlaceBase placeBase)
     {
