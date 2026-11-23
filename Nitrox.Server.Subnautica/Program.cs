@@ -10,7 +10,6 @@ using Nitrox.Model.Platforms.Discovery;
 using Nitrox.Server.Subnautica.Models;
 using Nitrox.Server.Subnautica.Models.Factories;
 using Nitrox.Server.Subnautica.Models.Serialization;
-using Nitrox.Server.Subnautica.Models.Serialization.World;
 using Nitrox.Server.Subnautica.Services;
 using Nitrox.Server.Subnautica.Services.Core;
 
@@ -70,11 +69,11 @@ internal sealed class Program
         {
             await StartServerAsync(args);
         }
-        catch (Exception ex) when (FindWorldLoadException(ex) is { } worldLoadException)
+        catch (Exception ex) when (FindStartupFailure(ex) is { } startupFailure)
         {
             // Already logged where it happened; the message is for the user as it is, without a stack trace
-            Console.Error.WriteLine(worldLoadException.Message);
-            Environment.ExitCode = WORLD_LOAD_FAILED_EXIT_CODE;
+            Console.Error.WriteLine(startupFailure.Message);
+            Environment.ExitCode = startupFailure.ExitCode;
             if (ConsoleUnhandledErrorHandler.WaitForKey && Environment.UserInteractive && !Console.IsInputRedirected)
             {
                 // A console window of its own would otherwise close before the message can be read
@@ -83,18 +82,13 @@ internal sealed class Program
             }
         }
 
-        static WorldLoadException? FindWorldLoadException(Exception ex) => ex switch
+        static StartupFailureException? FindStartupFailure(Exception ex) => ex switch
         {
-            WorldLoadException worldLoadException => worldLoadException,
-            AggregateException aggregate => aggregate.Flatten().InnerExceptions.OfType<WorldLoadException>().FirstOrDefault(),
+            StartupFailureException startupFailure => startupFailure,
+            AggregateException aggregate => aggregate.Flatten().InnerExceptions.OfType<StartupFailureException>().FirstOrDefault(),
             _ => null
         };
     }
-
-    /// <summary>
-    ///     Exit code of a server that stopped because its world cannot be opened.
-    /// </summary>
-    public const int WORLD_LOAD_FAILED_EXIT_CODE = 3;
 
     private static async Task StartServerAsync(string[] args)
     {
@@ -127,6 +121,7 @@ internal sealed class Program
                // Add initialization services - diagnoses the server environment on startup.
                .AddHostedSingletonService<PreventMultiServerInitService>()
                .AddHostedSingletonService<NetworkPortAvailabilityService>()
+               .AddHostedSingletonService<WorldLockService>()
                // Add communication services
                .AddCommands()
                .AddPackets()

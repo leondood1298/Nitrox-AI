@@ -8,6 +8,7 @@ using LiteNetLib.Utils;
 using Nitrox.Model.Core;
 using Nitrox.Model.Networking;
 using Nitrox.Model.Packets.Core;
+using Nitrox.Server.Subnautica.Models;
 using Nitrox.Server.Subnautica.Models.Administration;
 using Nitrox.Server.Subnautica.Models.AppEvents;
 using Nitrox.Server.Subnautica.Models.AppEvents.Core;
@@ -68,7 +69,14 @@ internal sealed class LiteNetLibServerService : IHostedService, IPacketSender, I
 #else
         server.DisconnectTimeout = 30_000; // 30 seconds; prevents false disconnects when post-sync game-loading stalls LiteNetLib briefly
 #endif
-        server.Start(options.Value.ServerPort);
+        if (!server.Start(options.Value.ServerPort))
+        {
+            // Running on without the port served nobody while still saving the world, possibly next to the server
+            // that holds the port
+            string message = $"Port {options.Value.ServerPort} UDP is in use by another program, often another Nitrox server. Close it or choose another port in the server settings.";
+            logger.ZLogCritical($"{message}");
+            throw new StartupFailureException(message, StartupFailureException.PORT_UNAVAILABLE);
+        }
         return Task.CompletedTask;
     }
 
