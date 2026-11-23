@@ -14,7 +14,7 @@ public sealed partial class PlayerCinematicController_OnPlayerCinematicModeEnd_P
 
     public static void Prefix(PlayerCinematicController __instance)
     {
-        if (__instance.cinematicModeActive && __instance.TryGetComponentInParent<NitroxEntity>(out var component, includeInactive: true) && !component.gameObject.GetComponent<Bed>() && Resolve<LocalPlayer>().SessionId.HasValue)
+        if (__instance.cinematicModeActive && __instance.TryGetComponentInParent<NitroxEntity>(out var component, includeInactive: true) && !component.gameObject.GetComponent<Bed>() && !__instance.GetComponentInParent<Bench>() && Resolve<LocalPlayer>().SessionId.HasValue)
         {
             int hashCode = __instance.gameObject.GetHierarchyPath(component.gameObject).GetHashCode();
             Resolve<PlayerCinematics>().EndCinematicMode(Resolve<LocalPlayer>().SessionId.Value, component.Id, hashCode, __instance.playerViewAnimationName);

@@ -19,7 +19,7 @@ public sealed partial class PlayerCinematicController_StartCinematicMode_Patch :
 
     public static void Prefix(PlayerCinematicController __instance)
     {
-        if (!__instance.cinematicModeActive && Player.main && Player.main.gameObject.activeInHierarchy && __instance.TryGetComponent<MultiplayerCinematicController>(out var component) && !__instance.GetComponentInParent<Bed>() && __instance.TryGetComponentInParent<NitroxEntity>(out var component2, includeInactive: true) && Resolve<LocalPlayer>().SessionId.HasValue)
+        if (!__instance.cinematicModeActive && Player.main && Player.main.gameObject.activeInHierarchy && __instance.TryGetComponent<MultiplayerCinematicController>(out var component) && !__instance.GetComponentInParent<Bed>() && !__instance.GetComponentInParent<Bench>() && __instance.TryGetComponentInParent<NitroxEntity>(out var component2, includeInactive: true) && Resolve<LocalPlayer>().SessionId.HasValue)
         {
             component.CallAllCinematicModeEnd();
             int hashCode = __instance.gameObject.GetHierarchyPath(component2.gameObject).GetHashCode();

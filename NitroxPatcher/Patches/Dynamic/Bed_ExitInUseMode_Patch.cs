@@ -10,7 +10,7 @@ namespace NitroxPatcher.Patches.Dynamic;
 
 public sealed partial class Bed_ExitInUseMode_Patch : NitroxPatch, IDynamicPatch
 {
-    public static readonly MethodInfo TARGET_METHOD = typeof(Bed).GetMethod("ExitInUseMode", BindingFlags.Instance | BindingFlags.NonPublic);
+    public static readonly MethodInfo TARGET_METHOD = Reflect.Method((Bed t) => t.ExitInUseMode(default(Player), default(bool)));
 
     public static void Prefix(Bed __instance)
     {

@@ -39,7 +39,7 @@ public sealed partial class PlayerCinematicController_EndCinematicMode_Patch : N
         {
             return;
         }
-        if (!__instance.TryGetComponentInParent(out NitroxEntity entity, true) || entity.gameObject.GetComponent<Bed>())
+        if (!__instance.TryGetComponentInParent(out NitroxEntity entity, true) || entity.gameObject.GetComponent<Bed>() || __instance.GetComponentInParent<Bench>())
         {
             return;
         }

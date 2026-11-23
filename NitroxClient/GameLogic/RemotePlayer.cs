@@ -187,10 +187,15 @@ public class RemotePlayer : INitroxPlayer
             return;
         }
 
-        SetVehicle(null);
+        // Same rule as in UpdatePosition: while a cinematic plays (e.g. climbing the Cyclops ladder), movement packets
+        // must not switch the normal animations back on.
+        if (!InCinematic)
+        {
+            SetVehicle(null);
 
-        AnimationController.AimingRotation = localRotation;
-        AnimationController.UpdatePlayerAnimations = true;
+            AnimationController.AimingRotation = localRotation;
+            AnimationController.UpdatePlayerAnimations = true;
+        }
         AnimationController.Velocity = (localPosition - Pawn.Handle.transform.localPosition) / Time.fixedDeltaTime;
 
         Pawn.Handle.transform.localPosition = localPosition;
