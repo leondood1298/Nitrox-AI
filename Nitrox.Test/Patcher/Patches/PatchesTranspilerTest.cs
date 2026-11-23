@@ -65,6 +65,7 @@ public class PatchesTranspilerTest
         [typeof(Knife_OnToolUseAnim_Patch), 0],
         [typeof(LargeRoomWaterPark_OnDeconstructionStart_Patch), 3],
         [typeof(LargeWorldEntity_UpdateCell_Patch), 1],
+        [typeof(LaserCutObject_SetCutFxPosition_Patch), 3],
         [typeof(LaunchRocket_OnHandClick_Patch), -8],
         [typeof(LeakingRadiation_Update_Patch), 0],
         [typeof(MainGameController_StartGame_Patch), 1],
