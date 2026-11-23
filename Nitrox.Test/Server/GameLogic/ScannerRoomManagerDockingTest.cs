@@ -430,6 +430,25 @@ public sealed class ScannerRoomManagerDockingTest
     }
 
     [TestMethod]
+    public async Task BuiltRoomCannotBringAnEntityThatAlreadyExistsAsItsCamera()
+    {
+        ScannerRoomScenarioFixture scenario = new();
+        Assert.IsTrue(scenario.Ownership.TryAcquire(cameraA, scenario.PlayerB, SimulationLockType.TRANSIENT));
+        Entity existing = scenario.EntityRegistry.GetEntityById(cameraA).Value;
+        MapRoomEntity built = CreateBuiltRoom(CreateBuiltCamera(cameraA, new MapRoomCameraMetadata(dockingIndex: 0)), CreateBuiltCamera(builtCameraRightId, null));
+
+        await BuildRoomAsync(scenario, scenario.PlayerA, built);
+
+        // Otherwise a builder could dock any camera without simulating it, by naming it as one their new room came with.
+        MapRoomEntity room = scenario.EntityRegistry.GetEntityById<MapRoomEntity>(builtRoomId).Value;
+        Assert.AreSame(existing, scenario.EntityRegistry.GetEntityById(cameraA).Value);
+        Assert.IsNull(existing.ParentId);
+        Assert.AreEqual(builtCameraRightId, room.ChildEntities.Single().Id);
+        Assert.AreEqual(0, scenario.CameraState(builtCameraRightId).DockingIndex);
+        AssertLock(scenario, cameraA, scenario.PlayerB, SimulationLockType.TRANSIENT);
+    }
+
+    [TestMethod]
     public async Task RoomThatStartsABaseComesWithItsCameras()
     {
         ScannerRoomScenarioFixture scenario = new();

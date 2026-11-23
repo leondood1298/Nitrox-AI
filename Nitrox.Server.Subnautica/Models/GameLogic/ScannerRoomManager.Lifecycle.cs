@@ -25,12 +25,14 @@ internal sealed partial class ScannerRoomManager
         roomsById[room.Id] = room;
         // The builder's client made the cameras that come with the room. It cannot know which numbers are free, and
         // what else it says about them does not count: a new camera is full, intact, dark and in the next free dock.
+        // A camera that comes with a room is new. One with the id of an entity that exists would take that entity's
+        // place in the registry: a way to dock any camera without simulating it, or to replace something else.
         bool[] taken = new bool[MapRoomCameraMetadata.DOCK_COUNT];
         foreach (WorldEntity camera in room.ChildEntities.OfType<WorldEntity>().Where(IsCamera).ToArray())
         {
             int requested = ReadState(camera).DockingIndex;
             int dockingIndex = requested is >= 0 and < MapRoomCameraMetadata.DOCK_COUNT && !taken[requested] ? requested : Array.IndexOf(taken, false);
-            if (dockingIndex < 0)
+            if (dockingIndex < 0 || entityRegistry.TryGetEntityById(camera.Id, out Entity? _))
             {
                 room.ChildEntities.Remove(camera);
                 continue;
