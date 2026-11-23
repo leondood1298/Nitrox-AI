@@ -3,7 +3,7 @@ using Nitrox.Launcher.Models.Services;
 
 namespace Nitrox.Launcher.ViewModels.Designer;
 
-internal sealed class DesignUpdatesViewModel() : UpdatesViewModel(null!, null!, null!, null!, null!)
+internal sealed class DesignUpdatesViewModel() : UpdatesViewModel(null!, null!, null!)
 {
     public new Avalonia.Collections.AvaloniaList<BackupInfo> AvailableBackups { get; } =
     [
