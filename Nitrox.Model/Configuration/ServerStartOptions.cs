@@ -42,6 +42,16 @@ public sealed partial record ServerStartOptions
     [RootedPath]
     public string? NitroxAssetsPath { get; set; }
 
+    /// <summary>
+    ///     Gets or sets the folder holding the worlds. Defaults to the "saves" folder in the data folder.
+    /// </summary>
+    /// <remarks>
+    ///     The launcher can keep its worlds in a folder of its choice (its "SavesFolderDir" setting), which the data folder
+    ///     alone cannot express.
+    /// </remarks>
+    [ConfigurationKeyName("saves-path")]
+    public string? SavesPath { get; set; }
+
     [ConfigurationKeyName("embedded")]
     public bool IsEmbedded { get; set; }
 

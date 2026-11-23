@@ -62,7 +62,13 @@ internal static class ServerStartOptionsExtensions
 
     public static string GetServerConfigFilePath(this ServerStartOptions options) => Path.Combine(options.GetServerSavePath(), typeof(SubnauticaServerOptions).GetCustomAttribute<SerializableFileNameAttribute>()?.FileName ?? throw new InvalidOperationException());
 
-    public static string GetServerSavePath(this ServerStartOptions options) => Path.Combine(NitroxDirectory.SavesPath, options.SaveName);
+    /// <summary>
+    ///     The world's folder: in the worlds folder the launcher gave (--saves-path), else in the data folder's "saves".
+    /// </summary>
+    public static string GetServerSavePath(this ServerStartOptions options) => Path.Combine(GetSavesRoot(options), options.SaveName);
+
+    private static string GetSavesRoot(ServerStartOptions options) =>
+        !string.IsNullOrWhiteSpace(options.SavesPath) && Path.IsPathRooted(options.SavesPath) ? options.SavesPath : NitroxDirectory.SavesPath;
 
     public static string GetServerSaveBackupsPath(this ServerStartOptions options) => Path.Combine(options.GetServerSavePath(), "backups");
 

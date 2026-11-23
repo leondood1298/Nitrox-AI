@@ -1,4 +1,3 @@
-using System.IO;
 using Nitrox.Launcher.Models.Design;
 
 namespace Nitrox.Test.Launcher.Models.Design;
@@ -18,7 +17,7 @@ public sealed class ServerEntryTest
     {
         List<string> arguments = ServerEntry.GetServerArguments(Path.Combine(dataPath, "saves", "My World"), "game", defaultDataPath);
 
-        CollectionAssert.AreEqual(new[] { "--save", "My World", "--game-path", "game", "--data-path", dataPath }, arguments);
+        arguments.Should().Equal("--save", "My World", "--game-path", "game", "--data-path", dataPath, "--saves-path", Path.Combine(dataPath, "saves"));
     }
 
     [TestMethod]
@@ -26,16 +25,17 @@ public sealed class ServerEntryTest
     {
         List<string> arguments = ServerEntry.GetServerArguments(Path.Combine(dataPath, "saves", "My World") + Path.DirectorySeparatorChar, "game", defaultDataPath);
 
-        Assert.AreEqual("My World", arguments[1]);
-        Assert.AreEqual(dataPath, arguments[5]);
+        arguments[1].Should().Be("My World");
+        arguments[5].Should().Be(dataPath);
     }
 
     [TestMethod]
-    public void WorldOutsideASavesFolderFallsBackToTheLaunchersDataFolder()
+    public void WorldsFolderOfTheLaunchersChoiceIsPassedOn()
     {
-        // The server can only look in <data folder>/saves, so a custom worlds folder cannot be expressed
+        // The data folder cannot express a worlds folder that is not named "saves", so it goes as --saves-path
         List<string> arguments = ServerEntry.GetServerArguments(Path.Combine(dataPath, "worlds", "My World"), "game", defaultDataPath);
 
-        Assert.AreEqual(defaultDataPath, arguments[5]);
+        arguments[5].Should().Be(defaultDataPath);
+        arguments.Should().ContainInConsecutiveOrder("--saves-path", Path.Combine(dataPath, "worlds"));
     }
 }

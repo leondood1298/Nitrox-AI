@@ -414,7 +414,14 @@ internal sealed partial class ServerEntry : ObservableObject
         {
             dataPath = parent;
         }
-        return ["--save", Path.GetFileName(Path.TrimEndingDirectorySeparator(saveDir)), "--game-path", gamePath, "--data-path", dataPath];
+        List<string> arguments = ["--save", Path.GetFileName(Path.TrimEndingDirectorySeparator(saveDir)), "--game-path", gamePath, "--data-path", dataPath];
+        // A worlds folder of the launcher's own choice is not "<data folder>/saves", so it is passed on as it is
+        if (savesDir != null)
+        {
+            arguments.Add("--saves-path");
+            arguments.Add(savesDir);
+        }
+        return arguments;
     }
 
     /// <summary>
