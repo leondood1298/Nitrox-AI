@@ -24,6 +24,11 @@ public sealed partial class MapRoomScans
     public bool ScansLocally(MapRoomFunctionality mapRoom) => !TryGetRoom(mapRoom, out IRoom? room) || ScansLocally(room);
 
     /// <summary>
+    ///     Whether the game may replace the room's list of results with what this client's game has loaded in range.
+    /// </summary>
+    public bool ObtainsResultsLocally(MapRoomFunctionality mapRoom, TechType target) => !TryGetRoom(mapRoom, out IRoom? room) || ObtainsResultsLocally(room, target);
+
+    /// <summary>
     ///     Called after a resource was loaded in this client's game and the game had its chance to add it to the room's results.
     /// </summary>
     public void ResourceDiscovered(MapRoomFunctionality mapRoom, ResourceTrackerDatabase.ResourceInfo info)
@@ -60,7 +65,7 @@ public sealed partial class MapRoomScans
     }
 
     /// <summary>
-    ///     Called after the game filled the room's list of results from this client's own game.
+    ///     Called after the game had its chance to fill the room's list of results from this client's own game.
     /// </summary>
     public void ResultsObtained(MapRoomFunctionality mapRoom)
     {
@@ -113,7 +118,23 @@ public sealed partial class MapRoomScans
         }
     }
 
-    internal bool ScansLocally(IRoom room) => !GetState(room.Id).ResultsReceived || simulationOwnership.HasAnyLockType(room.Id);
+    /// <summary>
+    ///     Only the player who simulates the room scans. Every client's game has other parts of the world loaded, so
+    ///     what another client's game finds is neither what the simulating player reports nor what the others see.
+    /// </summary>
+    internal bool ScansLocally(IRoom room) => simulationOwnership.HasAnyLockType(room.Id);
+
+    internal bool ObtainsResultsLocally(IRoom room, TechType target)
+    {
+        if (ScansLocally(room))
+        {
+            return true;
+        }
+        // The game would have emptied the list first. What stays is what the server sent for this target: the game
+        // also asks when nothing but the scan range changed.
+        room.Nodes.RemoveAll(info => info.techType != target);
+        return false;
+    }
 
     /// <summary>
     ///     The simulating player's game has replaced the room's list, which so far held what the server had added. The
@@ -189,19 +210,16 @@ public sealed partial class MapRoomScans
             return;
         }
         ReconcileSnapshot(room.Nodes, snapshot.Results);
-        state.ResultsReceived = true;
         ResultsChanged(room);
     }
 
     internal void ApplyChange(IRoom room, MapRoomScanResultChanged change)
     {
-        RoomState state = GetState(room.Id);
-        if (change.Generation != state.Generation)
+        if (change.Generation != GetState(room.Id).Generation)
         {
             return;
         }
         ApplyChangeToList(room.Nodes, change);
-        state.ResultsReceived = true;
         ResultsChanged(room);
     }
 

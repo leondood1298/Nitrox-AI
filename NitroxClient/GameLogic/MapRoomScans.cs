@@ -167,9 +167,10 @@ public sealed partial class MapRoomScans
         state.Generation = metadata.Generation;
         state.Target = target;
         state.NodesKnownToServer = metadata.NumNodesScanned;
-        if (newGeneration)
+        if (newGeneration && !simulating)
         {
-            state.ResultsReceived = false;
+            // What the room holds was found for the previous target.
+            room.Nodes.Clear();
         }
         if (newTarget)
         {
@@ -322,11 +323,6 @@ public sealed partial class MapRoomScans
         ///     Whether the server has to be sent the room's full list of results.
         /// </summary>
         public bool ReportDue;
-
-        /// <summary>
-        ///     Whether the server has sent results for the current target.
-        /// </summary>
-        public bool ResultsReceived;
 
         public bool TypesReceived;
         public readonly HashSet<TechType> AvailableTypes = [];

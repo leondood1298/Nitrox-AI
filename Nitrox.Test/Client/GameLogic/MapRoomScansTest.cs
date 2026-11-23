@@ -271,7 +271,6 @@ public sealed class MapRoomScansTest
         room.Loaded.Add(Info("quartz", 10f));
         room.StartScanning(TechType.Quartz);
         scans.TargetChosen(room);
-        scans.ResultsObtained(room);
 
         scans.Update(room);
         Assert.AreEqual(1, Sent<MapRoomScanReport>().Count, "A report naming generation 3 would be dropped as one for the previous target.");
@@ -422,16 +421,58 @@ public sealed class MapRoomScansTest
     }
 
     [TestMethod]
-    public void GameOnlyChangesTheResultsOfAPlayerWhoDoesNotSimulateUntilTheServerHasSentThem()
+    public void PlayerWhoDoesNotSimulateNeverFillsTheResultsFromItsOwnGame()
     {
+        room.Loaded.Add(Info("only-this-client-has-it-loaded", 10f));
+
         scans.ApplyMetadata(room, new MapRoomMetadata(quartz, 0, 3));
-        Assert.IsTrue(scans.ScansLocally(room));
+        Assert.AreEqual(0, room.Nodes.Count, "The game fills the list when a scan starts.");
+        Assert.IsFalse(scans.ScansLocally(room), "The game adds to the list when a resource is loaded.");
 
-        scans.ApplySnapshot(room, new MapRoomScanSnapshot(room.Id, 3, [], []));
-        Assert.IsFalse(scans.ScansLocally(room));
+        scans.ApplySnapshot(room, new MapRoomScanSnapshot(room.Id, 3, [new MapRoomScanResultRecord("from-the-server", quartz, new NitroxVector3(5f, 0f, 0f))], []));
+        // The game fills the list again when a range upgrade is put in or taken out.
+        room.ScanRange = 350f;
+        room.ObtainNodes();
 
+        Assert.AreEqual("from-the-server", room.Nodes.Single().uniqueId);
+        Assert.AreEqual(0, Sent<Packet>().Count);
+    }
+
+    [TestMethod]
+    public void PlayerWhoDoesNotSimulateDropsTheResultsOfThePreviousTarget()
+    {
+        scans.ApplyMetadata(room, new MapRoomMetadata(quartz, 1, 3));
+        scans.ApplySnapshot(room, new MapRoomScanSnapshot(room.Id, 3, [new MapRoomScanResultRecord("quartz", quartz, new NitroxVector3(5f, 0f, 0f))], []));
+
+        // This player picks another target; the server's answer comes later.
+        room.StartScanning(TechType.Titanium);
+        Assert.AreEqual(0, room.Nodes.Count);
+
+        room.Nodes.Add(Info("left-over", 1f, TechType.Titanium));
+        scans.ApplyMetadata(room, new MapRoomMetadata(titanium, 0, 4));
+        Assert.AreEqual(0, room.Nodes.Count, "The results of a new generation only come from the server.");
+    }
+
+    [TestMethod]
+    public void SimulatingPlayerScansWithItsOwnGameAndReportsAgainWhenTheGameRebuiltTheList()
+    {
         simulationOwnership.SimulateEntity(room.Id, SimulationLockType.TRANSIENT);
+        room.Loaded.AddRange([Info("near", 10f), Info("further", 320f)]);
+        scans.ApplyMetadata(room, new MapRoomMetadata(quartz, 0, 3));
+        scans.Update(room);
         Assert.IsTrue(scans.ScansLocally(room));
+        CollectionAssert.AreEqual(new[] { "near" }, Sent<MapRoomScanReport>().Single().Results.Select(result => result.ResourceId).ToArray());
+
+        // A range upgrade was put in: the game fills the list again, without what the server had added to it.
+        room.ScanRange = 350f;
+        room.ObtainNodes();
+        scans.Update(room);
+        scans.Update(room);
+
+        MapRoomScanReport report = Sent<MapRoomScanReport>().Last();
+        Assert.AreEqual(2, Sent<MapRoomScanReport>().Count);
+        Assert.AreEqual(350f, report.ScanRange);
+        CollectionAssert.AreEqual(new[] { "near", "further" }, report.Results.Select(result => result.ResourceId).ToArray());
     }
 
     [TestMethod]
@@ -622,8 +663,13 @@ public sealed class MapRoomScansTest
 
         public void ObtainNodes()
         {
-            Nodes.Clear();
-            Nodes.AddRange(Loaded.Where(info => info.techType == Target));
+            // As the patched game does it.
+            if (scans.ObtainsResultsLocally(this, Target))
+            {
+                Nodes.Clear();
+                Nodes.AddRange(Loaded.Where(info => info.techType == Target));
+            }
+            scans.ResultsObtained(this);
         }
 
         public void ObtainTypes()
