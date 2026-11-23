@@ -66,7 +66,7 @@ public class PatchesTranspilerTest
         [typeof(LaunchRocket_OnHandClick_Patch), -8],
         [typeof(LeakingRadiation_Update_Patch), 0],
         [typeof(MainGameController_StartGame_Patch), 1],
-        [typeof(MeleeAttack_CanDealDamageTo_Patch), 4],
+        [typeof(MeleeAttack_CanDealDamageTo_Patch), 7],
         [typeof(PDAScanner_Scan_Patch), 3],
         [typeof(PickPrefab_AddToContainerAsync_Patch), 4],
         [typeof(PipeSurfaceFloater_FixedUpdate_Patch), 2],

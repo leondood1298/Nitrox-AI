@@ -19,6 +19,12 @@ public sealed partial class LiveMixin_TakeDamage_Patch : NitroxPatch, IDynamicPa
         // Persist the previous health value
         __state = __instance.health;
 
+        // A bite on this player by a creature another player simulates is reported by that player's game
+        if (dealer && Resolve<CreatureAttacksOnPlayers>().IsLeftToSimulatingPlayer(__instance, dealer))
+        {
+            return false;
+        }
+
         // Only the simulating player changes a creature's health (see CreatureHealthManager)
         if (CreatureHealthManager.IsHealthSynced(__instance, out NitroxId creatureId))
         {
@@ -33,7 +39,7 @@ public sealed partial class LiveMixin_TakeDamage_Patch : NitroxPatch, IDynamicPa
         return Resolve<LiveMixinManager>().ShouldApplyNextHealthUpdate(__instance, dealer);
     }
 
-    public static void Postfix(float __state, LiveMixin __instance, float originalDamage, GameObject dealer, bool __runOriginal)
+    public static void Postfix(float __state, LiveMixin __instance, float originalDamage, DamageType type, GameObject dealer, bool __runOriginal)
     {
         if (!__runOriginal)
         {
@@ -56,6 +62,12 @@ public sealed partial class LiveMixin_TakeDamage_Patch : NitroxPatch, IDynamicPa
         if (HandlePvP(__instance, dealer, originalDamage))
         {
             return;
+        }
+
+        // Other players' bodies take no damage here, so a creature's hit on one is passed on to that player
+        if (dealer)
+        {
+            Resolve<CreatureAttacksOnPlayers>().ReportIfHitOnRemotePlayer(__instance, dealer, originalDamage, type);
         }
 
         // At this point, if the victim didn't take damage, there's no point in broadcasting it
