@@ -33,13 +33,19 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
     /// </summary>
     internal const string UNKNOWN_LOCK = "?";
 
-    private const int WARNING_KEY_CAPACITY = 256;
-    private const int WARNING_BURST_LIMIT = 128;
+    /// <summary>
+    ///     How many rejection lines one <see cref="REJECTION_WINDOW" /> may add to the log. A client can make up ids
+    ///     and reasons, so thinning out repeats alone does not bound the log.
+    /// </summary>
+    internal const int REJECTION_LINES_PER_WINDOW = 128;
+
+    private const int REJECTION_KEY_CAPACITY = 256;
+
+    internal static readonly TimeSpan REJECTION_WINDOW = TimeSpan.FromSeconds(60);
 
     private readonly Queue<ScannerRoomDiagnosticEntry> history = new(HISTORY_CAPACITY);
     private readonly object sync = new();
-    private readonly Dictionary<string, long> warningOccurrences = new(WARNING_KEY_CAPACITY);
-    private readonly Queue<string> warningKeys = new(WARNING_KEY_CAPACITY);
+    private readonly DiagnosticRepeatSampler rejectionSampler = new(REJECTION_KEY_CAPACITY);
     private readonly string epoch = DiagnosticLineFormat.NewEpoch();
     private readonly TimeProvider timeProvider = timeProvider ?? TimeProvider.System;
     private bool epochAnnounced;
@@ -48,8 +54,11 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
     private long rejected;
     private long invariantFailures;
     private long checkpoints;
-    private long warningObservations;
     private long suppressedWarnings;
+    private bool rejectionWindowOpen;
+    private long rejectionWindowStart;
+    private int rejectionLinesInWindow;
+    private long rejectionsMutedInWindow;
 
     internal string Epoch => epoch;
 
@@ -148,6 +157,7 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
         lock (sync)
         {
             AnnounceEpoch();
+            CloseRejectionWindowIfElapsed();
             entry = new ScannerRoomDiagnosticEntry(
                 ++nextSequence,
                 epoch,
@@ -163,6 +173,12 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
                 DiagnosticLineFormat.Token(reason, 64),
                 roomLock,
                 cameraLock);
+            bool writeRejection = false;
+            if (outcome == ScannerRoomDiagnosticOutcome.Rejected)
+            {
+                writeRejection = ShouldWriteRejection(entry, out long occurrences);
+                entry = entry with { Repeat = occurrences };
+            }
 
             IncrementCounter(outcome);
             if (history.Count == HISTORY_CAPACITY)
@@ -170,16 +186,17 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
                 history.Dequeue();
             }
             history.Enqueue(entry);
-            string line = entry.Format();
             if (outcome == ScannerRoomDiagnosticOutcome.InvariantFailure)
             {
                 // Invariants are rare correctness failures. Never let a preceding rejection burst hide one.
+                string line = entry.Format();
                 logger.ZLogWarning($"{line}");
             }
             else if (outcome == ScannerRoomDiagnosticOutcome.Rejected)
             {
-                if (ShouldLogWarning(entry))
+                if (writeRejection)
                 {
+                    string line = entry.Format();
                     logger.ZLogWarning($"{line}");
                 }
                 else
@@ -189,6 +206,7 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
             }
             else
             {
+                string line = entry.Format();
                 logger.ZLogInformation($"{line}");
             }
         }
@@ -213,25 +231,55 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
     private string FormatMarker(string eventName, SessionId? sessionId, string reason) =>
         $"{DiagnosticLineFormat.Header(PREFIX, null, epoch, DiagnosticLineFormat.SERVER_SIDE, sessionId, eventName, "info")} utc={DiagnosticLineFormat.UtcStamp(timeProvider.GetUtcNow())} reason={DiagnosticLineFormat.Token(reason, 64)}";
 
-    private bool ShouldLogWarning(ScannerRoomDiagnosticEntry entry)
+    /// <summary>
+    ///     Decides whether a rejection gets a log line. Repeats of the same rejection are thinned out and say how
+    ///     often they happened (<c>rep=</c>). Beyond that, one time window only gets a fixed number of lines; the
+    ///     log says when that limit is reached and, once the window is over, how many lines it cost. The limit is
+    ///     per window on purpose: a budget for the whole server run would be used up by the first busy minute and
+    ///     hide every rejection after it.
+    /// </summary>
+    private bool ShouldWriteRejection(ScannerRoomDiagnosticEntry entry, out long occurrences)
     {
-        warningObservations++;
-        string key = $"{entry.EventName}|{entry.Outcome}|{entry.SessionId}|{entry.RoomId}|{entry.CameraId}|{entry.Reason}";
-        if (!warningOccurrences.TryGetValue(key, out long occurrences))
+        string key = $"{entry.EventName}|{entry.SessionId}|{entry.RoomId}|{entry.CameraId}|{entry.Reason}";
+        if (!rejectionSampler.Observe(key, out occurrences))
         {
-            if (warningOccurrences.Count == WARNING_KEY_CAPACITY)
-            {
-                string oldest = warningKeys.Dequeue();
-                warningOccurrences.Remove(oldest);
-            }
-            warningKeys.Enqueue(key);
+            return false;
         }
-        occurrences++;
-        warningOccurrences[key] = occurrences;
 
-        bool duplicateSample = occurrences <= 2 || (occurrences & (occurrences - 1)) == 0;
-        bool globalSample = warningObservations <= WARNING_BURST_LIMIT || warningObservations % WARNING_BURST_LIMIT == 0;
-        return duplicateSample && globalSample;
+        if (!rejectionWindowOpen)
+        {
+            rejectionWindowOpen = true;
+            rejectionWindowStart = timeProvider.GetTimestamp();
+            rejectionLinesInWindow = 0;
+            rejectionsMutedInWindow = 0;
+        }
+        if (rejectionLinesInWindow < REJECTION_LINES_PER_WINDOW)
+        {
+            rejectionLinesInWindow++;
+            return true;
+        }
+        if (rejectionsMutedInWindow == 0)
+        {
+            string line = FormatMarker("log_budget", null,
+                $"rejections_muted_after_{REJECTION_LINES_PER_WINDOW}_lines_in_{(int)REJECTION_WINDOW.TotalSeconds}s");
+            logger.ZLogWarning($"{line}");
+        }
+        rejectionsMutedInWindow++;
+        return false;
+    }
+
+    private void CloseRejectionWindowIfElapsed()
+    {
+        if (!rejectionWindowOpen || timeProvider.GetElapsedTime(rejectionWindowStart) < REJECTION_WINDOW)
+        {
+            return;
+        }
+        rejectionWindowOpen = false;
+        if (rejectionsMutedInWindow > 0)
+        {
+            string line = FormatMarker("log_budget", null, $"rejections_logged_again_{rejectionsMutedInWindow}_were_muted");
+            logger.ZLogWarning($"{line}");
+        }
     }
 
     private void IncrementCounter(ScannerRoomDiagnosticOutcome outcome)
@@ -286,10 +334,15 @@ internal readonly record struct ScannerRoomDiagnosticEntry(
     string? StateFingerprint,
     string Reason,
     string RoomLock = DiagnosticLineFormat.NOT_APPLICABLE,
-    string CameraLock = DiagnosticLineFormat.NOT_APPLICABLE)
+    string CameraLock = DiagnosticLineFormat.NOT_APPLICABLE,
+    long Repeat = 1)
 {
+    /// <summary>
+    ///     <c>rep=</c> is only printed for a repeated rejection: it counts how often the same request was rejected
+    ///     for the same reason, including the repeats that did not get a line of their own.
+    /// </summary>
     public string Format() =>
-        $"{DiagnosticLineFormat.Header(ScannerRoomDiagnostics.PREFIX, Sequence, Epoch, DiagnosticLineFormat.SERVER_SIDE, SessionId, EventName, OutcomeToken())} room={RoomId} cam={CameraId} slot={DiagnosticLineFormat.Number(Slot)} dockRev={DiagnosticLineFormat.Number(DockingRevision)} cams={DiagnosticLineFormat.Number(CameraCount)} roomLock={RoomLock} camLock={CameraLock} fp={StateFingerprint ?? DiagnosticLineFormat.NOT_APPLICABLE} reason={Reason}";
+        $"{DiagnosticLineFormat.Header(ScannerRoomDiagnostics.PREFIX, Sequence, Epoch, DiagnosticLineFormat.SERVER_SIDE, SessionId, EventName, OutcomeToken())} room={RoomId} cam={CameraId} slot={DiagnosticLineFormat.Number(Slot)} dockRev={DiagnosticLineFormat.Number(DockingRevision)} cams={DiagnosticLineFormat.Number(CameraCount)} roomLock={RoomLock} camLock={CameraLock} fp={StateFingerprint ?? DiagnosticLineFormat.NOT_APPLICABLE}{(Repeat > 1 ? $" rep={DiagnosticLineFormat.Number(Repeat)}" : "")} reason={Reason}";
 
     public override string ToString() => Format();
 

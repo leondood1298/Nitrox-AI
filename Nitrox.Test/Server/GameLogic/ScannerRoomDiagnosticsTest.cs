@@ -115,6 +115,67 @@ public sealed class ScannerRoomDiagnosticsTest
     }
 
     [TestMethod]
+    public void RejectionsAreLoggedAgainAfterABurstHasPassed()
+    {
+        CapturingLogger<ScannerRoomDiagnostics> logger = new();
+        ManualTimeProvider time = new(DateTimeOffset.UnixEpoch);
+        ScannerRoomDiagnostics diagnostics = new(logger, timeProvider: time);
+        for (int index = 0; index < 300; index++)
+        {
+            diagnostics.RecordRejected("control", cameraId: new NitroxId("55555555-5555-5555-5555-555555555555"),
+                sessionId: (SessionId)(ushort)9, reason: $"burst_{index}");
+        }
+
+        time.Advance(TimeSpan.FromMinutes(2));
+        ScannerRoomDiagnosticEntry later = diagnostics.RecordRejected("dock", cameraId: new NitroxId("66666666-6666-6666-6666-666666666666"),
+            sessionId: (SessionId)(ushort)3, reason: "non_owner");
+
+        logger.Entries.Should().Contain((LogLevel.Warning, later.Format()),
+            "a rejection minutes after a burst is exactly the line a tester is looking for");
+    }
+
+    [TestMethod]
+    public void MutedRejectionsAreAnnouncedAndSummedUpInTheLog()
+    {
+        CapturingLogger<ScannerRoomDiagnostics> logger = new();
+        ManualTimeProvider time = new(DateTimeOffset.UnixEpoch);
+        ScannerRoomDiagnostics diagnostics = new(logger, timeProvider: time);
+
+        for (int index = 0; index < 200; index++)
+        {
+            diagnostics.RecordRejected("control", sessionId: (SessionId)(ushort)9, reason: $"distinct_{index}");
+        }
+        time.Advance(TimeSpan.FromMinutes(2));
+        diagnostics.RecordAccepted("dock");
+
+        string[] lines = logger.Entries.Select(entry => entry.Message).ToArray();
+        lines.Count(line => line.Contains(" out=reject ")).Should().Be(128);
+        lines.Should().ContainSingle(line => line.Contains(" ev=log_budget ") && line.EndsWith(" reason=rejections_muted_after_128_lines_in_60s"),
+            "a reader must be able to tell that lines are missing from here on");
+        lines.Should().ContainSingle(line => line.Contains(" ev=log_budget ") && line.EndsWith(" reason=rejections_logged_again_72_were_muted"));
+        diagnostics.GetCounters().Rejected.Should().Be(200);
+        diagnostics.GetCounters().SuppressedWarnings.Should().Be(72);
+    }
+
+    [TestMethod]
+    public void RepeatedRejectionSaysHowOftenItHappened()
+    {
+        CapturingLogger<ScannerRoomDiagnostics> logger = new();
+        ScannerRoomDiagnostics diagnostics = new(logger);
+
+        for (int index = 0; index < 9; index++)
+        {
+            diagnostics.RecordRejected("component", sessionId: (SessionId)(ushort)2, reason: "non_owner");
+        }
+
+        string[] rejections = logger.Entries.Select(entry => entry.Message).Where(line => line.Contains(" out=reject ")).ToArray();
+        rejections.Should().HaveCount(4, "the first two and then every power of two are written");
+        rejections[0].Should().EndWith(" fp=- reason=non_owner");
+        rejections[1].Should().EndWith(" fp=- rep=2 reason=non_owner");
+        rejections[3].Should().EndWith(" fp=- rep=8 reason=non_owner");
+    }
+
+    [TestMethod]
     public void CompactIdsDistinguishSiblingScannerCameras()
     {
         ScannerRoomDiagnostics diagnostics = new(NullLogger<ScannerRoomDiagnostics>.Instance);
