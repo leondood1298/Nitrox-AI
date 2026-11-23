@@ -182,6 +182,7 @@ internal static partial class ServiceCollectionExtensions
                     .AddSingleton<IntroCinematicPairing>()
                     .AddSingleton<PdaManager>()
                     .AddSingleton<ActiveTeleporters>()
+                    .AddSingleton<CollectedTimeCapsules>()
                     .AddSingleton<BatchEntitySpawner>()
                     .AddSingleton<EntityRegistry>()
                     .AddSingleton<SessionSettings>()

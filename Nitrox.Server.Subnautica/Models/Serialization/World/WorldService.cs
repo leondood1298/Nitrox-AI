@@ -42,6 +42,7 @@ internal class WorldService : IHostedService
     private readonly SaveDataUpgrade[] upgrades;
     private readonly WorldEntityManager worldEntityManager;
     private readonly ActiveTeleporters activeTeleporters;
+    private readonly CollectedTimeCapsules collectedTimeCapsules;
     public IServerSerializer Serializer { get; private set; }
     private string FileEnding => Serializer?.FileEnding ?? "";
 
@@ -64,6 +65,7 @@ internal class WorldService : IHostedService
         IProgressReporter progressReporter,
         IOptions<ServerStartOptions> startOptions,
         ActiveTeleporters activeTeleporters,
+        CollectedTimeCapsules collectedTimeCapsules,
         ILogger<WorldService> logger)
     {
         this.options = options;
@@ -83,6 +85,7 @@ internal class WorldService : IHostedService
         this.progressReporter = progressReporter;
         this.startOptions = startOptions;
         this.activeTeleporters = activeTeleporters;
+        this.collectedTimeCapsules = collectedTimeCapsules;
         this.logger = logger;
 
         Serializer = jsonSerializer;
@@ -110,7 +113,7 @@ internal class WorldService : IHostedService
             WorldData = new()
             {
                 ParsedBatchCells = batchEntitySpawner.SerializableParsedBatches,
-                GameData = GameData.From(pdaManager, storyManager.StoryGoalData, storyScheduler, storyManager, timeService, activeTeleporters)
+                GameData = GameData.From(pdaManager, storyManager.StoryGoalData, storyScheduler, storyManager, timeService, activeTeleporters, collectedTimeCapsules)
             },
             PlayerData = PlayerData.From(playerManager.GetAllPlayers()),
             GlobalRootData = GlobalRootData.From(globalRootEntities),
@@ -418,6 +421,8 @@ internal class WorldService : IHostedService
             storyManager.AuroraRealExplosionTime = TimeSpan.FromSeconds(pWorldData.WorldData.GameData.StoryTiming.AuroraRealExplosionTime ?? storyManager.AuroraCountdownTimeMs * 0.001 + 27 - TimeService.DEFAULT_STARTING_GAME_TIME_SECONDS);
             // Precursor teleporters
             activeTeleporters.Load(pWorldData.WorldData.GameData.ActiveTeleporters);
+            // Encyclopedia entries of the collected time capsules
+            collectedTimeCapsules.Load(pWorldData.WorldData.GameData.CollectedTimeCapsules);
         }
         finally
         {

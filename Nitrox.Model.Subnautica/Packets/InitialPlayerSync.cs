@@ -44,6 +44,7 @@ namespace Nitrox.Model.Subnautica.Packets
         public bool DisplaySurfaceWater { get; }
         public bool MarkDeathPointsWithBeacon { get; }
         public List<string> ActiveTeleporters { get; }
+        public List<CollectedTimeCapsule> CollectedTimeCapsules { get; }
 
         public InitialPlayerSync(NitroxId playerGameObjectId,
             bool firstTimeConnecting,
@@ -72,7 +73,8 @@ namespace Nitrox.Model.Subnautica.Packets
             bool inPrecursor,
             bool displaySurfaceWater,
             bool markDeathPointsWithBeacon,
-            IEnumerable<string> activeTeleporters)
+            IEnumerable<string> activeTeleporters,
+            IEnumerable<CollectedTimeCapsule> collectedTimeCapsules)
         {
             AssignedEscapePodId = assignedEscapePodId;
             PlayerGameObjectId = playerGameObjectId;
@@ -102,6 +104,7 @@ namespace Nitrox.Model.Subnautica.Packets
             DisplaySurfaceWater = displaySurfaceWater;
             MarkDeathPointsWithBeacon = markDeathPointsWithBeacon;
             ActiveTeleporters = activeTeleporters.ToList();
+            CollectedTimeCapsules = collectedTimeCapsules.ToList();
         }
 
         /// <remarks>Used for deserialization</remarks>
@@ -133,7 +136,8 @@ namespace Nitrox.Model.Subnautica.Packets
             bool inPrecursor,
             bool displaySurfaceWater,
             bool markDeathPointsWithBeacon,
-            List<string> activeTeleporters)
+            List<string> activeTeleporters,
+            List<CollectedTimeCapsule> collectedTimeCapsules)
         {
             AssignedEscapePodId = assignedEscapePodId;
             PlayerGameObjectId = playerGameObjectId;
@@ -163,6 +167,7 @@ namespace Nitrox.Model.Subnautica.Packets
             DisplaySurfaceWater = displaySurfaceWater;
             MarkDeathPointsWithBeacon = markDeathPointsWithBeacon;
             ActiveTeleporters = activeTeleporters;
+            CollectedTimeCapsules = collectedTimeCapsules;
         }
     }
 }

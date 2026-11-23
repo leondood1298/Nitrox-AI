@@ -1,12 +1,18 @@
+using System.Collections.Generic;
 using Nitrox.Model.DataStructures;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
+using Nitrox.Model.Subnautica.Packets;
+using NitroxClient.Communication;
+using NitroxClient.Communication.Abstract;
 using NitroxClient.MonoBehaviours;
 using UnityEngine;
 
 namespace NitroxClient.GameLogic;
 
 /// <summary>
-///     The time capsule in the rocket's cockpit, which the players fill together.
+///     The time capsules: the one in the rocket's cockpit that the players fill together, and the ones of other players of
+///     the game that are found in the world.
 ///     <para>
 ///     The game has a single PlayerTimeCapsule, a scene object outside the rocket. It is given the id of the rocket's
 ///     <see cref="PlayerTimeCapsuleEntity" />, which makes its container a container like a locker's and its text the
@@ -15,10 +21,12 @@ namespace NitroxClient.GameLogic;
 /// </summary>
 public class TimeCapsules
 {
+    private readonly IPacketSender packetSender;
     private readonly Entities entities;
 
-    public TimeCapsules(Entities entities)
+    public TimeCapsules(IPacketSender packetSender, Entities entities)
     {
+        this.packetSender = packetSender;
         this.entities = entities;
     }
 
@@ -81,5 +89,66 @@ public class TimeCapsules
         capsule.text = text;
         // Every key press changes the text
         entities.EntityMetadataChangedThrottled(capsule, capsuleId);
+    }
+
+    /// <summary>
+    ///     To be called before a found time capsule adds its encyclopedia entry. The game gives its items to the player
+    ///     who collects it, and the capsule entity is destroyed when it is opened (TimeCapsule_Open_Patch).
+    /// </summary>
+    public void BroadcastCollected(TimeCapsule timeCapsule)
+    {
+        string contentId = timeCapsule.id;
+        if (string.IsNullOrEmpty(contentId))
+        {
+            return;
+        }
+
+        // Only this player's game fetched the content, from the online service
+        TimeCapsuleContentProvider.GetData(contentId, out string title, out string text, out string imageUrl);
+        packetSender.Send(new TimeCapsuleCollected(new CollectedTimeCapsule(contentId, title, text, imageUrl)));
+    }
+
+    /// <summary>
+    ///     Adds the encyclopedia entry of a time capsule another player collected, with the content that player's game
+    ///     fetched.
+    /// </summary>
+    public void AddCollected(CollectedTimeCapsule collected, bool verbose)
+    {
+        if (string.IsNullOrEmpty(collected.Id))
+        {
+            return;
+        }
+
+        // Content this game fetched itself is kept: it also lists the items
+        if (!TimeCapsuleContentProvider.GetData(collected.Id, out _, out _, out _))
+        {
+            TimeCapsuleContentProvider.Set(collected.Id, new TimeCapsuleContent
+            {
+                title = collected.Title,
+                text = collected.Text,
+                imageUrl = collected.ImageUrl,
+                items = [],
+                isActive = true
+            });
+        }
+
+        // The collector's game already reported the entry's key; a game that lacks the content cannot make the entry from
+        // that key, which is why the content comes with this packet and the initial sync
+        using (PacketSuppressor<PDAEncyclopediaEntryAdd>.Suppress())
+        {
+            PDAEncyclopedia.AddTimeCapsule(collected.Id, verbose);
+        }
+    }
+
+    /// <summary>
+    ///     For a joining player: the content and the encyclopedia entries of the collected time capsules, which the game
+    ///     would read from its own save.
+    /// </summary>
+    public void RestoreCollected(IEnumerable<CollectedTimeCapsule> collectedCapsules)
+    {
+        foreach (CollectedTimeCapsule collected in collectedCapsules)
+        {
+            AddCollected(collected, false);
+        }
     }
 }
