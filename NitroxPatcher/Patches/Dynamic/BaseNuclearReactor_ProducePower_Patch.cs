@@ -1,4 +1,5 @@
 using System.Reflection;
+using Nitrox.Model.DataStructures;
 using NitroxClient.GameLogic;
 
 namespace NitroxPatcher.Patches.Dynamic;
@@ -9,6 +10,6 @@ public sealed partial class BaseNuclearReactor_ProducePower_Patch : NitroxPatch,
 
     public static bool Prefix(BaseNuclearReactor __instance)
     {
-        return !__instance.TryGetNitroxId(out var id) || Resolve<SimulationOwnership>().HasAnyLockType(id);
+        return !__instance.TryGetNitroxId(out NitroxId id) || Resolve<SimulationOwnership>().HasAnyLockType(id);
     }
 }
