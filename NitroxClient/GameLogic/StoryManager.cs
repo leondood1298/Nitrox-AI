@@ -1,7 +1,10 @@
 using System;
+using System.Collections.Generic;
+using NitroxClient.Communication.Abstract;
 using NitroxClient.MonoBehaviours;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
+using Nitrox.Model.Subnautica.Packets;
 using Story;
 using UnityEngine;
 
@@ -67,6 +70,28 @@ public static class StoryManager
                string.Equals(key, handler.sunbeamDestroyEventOutOfRange.key, StringComparison.OrdinalIgnoreCase);
     }
 
+    public static bool IsGoalComplete(string key) => !string.IsNullOrEmpty(key) && StoryGoalManager.main && StoryGoalManager.main.IsGoalComplete(key);
+
+    /// <summary>
+    ///     Reports a goal the game completed on the goal manager directly. Goals are reported from StoryGoal.Execute, but the
+    ///     game completes some without it: the intro's PDA triggers (IntroLifepodDirector.OpenPDA and OnClosePDA) and the
+    ///     goal of a Precursor door that opens (PrecursorGlobalKeyActivator.ToggleDoor). They were neither shared nor saved.
+    /// </summary>
+    /// <param name="wasComplete">
+    ///     Whether the goal was complete before the game's call. Then the call did nothing, also when it was the network
+    ///     that made this game complete it.
+    /// </param>
+    public static void ReportGoalCompletedDirectly(IPacketSender packetSender, string key, bool wasComplete)
+    {
+        // Goals the ending completes are not saved in single player, which saves nothing after the launch
+        if (wasComplete || !Multiplayer.Main || !Multiplayer.Main.InitialSyncCompleted || LaunchRocket.launchStarted || !IsGoalComplete(key))
+        {
+            return;
+        }
+        // STORY: the receivers complete it through StoryGoal.Execute, which then only calls the goal manager, as the game did here
+        packetSender.Send(new StoryGoalExecuted(key, StoryGoalExecuted.EventType.STORY));
+    }
+
     /// <summary>
     ///     False until the game scene with its story objects exists. The server sends story packets to every connected
     ///     session, also to one that still loads the game. Such a session can drop them: the snapshot it is given when it
@@ -83,6 +108,41 @@ public static class StoryManager
         }
         CrashedShipExploder.main.timeToStartCountdown = auroraEventData.TimeToStartCountdown;
         CrashedShipExploder.main.timeToStartWarning = auroraEventData.TimeToStartWarning;
+    }
+
+    /// <summary>
+    ///     Acts on each Aurora warning and explosion step a time skip passed, in order. The game moves its own skips
+    ///     gradually (DayNightCycle.SkipTime); the server's skips set the clock at once.
+    /// </summary>
+    /// <param name="timeBefore">The game time before the skip was applied.</param>
+    public static void ActOnAuroraEventsPassed(double timeBefore)
+    {
+        CrashedShipExploder exploder = CrashedShipExploder.main;
+        DayNightCycle dayNightCycle = DayNightCycle.main;
+        // The initial sync sets up the Aurora from the time it is given
+        if (!exploder || !dayNightCycle || !Multiplayer.Main || !Multiplayer.Main.InitialSyncCompleted)
+        {
+            return;
+        }
+
+        double timeAfter = dayNightCycle.timePassedAsDouble;
+        List<double> steps = AuroraTimeline.GetStepsPassed(timeBefore, timeAfter, exploder.timeToStartWarning, exploder.timeToStartCountdown);
+        if (steps.Count == 0)
+        {
+            return;
+        }
+
+        AuroraWarnings auroraWarnings = Player.mainObject ? Player.mainObject.GetComponentInChildren<AuroraWarnings>(true) : null;
+        foreach (double step in steps)
+        {
+            dayNightCycle.timePassedAsDouble = step;
+            if (auroraWarnings)
+            {
+                auroraWarnings.Update();
+            }
+            exploder.Update();
+        }
+        dayNightCycle.timePassedAsDouble = timeAfter;
     }
 
     public static void RestoreAurora()

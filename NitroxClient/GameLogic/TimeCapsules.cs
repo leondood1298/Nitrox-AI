@@ -132,8 +132,8 @@ public class TimeCapsules
             });
         }
 
-        // The collector's game already reported the entry's key; a game that lacks the content cannot make the entry from
-        // that key, which is why the content comes with this packet and the initial sync
+        // The entry is made from the content, which only this packet and the initial sync bring; the capsule's id is no
+        // entry key of the game's
         using (PacketSuppressor<PDAEncyclopediaEntryAdd>.Suppress())
         {
             PDAEncyclopedia.AddTimeCapsule(collected.Id, verbose);

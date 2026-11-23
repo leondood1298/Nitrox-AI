@@ -10,7 +10,8 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic;
 
 /// <summary>
 ///     Pairs two new players who wait for the intro so that they play it together, and puts a player whose partner
-///     leaves before both play back to waiting: its game would otherwise wait for a partner who is gone.
+///     leaves or chooses to play alone before both play back to waiting: its game would otherwise start the intro with a
+///     partner who is not in it.
 /// </summary>
 internal sealed class IntroCinematicPairing(PlayerManager playerManager, EscapePodManager escapePodManager, IPacketSender packetSender, ILogger<IntroCinematicPairing> logger) : ISessionCleaner
 {
@@ -67,12 +68,18 @@ internal sealed class IntroCinematicPairing(PlayerManager playerManager, EscapeP
         await escapePodManager.SetupIntroSequenceAsync(playerA, playerB);
     }
 
-    public async Task OnEventAsync(ISessionCleaner.Args args)
+    public Task OnEventAsync(ISessionCleaner.Args args) => ReleasePartnerAsync(args.Session.Id);
+
+    /// <summary>
+    ///     Ends the pairing of a player who leaves, or who chose to play the intro alone at the moment it was paired. Its
+    ///     partner waits again if its intro has not started yet.
+    /// </summary>
+    public async Task ReleasePartnerAsync(SessionId sessionId)
     {
         SessionId partnerId;
         lock (partnersLock)
         {
-            if (!partnerBySession.Remove(args.Session.Id, out partnerId))
+            if (!partnerBySession.Remove(sessionId, out partnerId))
             {
                 return;
             }
@@ -85,7 +92,7 @@ internal sealed class IntroCinematicPairing(PlayerManager playerManager, EscapeP
             return;
         }
 
-        logger.ZLogInformation($"The intro partner of {partner.PlayerContext.PlayerName} left before the intro started; waiting for another one");
+        logger.ZLogInformation($"The intro partner of {partner.PlayerContext.PlayerName} is gone before the intro started; waiting for another one");
         partner.PlayerContext.IntroCinematicMode = IntroCinematicMode.WAITING;
         // Without a partner id: the client takes it as "wait again" (SetIntroCinematicModeProcessor).
         await packetSender.SendPacketToAllAsync(new SetIntroCinematicMode(partner.SessionId, IntroCinematicMode.WAITING));

@@ -22,7 +22,7 @@ public sealed class TimeCapsuleCollectedProcessorTest
     [TestInitialize]
     public void Init()
     {
-        processor = new TimeCapsuleCollectedProcessor(collectedTimeCapsules);
+        processor = new TimeCapsuleCollectedProcessor(collectedTimeCapsules, new PdaNotificationManager(players.PlayerManager));
     }
 
     [TestMethod]
@@ -35,6 +35,22 @@ public sealed class TimeCapsuleCollectedProcessorTest
 
         collectedTimeCapsules.GetAll().Should().ContainSingle().Which.Should().BeSameAs(packet.Capsule);
         await packetSender.Received(1).SendPacketToOthersAsync(packet, collector.SessionId);
+    }
+
+    [TestMethod]
+    public async Task ACapsuleCollectedWhileAPlayerIsAwayIsUnreadForThemWhenTheyComeBack()
+    {
+        // The collector's game no longer reports the capsule's id as an ordinary encyclopedia entry, which marked it before
+        Player collector = players.Connect("Collector");
+        collector.HasFinishedInitialSync = true;
+        Player away = players.Connect("Away");
+        away.HasFinishedInitialSync = true;
+        away.IsOnline = false;
+
+        await processor.Process(new AuthProcessorContext(collector, packetSender), new TimeCapsuleCollected(new CollectedTimeCapsule("capsule-a", "Greetings", "", "")));
+
+        away.UnreadPdaNotifications.Should().Equal(new PdaNotification(PdaNotificationGroup.ENCYCLOPEDIA, "capsule-a"));
+        collector.UnreadPdaNotifications.Should().BeEmpty("its own game reports the marker it raised");
     }
 
     [TestMethod]

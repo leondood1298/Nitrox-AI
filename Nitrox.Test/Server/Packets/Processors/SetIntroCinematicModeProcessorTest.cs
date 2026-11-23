@@ -2,7 +2,10 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Nitrox.Model.Configuration;
+using Nitrox.Model.DataStructures;
+using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.Factories;
 using Nitrox.Server.Subnautica.Models.GameLogic;
@@ -21,21 +24,62 @@ public sealed class SetIntroCinematicModeProcessorTest
 {
     private ConnectedPlayers players;
     private IPacketSender packetSender;
+    private IntroCinematicPairing pairing;
     private SetIntroCinematicModeProcessor processor;
     private Player sender;
     private Player otherPlayer;
+    private Player thirdPlayer;
 
     [TestInitialize]
-    public void Init()
+    public async Task Init()
     {
         players = new ConnectedPlayers();
         packetSender = Substitute.For<IPacketSender>();
-        IOptions<SubnauticaServerOptions> options = Options.Create(new SubnauticaServerOptions { Seed = "TESTSEED" });
-        EscapePodManager escapePodManager = new(new RandomFactory(options), new EntityRegistry(NullLogger<EntityRegistry>.Instance), null, options, packetSender);
-        IntroCinematicPairing pairing = new(players.PlayerManager, escapePodManager, packetSender, NullLogger<IntroCinematicPairing>.Instance);
-        processor = new SetIntroCinematicModeProcessor(pairing, NullLogger<SetIntroCinematicModeProcessor>.Instance);
         sender = players.Connect("Sender");
         otherPlayer = players.Connect("Other");
+        thirdPlayer = players.Connect("Third");
+        IOptions<SubnauticaServerOptions> options = Options.Create(new SubnauticaServerOptions { Seed = "TESTSEED" });
+        EscapePodManager escapePodManager = new(new RandomFactory(options), new EntityRegistry(NullLogger<EntityRegistry>.Instance), null, options, packetSender);
+        EscapePodEntity pod = new(NitroxVector3.Zero, new NitroxId(), null);
+        pod.Players.AddRange([sender.PeerId, otherPlayer.PeerId, thirdPlayer.PeerId]);
+        await escapePodManager.AddKnownPodsAsync([pod]);
+        pairing = new(players.PlayerManager, escapePodManager, packetSender, NullLogger<IntroCinematicPairing>.Instance);
+        processor = new SetIntroCinematicModeProcessor(pairing, NullLogger<SetIntroCinematicModeProcessor>.Instance);
+    }
+
+    [TestMethod]
+    public async Task APlayerWhoseNewPartnerChoseToPlayAloneWaitsAgainAndIsPairedWithTheNext()
+    {
+        // The server pairs both while the sender's game is already on its way to playing alone
+        sender.PlayerContext.IntroCinematicMode = IntroCinematicMode.WAITING;
+        otherPlayer.PlayerContext.IntroCinematicMode = IntroCinematicMode.WAITING;
+        await pairing.PairWaitingPlayersAsync();
+        thirdPlayer.PlayerContext.IntroCinematicMode = IntroCinematicMode.WAITING;
+        packetSender.ClearReceivedCalls();
+
+        await Send(new SetIntroCinematicMode(sender.SessionId, IntroCinematicMode.SINGLEPLAYER));
+
+        Assert.AreEqual(IntroCinematicMode.SINGLEPLAYER, sender.PlayerContext.IntroCinematicMode);
+        List<SetIntroCinematicMode> sent = ConnectedPlayers.SentToAll<SetIntroCinematicMode>(packetSender);
+        SetIntroCinematicMode waitAgain = sent.First();
+        Assert.AreEqual((otherPlayer.SessionId, IntroCinematicMode.WAITING), (waitAgain.SessionId, waitAgain.Mode));
+        Assert.IsNull(waitAgain.PartnerId, "The client takes a WAITING without a partner as 'wait again'.");
+        Assert.AreEqual(thirdPlayer.SessionId, sent.Single(packet => packet.SessionId == otherPlayer.SessionId && packet.Mode == IntroCinematicMode.START).PartnerId);
+    }
+
+    [TestMethod]
+    public async Task APartnerWhoseIntroPlaysAlreadyPlaysOnWhenTheOtherChoseToPlayAlone()
+    {
+        sender.PlayerContext.IntroCinematicMode = IntroCinematicMode.WAITING;
+        otherPlayer.PlayerContext.IntroCinematicMode = IntroCinematicMode.WAITING;
+        await pairing.PairWaitingPlayersAsync();
+        otherPlayer.PlayerContext.IntroCinematicMode = IntroCinematicMode.PLAYING;
+        packetSender.ClearReceivedCalls();
+
+        await Send(new SetIntroCinematicMode(sender.SessionId, IntroCinematicMode.SINGLEPLAYER));
+
+        Assert.AreEqual(IntroCinematicMode.PLAYING, otherPlayer.PlayerContext.IntroCinematicMode);
+        Assert.AreEqual(0, ConnectedPlayers.SentToAll<SetIntroCinematicMode>(packetSender).Count);
     }
 
     [TestMethod]

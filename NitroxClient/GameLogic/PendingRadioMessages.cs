@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace NitroxClient.GameLogic;
 
@@ -29,23 +30,23 @@ public static class PendingRadioMessages
     }
 
     /// <summary>
-    ///     Applies the server's queue at initial sync. Messages that arrived by packet during the loading screen are
-    ///     already in the queue: each message is kept once, the server's order first.
+    ///     The goal StoryGoalManager.ExecutePendingRadioMessage completes when it plays a message.
     /// </summary>
-    public static void Merge(List<string> pendingMessages, IEnumerable<string> serverQueue)
+    public static string GetPlayedGoal(string messageKey) => $"OnPlay{messageKey}";
+
+    /// <summary>
+    ///     Applies the server's queue at initial sync. Messages that arrived by packet during the loading screen are
+    ///     already in the queue: each message is kept once, the server's order first. A message another player played
+    ///     meanwhile is left out, whether the snapshot or a packet said so: the snapshot can be older than the packets.
+    /// </summary>
+    /// <param name="isGoalComplete">Whether a goal is complete in the snapshot or in this game.</param>
+    public static void Merge(List<string> pendingMessages, IEnumerable<string> serverQueue, Func<string, bool> isGoalComplete)
     {
         List<string> merged = [];
         HashSet<string> added = new(StringComparer.OrdinalIgnoreCase);
-        foreach (string key in serverQueue)
+        foreach (string key in serverQueue.Concat(pendingMessages))
         {
-            if (added.Add(key))
-            {
-                merged.Add(key);
-            }
-        }
-        foreach (string key in pendingMessages)
-        {
-            if (added.Add(key))
+            if (!isGoalComplete(GetPlayedGoal(key)) && added.Add(key))
             {
                 merged.Add(key);
             }
