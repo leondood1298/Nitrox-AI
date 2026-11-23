@@ -49,6 +49,33 @@ public class MultiplayerCinematicController : MonoBehaviour
         }
     }
 
+    /// <summary>
+    ///     Whether another player's cinematic plays on this controller or on one that shares its animator.
+    /// </summary>
+    public bool IsRemoteCinematicActive()
+    {
+        foreach (RemotePlayerCinematicController remoteController in controllerBySessionId.Values)
+        {
+            if (remoteController.cinematicModeActive)
+            {
+                return true;
+            }
+        }
+
+        foreach (MultiplayerCinematicController controller in multiplayerControllerSameAnimator)
+        {
+            foreach (RemotePlayerCinematicController remoteController in controller.controllerBySessionId.Values)
+            {
+                if (remoteController.cinematicModeActive)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     private RemotePlayerCinematicController GetController(RemotePlayer player)
     {
         if (controllerBySessionId.TryGetValue(player.SessionId, out RemotePlayerCinematicController controller))
