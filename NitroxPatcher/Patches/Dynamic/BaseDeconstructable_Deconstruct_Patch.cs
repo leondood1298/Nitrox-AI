@@ -87,7 +87,8 @@ public sealed partial class BaseDeconstructable_Deconstruct_Patch : NitroxPatch,
             NitroxEntity.SetNewId(constructableBase.gameObject, baseId);
 
             Log.Verbose("Base destroyed and replaced by a simple ghost");
-            Resolve<IPacketSender>().Send(new BaseDeconstructed(baseId, ghostEntity));
+            BuildingHandler.Main.EnsureTracker(baseId).LocalOperations++;
+            Resolve<IPacketSender>().Send(new BaseDeconstructed(baseId, ghostEntity, BuildingHandler.Main.GetCurrentOperationIdOrDefault(baseId)));
             return;
         }
         if (!baseDeconstructable.GetComponentInParent<BaseCell>())
@@ -196,6 +197,13 @@ public sealed partial class BaseDeconstructable_Deconstruct_Patch : NitroxPatch,
         Log.Verbose($"Base is not empty, sending packet {pieceDeconstructed}");
 
         Resolve<IPacketSender>().Send(pieceDeconstructed);
+        if (@base.TryGetComponent(out BaseLeakManager baseLeakManager))
+        {
+            foreach (LeakRepaired leakRepaired in baseLeakManager.RemoveLeaksOfEmptyCells())
+            {
+                Resolve<IPacketSender>().Send(leakRepaired);
+            }
+        }
 
         Temp.Dispose();
     }

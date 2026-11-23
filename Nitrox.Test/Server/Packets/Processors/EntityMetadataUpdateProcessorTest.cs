@@ -692,6 +692,23 @@ public sealed class EntityMetadataUpdateProcessorTest
         Assert.AreEqual(0, packetSender.ReceivedCalls().Count());
     }
 
+    /// <summary>
+    ///     A frame's picture is the server's to set when it keeps an upload; a player naming one would skip its limits.
+    /// </summary>
+    [TestMethod]
+    public async Task PictureIsNotSetByAMetadataUpdate()
+    {
+        ModuleEntity frame = ModuleEntity.MakeEmpty();
+        frame.Id = new NitroxId();
+        frame.TechType = new NitroxTechType("PictureFrame");
+        entityRegistry.AddEntity(frame);
+
+        await Send(otherPlayer, frame, new PictureFrameMetadata(new string('a', 64)));
+
+        Assert.IsNull(frame.Metadata);
+        Assert.AreEqual(0, packetSender.ReceivedCalls().Count());
+    }
+
     private WorldEntity AddWorldTimeCapsule()
     {
         WorldEntity capsule = new(NitroxVector3.Zero, NitroxQuaternion.Identity, NitroxVector3.One, NitroxTechType.None, 0, "time-capsule", true, new NitroxId(), null);

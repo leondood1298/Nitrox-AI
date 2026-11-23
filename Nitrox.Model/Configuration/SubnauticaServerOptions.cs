@@ -81,6 +81,14 @@ public sealed partial class SubnauticaServerOptions
     [PropertyDescription("Command to run following a successful world save (e.g. .exe, .bat, or PowerShell script). ")]
     public string PostSaveCommandPath { get; set; } = "";
 
+    [PropertyDescription("Largest picture, in kilobytes, a player may put into a picture frame. 0 turns shared pictures off.")]
+    [Range(0, 16384)]
+    public int PictureFrameMaxKilobytes { get; set; } = 2048;
+
+    [PropertyDescription("Room, in megabytes, all the pictures in this world's picture frames may take together")]
+    [Range(0, 4096)]
+    public int PictureFramesMaxTotalMegabytes { get; set; } = 64;
+
     [OptionsValidator]
     public partial class Validator : IValidateOptions<SubnauticaServerOptions>;
 }

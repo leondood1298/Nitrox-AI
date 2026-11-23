@@ -16,6 +16,8 @@ public class EntitySignMetadataProcessor : EntityMetadataProcessor<EntitySignMet
             sign.elementsState = metadata.Elements;
             sign.scaleIndex = metadata.ScaleIndex;
             sign.SetBackground(metadata.Background);
+            // Text set from code does not always redraw the label (from upstream pull request #2843)
+            sign.inputField.ForceLabelUpdate();
         }
     }
 }

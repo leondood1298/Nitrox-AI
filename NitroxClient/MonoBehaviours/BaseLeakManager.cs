@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using NitroxClient.Communication;
 using NitroxClient.GameLogic;
 using Nitrox.Model.DataStructures;
@@ -121,6 +122,25 @@ public class BaseLeakManager : MonoBehaviour
             return new(baseId, cellId, relativeCell.ToDto());
         }
         return null;
+    }
+
+    /// <summary>
+    ///     Leaks whose room was deconstructed: the room's cells are empty now, and a leak kept for them would flood the next
+    ///     room built there once it is loaded again.
+    /// </summary>
+    /// <returns>The repairs to send for them, which this manager no longer tracks.</returns>
+    public List<LeakRepaired> RemoveLeaksOfEmptyCells()
+    {
+        List<LeakRepaired> repairs = [];
+        foreach (KeyValuePair<Int3, NitroxId> leak in idByRelativeCell.ToList())
+        {
+            if (@base.GetCell(Absolute(leak.Key)) == Base.CellType.Empty)
+            {
+                idByRelativeCell.Remove(leak.Key);
+                repairs.Add(new LeakRepaired(baseId, leak.Value, leak.Key.ToDto()));
+            }
+        }
+        return repairs;
     }
 
     public bool TryGetAbsoluteCellId(Int3 absoluteCell, out NitroxId cellId)

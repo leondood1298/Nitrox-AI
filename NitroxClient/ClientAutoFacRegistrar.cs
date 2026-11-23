@@ -92,6 +92,10 @@ namespace NitroxClient
             containerBuilder.RegisterType<SimulationOwnership>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<BasePowerSources>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<BasePowerConsumptionForwarder>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<BaseFloodBroadcaster>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<SignLabels>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<PictureFrames>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<GameLogic.Bases.RoomOccupancy>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<BasePowerClientDiagnostics>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<BasePowerRelayAudioSuppressor>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<FiltrationMachines>().InstancePerLifetimeScope();

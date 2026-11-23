@@ -79,6 +79,7 @@ public class BuildEntitySpawner : EntitySpawner<BuildEntity>
             yield break;
         }
         yield return MoonpoolManager.RestoreMoonpools(entity.ChildEntities.OfType<MoonpoolEntity>(), @base);
+        BulkheadDoorManager.RestoreDoors(entity.ChildEntities.OfType<BulkheadDoorEntity>(), @base);
 
         TaskResult<Optional<GameObject>> childResult = new();
         bool atLeastOneLeak = false;
@@ -205,7 +206,12 @@ public class BuildEntitySpawner : EntitySpawner<BuildEntity>
 
         foreach (GhostEntity childGhostEntity in ghostChildrenEntities)
         {
-            yield return GhostEntitySpawner.RestoreGhost(@base.transform, childGhostEntity);
+            TaskResult<Optional<GameObject>> ghostResult = new();
+            yield return GhostEntitySpawner.RestoreGhost(@base.transform, childGhostEntity, ghostResult);
+            if (ghostResult.Get().HasValue)
+            {
+                yield return GhostEntitySpawner.RestoreModuleContents(childGhostEntity, ghostResult.Get().Value, entities);
+            }
         }
 
         @base.OnProtoDeserialize(null);
