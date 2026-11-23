@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Linq;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Bases;
