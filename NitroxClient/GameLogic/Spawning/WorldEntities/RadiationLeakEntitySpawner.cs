@@ -63,7 +63,7 @@ public class RadiationLeakEntitySpawner : SyncEntitySpawner<RadiationLeakEntity>
         
         // If leaks aren't all fixed yet we calculate from current real elapsed time
         float deltaTimeAfterExplosion = realElapsedTime - realExplosionTime;
-        if (maxRegisteredLeakFixTime == -1)
+        if (!AreAllLeaksFixed(registeredLeaksFixTime))
         {
             if (deltaTimeAfterExplosion > 0)
             {
@@ -96,6 +96,15 @@ public class RadiationLeakEntitySpawner : SyncEntitySpawner<RadiationLeakEntity>
         }
         leakingRadiation.damagePlayerInRadius.damageRadius = leakingRadiation.currentRadius;
         leakingRadiation.radiatePlayerInRange.radiateRadius = leakingRadiation.currentRadius;
+    }
+
+    /// <summary>
+    ///     A leak that is not fixed has a negative fix time (see <see cref="RadiationMetadata" />). The radiation only starts
+    ///     to dissipate once every leak is fixed.
+    /// </summary>
+    internal static bool AreAllLeaksFixed(IEnumerable<float> leaksFixTime)
+    {
+        return leaksFixTime.All(fixTime => fixTime >= 0);
     }
 
     protected override bool SpawnsOwnChildren(RadiationLeakEntity entity) => false;
