@@ -97,8 +97,7 @@ public sealed class ScannerRoomDiagnosticsCallSiteTest
             new EntityMetadataUpdate(ScannerRoomScenarioFixture.RoomId, new MapRoomMetadata(titanium, 0, 2, 4)));
 
         ScannerRoomDiagnosticEntry entry = scenario.Diagnostics.GetHistory().Single();
-        entry.Outcome.Should().Be(ScannerRoomDiagnosticOutcome.Rejected, "the player's choice was dropped; without a line nobody can tell why the scan never started");
-        entry.EventName.Should().Be("scan_target");
+        entry.Format().Should().Contain(" ev=scan_target out=reject ", "the player's choice was dropped; without a line nobody can tell why the scan never started");
         entry.SessionId.Should().Be(scenario.PlayerB.SessionId);
         entry.Reason.Should().Be("stale_request_gen_2_rev_4_room_gen_3_rev_7");
     }
@@ -132,7 +131,7 @@ public sealed class ScannerRoomDiagnosticsCallSiteTest
             new MapRoomScanResultSnapshot(ScannerRoomScenarioFixture.RoomId, 4, [], NitroxVector3.Zero, 300f));
 
         ScannerRoomDiagnosticEntry entry = scenario.Diagnostics.GetHistory().Single();
-        entry.Outcome.Should().Be(ScannerRoomDiagnosticOutcome.Rejected);
+        entry.Format().Should().Contain(" ev=scan_snapshot out=reject ");
         entry.Reason.Should().Be("stale_or_invalid_gen_4_room_gen_7",
             "'stale or invalid' alone does not tell an outdated client from a malformed request");
     }

@@ -134,7 +134,7 @@ public sealed class DiagnosticsCommandsTest
 
         context.Replies[0].Should().Contain("nothing was written");
         ScannerRoomDiagnosticEntry checkpoint = scenario.Diagnostics.GetHistory().Single();
-        checkpoint.Outcome.Should().Be(ScannerRoomDiagnosticOutcome.Checkpoint);
+        checkpoint.Format().Should().Contain(" ev=manual out=checkpoint ");
         checkpoint.Reason.Should().Be("d1-before-restart");
         context.Replies[1].Should().Contain($"1 Scanner Room checkpoint(s): {ScannerRoomScenarioFixture.RoomId}={checkpoint.StateFingerprint}");
     }
