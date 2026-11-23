@@ -126,6 +126,16 @@ internal sealed partial class ServerEntry : ObservableObject
     [ObservableProperty]
     public partial Version Version { get; set; } = NitroxEnvironment.Version;
 
+    /// <summary>
+    ///     <see cref="NitroxSaveFormat" /> of the world, or null for a world nobody has saved yet.
+    /// </summary>
+    public int? SaveFormat { get; private set; }
+
+    /// <summary>
+    ///     Why this build cannot open the world, or null when it can.
+    /// </summary>
+    public string? SaveFormatMismatch => SaveFormat is { } format ? NitroxSaveFormat.DescribeMismatch(Name, format) : null;
+
     internal ServerProcess? Process { get; private set; }
     public AvaloniaList<OutputLine> Output { get; } = [];
     public string? PlayerNamesTooltip => PlayerNames.Count == 0 ? null : string.Join(Environment.NewLine, PlayerNames);
@@ -233,16 +243,21 @@ internal sealed partial class ServerEntry : ObservableObject
         }
 
         Version serverVersion;
-        await using (FileStream stream = new(saveFileVersion, FileMode.Open, FileAccess.Read, FileShare.Read))
+        int? saveFormat;
+        await using (FileStream stream = new(saveFileVersion, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
         {
             SaveFileVersion versionModel;
             try
             {
                 versionModel = JsonSerializer.Deserialize(stream, LauncherJsonSerializerContext.Default.SaveFileVersion);
+                saveFormat = versionModel.SaveFormat;
             }
             catch (Exception)
             {
+                // An empty file is a world the launcher made and nobody has saved yet; an unreadable one is left to the
+                // server, which refuses it with the reason
                 versionModel = new SaveFileVersion(NitroxEnvironment.Version);
+                saveFormat = null;
             }
             serverVersion = versionModel.Version;
         }
@@ -268,6 +283,7 @@ internal sealed partial class ServerEntry : ObservableObject
         AllowKeepInventory = config.KeepInventoryOnDeath;
         IsNewServer = !File.Exists(Path.Combine(saveDir, $"PlayerData{NitroxConstants.SAVE_FILE_ENDING}"));
         Version = serverVersion;
+        SaveFormat = saveFormat;
         LastAccessedTime = File.GetLastWriteTime(File.Exists(Path.Combine(saveDir, $"PlayerData{NitroxConstants.SAVE_FILE_ENDING}"))
                                                      ?
                                                      // This file is affected by server saving

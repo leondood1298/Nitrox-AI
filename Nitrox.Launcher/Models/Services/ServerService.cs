@@ -92,6 +92,19 @@ internal sealed class ServerService : IMessageReceiver, INotifyPropertyChanged
             }
         }
 
+        // Read the world's format again: it may have been replaced (a restored backup, files copied in) since the list loaded
+        await server.RefreshFromDirectoryAsync(Path.Combine(keyValueStore.GetSavesPath(), server.Name));
+        if (server.SaveFormatMismatch is { } mismatch)
+        {
+            await dialogService.ShowAsync<DialogBoxViewModel>(model =>
+            {
+                model.Title = $"\"{server.Name}\" cannot be opened by this build";
+                model.Description = mismatch;
+                model.ButtonOptions = ButtonOptions.Ok;
+            });
+            return false;
+        }
+
         // TODO: Exclude upgradeable versions + add separate prompt to upgrade first?
         if (server.Version != NitroxEnvironment.Version && !await ConfirmServerVersionAsync(server))
         {

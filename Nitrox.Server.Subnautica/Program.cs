@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -9,6 +10,7 @@ using Nitrox.Model.Platforms.Discovery;
 using Nitrox.Server.Subnautica.Models;
 using Nitrox.Server.Subnautica.Models.Factories;
 using Nitrox.Server.Subnautica.Models.Serialization;
+using Nitrox.Server.Subnautica.Models.Serialization.World;
 using Nitrox.Server.Subnautica.Services;
 using Nitrox.Server.Subnautica.Services.Core;
 
@@ -46,6 +48,8 @@ internal sealed class Program
                                            .Build();
         startOptions = new ServerStartOptions();
         configuration.Bind(startOptions);
+        // A server run by the launcher has a console nobody sees; waiting for a key there hangs the process forever
+        ConsoleUnhandledErrorHandler.WaitForKey = !startOptions.IsEmbedded;
 
         if (startOptions.GamePath == null)
         {
@@ -62,8 +66,35 @@ internal sealed class Program
         // TODO: Do not depend on Assembly-Csharp types, only game files. Use proxy/stub types which can map to a Subnautica object.
         AssemblyResolver.GamePath = startOptions.GamePath;
 
-        await StartServerAsync(args);
+        try
+        {
+            await StartServerAsync(args);
+        }
+        catch (Exception ex) when (FindWorldLoadException(ex) is { } worldLoadException)
+        {
+            // Already logged where it happened; the message is for the user as it is, without a stack trace
+            Console.Error.WriteLine(worldLoadException.Message);
+            Environment.ExitCode = WORLD_LOAD_FAILED_EXIT_CODE;
+            if (ConsoleUnhandledErrorHandler.WaitForKey && Environment.UserInteractive && !Console.IsInputRedirected)
+            {
+                // A console window of its own would otherwise close before the message can be read
+                Console.WriteLine("Press any key to close . . .");
+                Console.ReadKey(true);
+            }
+        }
+
+        static WorldLoadException? FindWorldLoadException(Exception ex) => ex switch
+        {
+            WorldLoadException worldLoadException => worldLoadException,
+            AggregateException aggregate => aggregate.Flatten().InnerExceptions.OfType<WorldLoadException>().FirstOrDefault(),
+            _ => null
+        };
     }
+
+    /// <summary>
+    ///     Exit code of a server that stopped because its world cannot be opened.
+    /// </summary>
+    public const int WORLD_LOAD_FAILED_EXIT_CODE = 3;
 
     private static async Task StartServerAsync(string[] args)
     {

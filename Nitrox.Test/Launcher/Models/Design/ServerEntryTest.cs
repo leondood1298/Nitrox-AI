@@ -1,4 +1,7 @@
+using System.Threading.Tasks;
 using Nitrox.Launcher.Models.Design;
+using Nitrox.Model.Configuration;
+using Nitrox.Model.Serialization;
 
 namespace Nitrox.Test.Launcher.Models.Design;
 
@@ -37,5 +40,37 @@ public sealed class ServerEntryTest
 
         arguments[5].Should().Be(defaultDataPath);
         arguments.Should().ContainInConsecutiveOrder("--saves-path", Path.Combine(dataPath, "worlds"));
+    }
+
+    [TestMethod]
+    [DataRow("""{"Major":1,"Minor":9,"Build":0,"Revision":0}""", true, DisplayName = "World from before the save format")]
+    [DataRow("""{"Major":1,"Minor":9,"Build":0,"Revision":0,"SaveFormat":99}""", true, DisplayName = "World from a newer build")]
+    [DataRow("""{"Major":1,"Minor":9,"Build":0,"Revision":0,"SaveFormat":1}""", false, DisplayName = "World of this build")]
+    [DataRow("", false, DisplayName = "World nobody has saved yet")]
+    public async Task WorldOfAnotherSaveFormatIsRecognised(string versionJson, bool refused)
+    {
+        string saveDir = Path.Combine(Path.GetTempPath(), $"nitrox-entry-test-{Guid.NewGuid():N}", "My World");
+        Directory.CreateDirectory(saveDir);
+        try
+        {
+            NitroxConfig.CreateFile(saveDir, new SubnauticaServerOptions());
+            File.WriteAllText(Path.Combine(saveDir, "Version.json"), versionJson);
+            ServerEntry entry = new() { Name = "My World" };
+
+            await entry.RefreshFromDirectoryAsync(saveDir);
+
+            if (refused)
+            {
+                entry.SaveFormatMismatch.Should().Contain("\"My World\"");
+            }
+            else
+            {
+                entry.SaveFormatMismatch.Should().BeNull();
+            }
+        }
+        finally
+        {
+            Directory.Delete(Path.GetDirectoryName(saveDir)!, true);
+        }
     }
 }
