@@ -782,8 +782,8 @@ event:/sub/cyclops/sub_ambieance;false;false;0
 event:/sub/drone/change_camera;false;false;0
 event:/sub/drone/connected;false;false;0
 event:/sub/drone/connecting_loop;false;false;0
-event:/sub/drone/idle;false;false;0
-event:/sub/drone/motor_loop;false;false;0
+event:/sub/drone/idle;false;false;20
+event:/sub/drone/motor_loop;false;false;40
 event:/sub/exo/claw_hit_fish;true;true;40
 event:/sub/exo/claw_hit_terain;true;true;40
 event:/sub/exo/claw_pickup;true;true;40
