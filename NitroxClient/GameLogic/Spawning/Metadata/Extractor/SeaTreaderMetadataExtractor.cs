@@ -12,6 +12,6 @@ public class SeaTreaderMetadataExtractor : EntityMetadataExtractor<SeaTreader, S
             return null;
         }
         float grazingEndTime = DayNightCycle.main.timePassedAsFloat + seaTreader.grazingTimeLeft;
-        return new(seaTreader.reverseDirection, grazingEndTime, seaTreader.leashPosition.ToDto());
+        return new(seaTreader.reverseDirection, grazingEndTime, seaTreader.leashPosition.ToDto(), Resolve<CreatureInfections>().GetDecidedAmount(seaTreader));
     }
 }

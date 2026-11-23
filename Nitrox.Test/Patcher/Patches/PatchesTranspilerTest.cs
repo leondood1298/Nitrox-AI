@@ -32,6 +32,7 @@ public class PatchesTranspilerTest
         [typeof(ConstructorInput_OnCraftingBegin_Patch), 7],
         [typeof(CrashHome_Spawn_Patch), -5],
         [typeof(CrashHome_Update_Patch), -5],
+        [typeof(Creature_ProcessInfection_Patch), 1],
         [typeof(CreatureDeath_OnKillAsync_Patch), 5],
         [typeof(CreatureDeath_SpawnRespawner_Patch), 2],
         [typeof(CyclopsDestructionEvent_DestroyCyclops_Patch), 3],

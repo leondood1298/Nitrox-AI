@@ -12,6 +12,6 @@ public class WaterParkCreatureMetadataExtractor : EntityMetadataExtractor<WaterP
         {
             return null;
         }
-        return new(entity.age, entity.matureTime, entity.timeNextBreed, entity.bornInside);
+        return new(entity.age, entity.matureTime, entity.timeNextBreed, entity.bornInside, Resolve<CreatureInfections>().GetDecidedAmount(entity));
     }
 }

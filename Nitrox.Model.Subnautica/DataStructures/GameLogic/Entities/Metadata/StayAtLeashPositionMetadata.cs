@@ -6,7 +6,7 @@ using Nitrox.Model.DataStructures.Unity;
 namespace Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 
 [Serializable, DataContract]
-public class StayAtLeashPositionMetadata : EntityMetadata
+public class StayAtLeashPositionMetadata : CreatureMetadata
 {
     [DataMember(Order = 1)]
     public NitroxVector3 LeashPosition { get; }
@@ -17,13 +17,13 @@ public class StayAtLeashPositionMetadata : EntityMetadata
         // Constructor for serialization. Has to be "protected" for json serialization.
     }
 
-    public StayAtLeashPositionMetadata(NitroxVector3 leashPosition)
+    public StayAtLeashPositionMetadata(NitroxVector3 leashPosition, float infectedAmount) : base(infectedAmount)
     {
         LeashPosition = leashPosition;
     }
 
     public override string ToString()
     {
-        return $"[{nameof(StayAtLeashPositionMetadata)} LeashPosition: {LeashPosition}]";
+        return $"[{nameof(StayAtLeashPositionMetadata)} LeashPosition: {LeashPosition}, {base.ToString()}]";
     }
 }
