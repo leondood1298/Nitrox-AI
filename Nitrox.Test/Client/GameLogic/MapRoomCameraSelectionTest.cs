@@ -28,14 +28,15 @@ public sealed class MapRoomCameraSelectionTest
     }
 
     [TestMethod]
-    [DataRow(0f, 100f, 1f, 1f)]
-    [DataRow(99.5f, 100f, 1f, 0.5f)]
-    [DataRow(100f, 100f, 1f, 0f)]
-    [DataRow(0f, 0f, 1f, 0f)]
-    [DataRow(0f, 100f, 0f, 0f)]
-    public void DockChargeIsBoundedPerSecond(float current, float capacity, float deltaTime, float expected)
+    [DataRow(0f, 100f, 10f)]
+    [DataRow(85f, 100f, 10f)]
+    [DataRow(99.5f, 100f, 0.5f)]
+    [DataRow(100f, 100f, 0f)]
+    [DataRow(-5f, 100f, 10f)]
+    [DataRow(0f, 0f, 0f)]
+    public void DockChargeIsATenthOfCapacityPerUpdateLikeTheGame(float current, float capacity, float expected)
     {
-        Assert.AreEqual(expected, MapRoomCameras.CalculateDockCharge(current, capacity, deltaTime), 0.0001f);
+        Assert.AreEqual(expected, MapRoomCameras.CalculateDockCharge(current, capacity), 0.0001f);
     }
 
     [TestMethod]
