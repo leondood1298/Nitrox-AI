@@ -21,7 +21,7 @@ public sealed partial class BreakableResource_BreakIntoResources_Patch : NitroxP
 
         // The server does not echo EntityDestroyed to its sender. Remove the outcrop's local
         // Scanner Room result now so the collector cannot retain a stale HUD marker.
-        MapRoomScanResults.RemoveLocalResource(destroyedId, CraftData.GetTechType(__instance.gameObject), __instance.transform.position);
+        Resolve<MapRoomScans>().RemoveResource(destroyedId, CraftData.GetTechType(__instance.gameObject), __instance.transform.position);
 
         // Case by case handling
 

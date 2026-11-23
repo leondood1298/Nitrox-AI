@@ -5,6 +5,10 @@ using Nitrox.Model.DataStructures.Unity;
 
 namespace Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 
+/// <summary>
+///     One resource the scan of a Scanner Room has found. Only sent in packets: the server holds what a scan found in
+///     memory and does not save it.
+/// </summary>
 [Serializable, DataContract]
 public class MapRoomScanResultRecord
 {

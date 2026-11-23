@@ -1,5 +1,4 @@
 using System.Reflection;
-using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication;
 using NitroxClient.GameLogic;
@@ -12,19 +11,9 @@ public sealed partial class MapRoomFunctionality_StartScanning_Patch : NitroxPat
 
     public static void Postfix(MapRoomFunctionality __instance)
     {
-        if (!PacketSuppressor<EntityMetadataUpdate>.IsSuppressed && __instance.TryGetNitroxId(out NitroxId nitroxId))
+        if (!PacketSuppressor<EntityMetadataUpdate>.IsSuppressed)
         {
-            Entities entities = Resolve<Entities>();
-            if (ShouldPublishImmediately(__instance.typeToScan))
-            {
-                entities.EntityMetadataChangedImmediately(__instance, nitroxId);
-            }
-            else
-            {
-                entities.EntityMetadataChangedThrottled(__instance, nitroxId);
-            }
+            Resolve<MapRoomScans>().TargetChosen(__instance);
         }
     }
-
-    internal static bool ShouldPublishImmediately(TechType typeToScan) => typeToScan == TechType.None;
 }

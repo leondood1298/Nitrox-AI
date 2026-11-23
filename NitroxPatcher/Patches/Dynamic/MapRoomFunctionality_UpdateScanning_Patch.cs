@@ -9,6 +9,7 @@ namespace NitroxPatcher.Patches.Dynamic;
 /// Prevents every connected client from independently draining Scanner Room power.
 /// Visual scanning and blip updates still run locally; only the simulation owner may let the drain timer elapse.
 /// The owner's drain is reported to whoever simulates the power sources (see <see cref="BasePowerConsumptionForwarder" />).
+/// The game calls this every frame, which is also what <see cref="MapRoomScans.Update(MapRoomFunctionality, NitroxId)" /> needs.
 /// </summary>
 public sealed partial class MapRoomFunctionality_UpdateScanning_Patch : NitroxPatch, IDynamicPatch
 {
@@ -18,6 +19,10 @@ public sealed partial class MapRoomFunctionality_UpdateScanning_Patch : NitroxPa
     {
         bool hasEntityId = __instance.TryGetNitroxId(out NitroxId roomId);
         bool hasOwnership = hasEntityId && Resolve<SimulationOwnership>().HasAnyLockType(roomId);
+        if (hasEntityId)
+        {
+            Resolve<MapRoomScans>().Update(__instance, roomId);
+        }
         if (ShouldSuppressPowerDrain(hasEntityId, hasOwnership))
         {
             __instance.timeLastPowerDrain = Time.time;

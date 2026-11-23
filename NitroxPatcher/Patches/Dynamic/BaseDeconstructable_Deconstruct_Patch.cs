@@ -145,7 +145,7 @@ public sealed partial class BaseDeconstructable_Deconstruct_Patch : NitroxPatch,
                     MapRoomFunctionality mapRoomFunctionality = @base.GetMapRoomFunctionalityForCell(mapRoomFunctionalityCell);
                     if (mapRoomFunctionality && mapRoomFunctionality.TryGetNitroxId(out NitroxId mapRoomId))
                     {
-                        MapRoomScanResults.Cleanup(mapRoomFunctionality);
+                        Resolve<MapRoomScans>().ClearResults(mapRoomFunctionality);
                         pieceId = mapRoomId;
                     }
                     else

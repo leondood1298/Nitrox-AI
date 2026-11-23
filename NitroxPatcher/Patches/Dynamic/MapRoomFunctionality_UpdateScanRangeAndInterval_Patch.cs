@@ -19,7 +19,7 @@ public sealed partial class MapRoomFunctionality_UpdateScanRangeAndInterval_Patc
 
         if (__instance.typeToScan != TechType.None && __instance.GetScanRange() != __state)
         {
-            Resolve<MapRoomScanResultBroadcaster>().BroadcastSnapshot(__instance);
+            Resolve<MapRoomScans>().ResultsObtained(__instance);
         }
     }
 }

@@ -26,11 +26,7 @@ public sealed partial class ResourceTrackerDatabase_Register_Patch : NitroxPatch
         {
             return;
         }
-        MapRoomScanResultBroadcaster broadcaster = Resolve<MapRoomScanResultBroadcaster>();
-        foreach (MapRoomFunctionality mapRoom in MapRoomFunctionality.mapRooms)
-        {
-            broadcaster.BroadcastMoved(mapRoom, moved);
-        }
+        Resolve<MapRoomScans>().ResourceMoved(moved);
     }
 
     private static ResourceTrackerDatabase.ResourceInfo FindNode(string uniqueId, TechType techType)

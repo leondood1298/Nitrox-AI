@@ -7,5 +7,5 @@ public sealed partial class uGUI_MapRoomScanner_OnDisable_Patch : NitroxPatch, I
 {
     private static readonly MethodInfo TARGET_METHOD = Reflect.Method((uGUI_MapRoomScanner t) => t.OnDisable());
 
-    public static void Postfix(uGUI_MapRoomScanner __instance) => Resolve<MapRoomScanResultSubscriber>().Set(__instance, false);
+    public static void Postfix(uGUI_MapRoomScanner __instance) => Resolve<MapRoomScans>().Unsubscribe(__instance);
 }

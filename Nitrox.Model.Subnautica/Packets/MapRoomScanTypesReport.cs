@@ -7,27 +7,31 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 
 namespace Nitrox.Model.Subnautica.Packets;
 
+/// <summary>
+///     Sent by the player who simulates a Scanner Room: the types of resources its screen offers to scan for, as that
+///     player's game sees them.
+/// </summary>
 [Serializable]
-public class MapRoomScanTypesSnapshot : Packet
+public class MapRoomScanTypesReport : Packet
 {
     public NitroxId MapRoomId { get; }
     public List<NitroxTechType> TechTypes { get; }
+
+    /// <summary>
+    ///     Every type the sender's game can scan for at all. The server uses it to add the types of resources in range
+    ///     that the sender has not loaded.
+    /// </summary>
     public List<NitroxTechType> DetectableTechTypes { get; }
+
     public NitroxVector3 ScanOrigin { get; }
     public float ScanRange { get; }
-    public long Revision { get; }
-    public bool IsServerResponse { get; }
-    public bool Granted { get; }
 
-    public MapRoomScanTypesSnapshot(NitroxId mapRoomId, List<NitroxTechType> techTypes, List<NitroxTechType> detectableTechTypes, NitroxVector3 scanOrigin, float scanRange, long revision = 0, bool isServerResponse = false, bool granted = false)
+    public MapRoomScanTypesReport(NitroxId mapRoomId, List<NitroxTechType> techTypes, List<NitroxTechType> detectableTechTypes, NitroxVector3 scanOrigin, float scanRange)
     {
         MapRoomId = mapRoomId;
         TechTypes = techTypes;
         DetectableTechTypes = detectableTechTypes;
         ScanOrigin = scanOrigin;
         ScanRange = scanRange;
-        Revision = revision;
-        IsServerResponse = isServerResponse;
-        Granted = granted;
     }
 }

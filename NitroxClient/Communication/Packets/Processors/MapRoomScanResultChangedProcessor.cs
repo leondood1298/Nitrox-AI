@@ -4,11 +4,11 @@ using NitroxClient.GameLogic;
 
 namespace NitroxClient.Communication.Packets.Processors;
 
-internal sealed class MapRoomScanResultChangedProcessor : IClientPacketProcessor<MapRoomScanResultChanged>
+internal sealed class MapRoomScanResultChangedProcessor(MapRoomScans mapRoomScans) : IClientPacketProcessor<MapRoomScanResultChanged>
 {
     public Task Process(ClientProcessorContext context, MapRoomScanResultChanged packet)
     {
-        MapRoomScanResults.ProcessDelta(packet);
+        mapRoomScans.ApplyChange(packet);
         return Task.CompletedTask;
     }
 }

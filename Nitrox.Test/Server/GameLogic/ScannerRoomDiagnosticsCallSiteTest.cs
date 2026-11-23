@@ -27,7 +27,7 @@ public sealed class ScannerRoomDiagnosticsCallSiteTest
     public async Task UnchangedScanTypeRefreshesDoNotFillTheLog()
     {
         ScannerRoomScenarioFixture scenario = CreateScenarioWithOwnedRoom();
-        MapRoomScanTypesSnapshotProcessor processor = new(scenario.Manager);
+        MapRoomScanTypesReportProcessor processor = new(scenario.Manager);
 
         // The simulating client republishes the available scan types every few seconds, changed or not.
         for (int refresh = 0; refresh < 50; refresh++)
@@ -92,7 +92,7 @@ public sealed class ScannerRoomDiagnosticsCallSiteTest
         CapturingLogger<ScannerRoomDiagnostics> diagnosticsLog = new();
         CapturingLogger<EntityMetadataUpdateProcessor> processorLog = new();
         ScannerRoomScenarioFixture scenario = new(diagnosticsLog: diagnosticsLog);
-        scenario.Room.Metadata = new MapRoomMetadata(quartz, 5, 1, 1);
+        scenario.Room.Metadata = new MapRoomMetadata(quartz, 5, 1);
         ScannerRoomDiagnostics diagnostics = scenario.Diagnostics;
         EntityMetadataUpdateProcessor processor = CreateMetadataProcessor(scenario, processorLog);
 
@@ -100,7 +100,7 @@ public sealed class ScannerRoomDiagnosticsCallSiteTest
         for (int node = 6; node < 46; node++)
         {
             await processor.Process(scenario.Context(scenario.PlayerB),
-                new EntityMetadataUpdate(ScannerRoomScenarioFixture.RoomId, new MapRoomMetadata(quartz, node, 1, 1)));
+                new EntityMetadataUpdate(ScannerRoomScenarioFixture.RoomId, new MapRoomMetadata(quartz, node, 1)));
         }
 
         string[] warnings = processorLog.Entries.Concat(diagnosticsLog.Entries).Where(entry => entry.Level == LogLevel.Warning)
@@ -114,45 +114,44 @@ public sealed class ScannerRoomDiagnosticsCallSiteTest
     public async Task ScanTargetChangeBasedOnAnOutdatedStateIsRecorded()
     {
         ScannerRoomScenarioFixture scenario = CreateScenarioWithOwnedRoom();
-        scenario.Room.Metadata = new MapRoomMetadata(quartz, 5, 3, 7);
+        scenario.Room.Metadata = new MapRoomMetadata(quartz, 5, 3);
         EntityMetadataUpdateProcessor processor = CreateMetadataProcessor(scenario, new CapturingLogger<EntityMetadataUpdateProcessor>());
 
-        // Player B still holds generation 2 (for instance from before the room was rebuilt) and picks another target.
+        // Player B still holds generation 2 (another player's target has not reached it yet) and picks another target.
         await processor.Process(scenario.Context(scenario.PlayerB),
-            new EntityMetadataUpdate(ScannerRoomScenarioFixture.RoomId, new MapRoomMetadata(titanium, 0, 2, 4)));
+            new EntityMetadataUpdate(ScannerRoomScenarioFixture.RoomId, new MapRoomMetadata(titanium, 0, 2)));
 
         ScannerRoomDiagnosticEntry entry = scenario.Diagnostics.GetHistory().Single();
         entry.Format().Should().Contain(" ev=scan_target out=reject ", "the player's choice was dropped; without a line nobody can tell why the scan never started");
         entry.SessionId.Should().Be(scenario.PlayerB.SessionId);
-        entry.Reason.Should().Be("stale_request_gen_2_rev_4_room_gen_3_rev_7");
+        entry.Reason.Should().Be("stale_request_gen_2_room_gen_3");
     }
 
     [TestMethod]
     public async Task RepeatedScanProgressFromTheSimulatingPlayerIsNotRecorded()
     {
         ScannerRoomScenarioFixture scenario = CreateScenarioWithOwnedRoom();
-        scenario.Room.Metadata = new MapRoomMetadata(quartz, 5, 3, 7);
+        scenario.Room.Metadata = new MapRoomMetadata(quartz, 5, 3);
         EntityMetadataUpdateProcessor processor = CreateMetadataProcessor(scenario, new CapturingLogger<EntityMetadataUpdateProcessor>());
 
         // The throttled progress report can repeat a count the server already has.
         await processor.Process(scenario.Context(scenario.PlayerA),
-            new EntityMetadataUpdate(ScannerRoomScenarioFixture.RoomId, new MapRoomMetadata(quartz, 5, 3, 7)));
+            new EntityMetadataUpdate(ScannerRoomScenarioFixture.RoomId, new MapRoomMetadata(quartz, 5, 3)));
 
         scenario.Diagnostics.GetHistory().Should().BeEmpty();
         scenario.Diagnostics.GetCounters().Rejected.Should().Be(0);
     }
 
     [TestMethod]
-    public async Task RejectedScanSnapshotSaysWhichGenerationsDisagreed()
+    public async Task RejectedScanReportSaysWhichGenerationsDisagreed()
     {
         ScannerRoomScenarioFixture scenario = CreateScenarioWithOwnedRoom();
-        scenario.Room.Metadata = new MapRoomMetadata(quartz, 0, 7, 9);
-        scenario.Room.ScanResultGeneration = 7;
-        MapRoomScanResultSnapshotProcessor processor = new(scenario.Manager);
+        scenario.Room.Metadata = new MapRoomMetadata(quartz, 0, 7);
+        MapRoomScanReportProcessor processor = new(scenario.Manager);
 
         // The simulating player still scans for generation 4, as after the room it knew was replaced.
         await processor.Process(scenario.Context(scenario.PlayerA),
-            new MapRoomScanResultSnapshot(ScannerRoomScenarioFixture.RoomId, 4, [], NitroxVector3.Zero, 300f));
+            new MapRoomScanReport(ScannerRoomScenarioFixture.RoomId, 4, NitroxVector3.Zero, 300f, []));
 
         ScannerRoomDiagnosticEntry entry = scenario.Diagnostics.GetHistory().Single();
         entry.Format().Should().Contain(" ev=scan_snapshot out=reject ");
@@ -174,7 +173,7 @@ public sealed class ScannerRoomDiagnosticsCallSiteTest
         return scenario;
     }
 
-    private static MapRoomScanTypesSnapshot ScanTypes(params NitroxTechType[] techTypes) =>
+    private static MapRoomScanTypesReport ScanTypes(params NitroxTechType[] techTypes) =>
         new(ScannerRoomScenarioFixture.RoomId, [.. techTypes], [.. techTypes], NitroxVector3.Zero, 300f);
 
     private sealed class CapturingLogger<T> : ILogger<T>

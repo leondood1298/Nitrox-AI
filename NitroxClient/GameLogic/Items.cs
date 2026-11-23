@@ -23,6 +23,7 @@ public class Items
     public static GameObject? PickingUpObject { get; private set; }
     private readonly EntityMetadataManager entityMetadataManager;
     private readonly SimulationOwnership simulationOwnership;
+    private readonly MapRoomScans mapRoomScans;
 
     /// <summary>
     /// Whether or not <see cref="Inventory.Pickup"/> or a similar method is running (if greater than 0).
@@ -31,8 +32,10 @@ public class Items
 
     public int PickingUpCount;
 
-    public Items(IPacketSender packetSender, Entities entities, EntityMetadataManager entityMetadataManager, SimulationOwnership simulationOwnership)
+    public Items(IPacketSender packetSender, Entities entities, EntityMetadataManager entityMetadataManager, SimulationOwnership simulationOwnership,
+        MapRoomScans mapRoomScans)
     {
+        this.mapRoomScans = mapRoomScans;
         this.packetSender = packetSender;
         this.entities = entities;
         this.entityMetadataManager = entityMetadataManager;
@@ -73,7 +76,7 @@ public class Items
 
             if (packetSender.Send(pickupItem))
             {
-                MapRoomScanResults.RemoveLocalResource(inventoryItemEntity.Id, techType, pickupPosition);
+                mapRoomScans.RemoveResource(inventoryItemEntity.Id, techType, pickupPosition);
                 Log.Debug($"Picked up item {inventoryItemEntity}");
             }
         }

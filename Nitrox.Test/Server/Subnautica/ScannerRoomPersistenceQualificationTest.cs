@@ -193,14 +193,6 @@ public sealed class ScannerRoomPersistenceQualificationTest
             new MapRoomCameraRecord(cameraBId, 2, false, 4, 44.5f, 55.25f, 6),
             new MapRoomCameraRecord(cameraCId, 7, true, 8, 22f, 33f, 9)
         ],
-        31,
-        44,
-        [
-            new MapRoomScanResultRecord("resource-b", new NitroxTechType("Silver"), new NitroxVector3(4f, 5f, 6f)),
-            new MapRoomScanResultRecord("resource-a", new NitroxTechType("Gold"), new NitroxVector3(1f, 2f, 3f))
-        ],
-        52,
-        [new NitroxTechType("Silver"), new NitroxTechType("Gold")],
         new CrafterMetadata(new NitroxTechType("MapRoomHUDChip"), 12.5f, 4f, 2, 1),
         new NitroxTransform(new NitroxVector3(1.25f, 2.5f, -3.75f), NitroxQuaternion.Identity, NitroxVector3.One),
         GlobalRootEntity.GLOBAL_ROOT_LEVEL,
@@ -208,7 +200,7 @@ public sealed class ScannerRoomPersistenceQualificationTest
         true,
         roomId,
         new NitroxTechType("MapRoom"),
-        new MapRoomMetadata(new NitroxTechType("Gold"), 17, 31, 32),
+        new MapRoomMetadata(new NitroxTechType("Gold"), 17, 31),
         baseId,
         []);
 
@@ -272,26 +264,6 @@ public sealed class ScannerRoomPersistenceQualificationTest
         Assert.AreEqual(expectedMetadata.TypeToScan.Name, actualMetadata.TypeToScan.Name, $"{context}: scan target");
         Assert.AreEqual(expectedMetadata.NumNodesScanned, actualMetadata.NumNodesScanned, $"{context}: scan progress");
         Assert.AreEqual(expectedMetadata.Generation, actualMetadata.Generation, $"{context}: metadata generation");
-        Assert.AreEqual(expectedMetadata.Revision, actualMetadata.Revision, $"{context}: metadata revision");
-
-        Assert.AreEqual(expected.ScanResultGeneration, actual.ScanResultGeneration, $"{context}: result generation");
-        Assert.AreEqual(expected.ScanResultRevision, actual.ScanResultRevision, $"{context}: result revision");
-        MapRoomScanResultRecord[] expectedResults = expected.ScanResults.OrderBy(result => result.ResourceId, StringComparer.Ordinal).ToArray();
-        MapRoomScanResultRecord[] actualResults = actual.ScanResults.OrderBy(result => result.ResourceId, StringComparer.Ordinal).ToArray();
-        Assert.AreEqual(expectedResults.Length, actualResults.Length, $"{context}: result count");
-        for (int i = 0; i < expectedResults.Length; i++)
-        {
-            Assert.AreEqual(expectedResults[i].ResourceId, actualResults[i].ResourceId, $"{context}: result {i} resource");
-            Assert.AreEqual(expectedResults[i].TechType.Name, actualResults[i].TechType.Name, $"{context}: result {i} type");
-            Assert.AreEqual(expectedResults[i].Position, actualResults[i].Position, $"{context}: result {i} position");
-        }
-
-        Assert.AreEqual(expected.AvailableScanTypesRevision, actual.AvailableScanTypesRevision,
-            $"{context}: available scan-types revision");
-        CollectionAssert.AreEqual(
-            expected.AvailableScanTypes.Select(type => type.Name).ToArray(),
-            actual.AvailableScanTypes.Select(type => type.Name).ToArray(),
-            $"{context}: available scan types");
 
         Assert.IsNotNull(expected.FabricatorMetadata, $"{context}: expected fabricator metadata");
         Assert.IsNotNull(actual.FabricatorMetadata, $"{context}: restored fabricator metadata");

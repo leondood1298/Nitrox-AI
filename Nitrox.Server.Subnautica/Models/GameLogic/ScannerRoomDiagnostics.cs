@@ -111,7 +111,7 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
                 return;
             }
             Record(ScannerRoomDiagnosticOutcome.REJECTED, "scan_target", room, sessionId: sessionId,
-                reason: $"stale_request_gen_{requested.Generation}_rev_{requested.Revision}_room_gen_{current?.Generation ?? 0}_rev_{current?.Revision ?? 0}");
+                reason: $"stale_request_gen_{requested.Generation}_room_gen_{current?.Generation ?? 0}");
         }
         catch (Exception exception)
         {

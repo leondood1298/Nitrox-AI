@@ -32,14 +32,15 @@ internal sealed class ScannerRoomCommand(EntityRegistry entityRegistry, ScannerR
     public async Task Execute(ICommandContext context)
     {
         // Copies of all rooms from one moment, ordered by id. Nothing below can change what the server holds.
-        MapRoomEntity[] rooms = scannerRoomManager.GetSnapshots().Select(snapshot => snapshot.Room).ToArray();
+        IReadOnlyList<ScannerRoomSnapshot> rooms = scannerRoomManager.GetSnapshots();
         List<string> anomalies = [];
         List<RoomView> roomViews = [];
         Dictionary<NitroxId, int> registrations = [];
         Dictionary<NitroxId, int> dockings = [];
-        foreach (MapRoomEntity room in rooms)
+        foreach (ScannerRoomSnapshot captured in rooms)
         {
-            RoomView view = ReadRoom(room);
+            MapRoomEntity room = captured.Room;
+            RoomView view = ReadRoom(captured);
             roomViews.Add(view);
             if (view.Violation != null)
             {
@@ -88,7 +89,7 @@ internal sealed class ScannerRoomCommand(EntityRegistry entityRegistry, ScannerR
 
         StringBuilder output = new();
         output.AppendLine(string.Create(CultureInfo.InvariantCulture,
-            $"Scanner Room diagnostics ep={diagnostics.Epoch}: rooms={rooms.Length}, cameras={registeredCameras + looseCameras.Length} (registered={registeredCameras}, loose={looseCameras.Length}), events={counters.Recorded} (accepted={counters.Accepted}, rejected={counters.Rejected}, invariant={counters.InvariantFailures}, checkpoints={counters.Checkpoints}), rejections without a log line={counters.SuppressedWarnings}, unchanged repeats skipped={diagnostics.UnchangedRepeats}, diagnostics failures={diagnostics.OwnFailures}"));
+            $"Scanner Room diagnostics ep={diagnostics.Epoch}: rooms={rooms.Count}, cameras={registeredCameras + looseCameras.Length} (registered={registeredCameras}, loose={looseCameras.Length}), events={counters.Recorded} (accepted={counters.Accepted}, rejected={counters.Rejected}, invariant={counters.InvariantFailures}, checkpoints={counters.Checkpoints}), rejections without a log line={counters.SuppressedWarnings}, unchanged repeats skipped={diagnostics.UnchangedRepeats}, diagnostics failures={diagnostics.OwnFailures}"));
         output.AppendLine(string.Create(CultureInfo.InvariantCulture, $"Anomalies ({anomalies.Count}):"));
         foreach (string anomaly in anomalies)
         {
@@ -100,7 +101,7 @@ internal sealed class ScannerRoomCommand(EntityRegistry entityRegistry, ScannerR
         {
             ScannerRoomStateSnapshot snapshot = view.Snapshot;
             output.AppendLine(string.Create(CultureInfo.InvariantCulture,
-                $"{ScannerRoomDiagnostics.PREFIX} snapshot ep={diagnostics.Epoch} side=S room={view.Id} roomLock={diagnostics.DescribeLock(view.Id)} left={ShortCamera(snapshot.LeftDockCameraId)} right={ShortCamera(snapshot.RightDockCameraId)} dockRev={snapshot.DockingRevision} cams={snapshot.CameraCount} target={(string.IsNullOrEmpty(snapshot.ScanTarget) ? DiagnosticLineFormat.NOT_APPLICABLE : snapshot.ScanTarget)} nodes={snapshot.NodesScanned} metaGen={snapshot.MetadataGeneration} metaRev={snapshot.MetadataRevision} scanGen={snapshot.ScanResultGeneration} scanRev={snapshot.ScanResultRevision} results={snapshot.ScanResultCount} types={snapshot.ScanTypeCount} typesRev={snapshot.ScanTypesRevision} crafting={(snapshot.FabricatorActive ? 1 : 0)} fp={snapshot.Fingerprint}"));
+                $"{ScannerRoomDiagnostics.PREFIX} snapshot ep={diagnostics.Epoch} side=S room={view.Id} roomLock={diagnostics.DescribeLock(view.Id)} left={ShortCamera(snapshot.LeftDockCameraId)} right={ShortCamera(snapshot.RightDockCameraId)} dockRev={snapshot.DockingRevision} cams={snapshot.CameraCount} target={(string.IsNullOrEmpty(snapshot.ScanTarget) ? DiagnosticLineFormat.NOT_APPLICABLE : snapshot.ScanTarget)} nodes={snapshot.NodesScanned} metaGen={snapshot.MetadataGeneration} results={view.ScanResultCount} types={view.ScanTypeCount} crafting={(snapshot.FabricatorActive ? 1 : 0)} fp={snapshot.Fingerprint}"));
             foreach (CameraView camera in view.Cameras)
             {
                 output.AppendLine(FormatCamera(camera, locksByCamera[camera.Id]));
@@ -154,8 +155,9 @@ internal sealed class ScannerRoomCommand(EntityRegistry entityRegistry, ScannerR
     ///     packet processors change them in, so the docks, revisions, records and fingerprint of one room belong to the
     ///     same moment.
     /// </summary>
-    private static RoomView ReadRoom(MapRoomEntity room)
+    private static RoomView ReadRoom(ScannerRoomSnapshot captured)
     {
+        MapRoomEntity room = captured.Room;
         ScannerRoomStateSnapshot snapshot = ScannerRoomStateFingerprint.Create(room);
         List<CameraView> cameras = [];
         foreach (MapRoomCameraRecord? record in room.CameraRegistry ?? [])
@@ -168,7 +170,8 @@ internal sealed class ScannerRoomCommand(EntityRegistry entityRegistry, ScannerR
             cameras.Add(new CameraView(record.CameraId, record.CameraNumber, slot, record.LightOn, record.LightRevision,
                 record.Energy, record.Health, record.ComponentRevision));
         }
-        return new RoomView(room.Id, snapshot, ScannerRoomStateFingerprint.Validate(room), [.. cameras.OrderBy(camera => camera.Number)]);
+        return new RoomView(room.Id, snapshot, ScannerRoomStateFingerprint.Validate(room), [.. cameras.OrderBy(camera => camera.Number)], captured.ScanResultCount,
+            captured.ScanTypeCount);
     }
 
     /// <summary>
@@ -218,7 +221,7 @@ internal sealed class ScannerRoomCommand(EntityRegistry entityRegistry, ScannerR
 
     private static string ShortCamera(NitroxId? id) => DiagnosticLineFormat.ShortId(id, true);
 
-    private readonly record struct RoomView(NitroxId Id, ScannerRoomStateSnapshot Snapshot, string? Violation, CameraView[] Cameras);
+    private readonly record struct RoomView(NitroxId Id, ScannerRoomStateSnapshot Snapshot, string? Violation, CameraView[] Cameras, int ScanResultCount, int ScanTypeCount);
 
     private readonly record struct CameraView(NitroxId Id, int Number, int Slot, bool LightOn, long LightRevision, float Energy, float Health,
         long ComponentRevision);

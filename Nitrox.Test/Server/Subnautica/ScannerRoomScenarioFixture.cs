@@ -121,6 +121,33 @@ internal sealed class ScannerRoomScenarioFixture
     }
 
     /// <summary>
+    ///     Makes a room scan for a type, with a player who simulates the room. A scan is measured from the room's
+    ///     base, which is put at the origin.
+    /// </summary>
+    internal void StartScan(ServerPlayer simulator, MapRoomEntity room, NitroxTechType target, long generation = 5)
+    {
+        if (!EntityRegistry.TryGetEntityById(RoomParentId, out WorldEntity _))
+        {
+            EntityRegistry.AddEntity(new WorldEntity(NitroxVector3.Zero, NitroxQuaternion.Identity, NitroxVector3.One, new NitroxTechType("Base"), 0,
+                RoomParentId.ToString(), true, RoomParentId, null));
+        }
+        room.Metadata = new MapRoomMetadata(target, 0, generation);
+        if (Ownership.GetPlayerForLock(room.Id) != simulator)
+        {
+            Ownership.RevokeOwnerOfId(room.Id);
+            Assert.IsTrue(Ownership.TryAcquire(room.Id, simulator, SimulationLockType.TRANSIENT));
+        }
+    }
+
+    /// <summary>
+    ///     Reports the full list of what a room's scan has found, the way its simulating player's client does.
+    /// </summary>
+    /// <returns>The packets the report was answered with, to whomever.</returns>
+    internal Task<IReadOnlyList<Packet>> ReportScanAsync(ServerPlayer player, MapRoomEntity room, params MapRoomScanResultRecord[] results) =>
+        SentDuringAsync(() => Manager.ReportScanAsync(player, new MapRoomScanReport(room.Id, (room.Metadata as MapRoomMetadata)?.Generation ?? 0,
+            NitroxVector3.Zero, 300f, [.. results])));
+
+    /// <summary>
     ///     Every packet sent so far, to whomever, in the order it was sent.
     /// </summary>
     internal IReadOnlyList<Packet> SentPackets() => PacketSender.ReceivedCalls().Select(call => call.GetArguments()[0]).OfType<Packet>().ToList();
