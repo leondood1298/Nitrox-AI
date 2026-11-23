@@ -30,7 +30,7 @@ public class StalkerMetadata : CreatureMetadata
         // Constructor for serialization. Has to be "protected" for json serialization.
     }
 
-    public StalkerMetadata(Optional<NitroxId> friendId, double friendshipEndTime, float infectedAmount) : base(infectedAmount)
+    public StalkerMetadata(Optional<NitroxId> friendId, double friendshipEndTime, float infectedAmount, float enzymeEndTime = NO_ENZYME) : base(infectedAmount, enzymeEndTime)
     {
         FriendId = friendId;
         FriendshipEndTime = friendshipEndTime;

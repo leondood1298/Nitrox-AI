@@ -196,7 +196,9 @@ public class CreatureInfections
     /// <returns>Null when there is nothing decided, or when other metadata carries the creature's state.</returns>
     public CreatureInfectionMetadata? GetDecidedState(InfectedMixin infectedMixin)
     {
-        if (infectedMixin.player || !infectedMixin.TryGetComponent(out Creature creature) || creature is SeaTreader)
+        // Sea Treaders, Stalkers and Sand Sharks have metadata of their own, which carries the infection with their path,
+        // friend or burrow. This one in their slot would take that away.
+        if (infectedMixin.player || !infectedMixin.TryGetComponent(out Creature creature) || creature is SeaTreader or Stalker or SandShark)
         {
             return null;
         }

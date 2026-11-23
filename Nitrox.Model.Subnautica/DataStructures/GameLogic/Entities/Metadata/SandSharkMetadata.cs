@@ -33,7 +33,7 @@ public class SandSharkMetadata : CreatureMetadata
         // Constructor for serialization. Has to be "protected" for json serialization.
     }
 
-    public SandSharkMetadata(bool buried, NitroxVector3 burryPosition, NitroxQuaternion floorAlign, float infectedAmount) : base(infectedAmount)
+    public SandSharkMetadata(bool buried, NitroxVector3 burryPosition, NitroxQuaternion floorAlign, float infectedAmount, float enzymeEndTime = NO_ENZYME) : base(infectedAmount, enzymeEndTime)
     {
         Buried = buried;
         BurryPosition = burryPosition;
