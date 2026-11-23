@@ -110,6 +110,21 @@ public sealed class EntitySimulationLockProtectionTest
         Assert.IsFalse(scenario.EntitySimulation.IsControlledScannerCamera(vehicleId, scenario.PlayerA), "Only Scanner Room cameras are covered.");
     }
 
+    [TestMethod]
+    public async Task LockRequestForSomethingThatIsNotAWorldEntityIsStillGranted()
+    {
+        // The fabricator in a Cyclops or lifepod is a child entity. Players take turns on it with an exclusive lock.
+        ScannerRoomScenarioFixture scenario = new();
+        NitroxId fabricatorId = new("00000000-0000-0000-0000-000000000901");
+
+        Assert.IsTrue((await scenario.RequestOwnershipAsync(scenario.PlayerA, fabricatorId, SimulationLockType.EXCLUSIVE)).LockAcquired);
+        Assert.IsFalse((await scenario.RequestOwnershipAsync(scenario.PlayerB, fabricatorId, SimulationLockType.EXCLUSIVE)).LockAcquired,
+            "The second player has to wait.");
+        Assert.IsTrue((await scenario.RequestOwnershipAsync(scenario.PlayerA, fabricatorId, SimulationLockType.TRANSIENT)).LockAcquired);
+        Assert.IsTrue((await scenario.RequestOwnershipAsync(scenario.PlayerB, fabricatorId, SimulationLockType.EXCLUSIVE)).LockAcquired,
+            "A transient lock held by someone else does not block an exclusive request.");
+    }
+
     private static WorldEntity AddVehicle(ScannerRoomScenarioFixture scenario)
     {
         WorldEntity vehicle = new(new NitroxVector3(10f, -20f, 0f), NitroxQuaternion.Identity, NitroxVector3.One,
