@@ -173,6 +173,16 @@ public class IntroCinematicUpdater : MonoBehaviour
             }
         }
 
+        // Removed before the intro ended (the partner plays it alone): the swapped head of the crash is undone too
+        if (remotePlayerHeadRenderer)
+        {
+            remotePlayerHeadRenderer.enabled = true;
+        }
+        if (remotePlayerCustomHead)
+        {
+            Destroy(remotePlayerCustomHead);
+        }
+
         transform.position = introRemoteEndPosition;
     }
 }
