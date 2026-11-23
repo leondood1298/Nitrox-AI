@@ -1,8 +1,6 @@
 using System.Collections.Generic;
 using Nitrox.Model.DataStructures;
-using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
-using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 
 namespace Nitrox.Server.Subnautica.Models.GameLogic.Bases;

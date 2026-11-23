@@ -1,10 +1,7 @@
 using System.Linq;
-using System.Threading.Tasks;
-using Nitrox.Model.DataStructures.GameLogic;
-using Nitrox.Model.Packets.Core;
-using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
+using Nitrox.Model.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
@@ -24,12 +21,6 @@ internal sealed class MapRoomCameraControlProcessor(SimulationOwnershipData simu
     ///     The game's GameModeOption.NoEnergy, part of Creative. Nothing needs power in such a game.
     /// </summary>
     private const int NO_ENERGY_GAME_MODE_OPTION = 16;
-
-    private readonly SimulationOwnershipData simulationOwnershipData = simulationOwnershipData;
-    private readonly EntityRegistry entityRegistry = entityRegistry;
-    private readonly MapRoomCameraControlLifecycle controlLifecycle = controlLifecycle;
-    private readonly MapRoomCameraControlReleaseFactory cameraControlReleaseFactory = cameraControlReleaseFactory;
-    private readonly ScannerRoomDiagnostics diagnostics = diagnostics;
 
     public async Task Process(AuthProcessorContext context, MapRoomCameraControl packet)
     {

@@ -1,8 +1,5 @@
-using System;
 using System.Reflection;
-using Nitrox.Model.Helper;
 using NitroxClient.GameLogic;
-using UnityEngine;
 
 namespace NitroxPatcher.Patches.Dynamic;
 

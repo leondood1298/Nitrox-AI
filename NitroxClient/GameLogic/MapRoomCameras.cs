@@ -1,17 +1,16 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
+using FMOD.Studio;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
-using Nitrox.Model.Logger;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
-using Nitrox.Model.Subnautica.Extensions;
 using Nitrox.Model.Subnautica.Helper;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication;
 using NitroxClient.Communication.Abstract;
-using NitroxClient.Extensions;
 using NitroxClient.GameLogic.Helper;
 using NitroxClient.MonoBehaviours;
 using UnityEngine;
@@ -20,6 +19,16 @@ namespace NitroxClient.GameLogic;
 
 public class MapRoomCameras
 {
+    private const float ENERGY_BROADCAST_THRESHOLD = 0.5f;
+    private const float HEALTH_BROADCAST_THRESHOLD = 0.05f;
+    private const float DOCK_CHARGE_FRACTION_PER_UPDATE = 0.1f;
+    private const float CAMERA_BATTERY_WAIT_SECONDS = 10f;
+    private const float DOCK_POSITION_ID_SCALE = 10f;
+    private const float DOCK_REPLAY_RETRY_SECONDS = 0.25f;
+    private const float CAMERA_IDS_WAIT_SECONDS = 15f;
+    private const int PREVIEW_JPEG_QUALITY = 55;
+    private const float DOCK_POSITION_SORT_TOLERANCE = 0.01f;
+
     private readonly IPacketSender packetSender;
     private readonly IMultiplayerSession multiplayerSession;
     private readonly LiveMixinManager liveMixinManager;
@@ -27,13 +36,13 @@ public class MapRoomCameras
     private readonly ScannerRoomClientDiagnostics diagnostics;
     private readonly StalkerCameraLockPurposeTracker stalkerCameraLockPurposeTracker;
 
-    private readonly Dictionary<NitroxId, bool> lastBroadcastLightState = new Dictionary<NitroxId, bool>();
+    private readonly Dictionary<NitroxId, bool> lastBroadcastLightState = new();
 
-    private readonly HashSet<NitroxId> locallyControlled = new HashSet<NitroxId>();
-    private readonly HashSet<NitroxId> pendingControl = new HashSet<NitroxId>();
-    private readonly HashSet<NitroxId> remotelyControlled = new HashSet<NitroxId>();
-    private readonly Dictionary<NitroxId, long> dockingRevisions = new Dictionary<NitroxId, long>();
-    private readonly Dictionary<NitroxId, long> lightRevisions = new Dictionary<NitroxId, long>();
+    private readonly HashSet<NitroxId> locallyControlled = new();
+    private readonly HashSet<NitroxId> pendingControl = new();
+    private readonly HashSet<NitroxId> remotelyControlled = new();
+    private readonly Dictionary<NitroxId, long> dockingRevisions = new();
+    private readonly Dictionary<NitroxId, long> lightRevisions = new();
     private readonly Dictionary<NitroxId, (float Energy, float Health)> lastComponents = new();
     private readonly Dictionary<NitroxId, long> componentRevisions = new();
     private readonly Dictionary<NitroxId, float> pendingCameraEnergy = new();
@@ -121,7 +130,6 @@ public class MapRoomCameras
         {
             return;
         }
-        NitroxId nitroxId2;
         if (isControlling)
         {
             if (!CanBeginControl(camera))
@@ -133,8 +141,8 @@ public class MapRoomCameras
             int cameraIndex = -1;
             if (camera.dockingPoint)
             {
-                MapRoomFunctionality mapRoomForDock = GetMapRoomForDock(camera.dockingPoint);
-                if (!mapRoomForDock || !mapRoomForDock.TryGetNitroxId(out NitroxId nitroxId))
+                MapRoomFunctionality mapRoom = GetMapRoomForDock(camera.dockingPoint);
+                if (!mapRoom || !mapRoom.TryGetNitroxId(out NitroxId roomId))
                 {
                     camera.TryGetNitroxId(out NitroxId unresolvedCameraId);
                     diagnostics.Record("control_publish", "pending", unresolvedCameraId,
@@ -142,17 +150,17 @@ public class MapRoomCameras
                     AbortLocalControl(camera);
                     return;
                 }
-                mapRoomId = Optional.Of(nitroxId);
-                cameraIndex = GetDockingIndex(mapRoomForDock, camera.dockingPoint);
+                mapRoomId = Optional.Of(roomId);
+                cameraIndex = GetDockingIndex(mapRoom, camera.dockingPoint);
                 if (cameraIndex < 0)
                 {
                     camera.TryGetNitroxId(out NitroxId unresolvedCameraId);
-                    diagnostics.Record("control_publish", "pending", unresolvedCameraId, nitroxId,
+                    diagnostics.Record("control_publish", "pending", unresolvedCameraId, roomId,
                         slot: cameraIndex, reason: "fresh_room_slot_wait");
                     AbortLocalControl(camera);
                     return;
                 }
-                if (bootstrapStateCache.TryGetDock(nitroxId, cameraIndex, out MapRoomCameraDock authoritativeDock))
+                if (bootstrapStateCache.TryGetDock(roomId, cameraIndex, out MapRoomCameraDock authoritativeDock))
                 {
                     if (NitroxEntity.TryGetObjectFrom(authoritativeDock.CameraId, out GameObject canonicalObject) &&
                         canonicalObject && canonicalObject != camera.gameObject)
@@ -162,7 +170,7 @@ public class MapRoomCameras
                     }
                     if (!TryAssignCameraId(camera.gameObject, authoritativeDock.CameraId))
                     {
-                        diagnostics.Record("control_publish", "reject", authoritativeDock.CameraId, nitroxId,
+                        diagnostics.Record("control_publish", "reject", authoritativeDock.CameraId, roomId,
                             authoritativeDock.Revision, cameraIndex, "canonical_id_collision");
                         AbortLocalControl(camera);
                         return;
@@ -182,21 +190,21 @@ public class MapRoomCameras
                     }
                 }
             }
-            NitroxId idOrGenerateNew = NitroxEntity.GetIdOrGenerateNew(camera.gameObject);
-            bool flag = camera.lightsParent && camera.lightsParent.activeSelf;
-            lastBroadcastLightState[idOrGenerateNew] = flag;
-            pendingControl.Add(idOrGenerateNew);
-            packetSender.Send(new MapRoomCameraControl(idOrGenerateNew, mapRoomId, cameraIndex, isControlling: true, flag));
+            NitroxId cameraId = NitroxEntity.GetIdOrGenerateNew(camera.gameObject);
+            bool lightOn = camera.lightsParent && camera.lightsParent.activeSelf;
+            lastBroadcastLightState[cameraId] = lightOn;
+            pendingControl.Add(cameraId);
+            packetSender.Send(new MapRoomCameraControl(cameraId, mapRoomId, cameraIndex, isControlling: true, lightOn));
         }
-        else if (camera.TryGetNitroxId(out nitroxId2))
+        else if (camera.TryGetNitroxId(out NitroxId cameraId))
         {
-            pendingControl.Remove(nitroxId2);
-            locallyControlled.Remove(nitroxId2);
-            lastBroadcastLightState.Remove(nitroxId2);
+            pendingControl.Remove(cameraId);
+            locallyControlled.Remove(cameraId);
+            lastBroadcastLightState.Remove(cameraId);
             // Release the camera-specific lock before generic movement ownership is relinquished.
             // Otherwise the server can see an already-unlocked camera and fail to notify remote clients.
-            packetSender.Send(new MapRoomCameraControl(nitroxId2, Optional.Empty, -1, isControlling: false, lightOn: false));
-            MovementBroadcaster.UnregisterWatched(nitroxId2);
+            packetSender.Send(new MapRoomCameraControl(cameraId, Optional.Empty, -1, isControlling: false, lightOn: false));
+            MovementBroadcaster.UnregisterWatched(cameraId);
         }
     }
 
@@ -288,8 +296,6 @@ public class MapRoomCameras
             }
             return;
         }
-        GameObject gameObject2;
-        MapRoomCameraMovementReplicator component;
         if (packet.IsControlling)
         {
             if (isLocalController)
@@ -301,23 +307,23 @@ public class MapRoomCameras
             {
                 stalkerCameraLockPurposeTracker.Forget(packet.CameraId);
             }
-            GameObject gameObject = ResolveCameraObject(packet.CameraId, packet.MapRoomId, packet.CameraIndex);
-            if (!gameObject)
+            GameObject cameraObject = ResolveCameraObject(packet.CameraId, packet.MapRoomId, packet.CameraIndex);
+            if (!cameraObject)
             {
                 bootstrapStateCache.RetainControl(packet);
                 diagnostics.Record("control_apply", "pending", packet.CameraId, packet.MapRoomId.HasValue ? packet.MapRoomId.Value : null,
                     slot: packet.CameraIndex, reason: "waiting_object");
-                Log.Warn(string.Format("[{0}] Deferring camera control until its fresh-room object exists for {1}", "MapRoomCameras", packet));
+                Log.Warn($"[{nameof(MapRoomCameras)}] Deferring camera control until its fresh-room object exists for {packet}");
                 return;
             }
             bootstrapStateCache.RemoveControl(packet.CameraId);
-            SetLight(gameObject, packet.LightOn);
+            SetLight(cameraObject, packet.LightOn);
             if (isLocalController)
             {
                 remotelyControlled.Remove(packet.CameraId);
                 pendingControl.Remove(packet.CameraId);
                 locallyControlled.Add(packet.CameraId);
-                if (gameObject.TryGetComponent(out MapRoomCamera localCamera))
+                if (cameraObject.TryGetComponent(out MapRoomCamera localCamera))
                 {
                     localCamera.enabled = true;
                     if (uGUI_CameraDrone.main && uGUI_CameraDrone.main.GetCamera() == localCamera)
@@ -325,44 +331,41 @@ public class MapRoomCameras
                         uGUI_CameraDrone.main.noSignal.SetActive(false);
                     }
                 }
-                MovementBroadcaster.RegisterWatched(gameObject, packet.CameraId);
+                MovementBroadcaster.RegisterWatched(cameraObject, packet.CameraId);
                 diagnostics.Record("control_apply", "ok", packet.CameraId, packet.MapRoomId.HasValue ? packet.MapRoomId.Value : null,
                     slot: packet.CameraIndex, reason: "local");
                 return;
             }
-            if (!gameObject.GetComponent<MapRoomCameraMovementReplicator>())
+            if (!cameraObject.GetComponent<MapRoomCameraMovementReplicator>())
             {
-                gameObject.AddComponent<MapRoomCameraMovementReplicator>();
+                cameraObject.AddComponent<MapRoomCameraMovementReplicator>();
             }
             remotelyControlled.Add(packet.CameraId);
             diagnostics.Record("control_apply", "ok", packet.CameraId, packet.MapRoomId.HasValue ? packet.MapRoomId.Value : null,
                 slot: packet.CameraIndex, reason: "remote");
         }
-        else if (NitroxEntity.TryGetObjectFrom(packet.CameraId, out gameObject2) && gameObject2.TryGetComponent<MapRoomCameraMovementReplicator>(out component))
+        else if (NitroxEntity.TryGetObjectFrom(packet.CameraId, out GameObject cameraObject) && cameraObject.TryGetComponent(out MapRoomCameraMovementReplicator replicator))
         {
-            UnityEngine.Object.Destroy(component);
+            UnityEngine.Object.Destroy(replicator);
         }
         if (!packet.IsControlling)
         {
             remotelyControlled.Remove(packet.CameraId);
-        }
-        if (!packet.IsControlling && isLocalController)
-        {
-            pendingControl.Remove(packet.CameraId);
-            // A release this client did not ask for (it still counts the camera as granted) means the server revoked
-            // control. A release that merely echoes a local exit finds the camera already removed here, which also
-            // keeps a quick re-take of the same camera from being kicked out by the old echo.
-            bool revokedByServer = locallyControlled.Remove(packet.CameraId);
-            if (revokedByServer && NitroxEntity.TryGetObjectFrom(packet.CameraId, out GameObject revokedObject) &&
-                revokedObject.TryGetComponent(out MapRoomCamera revokedCamera) && revokedCamera.IsControlled())
+            if (isLocalController)
             {
-                ExitCameraModeLocally(revokedCamera);
+                pendingControl.Remove(packet.CameraId);
+                // A release this client did not ask for (it still counts the camera as granted) means the server revoked
+                // control. A release that merely echoes a local exit finds the camera already removed here, which also
+                // keeps a quick re-take of the same camera from being kicked out by the old echo.
+                bool revokedByServer = locallyControlled.Remove(packet.CameraId);
+                if (revokedByServer && NitroxEntity.TryGetObjectFrom(packet.CameraId, out GameObject revokedObject) &&
+                    revokedObject.TryGetComponent(out MapRoomCamera revokedCamera) && revokedCamera.IsControlled())
+                {
+                    ExitCameraModeLocally(revokedCamera);
+                }
+                stalkerCameraLockPurposeTracker.Forget(packet.CameraId);
+                MovementBroadcaster.UnregisterWatched(packet.CameraId);
             }
-            stalkerCameraLockPurposeTracker.Forget(packet.CameraId);
-            MovementBroadcaster.UnregisterWatched(packet.CameraId);
-        }
-        if (!packet.IsControlling)
-        {
             diagnostics.Record("control_release_apply", "ok", packet.CameraId, packet.MapRoomId.HasValue ? packet.MapRoomId.Value : null,
                 slot: packet.CameraIndex, reason: isLocalController ? "local" : "remote");
         }
@@ -396,7 +399,7 @@ public class MapRoomCameras
         TryApplyPendingPreview();
     }
 
-    public void TryApplyPendingPreview()
+    private void TryApplyPendingPreview()
     {
         if (pendingPreview == null)
         {
@@ -429,12 +432,12 @@ public class MapRoomCameras
 
     private void RecordPreviewApply(MapRoomCameraPreview packet, string outcome, string reason)
     {
-        if (lastPreviewApplyDiagnosticRevision == packet.Revision && lastPreviewApplyDiagnosticOutcome == outcome + reason)
+        if (lastPreviewApplyDiagnosticRevision == packet.Revision && lastPreviewApplyDiagnosticOutcome == $"{outcome}{reason}")
         {
             return;
         }
         lastPreviewApplyDiagnosticRevision = packet.Revision;
-        lastPreviewApplyDiagnosticOutcome = outcome + reason;
+        lastPreviewApplyDiagnosticOutcome = $"{outcome}{reason}";
         MapRoomCameraPreviewImage.TryValidate(packet.JpegBytes, out int width, out int height);
         diagnostics.Record("preview_apply", outcome, packet.CameraId, revision: packet.Revision,
             slot: packet.CameraNumber, reason: $"{reason}_bytes_{packet.JpegBytes.Length}_{width}x{height}");
@@ -476,7 +479,7 @@ public class MapRoomCameras
     internal bool CanSelectForControl(NitroxId cameraId, bool activelyControlled) =>
         CanSelectForControl(pendingControl.Contains(cameraId), locallyControlled.Contains(cameraId), remotelyControlled.Contains(cameraId), activelyControlled);
 
-    public static bool CanSelectForControl(bool pending, bool locallyControlled, bool remotelyControlled, bool activelyControlled) =>
+    internal static bool CanSelectForControl(bool pending, bool locallyControlled, bool remotelyControlled, bool activelyControlled) =>
         locallyControlled || (!remotelyControlled && (!pending || activelyControlled));
 
     public bool HasPendingControl(NitroxId cameraId) => pendingControl.Contains(cameraId);
@@ -492,8 +495,8 @@ public class MapRoomCameras
         lastBroadcastLightState.Remove(cameraId);
         stalkerCameraLockPurposeTracker.Forget(cameraId);
         MovementBroadcaster.UnregisterWatched(cameraId);
-        if (NitroxEntity.TryGetObjectFrom(cameraId, out GameObject gameObject) &&
-            gameObject.TryGetComponent<MapRoomCameraMovementReplicator>(out MapRoomCameraMovementReplicator replicator))
+        if (NitroxEntity.TryGetObjectFrom(cameraId, out GameObject cameraObject) &&
+            cameraObject.TryGetComponent<MapRoomCameraMovementReplicator>(out MapRoomCameraMovementReplicator replicator))
         {
             UnityEngine.Object.Destroy(replicator);
         }
@@ -505,17 +508,17 @@ public class MapRoomCameras
 
     public void BroadcastLightIfChanged(MapRoomCamera camera)
     {
-        if (camera && camera.lightsParent && camera.TryGetNitroxId(out NitroxId nitroxId))
+        if (camera && camera.lightsParent && camera.TryGetNitroxId(out NitroxId cameraId))
         {
-            if (restoreStateCache.HasPending(nitroxId) || HasActiveCameraRestoreBarrier(nitroxId))
+            if (restoreStateCache.HasPending(cameraId) || HasActiveCameraRestoreBarrier(cameraId))
             {
                 return;
             }
-            bool activeSelf = camera.lightsParent.activeSelf;
-            if (!lastBroadcastLightState.TryGetValue(nitroxId, out var value) || value != activeSelf)
+            bool lightOn = camera.lightsParent.activeSelf;
+            if (!lastBroadcastLightState.TryGetValue(cameraId, out bool lastLightOn) || lastLightOn != lightOn)
             {
-                lastBroadcastLightState[nitroxId] = activeSelf;
-                packetSender.Send(new MapRoomCameraLight(nitroxId, activeSelf));
+                lastBroadcastLightState[cameraId] = lightOn;
+                packetSender.Send(new MapRoomCameraLight(cameraId, lightOn));
             }
         }
     }
@@ -529,30 +532,30 @@ public class MapRoomCameras
         }
         lightRevisions[packet.CameraId] = packet.Revision;
         restoreStateCache.Retain(packet);
-        if (!TryApplyPendingCameraState(packet.CameraId))
-        {
-            if (deferredCameraState.Add(packet.CameraId))
-            {
-                diagnostics.Record("light_apply", "pending", packet.CameraId, revision: packet.Revision, reason: "waiting_object");
-            }
-        }
+        ApplyPendingCameraStateOrDefer(packet.CameraId, "light_apply", packet.Revision);
     }
 
     public void BroadcastComponentStateIfChanged(MapRoomCamera camera)
     {
-        if (!camera || !camera.TryGetNitroxId(out NitroxId id) || (!locallyControlled.Contains(id) && !simulationOwnership.HasAnyLockType(id) && !CanSimulateDockedCamera(camera))) return;
-        if (ShouldSuppressComponentBroadcast(restoreStateCache.HasPending(id),
-            initializingCameraBatteries.ContainsKey(id), HasActiveCameraRestoreBarrier(id))) return;
+        if (!camera || !camera.TryGetNitroxId(out NitroxId cameraId) || (!locallyControlled.Contains(cameraId) && !simulationOwnership.HasAnyLockType(cameraId) && !CanSimulateDockedCamera(camera)))
+        {
+            return;
+        }
+        if (ShouldSuppressComponentBroadcast(restoreStateCache.HasPending(cameraId),
+            initializingCameraBatteries.ContainsKey(cameraId), HasActiveCameraRestoreBarrier(cameraId)))
+        {
+            return;
+        }
         float energy = camera.energyMixin.charge;
         float health = camera.liveMixin.health;
-        if (!lastComponents.TryGetValue(id, out var state) || Math.Abs(state.Energy - energy) >= 0.5f || Math.Abs(state.Health - health) >= 0.05f)
+        if (!lastComponents.TryGetValue(cameraId, out (float Energy, float Health) last) || Math.Abs(last.Energy - energy) >= ENERGY_BROADCAST_THRESHOLD || Math.Abs(last.Health - health) >= HEALTH_BROADCAST_THRESHOLD)
         {
-            lastComponents[id] = (energy, health);
-            packetSender.Send(new MapRoomCameraComponentState(id, energy, health));
+            lastComponents[cameraId] = (energy, health);
+            packetSender.Send(new MapRoomCameraComponentState(cameraId, energy, health));
         }
     }
 
-    public bool CanSimulateDockedCamera(MapRoomCamera camera)
+    private bool CanSimulateDockedCamera(MapRoomCamera camera)
     {
         MapRoomFunctionality mapRoom = camera ? GetMapRoomForDock(camera.dockingPoint) : null;
         return mapRoom && mapRoom.TryGetNitroxId(out NitroxId mapRoomId) && simulationOwnership.HasAnyLockType(mapRoomId);
@@ -560,16 +563,13 @@ public class MapRoomCameras
 
     public void ProcessComponentState(MapRoomCameraComponentState packet)
     {
-        if (!packet.IsServerResponse || !packet.Granted || componentRevisions.TryGetValue(packet.CameraId, out long revision) && packet.Revision < revision) return;
+        if (!packet.IsServerResponse || !packet.Granted || componentRevisions.TryGetValue(packet.CameraId, out long revision) && packet.Revision < revision)
+        {
+            return;
+        }
         componentRevisions[packet.CameraId] = packet.Revision;
         restoreStateCache.Retain(packet);
-        if (!TryApplyPendingCameraState(packet.CameraId))
-        {
-            if (deferredCameraState.Add(packet.CameraId))
-            {
-                diagnostics.Record("component_apply", "pending", packet.CameraId, revision: packet.Revision, reason: "waiting_object");
-            }
-        }
+        ApplyPendingCameraStateOrDefer(packet.CameraId, "component_apply", packet.Revision);
     }
 
     internal static bool ShouldSuppressComponentBroadcast(bool authoritativeStatePending, bool batteryInitializing,
@@ -730,7 +730,7 @@ public class MapRoomCameras
         }
         else
         {
-            camera.chargingSound.Stop(global::FMOD.Studio.STOP_MODE.IMMEDIATE);
+            camera.chargingSound.Stop(STOP_MODE.IMMEDIATE);
         }
         BroadcastComponentStateIfChanged(camera);
     }
@@ -739,13 +739,13 @@ public class MapRoomCameras
     ///     Energy a docked camera takes in one update. This is the game's own rule (MapRoomCamera.UpdateEnergyRecharge):
     ///     a tenth of the battery's capacity per update until full, so a docked camera is recharged almost at once.
     /// </summary>
-    public static float CalculateDockCharge(float current, float capacity)
+    internal static float CalculateDockCharge(float current, float capacity)
     {
         if (capacity <= 0f || current >= capacity)
         {
             return 0f;
         }
-        return Math.Min(capacity - Math.Max(0f, current), capacity * 0.1f);
+        return Math.Min(capacity - Math.Max(0f, current), capacity * DOCK_CHARGE_FRACTION_PER_UPDATE);
     }
 
     private IEnumerator InitializeCameraBattery(MapRoomCamera camera, NitroxId cameraId, long generation)
@@ -769,7 +769,7 @@ public class MapRoomCameras
 
                 if (!populationFailed)
                 {
-                    float timeoutAt = Time.time + 10f;
+                    float timeoutAt = Time.time + CAMERA_BATTERY_WAIT_SECONDS;
                     yield return new WaitUntil(() => !camera || camera.energyMixin.battery != null ||
                         !IsCurrentCameraBatteryInitialization(cameraId, camera, generation) || Time.time >= timeoutAt);
                 }
@@ -783,7 +783,7 @@ public class MapRoomCameras
             else if (camera && camera.energyMixin.battery == null &&
                 IsCurrentCameraBatteryInitialization(cameraId, camera, generation))
             {
-                Log.Warn($"[MapRoomCameras] Restored camera {cameraId} battery is still unavailable after 10 seconds; authoritative component broadcasts remain suppressed");
+                Log.Warn($"[MapRoomCameras] Restored camera {cameraId} battery is still unavailable after {CAMERA_BATTERY_WAIT_SECONDS} seconds; authoritative component broadcasts remain suppressed");
                 diagnostics.Record("component_apply", "pending", cameraId, reason: "battery_wait_timeout");
             }
 
@@ -825,12 +825,12 @@ public class MapRoomCameras
 
     public void BroadcastDock(MapRoomCameraDocking dockingPoint, MapRoomCamera camera)
     {
-        if (!PacketSuppressor<MapRoomCameraDock>.IsSuppressed && dockingPoint && camera && camera.TryGetNitroxId(out NitroxId nitroxId))
+        if (!PacketSuppressor<MapRoomCameraDock>.IsSuppressed && dockingPoint && camera && camera.TryGetNitroxId(out NitroxId cameraId))
         {
-            MapRoomFunctionality mapRoomForDock = GetMapRoomForDock(dockingPoint);
-            if (mapRoomForDock && mapRoomForDock.TryGetNitroxId(out NitroxId nitroxId2))
+            MapRoomFunctionality mapRoom = GetMapRoomForDock(dockingPoint);
+            if (mapRoom && mapRoom.TryGetNitroxId(out NitroxId mapRoomId))
             {
-                packetSender.Send(new MapRoomCameraDock(nitroxId, nitroxId2, GetDockingIndex(mapRoomForDock, dockingPoint)));
+                packetSender.Send(new MapRoomCameraDock(cameraId, mapRoomId, GetDockingIndex(mapRoom, dockingPoint)));
             }
         }
     }
@@ -1027,32 +1027,32 @@ public class MapRoomCameras
 
     private static void SetLight(GameObject cameraObject, bool on)
     {
-        if (!cameraObject.TryGetComponent<MapRoomCamera>(out var component))
+        if (!cameraObject.TryGetComponent(out MapRoomCamera camera))
         {
             return;
         }
 
         // Start restores lightsParent from this serialized field. Keep it canonical even when
         // authoritative state arrives between prefab creation and the component's Start callback.
-        component.lightState = on;
-        if (component.lightsParent && component.lightsParent.activeSelf != on)
+        camera.lightState = on;
+        if (camera.lightsParent && camera.lightsParent.activeSelf != on)
         {
-            component.lightsParent.SetActive(on);
+            camera.lightsParent.SetActive(on);
         }
     }
 
     private static GameObject ResolveCameraObject(NitroxId cameraId, Optional<NitroxId> mapRoomId, int cameraIndex)
     {
-        if (NitroxEntity.TryGetObjectFrom(cameraId, out GameObject gameObject) && gameObject)
+        if (NitroxEntity.TryGetObjectFrom(cameraId, out GameObject cameraObject) && cameraObject)
         {
-            return gameObject.TryGetComponent<MapRoomCamera>(out _) &&
-                TryAssignCameraId(gameObject, cameraId)
-                    ? gameObject
+            return cameraObject.TryGetComponent<MapRoomCamera>(out _) &&
+                TryAssignCameraId(cameraObject, cameraId)
+                    ? cameraObject
                     : null;
         }
-        if (mapRoomId.HasValue && cameraIndex >= 0 && NitroxEntity.TryGetObjectFrom(mapRoomId.Value, out GameObject gameObject2) && gameObject2 && gameObject2.TryGetComponent<MapRoomFunctionality>(out var component))
+        if (mapRoomId.HasValue && cameraIndex >= 0 && NitroxEntity.TryGetObjectFrom(mapRoomId.Value, out GameObject mapRoomObject) && mapRoomObject && mapRoomObject.TryGetComponent(out MapRoomFunctionality mapRoom))
         {
-            List<MapRoomCameraDocking> dockingPoints = GetDockingPoints(component);
+            List<MapRoomCameraDocking> dockingPoints = GetDockingPoints(mapRoom);
             if (cameraIndex < dockingPoints.Count)
             {
                 MapRoomCamera camera = dockingPoints[cameraIndex].camera;
@@ -1067,33 +1067,25 @@ public class MapRoomCameras
 
     private static int GetDockingIndex(MapRoomFunctionality mapRoom, MapRoomCameraDocking dockingPoint)
     {
-        List<MapRoomCameraDocking> dockingPoints = GetDockingPoints(mapRoom);
-        for (int i = 0; i < dockingPoints.Count; i++)
-        {
-            if (dockingPoints[i] == dockingPoint)
-            {
-                return i;
-            }
-        }
-        return -1;
+        return GetDockingPoints(mapRoom).IndexOf(dockingPoint);
     }
 
-    public static NitroxId GetDeterministicCameraId(NitroxId mapRoomId, Vector3 localDockPosition)
+    internal static NitroxId GetDeterministicCameraId(NitroxId mapRoomId, Vector3 localDockPosition)
     {
-        int value = Mathf.RoundToInt(localDockPosition.x * 10f);
-        int value2 = Mathf.RoundToInt(localDockPosition.y * 10f);
-        int value3 = Mathf.RoundToInt(localDockPosition.z * 10f);
-        byte[] array = new Guid(mapRoomId.ToString()).ToByteArray();
-        byte[] bytes = BitConverter.GetBytes(value);
-        byte[] bytes2 = BitConverter.GetBytes(value2);
-        byte[] bytes3 = BitConverter.GetBytes(value3);
+        int x = Mathf.RoundToInt(localDockPosition.x * DOCK_POSITION_ID_SCALE);
+        int y = Mathf.RoundToInt(localDockPosition.y * DOCK_POSITION_ID_SCALE);
+        int z = Mathf.RoundToInt(localDockPosition.z * DOCK_POSITION_ID_SCALE);
+        byte[] idBytes = new Guid(mapRoomId.ToString()).ToByteArray();
+        byte[] xBytes = BitConverter.GetBytes(x);
+        byte[] yBytes = BitConverter.GetBytes(y);
+        byte[] zBytes = BitConverter.GetBytes(z);
         for (int i = 0; i < 4; i++)
         {
-            array[i] ^= bytes[i];
-            array[i + 4] ^= bytes2[i];
-            array[i + 8] ^= bytes3[i];
+            idBytes[i] ^= xBytes[i];
+            idBytes[i + 4] ^= yBytes[i];
+            idBytes[i + 8] ^= zBytes[i];
         }
-        return new NitroxId(array);
+        return new NitroxId(idBytes);
     }
 
     private static Vector3 GetLocalDockPosition(MapRoomFunctionality mapRoom, MapRoomCameraDocking dockingPoint)
@@ -1151,7 +1143,7 @@ public class MapRoomCameras
                     ApplyPendingControls();
                     yield break;
                 }
-                yield return new WaitForSeconds(0.25f);
+                yield return new WaitForSeconds(DOCK_REPLAY_RETRY_SECONDS);
             }
         }
         finally
@@ -1160,30 +1152,30 @@ public class MapRoomCameras
         }
     }
 
-    public static void EnsureCameraIds(MapRoomFunctionality mapRoom) => EnsureCameraIds(mapRoom, null);
+    private static void EnsureCameraIds(MapRoomFunctionality mapRoom) => EnsureCameraIds(mapRoom, null);
 
     private static void EnsureCameraIds(MapRoomFunctionality mapRoom, IReadOnlyList<NitroxId?> authoritativeDockIds, IReadOnlyList<MapRoomCameraRecord> cameraRecords = null)
     {
-        if (!mapRoom || !mapRoom.TryGetNitroxId(out NitroxId nitroxId))
+        if (!mapRoom || !mapRoom.TryGetNitroxId(out NitroxId mapRoomId))
         {
             return;
         }
         MapRoomCameras cameraManager = NitroxServiceLocator.LocateService<MapRoomCameras>();
-        bool cachedDocksApplied = cameraManager.ApplyCachedDocks(mapRoom, nitroxId);
-        if (!cachedDocksApplied && cameraManager.bootstrapReplayRooms.Add(nitroxId))
+        bool cachedDocksApplied = cameraManager.ApplyCachedDocks(mapRoom, mapRoomId);
+        if (!cachedDocksApplied && cameraManager.bootstrapReplayRooms.Add(mapRoomId))
         {
-            UWE.CoroutineHost.StartCoroutine(cameraManager.ReplayCachedDocksDeferred(mapRoom, nitroxId));
+            UWE.CoroutineHost.StartCoroutine(cameraManager.ReplayCachedDocksDeferred(mapRoom, mapRoomId));
         }
         List<MapRoomCameraDocking> dockingPoints = GetDockingPoints(mapRoom);
-        int num = 0;
+        int assigned = 0;
         int reconciled = 0;
         int broadcast = 0;
         int removed = 0;
         for (int index = 0; index < dockingPoints.Count; index++)
         {
-            MapRoomCameraDocking item = dockingPoints[index];
-            MapRoomCamera camera = item.camera;
-            bool hasCachedDock = cameraManager.bootstrapStateCache.TryGetDock(nitroxId, index, out MapRoomCameraDock cachedDock);
+            MapRoomCameraDocking dockingPoint = dockingPoints[index];
+            MapRoomCamera camera = dockingPoint.camera;
+            bool hasCachedDock = cameraManager.bootstrapStateCache.TryGetDock(mapRoomId, index, out MapRoomCameraDock cachedDock);
             bool hasAuthoritativeSlot = hasCachedDock || authoritativeDockIds != null;
             NitroxId? authoritativeCameraId = hasCachedDock
                 ? cachedDock.IsDocked ? cachedDock.CameraId : null
@@ -1192,7 +1184,7 @@ public class MapRoomCameras
             {
                 if (camera)
                 {
-                    RemoveUnexpectedRestoredCamera(item, camera);
+                    RemoveUnexpectedRestoredCamera(dockingPoint, camera);
                     removed++;
                 }
                 continue;
@@ -1204,28 +1196,28 @@ public class MapRoomCameras
                 if (!TryAssignCameraId(camera.gameObject, authoritativeCameraId))
                 {
                     cameraManager.diagnostics.Record("dock_reconcile", "diverge", authoritativeCameraId,
-                        nitroxId, slot: index, reason: "canonical_id_collision");
+                        mapRoomId, slot: index, reason: "canonical_id_collision");
                     continue;
                 }
                 if (identityChanged)
                 {
-                    num++;
+                    assigned++;
                 }
             }
             else if (camera && !hasAuthoritativeSlot)
             {
-                NitroxId deterministicCameraId = GetDeterministicCameraId(nitroxId, GetLocalDockPosition(mapRoom, item));
+                NitroxId deterministicCameraId = GetDeterministicCameraId(mapRoomId, GetLocalDockPosition(mapRoom, dockingPoint));
                 bool identityChanged = !camera.TryGetNitroxId(out NitroxId provisionalId) ||
                     provisionalId != deterministicCameraId;
                 if (!TryAssignCameraId(camera.gameObject, deterministicCameraId))
                 {
                     cameraManager.diagnostics.Record("dock_reconcile", "diverge",
-                        deterministicCameraId, nitroxId, slot: index, reason: "deterministic_id_collision");
+                        deterministicCameraId, mapRoomId, slot: index, reason: "deterministic_id_collision");
                     continue;
                 }
                 if (identityChanged)
                 {
-                    num++;
+                    assigned++;
                 }
             }
             if (camera && RegisterRestoredDockedCamera(camera))
@@ -1234,7 +1226,7 @@ public class MapRoomCameras
             }
             if (camera)
             {
-                cameraManager.BroadcastDock(item, camera);
+                cameraManager.BroadcastDock(dockingPoint, camera);
                 broadcast++;
             }
         }
@@ -1242,7 +1234,7 @@ public class MapRoomCameras
         {
             cameraManager.ApplyRestoredCameraRecords(cameraRecords);
         }
-        Log.Info(string.Format("[{0}] EnsureCameraIds map room {1}: found {2} dock(s), assigned {3} camera id(s), reconciled {4} camera reference(s), broadcast {5} restored dock(s), removed {6} authoritative empty-slot camera(s)", "MapRoomCameras", nitroxId, dockingPoints.Count, num, reconciled, broadcast, removed));
+        Log.Info($"[{nameof(MapRoomCameras)}] EnsureCameraIds map room {mapRoomId}: found {dockingPoints.Count} dock(s), assigned {assigned} camera id(s), reconciled {reconciled} camera reference(s), broadcast {broadcast} restored dock(s), removed {removed} authoritative empty-slot camera(s)");
         NormalizeCameraList();
         cameraManager.TryApplyPendingPreview();
         cameraManager.ApplyPendingControls();
@@ -1250,14 +1242,14 @@ public class MapRoomCameras
 
     public static IEnumerator EnsureCameraIdsDeferred(MapRoomFunctionality mapRoom)
     {
-        float timeoutAt = Time.time + 15f;
+        float timeoutAt = Time.time + CAMERA_IDS_WAIT_SECONDS;
         yield return new WaitUntil(() => !mapRoom || Time.time >= timeoutAt || FreshMapRoomReadyForIds(mapRoom));
         EnsureCameraIds(mapRoom);
     }
 
     public static IEnumerator EnsureCameraIdsDeferred(MapRoomFunctionality mapRoom, NitroxId? leftDockCameraId, NitroxId? rightDockCameraId, IReadOnlyList<MapRoomCameraRecord> cameraRecords)
     {
-        float timeoutAt = Time.time + 15f;
+        float timeoutAt = Time.time + CAMERA_IDS_WAIT_SECONDS;
         NitroxId?[] authoritativeDockIds = [leftDockCameraId, rightDockCameraId];
         yield return new WaitUntil(() => !mapRoom || Time.time >= timeoutAt ||
             AuthoritativeMapRoomReadyForIds(mapRoom, authoritativeDockIds));
@@ -1283,13 +1275,17 @@ public class MapRoomCameras
         {
             componentRevisions[record.CameraId] = record.ComponentRevision;
         }
-        if (!TryApplyPendingCameraState(record.CameraId))
+        ApplyPendingCameraStateOrDefer(record.CameraId, "restore_apply", record.ComponentRevision, record.CameraNumber);
+    }
+
+    /// <summary>
+    ///     Applies retained state when the camera object exists; otherwise records once that it waits for the object.
+    /// </summary>
+    private void ApplyPendingCameraStateOrDefer(NitroxId cameraId, string eventName, long revision, int? slot = null)
+    {
+        if (!TryApplyPendingCameraState(cameraId) && deferredCameraState.Add(cameraId))
         {
-            if (deferredCameraState.Add(record.CameraId))
-            {
-                diagnostics.Record("restore_apply", "pending", record.CameraId, revision: record.ComponentRevision,
-                    slot: record.CameraNumber, reason: "waiting_object");
-            }
+            diagnostics.Record(eventName, "pending", cameraId, revision: revision, slot: slot, reason: "waiting_object");
         }
     }
 
@@ -1299,9 +1295,7 @@ public class MapRoomCameras
 
     private static void RemoveUnexpectedRestoredCamera(MapRoomCameraDocking dockingPoint, MapRoomCamera camera)
     {
-        while (MapRoomCamera.cameras.Remove(camera))
-        {
-        }
+        MapRoomCamera.cameras.RemoveAll(registered => registered == camera);
         dockingPoint.camera = null;
         dockingPoint.cameraDocked = false;
         if (camera.TryGetComponent(out NitroxEntity nitroxEntity))
@@ -1327,19 +1321,19 @@ public class MapRoomCameras
         }
         else
         {
-            MapRoomFunctionality mapRoomForDock = GetMapRoomForDock(dockingPoint);
-            if (!mapRoomForDock || !mapRoomForDock.TryGetNitroxId(out NitroxId mapRoomId))
+            MapRoomFunctionality mapRoom = GetMapRoomForDock(dockingPoint);
+            if (!mapRoom || !mapRoom.TryGetNitroxId(out NitroxId mapRoomId))
             {
                 return false;
             }
-            Vector3 localDockPosition = GetLocalDockPosition(mapRoomForDock, dockingPoint);
+            Vector3 localDockPosition = GetLocalDockPosition(mapRoom, dockingPoint);
             NitroxId deterministicCameraId = GetDeterministicCameraId(mapRoomId, localDockPosition);
             if (!TryAssignCameraId(camera.gameObject, deterministicCameraId))
             {
                 Log.Error($"[MapRoomCameras] Refused to overwrite canonical camera id {deterministicCameraId} while reconciling map room {mapRoomId}");
                 return false;
             }
-            Log.Info(string.Format("[{0}] assigned camera id {1} (map room {2}, localPos {3:F2},{4:F2},{5:F2})", "MapRoomCameras", deterministicCameraId, mapRoomId, localDockPosition.x, localDockPosition.y, localDockPosition.z));
+            Log.Info($"[{nameof(MapRoomCameras)}] assigned camera id {deterministicCameraId} (map room {mapRoomId}, localPos {localDockPosition.x:F2},{localDockPosition.y:F2},{localDockPosition.z:F2})");
         }
         RegisterRestoredDockedCamera(camera);
         NormalizeCameraList();
@@ -1403,10 +1397,10 @@ public class MapRoomCameras
         (!idRegistered || registeredObjectIsCandidate) &&
         (!uniqueIdRegistered || registeredIdentifierIsCandidate);
 
-    public static void NormalizeCameraList()
+    private static void NormalizeCameraList()
     {
-        HashSet<MapRoomCamera> seenInstances = new HashSet<MapRoomCamera>();
-        HashSet<NitroxId> seenIds = new HashSet<NitroxId>();
+        HashSet<MapRoomCamera> seenInstances = new();
+        HashSet<NitroxId> seenIds = new();
         int removed = 0;
         for (int i = 0; i < MapRoomCamera.cameras.Count; i++)
         {
@@ -1433,16 +1427,16 @@ public class MapRoomCameras
 
     public static void DestroyStaleLocalCamera(NitroxId cameraId)
     {
-        if (NitroxEntity.TryGetObjectFrom(cameraId, out GameObject gameObject) && gameObject &&
-            gameObject.TryGetComponent<MapRoomCamera>(out var _))
+        if (NitroxEntity.TryGetObjectFrom(cameraId, out GameObject cameraObject) && cameraObject &&
+            cameraObject.TryGetComponent(out MapRoomCamera _))
         {
             // Unity destroys the old object at the end of the frame. Detach its identity now so
             // authoritative state received while the replacement prefab yields cannot drain into it.
-            if (gameObject.TryGetComponent(out NitroxEntity nitroxEntity))
+            if (cameraObject.TryGetComponent(out NitroxEntity nitroxEntity))
             {
                 nitroxEntity.Remove();
             }
-            UnityEngine.Object.Destroy(gameObject);
+            UnityEngine.Object.Destroy(cameraObject);
         }
     }
 
@@ -1463,7 +1457,7 @@ public class MapRoomCameras
 
     internal static bool ExpectedDockCamerasReady(IReadOnlyList<bool> cameraPresence)
     {
-        if (cameraPresence.Count < 2)
+        if (cameraPresence.Count < MapRoomEntity.DOCK_COUNT)
         {
             return false;
         }
@@ -1517,33 +1511,33 @@ public class MapRoomCameras
 
     private static List<MapRoomCameraDocking> GetDockingPoints(MapRoomFunctionality mapRoom)
     {
-        List<MapRoomCameraDocking> list = new List<MapRoomCameraDocking>();
+        List<MapRoomCameraDocking> dockingPoints = new();
         if (!mapRoom)
         {
-            return list;
+            return dockingPoints;
         }
-        Base componentInParent = mapRoom.GetComponentInParent<Base>();
-        if (componentInParent)
+        Base parentBase = mapRoom.GetComponentInParent<Base>();
+        if (parentBase)
         {
-            MapRoomCameraDocking[] componentsInChildren = componentInParent.GetComponentsInChildren<MapRoomCameraDocking>(includeInactive: true);
-            foreach (MapRoomCameraDocking mapRoomCameraDocking in componentsInChildren)
+            MapRoomCameraDocking[] baseDockingPoints = parentBase.GetComponentsInChildren<MapRoomCameraDocking>(includeInactive: true);
+            foreach (MapRoomCameraDocking dockingPoint in baseDockingPoints)
             {
-                if (mapRoomCameraDocking && GetMapRoomForDock(mapRoomCameraDocking) == mapRoom)
+                if (dockingPoint && GetMapRoomForDock(dockingPoint) == mapRoom)
                 {
-                    list.Add(mapRoomCameraDocking);
+                    dockingPoints.Add(dockingPoint);
                 }
             }
         }
-        if (list.Count == 0)
+        if (dockingPoints.Count == 0)
         {
-            list.AddRange(mapRoom.GetComponentsInChildren<MapRoomCameraDocking>(includeInactive: true));
+            dockingPoints.AddRange(mapRoom.GetComponentsInChildren<MapRoomCameraDocking>(includeInactive: true));
         }
-        list.Sort((MapRoomCameraDocking a, MapRoomCameraDocking b) => CompareWorldPosition(a.transform.position, b.transform.position));
-        return list;
+        dockingPoints.Sort((MapRoomCameraDocking a, MapRoomCameraDocking b) => CompareWorldPosition(a.transform.position, b.transform.position));
+        return dockingPoints;
     }
 
     private const float DOCK_ROOM_CACHE_SECONDS = 2f;
-    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<MapRoomCameraDocking, DockRoomCacheEntry> dockRoomCache = new();
+    private static readonly ConditionalWeakTable<MapRoomCameraDocking, DockRoomCacheEntry> dockRoomCache = new();
 
     private sealed class DockRoomCacheEntry
     {
@@ -1574,25 +1568,25 @@ public class MapRoomCameras
 
     private static MapRoomFunctionality ResolveMapRoomForDock(MapRoomCameraDocking dockingPoint)
     {
-        Base componentInParent = dockingPoint.GetComponentInParent<Base>();
-        if (componentInParent)
+        Base parentBase = dockingPoint.GetComponentInParent<Base>();
+        if (parentBase)
         {
-            MapRoomFunctionality mapRoomFunctionality = null;
-            float num = float.MaxValue;
+            MapRoomFunctionality closestRoom = null;
+            float closestSqrDistance = float.MaxValue;
             Vector3 position = dockingPoint.transform.position;
-            MapRoomFunctionality[] componentsInChildren = componentInParent.GetComponentsInChildren<MapRoomFunctionality>(includeInactive: true);
-            foreach (MapRoomFunctionality mapRoomFunctionality2 in componentsInChildren)
+            MapRoomFunctionality[] rooms = parentBase.GetComponentsInChildren<MapRoomFunctionality>(includeInactive: true);
+            foreach (MapRoomFunctionality room in rooms)
             {
-                float sqrMagnitude = (mapRoomFunctionality2.transform.position - position).sqrMagnitude;
-                if (sqrMagnitude < num)
+                float sqrDistance = (room.transform.position - position).sqrMagnitude;
+                if (sqrDistance < closestSqrDistance)
                 {
-                    num = sqrMagnitude;
-                    mapRoomFunctionality = mapRoomFunctionality2;
+                    closestSqrDistance = sqrDistance;
+                    closestRoom = room;
                 }
             }
-            if (mapRoomFunctionality)
+            if (closestRoom)
             {
-                return mapRoomFunctionality;
+                return closestRoom;
             }
         }
         return dockingPoint.GetComponentInParent<MapRoomFunctionality>();
@@ -1612,7 +1606,7 @@ public class MapRoomCameras
             readback = new Texture2D(SIZE, SIZE, TextureFormat.RGB24, mipChain: false);
             readback.ReadPixels(new Rect(0f, 0f, SIZE, SIZE), 0, 0, recalculateMipMaps: false);
             readback.Apply(updateMipmaps: false, makeNoLongerReadable: false);
-            return ImageConversion.EncodeToJPG(readback, 55);
+            return ImageConversion.EncodeToJPG(readback, PREVIEW_JPEG_QUALITY);
         }
         finally
         {
@@ -1627,8 +1621,8 @@ public class MapRoomCameras
 
     private static MapRoomCamera FindCamera(NitroxId cameraId)
     {
-        if (NitroxEntity.TryGetObjectFrom(cameraId, out GameObject gameObject) && gameObject &&
-            gameObject.TryGetComponent(out MapRoomCamera camera))
+        if (NitroxEntity.TryGetObjectFrom(cameraId, out GameObject cameraObject) && cameraObject &&
+            cameraObject.TryGetComponent(out MapRoomCamera camera))
         {
             return camera;
         }
@@ -1722,11 +1716,11 @@ public class MapRoomCameras
 
     private static int CompareWorldPosition(Vector3 a, Vector3 b)
     {
-        if (Mathf.Abs(a.x - b.x) > 0.01f)
+        if (Mathf.Abs(a.x - b.x) > DOCK_POSITION_SORT_TOLERANCE)
         {
             return a.x.CompareTo(b.x);
         }
-        if (Mathf.Abs(a.y - b.y) > 0.01f)
+        if (Mathf.Abs(a.y - b.y) > DOCK_POSITION_SORT_TOLERANCE)
         {
             return a.y.CompareTo(b.y);
         }

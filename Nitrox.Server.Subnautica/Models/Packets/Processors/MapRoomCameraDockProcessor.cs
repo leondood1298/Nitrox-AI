@@ -1,11 +1,8 @@
-using System.Threading.Tasks;
 using System.Linq;
 using Nitrox.Model.DataStructures;
-using Nitrox.Model.Packets.Core;
-using Nitrox.Model.Subnautica.Packets;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
-using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
@@ -18,14 +15,6 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
     MapRoomLooseCameraState looseCameraState, MapRoomRevisionFloors revisionFloors, ILogger<MapRoomCameraDockProcessor> logger) : IAuthPacketProcessor<MapRoomCameraDock>
 {
     private const string MAP_ROOM_CAMERA_CLASS_ID = "733fd479-0760-4bc2-a03e-281cbf02bfa4";
-    private readonly EntityRegistry entityRegistry = entityRegistry;
-    private readonly WorldEntityManager worldEntityManager = worldEntityManager;
-    private readonly SimulationOwnershipData simulationOwnershipData = simulationOwnershipData;
-    private readonly MapRoomCameraControlReleaseFactory cameraControlReleaseFactory = cameraControlReleaseFactory;
-    private readonly MapRoomLifecycle roomLifecycle = roomLifecycle;
-    private readonly MapRoomCameraControlLifecycle controlLifecycle = controlLifecycle;
-    private readonly ScannerRoomDiagnostics diagnostics = diagnostics;
-    private readonly ILogger<MapRoomCameraDockProcessor> logger = logger;
     private readonly object dockingLock = new();
 
     public async Task Process(AuthProcessorContext context, MapRoomCameraDock packet)
@@ -212,7 +201,7 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
     internal static bool CanBeDocked(bool isDocked, bool entityExists, bool validWorldCamera) =>
         !isDocked || !entityExists || validWorldCamera;
     internal static bool CanBootstrapRestoredCamera(bool isDocked, bool senderOwnsRoom, bool slotAvailable, int registeredCameraCount) =>
-        isDocked && senderOwnsRoom && slotAvailable && registeredCameraCount is >= 0 and < 2;
+        isDocked && senderOwnsRoom && slotAvailable && registeredCameraCount is >= 0 and < MapRoomEntity.DOCK_COUNT;
     internal static bool ShouldPreserveControlLock(SimulationLockType lockType, bool holderIsActiveController) =>
         lockType == SimulationLockType.EXCLUSIVE && holderIsActiveController;
     internal static bool ShouldPersistLooseCamera(bool isDocked, bool entityExists, bool hasTransform) =>
@@ -220,7 +209,7 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
     internal static bool IsRequestedStateCanonical(bool isDocked, NitroxId cameraId, NitroxId? slotCameraId, bool cameraDocked) =>
         isDocked ? slotCameraId == cameraId : slotCameraId == null && !cameraDocked;
 
-    private bool TryTransferRegistration(MapRoomEntity targetRoom, Nitrox.Model.DataStructures.NitroxId cameraId)
+    private bool TryTransferRegistration(MapRoomEntity targetRoom, NitroxId cameraId)
     {
         MapRoomEntity? sourceRoom = null;
         MapRoomCameraRecord? sourceRecord = null;

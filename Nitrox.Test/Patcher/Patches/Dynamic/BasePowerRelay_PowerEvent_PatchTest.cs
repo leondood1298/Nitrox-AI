@@ -1,4 +1,4 @@
-using System.Reflection;
+using NitroxClient.GameLogic;
 using NitroxPatcher.Patches.Dynamic;
 
 namespace Nitrox.Test.Patcher.Patches.Dynamic;
@@ -7,18 +7,18 @@ namespace Nitrox.Test.Patcher.Patches.Dynamic;
 public sealed class BasePowerRelay_PowerEvent_PatchTest
 {
     [TestMethod]
-    [DataRow("TARGET_METHOD_START")]
-    [DataRow("TARGET_METHOD_POWER_DOWN_EVENT")]
-    [DataRow("TARGET_METHOD_POWER_UP_EVENT")]
-    public void PatchTargetsExistInCurrentGameAssembly(string fieldName)
+    [DataRow(typeof(BasePowerRelay_Start_Patch), false)]
+    [DataRow(typeof(BasePowerRelay_PowerDownEvent_Patch), true)]
+    [DataRow(typeof(BasePowerRelay_PowerUpEvent_Patch), true)]
+    public void PatchTargetsExistInCurrentGameAssembly(Type patchType, bool takesPowerRelay)
     {
-        FieldInfo targetField = typeof(BasePowerRelay_PowerEvent_Patch).GetField(fieldName,
+        FieldInfo targetField = patchType.GetField("TARGET_METHOD",
             BindingFlags.NonPublic | BindingFlags.Static)!;
 
         Assert.IsNotNull(targetField);
         MethodInfo targetMethod = (MethodInfo)targetField.GetValue(null)!;
         Assert.IsNotNull(targetMethod);
-        if (fieldName != "TARGET_METHOD_START")
+        if (takesPowerRelay)
         {
             ParameterInfo[] parameters = targetMethod.GetParameters();
             Assert.AreEqual(1, parameters.Length);
@@ -34,7 +34,7 @@ public sealed class BasePowerRelay_PowerEvent_PatchTest
     public void TracksOnlyMultiplayerRelaysCreatedDuringReconciliation(bool multiplayerActive,
         bool initialSyncCompleted, bool expected)
     {
-        Assert.AreEqual(expected, BasePowerRelay_PowerEvent_Patch.ShouldTrack(multiplayerActive, initialSyncCompleted));
+        Assert.AreEqual(expected, BasePowerRelayAudioSuppressor.ShouldTrack(multiplayerActive, initialSyncCompleted));
     }
 
     [TestMethod]
@@ -48,7 +48,7 @@ public sealed class BasePowerRelay_PowerEvent_PatchTest
     public void SuppressesTrackedLoadRelayOnlyUntilScaledTimeBoundary(bool tracked, bool initialSyncCompleted,
         float currentTime, float suppressUntil, bool expected)
     {
-        Assert.AreEqual(expected, BasePowerRelay_PowerEvent_Patch.ShouldSuppress(tracked, initialSyncCompleted,
+        Assert.AreEqual(expected, BasePowerRelayAudioSuppressor.ShouldSuppress(tracked, initialSyncCompleted,
             currentTime, suppressUntil));
     }
 }

@@ -1,11 +1,11 @@
 using System.Collections.Generic;
 using System.Linq;
+using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.Helper;
-using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities;
@@ -26,7 +26,7 @@ internal sealed class MapRoomDeconstructionCleanup(EntityRegistry entityRegistry
             clearedResults = new MapRoomScanResultSnapshot(mapRoom.Id, mapRoom.ScanResultGeneration, [], NitroxVector3.Zero, 0f,
                 mapRoom.ScanResultRevision, true, true);
         }
-        var subscribedSessions = subscriptions.RemoveRoom(mapRoom.Id);
+        List<SessionId> subscribedSessions = subscriptions.RemoveRoom(mapRoom.Id);
         foreach (Player player in playerManager.GetConnectedPlayers().Where(player => subscribedSessions.Contains(player.SessionId)))
         {
             await context.SendAsync(clearedResults, player.SessionId);

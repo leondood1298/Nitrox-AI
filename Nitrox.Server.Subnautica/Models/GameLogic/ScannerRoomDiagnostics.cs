@@ -1,7 +1,6 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
-using System.Threading;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
@@ -37,29 +36,29 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
 
     public ScannerRoomDiagnosticEntry RecordAccepted(string eventName, MapRoomEntity? room = null, NitroxId? cameraId = null,
         SessionId? sessionId = null, int? slot = null, string? reason = null) =>
-        Record(ScannerRoomDiagnosticOutcome.Accepted, eventName, room, cameraId, sessionId, slot, reason);
+        Record(ScannerRoomDiagnosticOutcome.ACCEPTED, eventName, room, cameraId, sessionId, slot, reason);
 
     public ScannerRoomDiagnosticEntry RecordRejected(string eventName, MapRoomEntity? room = null, NitroxId? cameraId = null,
         SessionId? sessionId = null, int? slot = null, string? reason = null) =>
-        Record(ScannerRoomDiagnosticOutcome.Rejected, eventName, room, cameraId, sessionId, slot, reason);
+        Record(ScannerRoomDiagnosticOutcome.REJECTED, eventName, room, cameraId, sessionId, slot, reason);
 
     public ScannerRoomDiagnosticEntry RecordInvariantFailure(string eventName, MapRoomEntity? room = null, NitroxId? cameraId = null,
         SessionId? sessionId = null, int? slot = null, string? reason = null) =>
-        Record(ScannerRoomDiagnosticOutcome.InvariantFailure, eventName, room, cameraId, sessionId, slot, reason);
+        Record(ScannerRoomDiagnosticOutcome.INVARIANT_FAILURE, eventName, room, cameraId, sessionId, slot, reason);
 
     public ScannerRoomDiagnosticEntry RecordCheckpoint(string eventName, MapRoomEntity room, string? reason = null)
     {
         string? invariantFailure = ScannerRoomStateFingerprint.Validate(room);
         return invariantFailure == null
-            ? Record(ScannerRoomDiagnosticOutcome.Checkpoint, eventName, room, reason: reason)
-            : Record(ScannerRoomDiagnosticOutcome.InvariantFailure, $"{eventName}_invalid", room, reason: invariantFailure);
+            ? Record(ScannerRoomDiagnosticOutcome.CHECKPOINT, eventName, room, reason: reason)
+            : Record(ScannerRoomDiagnosticOutcome.INVARIANT_FAILURE, $"{eventName}_invalid", room, reason: invariantFailure);
     }
 
     public ScannerRoomDiagnosticEntry RecordCapturedCheckpoint(string eventName, MapRoomEntity room,
         ScannerRoomStateSnapshot snapshot, string? invariantFailure, string? reason = null) =>
         invariantFailure == null
-            ? Record(ScannerRoomDiagnosticOutcome.Checkpoint, eventName, room, reason: reason, capturedSnapshot: snapshot)
-            : Record(ScannerRoomDiagnosticOutcome.InvariantFailure, $"{eventName}_invalid", room,
+            ? Record(ScannerRoomDiagnosticOutcome.CHECKPOINT, eventName, room, reason: reason, capturedSnapshot: snapshot)
+            : Record(ScannerRoomDiagnosticOutcome.INVARIANT_FAILURE, $"{eventName}_invalid", room,
                 reason: invariantFailure, capturedSnapshot: snapshot);
 
     public IReadOnlyList<ScannerRoomDiagnosticEntry> GetHistory()
@@ -96,7 +95,7 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
             {
                 dockingRevision = room.DockingRevision;
                 cameraCount = room.CameraRegistry.Count;
-                if (outcome is ScannerRoomDiagnosticOutcome.Checkpoint or ScannerRoomDiagnosticOutcome.InvariantFailure)
+                if (outcome is ScannerRoomDiagnosticOutcome.CHECKPOINT or ScannerRoomDiagnosticOutcome.INVARIANT_FAILURE)
                 {
                     snapshot = ScannerRoomStateFingerprint.Create(room);
                 }
@@ -126,12 +125,12 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
             }
             history.Enqueue(entry);
             string line = entry.Format();
-            if (outcome == ScannerRoomDiagnosticOutcome.InvariantFailure)
+            if (outcome == ScannerRoomDiagnosticOutcome.INVARIANT_FAILURE)
             {
                 // Invariants are rare correctness failures. Never let a preceding rejection burst hide one.
                 logger.ZLogWarning($"{line}");
             }
-            else if (outcome == ScannerRoomDiagnosticOutcome.Rejected)
+            else if (outcome == ScannerRoomDiagnosticOutcome.REJECTED)
             {
                 if (ShouldLogWarning(entry))
                 {
@@ -175,16 +174,16 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
     {
         switch (outcome)
         {
-            case ScannerRoomDiagnosticOutcome.Accepted:
+            case ScannerRoomDiagnosticOutcome.ACCEPTED:
                 accepted++;
                 break;
-            case ScannerRoomDiagnosticOutcome.Rejected:
+            case ScannerRoomDiagnosticOutcome.REJECTED:
                 rejected++;
                 break;
-            case ScannerRoomDiagnosticOutcome.InvariantFailure:
+            case ScannerRoomDiagnosticOutcome.INVARIANT_FAILURE:
                 invariantFailures++;
                 break;
-            case ScannerRoomDiagnosticOutcome.Checkpoint:
+            case ScannerRoomDiagnosticOutcome.CHECKPOINT:
                 checkpoints++;
                 break;
             default:
@@ -234,10 +233,10 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
 
 internal enum ScannerRoomDiagnosticOutcome
 {
-    Accepted,
-    Rejected,
-    InvariantFailure,
-    Checkpoint
+    ACCEPTED,
+    REJECTED,
+    INVARIANT_FAILURE,
+    CHECKPOINT
 }
 
 internal readonly record struct ScannerRoomDiagnosticCounters(
@@ -271,10 +270,10 @@ internal readonly record struct ScannerRoomDiagnosticEntry(
 
     private string OutcomeToken() => Outcome switch
     {
-        ScannerRoomDiagnosticOutcome.Accepted => "ok",
-        ScannerRoomDiagnosticOutcome.Rejected => "reject",
-        ScannerRoomDiagnosticOutcome.InvariantFailure => "invariant",
-        ScannerRoomDiagnosticOutcome.Checkpoint => "checkpoint",
+        ScannerRoomDiagnosticOutcome.ACCEPTED => "ok",
+        ScannerRoomDiagnosticOutcome.REJECTED => "reject",
+        ScannerRoomDiagnosticOutcome.INVARIANT_FAILURE => "invariant",
+        ScannerRoomDiagnosticOutcome.CHECKPOINT => "checkpoint",
         _ => throw new ArgumentOutOfRangeException(nameof(Outcome), Outcome, null)
     };
 

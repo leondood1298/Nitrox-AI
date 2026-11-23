@@ -1,6 +1,5 @@
 using System.Threading.Tasks;
 using Nitrox.Model.DataStructures;
-using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;

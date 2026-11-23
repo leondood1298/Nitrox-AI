@@ -8,8 +8,7 @@ namespace NitroxPatcher.Patches.Dynamic;
 
 public sealed partial class MapRoomCamera_CaptureScreenAndExitLockedMode_Patch : NitroxPatch, IDynamicPatch
 {
-    private static readonly MethodInfo TARGET_METHOD = typeof(MapRoomCamera).GetMethod(
-        "CaptureScreenAndExitLockedMode", BindingFlags.Instance | BindingFlags.NonPublic);
+    private static readonly MethodInfo TARGET_METHOD = Reflect.Method((MapRoomCamera t) => t.CaptureScreenAndExitLockedMode());
 
     public static IEnumerator Postfix(IEnumerator __result, MapRoomCamera __instance) =>
         PublishAfterCapturedFrame(__result, () => Resolve<MapRoomCameras>().BroadcastPreview(__instance));

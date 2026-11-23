@@ -21,6 +21,7 @@ internal class PlayerSyncFinishedProcessor(SessionManager sessionManager, Joinin
             await hibernateService.WakeAsync();
         }
 
+        context.Sender.HasFinishedInitialSync = true;
         joiningManager.SyncFinishedCallback?.Invoke();
 
         // The world and the other players exist on the joining client now, so it can show who is lying in bed.

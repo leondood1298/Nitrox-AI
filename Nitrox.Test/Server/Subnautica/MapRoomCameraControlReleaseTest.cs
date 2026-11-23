@@ -1,4 +1,3 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Nitrox.Server.Subnautica.Models.Packets.Processors;
 
 namespace Nitrox.Test.Server.Subnautica;

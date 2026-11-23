@@ -1,12 +1,10 @@
-using System;
 using System.Reflection;
-using Nitrox.Model.Helper;
 
 namespace NitroxPatcher.Patches.Dynamic;
 
 public sealed partial class Charger_OnUnequip_Patch : NitroxPatch, IDynamicPatch
 {
-    private static readonly MethodInfo TARGET_METHOD = Reflect.Method((Charger t) => t.OnUnequip((string)null, (InventoryItem)null));
+    private static readonly MethodInfo TARGET_METHOD = Reflect.Method((Charger t) => t.OnUnequip(default, default));
 
     public static void Postfix(Charger __instance)
     {

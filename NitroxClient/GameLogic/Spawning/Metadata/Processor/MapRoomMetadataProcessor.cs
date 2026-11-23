@@ -1,6 +1,4 @@
-using Nitrox.Model.Logger;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
-using Nitrox.Model.Subnautica.Extensions;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication;
 using NitroxClient.GameLogic.Spawning.Metadata.Processor.Abstract;
@@ -13,28 +11,28 @@ public class MapRoomMetadataProcessor : EntityMetadataProcessor<MapRoomMetadata>
 {
     public override void ProcessMetadata(GameObject gameObject, MapRoomMetadata metadata)
     {
-        if (!gameObject.TryGetComponent<MapRoomFunctionality>(out var component))
+        if (!gameObject.TryGetComponent(out MapRoomFunctionality mapRoom))
         {
             Log.Error($"Could not find MapRoomFunctionality on {gameObject.name}");
             return;
         }
         TechType techType = metadata.TypeToScan.ToUnity();
-        bool flag = component.typeToScan != techType;
+        bool targetChanged = mapRoom.typeToScan != techType;
         MapRoomNetworkState state = gameObject.EnsureComponent<MapRoomNetworkState>();
         if (metadata.Generation < state.Generation || metadata.Revision < state.Revision)
         {
             Log.Warn($"Ignoring stale Map Room metadata for {gameObject.name}: incoming generation/revision {metadata.Generation}/{metadata.Revision}, current {state.Generation}/{state.Revision}");
             return;
         }
-        bool applyScanningState = ShouldApplyScanningState(state.MetadataInitialized, flag);
+        bool applyScanningState = ShouldApplyScanningState(state.MetadataInitialized, targetChanged);
         bool generationAdvanced = metadata.Generation > state.Generation;
         using (PacketSuppressor<EntityMetadataUpdate>.Suppress())
         {
             if (applyScanningState)
             {
-                component.StartScanning(techType);
+                mapRoom.StartScanning(techType);
             }
-            component.numNodesScanned = metadata.NumNodesScanned;
+            mapRoom.numNodesScanned = metadata.NumNodesScanned;
         }
         state.MetadataInitialized = true;
         if (generationAdvanced)
@@ -43,13 +41,13 @@ public class MapRoomMetadataProcessor : EntityMetadataProcessor<MapRoomMetadata>
         }
         state.Generation = metadata.Generation;
         state.Revision = metadata.Revision;
-        MapRoomScanResults.RefreshResultConsumers(component);
+        MapRoomScanResults.RefreshResultConsumers(mapRoom);
         if (applyScanningState)
         {
-            uGUI_MapRoomScanner componentInChildren = component.GetComponentInChildren<uGUI_MapRoomScanner>(includeInactive: true);
-            if (componentInChildren)
+            uGUI_MapRoomScanner scanner = mapRoom.GetComponentInChildren<uGUI_MapRoomScanner>(includeInactive: true);
+            if (scanner)
             {
-                componentInChildren.UpdateGUIState();
+                scanner.UpdateGUIState();
             }
         }
     }

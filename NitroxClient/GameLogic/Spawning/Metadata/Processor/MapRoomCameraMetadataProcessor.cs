@@ -1,7 +1,6 @@
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Packets;
-using NitroxClient.Extensions;
 using NitroxClient.GameLogic.Spawning.Metadata.Processor.Abstract;
 using UnityEngine;
 
