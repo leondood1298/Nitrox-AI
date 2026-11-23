@@ -25,8 +25,9 @@ internal sealed class BasePowerSourceConsumeProcessor(SimulationOwnership simula
             return Task.CompletedTask;
         }
 
-        // Negative amount consumes. The game clamps at zero and ignores it in modes without power requirements.
-        powerSource.ModifyPower(-packet.Amount, out _);
+        // Not ModifyPower: the game ignores that in modes without power requirements, and the player who took this
+        // energy needs it accounted for even when a Creative player simulates the source. SetPower clamps at zero.
+        powerSource.SetPower(BasePowerSources.LevelAfterDraw(powerSource.power, packet.Amount));
         return Task.CompletedTask;
     }
 }
