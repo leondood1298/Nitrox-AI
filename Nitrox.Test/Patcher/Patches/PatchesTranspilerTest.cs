@@ -35,6 +35,7 @@ public class PatchesTranspilerTest
         [typeof(CrashHome_Update_Patch), -5],
         [typeof(Creature_ProcessInfection_Patch), 1],
         [typeof(Creature_UpdateBehaviour_Patch), 0],
+        [typeof(Creature_ScanCreatureActions_Patch), 0],
         [typeof(CreatureDeath_OnKillAsync_Patch), 5],
         [typeof(CreatureDeath_SpawnRespawner_Patch), 2],
         [typeof(CyclopsDestructionEvent_DestroyCyclops_Patch), 3],
