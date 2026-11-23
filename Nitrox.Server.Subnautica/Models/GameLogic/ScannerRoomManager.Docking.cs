@@ -1,5 +1,4 @@
 using System.Linq;
-using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
@@ -49,17 +48,9 @@ internal sealed partial class ScannerRoomManager
         // The player who flew the camera in keeps control while it is docked, as in the game. Any other exclusive
         // lock was taken for something that ended with the dock (a Stalker carrying the camera); its holder goes
         // on simulating the camera like any other entity.
-        if (simulationOwnershipData.TryGetLock(worldCamera.Id, out SimulationOwnershipData.PlayerLock playerLock) && playerLock.LockType == SimulationLockType.EXCLUSIVE &&
-            !IsController(worldCamera.Id, playerLock.Player.SessionId))
+        if (simulationOwnershipData.TryGetLock(worldCamera.Id, out SimulationOwnershipData.PlayerLock playerLock) && !IsController(worldCamera.Id, playerLock.Player.SessionId))
         {
-            if (TryCreateControlRelease(worldCamera.Id, playerLock, "dock", out MapRoomCameraControl? release))
-            {
-                await SendToAllAsync(release);
-            }
-            if (EndControlLock(worldCamera.Id, playerLock.Player) is { } keptSimulation)
-            {
-                await SendToAllAsync(keptSimulation);
-            }
+            await GiveUpExclusiveLockAsync(worldCamera.Id, playerLock.Player);
         }
         await SendToOthersAsync(sender, packet);
         return true;
@@ -132,7 +123,7 @@ internal sealed partial class ScannerRoomManager
     /// <summary>
     ///     Makes a camera a child of a room, or an entity without a parent. Only the entity tree changes: the camera's
     ///     transform stays a place in the world, as in the game, which does not put a docked camera under its room
-    ///     either. <see cref="EntityRegistry.ReparentEntity(Entity, Entity)" /> would make it relative to the transform
+    ///     either. <c>EntityRegistry.ReparentEntity</c> would make it relative to the transform
     ///     of the room entity, which is empty and cannot be inverted, and leave the camera without a position.
     /// </summary>
     private void SetParent(WorldEntity camera, MapRoomEntity? room)

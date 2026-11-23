@@ -236,14 +236,14 @@ public sealed class ScannerRoomManagerDockingTest
     {
         ScannerRoomScenarioFixture scenario = new();
         Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, cameraA, 0, true)).Granted);
-        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, cameraA, 0, true)).Granted);
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, cameraA, true)).Granted);
 
         ScannerRoomScenarioFixture.DockResult undocked = await scenario.DockAsync(scenario.PlayerA, cameraA, 0, false, establishAuthority: false);
         ScannerRoomScenarioFixture.DockResult docked = await scenario.DockAsync(scenario.PlayerA, cameraA, 1, true, establishAuthority: false);
 
         Assert.IsTrue(undocked.Granted);
         Assert.IsTrue(docked.Granted);
-        Assert.AreEqual(0, undocked.Sent.Concat(docked.Sent).OfType<MapRoomCameraControl>().Count(), "Nobody may be told that control ended.");
+        Assert.AreEqual(0, undocked.Sent.Concat(docked.Sent).OfType<MapRoomCameraControlChanged>().Count(), "Nobody may be told that control ended.");
         AssertLock(scenario, cameraA, scenario.PlayerA, SimulationLockType.EXCLUSIVE);
         Assert.IsTrue(scenario.IsController(cameraA, scenario.PlayerA.SessionId));
     }
@@ -506,13 +506,13 @@ public sealed class ScannerRoomManagerDockingTest
     {
         ScannerRoomScenarioFixture scenario = new();
         Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, cameraA, 0, true)).Granted);
-        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerB, cameraA, 0, true)).Granted);
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerB, cameraA, true)).Granted);
         Assert.IsTrue(scenario.EntityRegistry.RemoveEntity(scenario.Room.Id).HasValue);
 
         List<Packet> sent = [.. await scenario.CleanupAsync(scenario.Room)];
 
-        MapRoomCameraControl release = sent.OfType<MapRoomCameraControl>().Single();
-        Assert.AreEqual((cameraA, false, scenario.PlayerB.SessionId), (release.CameraId, release.IsControlling, release.ControllerSessionId));
+        MapRoomCameraControlChanged release = sent.OfType<MapRoomCameraControlChanged>().Single();
+        Assert.AreEqual((cameraA, false, scenario.PlayerB.SessionId), (release.CameraId, release.IsControlling, release.SessionId));
         Assert.IsTrue(sent.IndexOf(release) < sent.FindIndex(packet => packet is EntityDestroyed), "Players hear that control ended before they hear that the camera is gone.");
         Assert.IsFalse(scenario.HasController(cameraA));
         Assert.IsNull(scenario.Ownership.GetPlayerForLock(cameraA));

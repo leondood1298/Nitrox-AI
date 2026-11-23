@@ -34,6 +34,11 @@ internal sealed partial class ScannerRoomManager
     private readonly HashSet<(NitroxId RoomId, SessionId SessionId)> subscribers = [];
 
     /// <summary>
+    ///     The rooms for which <see cref="RejectFabricatorStateForRoom" /> has written its line.
+    /// </summary>
+    private readonly HashSet<NitroxId> roomsSentFabricatorState = [];
+
+    /// <summary>
     ///     The gate for a room's scan target and scan progress. Any player who sees the room may choose a target; only
     ///     its simulating player reports progress. A new target goes to everyone, the sender included, because the
     ///     server sets its generation; progress only goes to the others. A sender that is refused has already applied
@@ -79,6 +84,22 @@ internal sealed partial class ScannerRoomManager
         }
         diagnostics.RecordAccepted("scan_target", room, sessionId: sender.SessionId, reason: accepted.TypeToScan?.Name ?? "none");
         return MetadataUpdateResult.AcceptAndEcho(accepted);
+    }
+
+    /// <summary>
+    ///     The gate for crafting state sent for a room itself: always shut. The room's fabricator is a child entity
+    ///     with an id of its own. A client that names the room instead has not found the fabricator in its game, and
+    ///     stored as the room's metadata the crafting state would replace what the room scans for.
+    /// </summary>
+    public MetadataUpdateResult RejectFabricatorStateForRoom(Player sender, MapRoomEntity room)
+    {
+        using Hold held = Enter();
+        // Once per room: the client sends this with every craft, and it is the same mistake every time.
+        if (roomsSentFabricatorState.Add(room.Id))
+        {
+            diagnostics.RecordRejected("fabricator", room, sessionId: sender.SessionId, reason: "sent_for_room");
+        }
+        return MetadataUpdateResult.Reject;
     }
 
     /// <summary>

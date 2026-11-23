@@ -31,6 +31,7 @@ public sealed class EntityMetadataUpdateProcessorTest
     private EntityRegistry entityRegistry;
     private SimulationOwnershipData simulationOwnershipData;
     private BasePowerDiagnostics diagnostics;
+    private ScannerRoomDiagnostics scannerDiagnostics;
     private EntityMetadataUpdateProcessor processor;
     private IPacketSender packetSender;
     private Player simulator;
@@ -46,8 +47,8 @@ public sealed class EntityMetadataUpdateProcessorTest
         diagnostics = new BasePowerDiagnostics();
         BasePowerManager basePowerManager = new(entityRegistry, simulationOwnershipData, diagnostics, NullLogger<BasePowerManager>.Instance);
         packetSender = Substitute.For<IPacketSender>();
-        ScannerRoomManager scannerRoomManager = ScannerRoomScenarioFixture.CreateManager(entityRegistry, simulationOwnershipData,
-            new ScannerRoomDiagnostics(NullLogger<ScannerRoomDiagnostics>.Instance), packetSender, players.PlayerManager);
+        scannerDiagnostics = new ScannerRoomDiagnostics(NullLogger<ScannerRoomDiagnostics>.Instance);
+        ScannerRoomManager scannerRoomManager = ScannerRoomScenarioFixture.CreateManager(entityRegistry, simulationOwnershipData, scannerDiagnostics, packetSender, players.PlayerManager);
         processor = new EntityMetadataUpdateProcessor(players.PlayerManager, entityRegistry, simulationOwnershipData, scannerRoomManager, basePowerManager,
             NullLogger<EntityMetadataUpdateProcessor>.Instance);
         simulator = players.Connect("Simulator");
@@ -317,6 +318,22 @@ public sealed class EntityMetadataUpdateProcessorTest
         Assert.AreSame(crafting, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, simulator).Single().NewValue);
         Assert.AreSame(crafting, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, thirdPlayer).Single().NewValue);
         Assert.AreEqual(0, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, otherPlayer).Count);
+    }
+
+    [TestMethod]
+    public async Task FabricatorStateSentForTheRoomItselfIsRefusedAndTheRoomKeepsItsScanState()
+    {
+        // What a client would send if it took the room's object for its fabricator.
+        MapRoomEntity room = AddRoom(new MapRoomMetadata(quartz, 4, 2), simulator);
+        MapRoomMetadata scanState = (MapRoomMetadata)room.Metadata;
+
+        await Send(simulator, room, new CrafterMetadata(new NitroxTechType("MapRoomHUDChip"), 12.5f, 4f, 1, 0));
+        await Send(simulator, room, new CrafterMetadata(new NitroxTechType("MapRoomHUDChip"), 20f, 4f, 1, 0));
+
+        Assert.AreSame(scanState, room.Metadata, "Stored on the room, the crafting state would replace what the room scans for.");
+        Assert.AreEqual(0, packetSender.ReceivedCalls().Count());
+        ScannerRoomDiagnosticEntry recorded = scannerDiagnostics.GetHistory().Single();
+        Assert.AreEqual(("fabricator", ScannerRoomDiagnosticOutcome.REJECTED, "sent_for_room"), (recorded.EventName, recorded.Outcome, recorded.Reason), "Written once, however often it is sent.");
     }
 
     [TestMethod]

@@ -237,7 +237,7 @@ public sealed class VehicleMovementsPacketProcessorAuthorityTest
             NitroxVector3.Zero, NitroxQuaternion.Identity);
 
         Assert.IsTrue((await test.Scenario.ControlAsync(
-            test.Scenario.PlayerA, cameraId, 0, true)).Granted);
+            test.Scenario.PlayerA, cameraId, true)).Granted);
         SimpleMovementData authorizedMovement = CreateMovement(cameraId, 7.3f);
         await test.Processor.Process(
             new AuthProcessorContext(test.Scenario.PlayerA, test.Sender),

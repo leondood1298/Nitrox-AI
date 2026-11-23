@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication.Abstract;
@@ -80,6 +81,8 @@ public class SimulationOwnership
         simulatedIdsByLockType.Remove(id);
     }
 
+    public bool IsLocalPlayer(SessionId sessionId) => multiplayerSession.Reservation.SessionId == sessionId;
+
     public void TreatSimulatedEntity(SimulatedEntity simulatedEntity)
     {
         bool isLocalPlayerNewOwner = multiplayerSession.Reservation.SessionId == simulatedEntity.SessionId;
@@ -108,7 +111,11 @@ public class SimulationOwnership
             }
 
             StopSimulatingEntity(simulatedEntity.Id);
-            EntityPositionBroadcaster.Instance.StopWatchingEntity(simulatedEntity.Id);
+            // As for a drop, this can arrive before the broadcaster exists (while joining)
+            if (EntityPositionBroadcaster.Instance)
+            {
+                EntityPositionBroadcaster.Instance.StopWatchingEntity(simulatedEntity.Id);
+            }
         }
 
         // Avoid keeping artifacts of the entity's previous ChangesPosition state

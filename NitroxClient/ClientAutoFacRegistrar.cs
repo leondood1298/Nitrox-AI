@@ -115,7 +115,7 @@ namespace NitroxClient
             containerBuilder.RegisterType<MapRoomCameras>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<MapRoomCameraStates>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<MapRoomCameraDocks>().InstancePerLifetimeScope();
-            containerBuilder.RegisterType<StalkerCameraLockPurposeTracker>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<StalkerCameraGrabs>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<ScannerRoomClientDiagnostics>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<MapRoomScans>().InstancePerLifetimeScope();
             containerBuilder.Register(_ => FMODWhitelist.Load(GameInfo.Subnautica)).InstancePerLifetimeScope();

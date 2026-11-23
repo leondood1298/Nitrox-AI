@@ -204,7 +204,7 @@ public sealed class ScannerRoomManagerCameraStateTest
         // must not go on recharging it against the controller's reports.
         ScannerRoomScenarioFixture scenario = new();
         Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, cameraId, 0, true)).Granted);
-        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerB, cameraId, 0, true)).Granted);
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerB, cameraId, true)).Granted);
 
         await scenario.ReportCameraAsync(scenario.PlayerA, cameraId, energy: 90f);
         Assert.AreEqual(MapRoomCameraMetadata.MAX_ENERGY, scenario.CameraState(cameraId).Energy);
@@ -212,7 +212,7 @@ public sealed class ScannerRoomManagerCameraStateTest
         Assert.AreEqual(80f, scenario.CameraState(cameraId).Energy);
 
         // After the release the controller goes on simulating the camera, in its dock or out of it.
-        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerB, cameraId, 0, false)).Granted);
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerB, cameraId, false)).Granted);
         await scenario.ReportCameraAsync(scenario.PlayerB, cameraId, energy: 85f);
         Assert.AreEqual(85f, scenario.CameraState(cameraId).Energy);
     }
@@ -242,7 +242,7 @@ public sealed class ScannerRoomManagerCameraStateTest
         Assert.IsFalse(scenario.CameraState(cameraId).LightOn);
         Assert.IsFalse(((MapRoomCameraMetadata)((EntityMetadataUpdate)fromSimulator.Single()).NewValue).LightOn, "Their camera shows a light nobody else sees, so they are corrected.");
 
-        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerB, cameraId, 0, true)).Granted);
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerB, cameraId, true)).Granted);
         IReadOnlyList<Packet> fromController = await scenario.ReportCameraAsync(scenario.PlayerB, cameraId, lightOn: true);
 
         Assert.IsTrue(scenario.CameraState(cameraId).LightOn);

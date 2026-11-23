@@ -73,7 +73,7 @@ public sealed class DiagnosticsCommandsTest
         ScannerRoomScenarioFixture scenario = new();
         Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.RoomId, scenario.PlayerA, SimulationLockType.TRANSIENT));
         Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
-        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerB, ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerB, ScannerRoomScenarioFixture.CameraAId, true)).Granted);
         ScannerRoomDiagnostics diagnostics = new(NullLogger<ScannerRoomDiagnostics>.Instance, scenario.Ownership);
 
         string output = await RunAsync(CreateScannerRoomCommand(scenario, diagnostics));

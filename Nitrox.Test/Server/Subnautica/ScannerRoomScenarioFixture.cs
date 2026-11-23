@@ -256,46 +256,41 @@ internal sealed class ScannerRoomScenarioFixture
     internal bool IsDocked(NitroxId cameraId) =>
         EntityRegistry.TryGetEntityById(cameraId, out Entity camera) && camera.ParentId != null && EntityRegistry.TryGetEntityById(camera.ParentId, out MapRoomEntity _);
 
-    internal Task<MapRoomCameraControl> ControlAsync(ServerPlayer player, NitroxId cameraId, int slot, bool isControlling) =>
-        ControlAnswerAsync(player, new MapRoomCameraControl(cameraId, RoomId, slot, isControlling, false));
-
-    internal Task<MapRoomCameraControl> ControlLooseAsync(ServerPlayer player, NitroxId cameraId, bool isControlling) =>
-        ControlAnswerAsync(player, new MapRoomCameraControl(cameraId, Optional.Empty, -1, isControlling, false));
-
     /// <summary>
-    ///     Taking a camera can also end control of the camera the player had before, which is announced in the same go.
+    ///     Takes or gives up control of a camera the way a client does. To take it, the player asks for the camera's
+    ///     exclusive lock through the real lock request processor and, once it has it, says that it controls the
+    ///     camera. To give it up, the player says so and asks for an ordinary lock.
     /// </summary>
-    private async Task<MapRoomCameraControl> ControlAnswerAsync(ServerPlayer player, MapRoomCameraControl request)
+    internal async Task<ControlResult> ControlAsync(ServerPlayer player, NitroxId cameraId, bool isControlling)
     {
-        int alreadySent = PacketSender.ReceivedCalls().Count();
-        await Manager.SetControlAsync(player, request);
-        return Answer<MapRoomCameraControl>(alreadySent, player, packet => packet.CameraId == request.CameraId && packet.IsControlling == request.IsControlling);
-    }
-
-    /// <summary>
-    ///     The answer to a request of <paramref name="player" /> among what was sent since it was made. Other requests
-    ///     may have been answered in that time: a refusal goes to the player who asked alone, anything else to everyone
-    ///     and names the player it is about.
-    /// </summary>
-    private T Answer<T>(int alreadySent, ServerPlayer player, Func<T, bool> isAnswer) where T : Packet
-    {
-        List<NSubstitute.Core.ICall> calls = PacketSender.ReceivedCalls().Skip(alreadySent).ToList();
-        List<T> refusals = calls.Where(call => call.GetMethodInfo().Name == nameof(IPacketSender.SendPacketAsync) && Equals(call.GetArguments()[1], player.SessionId))
-                                .Select(call => call.GetArguments()[0]).OfType<T>().Where(isAnswer).ToList();
-        if (refusals.Count > 0)
+        int alreadySent = SentPackets().Count;
+        bool granted;
+        if (isControlling)
         {
-            return refusals.Single();
+            if ((await RequestOwnershipAsync(player, cameraId, SimulationLockType.EXCLUSIVE)).LockAcquired)
+            {
+                await Manager.SetControlAsync(player, new MapRoomCameraControlChanged(cameraId, player.SessionId, true));
+            }
+            granted = IsController(cameraId, player.SessionId);
         }
-        return calls.Where(call => call.GetMethodInfo().Name == nameof(IPacketSender.SendPacketToAllAsync))
-                    .Select(call => call.GetArguments()[0]).OfType<T>()
-                    .Single(packet => isAnswer(packet) && (packet is not MapRoomCameraControl control || control.ControllerSessionId == player.SessionId));
+        else
+        {
+            granted = IsController(cameraId, player.SessionId);
+            await Manager.SetControlAsync(player, new MapRoomCameraControlChanged(cameraId, player.SessionId, false));
+            if (Ownership.TryGetLock(cameraId, out SimulationOwnershipData.PlayerLock heldLock) && heldLock.Player == player && heldLock.LockType == SimulationLockType.EXCLUSIVE)
+            {
+                await RequestOwnershipAsync(player, cameraId, SimulationLockType.TRANSIENT);
+            }
+        }
+        return new ControlResult(granted, Manager.TryGetController(cameraId, out SessionId controller) ? controller : null, SentPackets().Skip(alreadySent).ToList());
     }
 
     /// <summary>
-    ///     Everything the server sends in answer to a control packet, for tests that look beyond the control response.
+    ///     Says that a player controls a camera, or no longer does, without asking for the lock: what the server
+    ///     answers when the lock is not what the player claims.
     /// </summary>
-    internal Task<IReadOnlyList<Packet>> ControlPacketsAsync(ServerPlayer player, MapRoomCameraControl packet) =>
-        SentDuringAsync(() => Manager.SetControlAsync(player, packet));
+    internal Task<IReadOnlyList<Packet>> ControlChangedAsync(ServerPlayer player, NitroxId cameraId, bool isControlling) =>
+        SentDuringAsync(() => Manager.SetControlAsync(player, new MapRoomCameraControlChanged(cameraId, player.SessionId, isControlling)));
 
     /// <summary>
     ///     What deconstructing a room sends, once the room has left the entity registry.
@@ -363,8 +358,8 @@ internal sealed class ScannerRoomScenarioFixture
     /// <summary>
     ///     What a player is told about camera control once their initial sync has finished.
     /// </summary>
-    internal async Task<IReadOnlyList<MapRoomCameraControl>> JoinedPlayerControlGrantsAsync(SessionId joinedSessionId) =>
-        (await SentDuringAsync(() => Manager.SendControlGrantsAsync(joinedSessionId))).Cast<MapRoomCameraControl>().ToList();
+    internal Task<IReadOnlyList<Packet>> JoinedPlayerControlGrantsAsync(SessionId joinedSessionId) =>
+        SentDuringAsync(() => Manager.SendControlGrantsAsync(joinedSessionId));
 
     /// <summary>
     ///     Runs the simulation cleanup of a player who left.
@@ -425,6 +420,11 @@ internal sealed class ScannerRoomScenarioFixture
             Assert.IsTrue(EntityRegistry.TryGetEntityById(camera.Id, out Entity registered) && ReferenceEquals(registered, camera), Snapshot());
         }
     }
+
+    /// <param name="Granted">Whether the player controls the camera now (or, for a release, did before it).</param>
+    /// <param name="Controller">The player the server has on record as controlling the camera afterwards.</param>
+    /// <param name="Sent">Everything the server sent in answer, to whomever.</param>
+    internal readonly record struct ControlResult(bool Granted, SessionId? Controller, IReadOnlyList<Packet> Sent);
 
     /// <param name="Granted">Whether the server took the report over.</param>
     /// <param name="State">What the server holds for the camera after the report.</param>

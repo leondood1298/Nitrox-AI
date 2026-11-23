@@ -4,7 +4,6 @@ using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
-using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 
 namespace Nitrox.Test.Server.Subnautica;
@@ -103,7 +102,7 @@ public sealed class EntitySimulationLockProtectionTest
     {
         ScannerRoomScenarioFixture scenario = new();
         Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
-        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, true)).Granted);
 
         Assert.IsTrue(scenario.Manager.IsControlledBy(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA));
         Assert.IsFalse(scenario.Manager.IsControlledBy(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerB));
