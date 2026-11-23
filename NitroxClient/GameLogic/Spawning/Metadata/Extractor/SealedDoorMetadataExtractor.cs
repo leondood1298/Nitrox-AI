@@ -12,6 +12,11 @@ public class SealedDoorMetadataExtractor : EntityMetadataExtractor<Sealed, Entit
         {
             return Resolve<StarshipDoorMetadataExtractor>().Extract(door);
         }
+        // Same for a crate that has to be cut open
+        if (entity.TryGetComponent(out SupplyCrate crate))
+        {
+            return Resolve<SupplyCrateMetadataExtractor>().Extract(crate);
+        }
 
         return new SealedDoorMetadata(entity._sealed, entity.openedAmount);
     }

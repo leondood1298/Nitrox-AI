@@ -214,7 +214,8 @@ internal sealed class JoiningManager(
             player.InPrecursor,
             player.DisplaySurfaceWater,
             options.Value.MarkDeathPointsWithBeacon,
-            activeTeleporters.GetAll()
+            activeTeleporters.GetAll(),
+            player.UnreadPdaNotifications.ToList()
         );
 
         await packetSender.SendPacketAsync(initialPlayerSync, player.SessionId);
