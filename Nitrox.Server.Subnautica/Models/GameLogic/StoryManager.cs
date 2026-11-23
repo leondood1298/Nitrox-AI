@@ -13,6 +13,16 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic;
 /// </summary>
 internal sealed class StoryManager : ISummarize
 {
+    /// <summary>
+    ///     Completed when a player disables the Sunbeam gun (StoryGoalCustomEventHandler.gunDeactivate).
+    /// </summary>
+    public const string GUN_DISABLED_GOAL = "Goal_Disable_Gun";
+
+    /// <summary>
+    ///     The radio message that starts the Sunbeam landing countdown when played.
+    /// </summary>
+    public const string SUNBEAM_LAST_RADIO_MESSAGE = "RadioSunbeam4";
+
     private readonly ILogger<StoryManager> logger;
     private readonly IOptions<SubnauticaServerOptions> options;
     private readonly PdaManager pdaManager;
@@ -46,6 +56,8 @@ internal sealed class StoryManager : ISummarize
         this.logger = logger;
 
         timeService.TimeSkipped += ReadjustAuroraRealExplosionTime;
+        // A skip moves AuroraRealExplosionTime, which only AuroraAndTimeUpdate carries to the connected players
+        timeService.MakeTimeSkipPacket = () => new AuroraAndTimeUpdate(GetTimeData(), false);
     }
 
     public void ReadjustAuroraRealExplosionTime(TimeSpan skippedTime)
@@ -92,7 +104,8 @@ internal sealed class StoryManager : ISummarize
         await packetSender.SendPacketToAllAsync(new AuroraAndTimeUpdate(GetTimeData(), false));
     }
 
-    public async Task BroadcastRestoreAurora()
+    /// <param name="storyScheduler">Passed in because the scheduler depends on this class.</param>
+    public async Task BroadcastRestoreAurora(StoryScheduler storyScheduler)
     {
         AuroraWarningTimeMs = timeService.GameTime.TotalMilliseconds;
         AuroraCountdownTimeMs = GenerateDeterministicAuroraTime(options.Value.Seed);
@@ -104,6 +117,8 @@ internal sealed class StoryManager : ISummarize
         {
             pdaManager.RemovePdaLogsByKey(eventKey);
             StoryGoalData.CompletedGoals.Remove(eventKey);
+            // A warning of the previous run still waiting would play right away
+            await storyScheduler.UnscheduleStory(eventKey);
         }
 
         await packetSender.SendPacketToAllAsync(new AuroraAndTimeUpdate(GetTimeData(), true));
@@ -127,7 +142,8 @@ internal sealed class StoryManager : ISummarize
     ///     Clears the already completed sunbeam events to come and broadcasts it to all players along with the rescheduling of
     ///     the specified sunbeam event.
     /// </summary>
-    public async Task StartSunbeamEvent(string sunbeamEventKey)
+    /// <param name="storyScheduler">Passed in because the scheduler depends on this class.</param>
+    public async Task StartSunbeamEvent(string sunbeamEventKey, StoryScheduler storyScheduler)
     {
         int beginIndex = PlaySunbeamEvent.SunbeamGoals.GetIndex(sunbeamEventKey);
         if (beginIndex == -1)
@@ -137,7 +153,11 @@ internal sealed class StoryManager : ISummarize
         }
         for (int i = beginIndex; i < PlaySunbeamEvent.SunbeamGoals.Length; i++)
         {
-            StoryGoalData.CompletedGoals.Remove(PlaySunbeamEvent.SunbeamGoals[i]);
+            string goalKey = PlaySunbeamEvent.SunbeamGoals[i];
+            StoryGoalData.CompletedGoals.Remove(goalKey);
+            // Goals and radio messages of the previous run would otherwise play in the middle of the new one
+            await storyScheduler.UnscheduleStory(goalKey);
+            RemoveQueuedRadioMessage(goalKey);
         }
         await packetSender.SendPacketToAllAsync(new PlaySunbeamEvent(sunbeamEventKey));
     }
@@ -152,18 +172,47 @@ internal sealed class StoryManager : ISummarize
         return new(timeService.MakeTimePacket(), MakeAuroraData());
     }
 
-    public bool RemovedLatestRadioMessage()
+    /// <summary>
+    ///     Removes a radio message a player played from the queue and marks it as played.
+    /// </summary>
+    /// <returns>False if the message was not waiting in the queue.</returns>
+    public bool RemovePlayedRadioMessage(string messageKey)
     {
-        if (StoryGoalData.RadioQueue.Count <= 0)
+        if (!RemoveQueuedRadioMessage(messageKey))
         {
             return false;
         }
-
-        string message = StoryGoalData.RadioQueue.Dequeue();
         // Just like StoryGoalManager.ExecutePendingRadioMessage
-        StoryGoalData.CompletedGoals.Add($"OnPlay{message}");
-
+        StoryGoalData.CompletedGoals.Add($"OnPlay{messageKey}");
         return true;
+    }
+
+    /// <summary>
+    ///     Updates the story for a goal a player completed.
+    /// </summary>
+    public void OnGoalCompleted(string goalKey)
+    {
+        // Like StoryGoalCustomEventHandler.NotifyGoalComplete, which removes this message in every connected game. Playing
+        // it would start a Sunbeam countdown for a gun that is already disabled.
+        if (string.Equals(goalKey, GUN_DISABLED_GOAL, StringComparison.OrdinalIgnoreCase))
+        {
+            RemoveQueuedRadioMessage(SUNBEAM_LAST_RADIO_MESSAGE);
+        }
+    }
+
+    private bool RemoveQueuedRadioMessage(string messageKey)
+    {
+        bool removed = false;
+        StoryGoalData.RadioQueue.RemoveWhere(queuedKey =>
+        {
+            if (removed || !string.Equals(queuedKey, messageKey, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+            removed = true;
+            return true;
+        });
+        return removed;
     }
 
     public InitialStoryGoalData GetInitialStoryGoalData(StoryScheduler storyScheduler, Player player)

@@ -19,10 +19,14 @@ internal sealed class SubRootChangedProcessor(PlayerManager remotePlayerManager)
         {
             SubRoot subRoot = null;
 
-            if (packet.SubRootId.HasValue)
+            // A base or Cyclops this player has not loaded cannot hold the other player's model; it is then shown on its own.
+            if (packet.SubRootId.HasValue && NitroxEntity.TryGetObjectFrom(packet.SubRootId.Value, out GameObject? sub))
             {
-                GameObject sub = NitroxEntity.RequireObjectFrom(packet.SubRootId.Value);
                 subRoot = sub.GetComponent<SubRoot>();
+            }
+            else if (packet.SubRootId.HasValue)
+            {
+                Log.Debug($"[{nameof(SubRootChangedProcessor)}] Sub {packet.SubRootId.Value} is not loaded here");
             }
 
             remotePlayer.Value.SetSubRoot(subRoot);

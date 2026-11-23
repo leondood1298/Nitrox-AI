@@ -1,4 +1,5 @@
-﻿using Nitrox.Model.Subnautica.Packets;
+﻿using Nitrox.Model.Subnautica.DataStructures.GameLogic;
+using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication.Packets.Processors.Core;
 using NitroxClient.GameLogic;
 using NitroxClient.GameLogic.PlayerLogic;
@@ -15,6 +16,19 @@ internal sealed class SetIntroCinematicModeProcessor(PlayerManager playerManager
     {
         if (localPlayer.SessionId == packet.SessionId)
         {
+            // The server sends WAITING when the partner it paired this player with left before both played. An intro
+            // this game has started already plays on alone; one that has not waits for another partner, or for the
+            // player to start it alone.
+            if (packet.Mode == IntroCinematicMode.WAITING)
+            {
+                if (localPlayer.IntroCinematicMode == IntroCinematicMode.START)
+                {
+                    playerCinematics.IntroCinematicPartnerId = null;
+                    localPlayer.IntroCinematicMode = IntroCinematicMode.WAITING;
+                }
+                return Task.CompletedTask;
+            }
+
             if (packet.PartnerId.HasValue)
             {
                 playerCinematics.IntroCinematicPartnerId = packet.PartnerId;

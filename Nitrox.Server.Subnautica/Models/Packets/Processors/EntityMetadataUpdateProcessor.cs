@@ -36,7 +36,9 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
             return;
         }
 
-        if ((GatePowerMetadata(context.Sender, entity, packet.NewValue) ?? GateScannerRoomMetadata(context.Sender, entity, packet.NewValue)) is { } result)
+        if ((GateEscapePodMetadata(context.Sender, entity, packet.NewValue) ??
+             GatePowerMetadata(context.Sender, entity, packet.NewValue) ??
+             GateScannerRoomMetadata(context.Sender, entity, packet.NewValue)) is { } result)
         {
             await SendResultAsync(context, entity, result);
             return;
@@ -51,6 +53,21 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
     }
 
     /// <summary>
+    ///     A pod's repair state is its only metadata. Any other kind would take its place, and the pod and its radio would
+    ///     come back broken for the next player who joins and after a restart.
+    /// </summary>
+    /// <returns>Null when the update is no replacement of a pod's repair state.</returns>
+    private MetadataUpdateResult? GateEscapePodMetadata(Player sender, Entity entity, EntityMetadata metadata)
+    {
+        if (entity is not EscapePodEntity || metadata is EscapePodMetadata)
+        {
+            return null;
+        }
+        logger.ZLogWarning($"Player {sender.Name} tried replacing the repair state of escape pod {entity.Id} with {metadata.GetType().Name}");
+        return MetadataUpdateResult.Reject;
+    }
+
+    /// <summary>
     ///     The arms for base power: each hands the update to <see cref="BasePowerManager" />, which stores what it accepts.
     /// </summary>
     /// <returns>Null when the update has nothing to do with base power.</returns>
@@ -58,7 +75,8 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
     {
         PowerSourceMetadata powerState => basePowerManager.AcceptState(sender, entity, powerState),
         ThermalPlantMetadata temperatureReport => basePowerManager.AcceptTemperature(entity, temperatureReport),
-        _ when entity.Metadata is PowerSourceMetadata => basePowerManager.RejectReplacement(sender, entity, metadata),
+        // A Lifepod cell holds nothing but its power state, also before its first report
+        _ when entity.Metadata is PowerSourceMetadata || entity is EscapePodPowerCellEntity => basePowerManager.RejectReplacement(sender, entity, metadata),
         _ => null
     };
 
@@ -129,10 +147,26 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
         return metadata switch
         {
             PlayerMetadata playerMetadata => ProcessPlayerMetadata(sendingPlayer, entity, playerMetadata),
+            MedicalCabinetMetadata => ProcessMedicalCabinetMetadata(sendingPlayer, entity),
 
             // Allow metadata updates from any player by default
             _ => true
         };
+    }
+
+    /// <summary>
+    ///     Any player may click a cabinet or see its medkit appear. Two players who take the medkit at the same moment may
+    ///     both get one; the server does not decide between them.
+    /// </summary>
+    private bool ProcessMedicalCabinetMetadata(Player sendingPlayer, Entity entity)
+    {
+        // The Lifepod's cabinet and a cabinet built in a base both carry the cabinet's tech type.
+        if (entity.TechType?.Name == "MedicalCabinet")
+        {
+            return true;
+        }
+        logger.ZLogWarningOnce($"Player {sendingPlayer.Name} tried applying medical cabinet metadata to {entity.TechType?.Name ?? "None"} entity {entity.Id}");
+        return false;
     }
 
     private bool ProcessPlayerMetadata(Player sendingPlayer, Entity entity, PlayerMetadata metadata)

@@ -218,6 +218,29 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities
             newParent.ChildEntities.Add(entity);
         }
 
+        /// <summary>
+        ///     True when <paramref name="entity" /> is the entity with <paramref name="ancestorId" /> or lies somewhere
+        ///     below it. Putting an entity under such an entity would make it its own ancestor.
+        /// </summary>
+        public bool IsSelfOrDescendantOf(Entity entity, NitroxId ancestorId)
+        {
+            HashSet<NitroxId> visited = [];
+            Entity? current = entity;
+            // The visited set ends the walk should the stored parents already form a cycle.
+            while (current != null && visited.Add(current.Id))
+            {
+                if (current.Id.Equals(ancestorId))
+                {
+                    return true;
+                }
+                if (current.ParentId == null || !TryGetEntityById(current.ParentId, out current))
+                {
+                    return false;
+                }
+            }
+            return false;
+        }
+
         public void TransferChildren(NitroxId parentId, NitroxId newParentId, Func<Entity, bool> filter = null)
         {
             if (!TryGetEntityById(parentId, out Entity parentEntity))

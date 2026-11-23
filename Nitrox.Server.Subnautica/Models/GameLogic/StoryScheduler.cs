@@ -41,7 +41,8 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic
 
         public bool ContainsScheduledStory(string storyGoalKey) => scheduledStories.ContainsKey(storyGoalKey);
 
-        public void ScheduleStory(NitroxScheduledGoal scheduledGoal)
+        /// <returns>False if the goal was not scheduled (already scheduled, already done or in the past).</returns>
+        public bool ScheduleStory(NitroxScheduledGoal scheduledGoal)
         {
             // Only add if it's not in already
             if (!scheduledStories.ContainsKey(scheduledGoal.GoalKey))
@@ -52,9 +53,11 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic
                     if (scheduledGoal.TimeExecute > ElapsedSecondsFloat)
                     {
                         scheduledStories.Add(scheduledGoal.GoalKey, scheduledGoal);
+                        return true;
                     }
                 }
             }
+            return false;
         }
 
         /// <param name="storyGoalKey"></param>

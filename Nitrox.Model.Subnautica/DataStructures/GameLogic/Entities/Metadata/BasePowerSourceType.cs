@@ -6,5 +6,9 @@ public enum BasePowerSourceType
     SOLAR,
     THERMAL,
     BIOREACTOR,
-    NUCLEAR
+    NUCLEAR,
+    /// <summary>
+    ///     A power cell of the Lifepod (a PowerSource with a RegeneratePowerSource).
+    /// </summary>
+    ESCAPE_POD
 }

@@ -60,32 +60,15 @@ public sealed partial class PDAScanner_Scan_Patch : NitroxPatch, IDynamicPatch
             // We want to broadcast the destruction event before the object is destroyed and corresponding scan data is invalidated.
             if (scanTarget.hasUID)
             {
-                PDAScanFinished packet = new(new(scanTarget.uid), techType.ToDto(), entryData.totalFragments, true, true, true);
+                PDAScanFinished packet = new(new(scanTarget.uid), techType.ToDto(), entryData.totalFragments, entryData.totalFragments, true, true, true);
                 Resolve<IPacketSender>().Send(packet);
             }
             return;
         }
-        else
-        {
-            NitroxId targetId = scanTarget.hasUID ? new(scanTarget.uid) : null;
 
-            // Case in which the unlocked progress is incremented
-            if (result == PDAScanner.Result.Done)
-            {
-                if (!PDAScanner.GetPartialEntryByKey(techType, out PDAScanner.Entry entry))
-                {
-                    // Something wrong happened
-                    return;
-                }
-                PDAScanFinished packet = new(targetId, techType.ToDto(), entry.unlocked, false, entryData.destroyAfterScan);
-                Resolve<IPacketSender>().Send(packet);
-            }
-            // Case in which the scanned entry is fully unlocked
-            else if (result == PDAScanner.Result.Researched)
-            {
-                PDAScanFinished packet = new(targetId, techType.ToDto(), entryData.totalFragments, true, entryData.destroyAfterScan);
-                Resolve<IPacketSender>().Send(packet);
-            }
-        }
+        // Done (progress incremented) and Researched (last fragment) are both one more scan: the server counts the scans
+        // of all players and sends the result back, so two scans finishing at the same time are both counted
+        NitroxId targetId = scanTarget.hasUID ? new(scanTarget.uid) : null;
+        Resolve<IPacketSender>().Send(new PDAScanFinished(targetId, techType.ToDto(), 0, entryData.totalFragments, false, entryData.destroyAfterScan));
     }
 }

@@ -41,14 +41,22 @@ internal sealed class PdaManager(ILogger<PdaManager> logger) : ISummarize
         }
     }
 
-    public void AddKnownTechType(NitroxTechType techType, List<NitroxTechType> partialTechTypesToRemove)
+    /// <param name="completedScannerEntries">
+    ///     Scanner entries the game marked as completely scanned when it learned the tech, so their fragments no longer
+    ///     count after a rejoin or restart.
+    /// </param>
+    public void AddKnownTechType(NitroxTechType techType, List<NitroxTechType> completedScannerEntries)
     {
         bool duplicateAttempt = false;
         try
         {
             lock (pdaStateLock)
             {
-                PdaState.ScannerPartial.RemoveAllFast(partialTechTypesToRemove, static (entry, list) => list.Contains(entry.TechType));
+                PdaState.ScannerPartial.RemoveAllFast(completedScannerEntries, static (entry, list) => list.Contains(entry.TechType));
+                foreach (NitroxTechType scannerEntry in completedScannerEntries)
+                {
+                    PdaState.ScannerComplete.Add(scannerEntry);
+                }
                 if (PdaState.KnownTechTypes.Contains(techType))
                 {
                     duplicateAttempt = true;
@@ -146,26 +154,41 @@ internal sealed class PdaManager(ILogger<PdaManager> logger) : ISummarize
         }
     }
 
-    public void UpdateEntryUnlockedProgress(NitroxTechType techType, int unlockedAmount, bool fullyResearched)
+    /// <summary>
+    ///     Counts one more finished scan of a fragment of <paramref name="techType" />. The count is kept here and not by
+    ///     the clients so that two players finishing a scan of the same tech at once both count.
+    /// </summary>
+    /// <param name="totalFragments">How many scans research the tech (from the scanning player's PDAScanner data).</param>
+    /// <param name="fullyResearched">True once the count reached <paramref name="totalFragments" />.</param>
+    /// <returns>The number of scanned fragments of the tech, at most <paramref name="totalFragments" />.</returns>
+    public int AddScannedFragment(NitroxTechType techType, int totalFragments, out bool fullyResearched)
     {
+        totalFragments = Math.Max(1, totalFragments);
         lock (pdaStateLock)
         {
+            if (PdaState.ScannerComplete.Contains(techType))
+            {
+                fullyResearched = true;
+                return totalFragments;
+            }
+
+            PDAEntry entry = PdaState.ScannerPartial.FirstOrDefault(e => e.TechType.Equals(techType));
+            int unlocked = Math.Min((entry?.Unlocked ?? 0) + 1, totalFragments);
+            fullyResearched = unlocked >= totalFragments;
             if (fullyResearched)
             {
-                PdaState.ScannerPartial.RemoveAllFast(techType, static (entry, toRemove) => entry.TechType.Equals(toRemove));
+                PdaState.ScannerPartial.RemoveAllFast(techType, static (partialEntry, toRemove) => partialEntry.TechType.Equals(toRemove));
                 PdaState.ScannerComplete.Add(techType);
+            }
+            else if (entry != null)
+            {
+                entry.Unlocked = unlocked;
             }
             else
             {
-                if (PdaState.ScannerPartial.FirstOrDefault(e => e.TechType.Equals(techType)) is { } entry)
-                {
-                    entry.Unlocked = unlockedAmount;
-                }
-                else
-                {
-                    PdaState.ScannerPartial.Add(new(techType, unlockedAmount));
-                }
+                PdaState.ScannerPartial.Add(new PDAEntry(techType, unlocked));
             }
+            return unlocked;
         }
     }
 

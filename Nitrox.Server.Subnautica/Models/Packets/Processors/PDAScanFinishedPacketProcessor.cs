@@ -11,11 +11,16 @@ internal sealed class PDAScanFinishedPacketProcessor(PdaManager pdaManager, Worl
 
     public async Task Process(AuthProcessorContext context, PDAScanFinished packet)
     {
-        if (!packet.WasAlreadyResearched)
+        if (packet.WasAlreadyResearched)
         {
-            pdaManager.UpdateEntryUnlockedProgress(packet.TechType, packet.UnlockedAmount, packet.FullyResearched);
+            await context.SendToOthersAsync(packet);
         }
-        await context.SendToOthersAsync(packet);
+        else
+        {
+            int unlocked = pdaManager.AddScannedFragment(packet.TechType, packet.TotalFragments, out bool fullyResearched);
+            // The scanning player gets the count too: its game counted only its own scan
+            await context.SendToAllAsync(new PDAScanFinished(packet.Id, packet.TechType, unlocked, packet.TotalFragments, fullyResearched, packet.Destroy));
+        }
 
         if (packet.Id != null)
         {

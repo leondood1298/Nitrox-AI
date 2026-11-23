@@ -1,5 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Nitrox.Model.DataStructures;
+using Nitrox.Model.DataStructures.Unity;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Server.Subnautica.Models.Serialization;
@@ -45,6 +47,28 @@ public sealed class ServerJsonSerializerTest
         Assert.AreEqual(88f, actual.Power);
         Assert.AreEqual(BasePowerSourceType.THERMAL, actual.SourceType);
         Assert.AreEqual(73.5f, actual.Temperature);
+    }
+
+    [TestMethod]
+    public void JsonRoundTripPreservesTheLifepodsPowerCellsInsideThePod()
+    {
+        // The pod is saved as a global root entity with its cells as children.
+        EscapePodEntity pod = new(NitroxVector3.Zero, new NitroxId(), new EscapePodMetadata(true, false));
+        EscapePodPowerCellEntity cell = new(new NitroxId(), 2, pod.Id) { Metadata = new PowerSourceMetadata(14.5f, 0f, BasePowerSourceType.ESCAPE_POD) };
+        pod.ChildEntities.Add(cell);
+
+        using MemoryStream output = new();
+        serializer.Serialize(output, pod);
+        using MemoryStream input = new(output.ToArray());
+        EscapePodEntity restored = serializer.Deserialize<EscapePodEntity>(input);
+
+        EscapePodPowerCellEntity restoredCell = restored.ChildEntities.OfType<EscapePodPowerCellEntity>().Single();
+        Assert.AreEqual(cell.Id, restoredCell.Id);
+        Assert.AreEqual(2, restoredCell.CellIndex);
+        Assert.AreEqual(pod.Id, restoredCell.ParentId);
+        PowerSourceMetadata state = (PowerSourceMetadata)restoredCell.Metadata;
+        Assert.AreEqual(14.5f, state.Power);
+        Assert.AreEqual(BasePowerSourceType.ESCAPE_POD, state.SourceType);
     }
 
     [TestMethod]

@@ -1,5 +1,6 @@
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication.Packets.Processors.Core;
+using NitroxClient.GameLogic;
 using Story;
 
 namespace NitroxClient.Communication.Packets.Processors;
@@ -8,6 +9,11 @@ internal sealed class PlaySunbeamEventProcessor : IClientPacketProcessor<PlaySun
 {
     public Task Process(ClientProcessorContext context, PlaySunbeamEvent packet)
     {
+        if (!StoryManager.IsStoryLoaded())
+        {
+            return Task.CompletedTask;
+        }
+
         // TODO: Look into compound goals and OnUnlock goals to bring back the necessary ones
         int beginIndex = PlaySunbeamEvent.SunbeamGoals.GetIndex(packet.EventKey);
         if (beginIndex == -1)
@@ -17,7 +23,11 @@ internal sealed class PlaySunbeamEventProcessor : IClientPacketProcessor<PlaySun
         }
         for (int i = beginIndex; i < PlaySunbeamEvent.SunbeamGoals.Length; i++)
         {
-            StoryGoalManager.main.completedGoals.Remove(PlaySunbeamEvent.SunbeamGoals[i]);
+            string goalKey = PlaySunbeamEvent.SunbeamGoals[i];
+            StoryGoalManager.main.completedGoals.Remove(goalKey);
+            // Goals and radio messages of the previous run would otherwise play in the middle of the new one
+            StoryGoalScheduler.main.schedule.RemoveAll(goal => goal.goalKey == goalKey);
+            StoryGoalManager.main.pendingRadioMessages.Remove(goalKey);
         }
         // Same execution as for StoryGoalCustomEventHandler commands
         StoryGoalManager.main.OnGoalComplete(packet.EventKey);

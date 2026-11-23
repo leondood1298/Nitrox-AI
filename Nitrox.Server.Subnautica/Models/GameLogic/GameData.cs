@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Unlockables;
 using Nitrox.Server.Subnautica.Services;
 
@@ -11,13 +12,16 @@ internal sealed class GameData
 
     public StoryTimingData StoryTiming { get; set; }
 
-    public static GameData From(PdaManager pdaManager, StoryGoalData storyGoals, StoryScheduler storyScheduler, StoryManager storyManager, TimeService timeService)
+    public List<string> ActiveTeleporters { get; set; } = [];
+
+    public static GameData From(PdaManager pdaManager, StoryGoalData storyGoals, StoryScheduler storyScheduler, StoryManager storyManager, TimeService timeService, ActiveTeleporters activeTeleporters)
     {
         return new GameData
         {
             PDAState = pdaManager.GetPdaStateCopy(),
             StoryGoals = StoryGoalData.From(storyGoals, storyScheduler),
-            StoryTiming = StoryTimingData.From(storyManager, timeService)
+            StoryTiming = StoryTimingData.From(storyManager, timeService),
+            ActiveTeleporters = activeTeleporters.GetAll()
         };
     }
 }

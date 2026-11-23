@@ -33,7 +33,8 @@ public sealed class StoryGoalInitialSyncProcessor : InitialSyncProcessor
 
         storyGoalManager.completedGoals.AddRange(completedGoals);
 
-        storyGoalManager.pendingRadioMessages.AddRange(radioQueue);
+        // Packets are processed during the loading screen, a message may already be pending
+        PendingRadioMessages.Merge(storyGoalManager.pendingRadioMessages, radioQueue);
         storyGoalManager.PulsePendingMessages();
 
         // Restore states of GoalManager and the (tutorial) arrow system
