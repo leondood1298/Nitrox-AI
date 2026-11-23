@@ -122,8 +122,7 @@ Update this file after each completed work slice. Keep entries short; link the P
 ## Rules
 
 - Push only to `leondood1298/Nitrox-AI`; upstream push stays disabled.
-- One focused PR at a time; merge before starting the next branch.
-- Publish interim two-client test artifacts as immutable Drive packages. GitHub releases are reserved for phase completion or an explicitly owner-designated intermediate milestone whose open gates remain visible.
-- Use `agent/nitrox-ai-development` as the durable project branch; merge through protected PRs, then synchronize it to released `master` before continuing.
+- Focused PRs. `agent/nitrox-ai-development` is the working branch and merges to `master` by PR.
+- Build and run the full test suite before every PR. Automated tests are the merge bar.
+- In-game testing happens at milestones the owner picks, not per change. No evidence packages, waiver records, or per-build releases unless the owner asks.
 - Preserve unrelated custom fixes.
-- Build and run the full test suite before every PR.
