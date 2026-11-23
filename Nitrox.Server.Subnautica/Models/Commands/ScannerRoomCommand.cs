@@ -57,7 +57,6 @@ internal sealed class ScannerRoomCommand(ScannerRoomDiagnostics diagnostics, Sim
             }
         }
 
-        // The cameras that are out in the world and in no dock.
         CameraView[] looseCameras = worldCameras.Where(camera => !dockings.ContainsKey(camera.Id))
                                                 .Select(camera => ReadCamera(camera.Id, camera.State, MapRoomCameraMetadata.NOT_DOCKED))
                                                 .ToArray();
