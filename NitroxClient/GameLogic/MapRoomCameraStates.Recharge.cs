@@ -1,6 +1,7 @@
 using System;
 using FMOD.Studio;
 using Nitrox.Model.DataStructures;
+using NitroxClient.GameLogic.FMOD;
 
 namespace NitroxClient.GameLogic;
 
@@ -47,10 +48,28 @@ public sealed partial class MapRoomCameraStates
         return Math.Min(capacity - Math.Max(0f, current), capacity * DOCK_CHARGE_FRACTION_PER_UPDATE);
     }
 
+    /// <summary>
+    ///     Whether a docked camera that another player's game recharges is charging now, from what this game holds of
+    ///     it: the battery the simulating player last reported, and the power of its base. The game's own rule
+    ///     (MapRoomCamera.UpdateEnergyRecharge) is a battery below its capacity and a base that gave it energy.
+    /// </summary>
+    /// <param name="reportedEnergy">The battery as the simulating player last reported it.</param>
+    /// <param name="basePowered">Whether the base has power to give, or the game mode needs none.</param>
+    internal static bool IsRechargedByAnotherPlayer(float reportedEnergy, float capacity, bool basePowered) =>
+        // The last bit of a charge can stay unreported: a report needs a change of at least ENERGY_REPORT_THRESHOLD.
+        basePowered && capacity - reportedEnergy >= ENERGY_REPORT_THRESHOLD;
+
     private void Recharge(MapRoomCamera camera)
     {
+        if (!CanSimulateDockedCamera(camera))
+        {
+            PlayChargingOfAnotherPlayer(camera);
+            ReportIfChanged(camera);
+            return;
+        }
+
         bool charging = false;
-        if (CanSimulateDockedCamera(camera) && camera.energyMixin.battery != null)
+        if (camera.energyMixin.battery != null)
         {
             float current = camera.energyMixin.charge;
             float amount = CalculateDockCharge(current, camera.energyMixin.capacity);
@@ -76,15 +95,46 @@ public sealed partial class MapRoomCameraStates
                 }
             }
         }
+        SetChargingSound(camera, charging);
+        ReportIfChanged(camera);
+    }
+
+    /// <summary>
+    ///     The game plays a camera's charging sound only where the camera is recharged, which is the game of the player
+    ///     who simulates it. Everybody else hears it from what the server holds of the camera, without packets, which
+    ///     also holds for a player who comes near or joins while it charges.
+    /// </summary>
+    private void PlayChargingOfAnotherPlayer(MapRoomCamera camera)
+    {
+        bool charging = false;
+        if (camera && camera.dockingPoint && camera.energyMixin.battery != null && camera.TryGetNitroxId(out NitroxId _))
+        {
+            PowerRelay relay = camera.dockingPoint.GetComponentInParent<PowerRelay>();
+            bool basePowered = !GameModeUtils.RequiresPower() || relay && relay.GetPower() > 0f;
+            charging = IsRechargedByAnotherPlayer(camera.energyMixin.charge, camera.energyMixin.capacity, basePowered);
+        }
+        // Each game decides this for itself; a sound sent on from here would reach games that already play it.
+        using (FMODSystem.SuppressSendingSounds())
+        {
+            SetChargingSound(camera, charging);
+        }
+    }
+
+    private static void SetChargingSound(MapRoomCamera camera, bool charging)
+    {
+        if (!camera)
+        {
+            return;
+        }
         if (charging)
         {
             camera.chargingSound.Play();
         }
         else
         {
-            camera.chargingSound.Stop(STOP_MODE.IMMEDIATE);
+            // As the game stops it (MapRoomCamera.UpdateEnergyRecharge): the loop fades out.
+            camera.chargingSound.Stop(STOP_MODE.ALLOWFADEOUT);
         }
-        ReportIfChanged(camera);
     }
 
     /// <summary>
