@@ -12,6 +12,12 @@ internal sealed class PersistedPlayerData
 {
     public string Name { get; set; }
 
+    /// <summary>
+    ///     The hash of the key the name is tied to; null for a player saved before keys existed, who keeps the first key
+    ///     they join with.
+    /// </summary>
+    public string? IdentityKeyHash { get; set; }
+
     public List<NitroxTechType> UsedItems { get; set; } = [];
 
     public Optional<NitroxId>[] QuickSlotsBindingIds { get; set; } = [];
@@ -75,6 +81,7 @@ internal sealed class PersistedPlayerData
         {
             player.UnreadPdaNotifications.Add(notification);
         }
+        player.IdentityKeyHash = IdentityKeyHash;
         return player;
     }
 
@@ -83,6 +90,7 @@ internal sealed class PersistedPlayerData
         return new PersistedPlayerData
         {
             Name = player.Name,
+            IdentityKeyHash = player.IdentityKeyHash,
             UsedItems = player.UsedItems?.ToList(),
             QuickSlotsBindingIds = player.QuickSlotsBindingIds,
             EquippedItems = new(player.EquippedItems),

@@ -27,7 +27,10 @@ namespace Nitrox.Model.MultiplayerSession
         INCORRECT_USERNAME = 1 << 5,
 
         [Description("You have been banned from this server.")]
-        PLAYER_BANNED = 1 << 6
+        PLAYER_BANNED = 1 << 6,
+
+        [Description("This name belongs to another player on this server: it was first used from another game installation.\nChoose another name, or ask an admin to run \"forgetkey <name>\" if this is your name.")]
+        PLAYER_KEY_MISMATCH = 1 << 7
     }
 
     public static class MultiplayerSessionReservationStateExtensions

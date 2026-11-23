@@ -35,7 +35,8 @@ public static class JoinServerBackend
         preferencesManager.SetPreference(serverIp, new PlayerPreference(playerName, playerColor));
 
         Optional<string> opPassword = MainMenuEnterPasswordPanel.LastEnteredPassword;
-        AuthenticationContext authenticationContext = new(playerName, opPassword);
+        // Keyed by the server's IP address like the other per-server preferences
+        AuthenticationContext authenticationContext = new(playerName, opPassword, PlayerKeys.GetKeyFor(serverIp));
 
         multiplayerSession.RequestSessionReservation(new PlayerSettings(playerColor.ToDto()), authenticationContext);
     }

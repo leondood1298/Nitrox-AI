@@ -46,6 +46,13 @@ namespace Nitrox.Server.Subnautica.Models
         }
 
         public string Name { get; }
+
+        /// <summary>
+        ///     The hash of the key this name first joined with, or null if no key is tied to the name yet. A player who
+        ///     joins with this name and another key is refused.
+        /// </summary>
+        public string? IdentityKeyHash { get; set; }
+
         public bool IsPermaDeath { get; set; }
         public NitroxVector3 Position { get; set; }
         public NitroxQuaternion Rotation { get; set; }
