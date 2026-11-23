@@ -7,16 +7,16 @@ namespace NitroxClient.Communication.Packets.Processors;
 
 /// <summary>
 ///     Applies energy another player consumed from a power source this client simulates. The reduced level then
-///     reaches everyone through the normal broadcast of that source.
+///     reaches everyone as the source's next state.
 /// </summary>
-internal sealed class BasePowerSourceConsumeProcessor(SimulationOwnership simulationOwnership, BasePowerState state) : IClientPacketProcessor<BasePowerSourceConsume>
+internal sealed class BasePowerSourceConsumeProcessor(SimulationOwnership simulationOwnership, BasePowerSources basePowerSources) : IClientPacketProcessor<BasePowerSourceConsume>
 {
     public Task Process(ClientProcessorContext context, BasePowerSourceConsume packet)
     {
         bool sourceObjectExists = NitroxEntity.TryGetComponentFrom(packet.SourceId, out PowerSource powerSource);
         // During a resync the source is only gone until its base has been rebuilt, like during the initial load
-        bool finishedLoading = Multiplayer.Main && Multiplayer.Main.InitialSyncCompleted && !BasePowerBroadcaster.IsRebuildingBases();
-        switch (state.DecideForwardedDraw(packet.SourceId, simulationOwnership.HasAnyLockType(packet.SourceId), sourceObjectExists, finishedLoading))
+        bool finishedLoading = Multiplayer.Main && Multiplayer.Main.InitialSyncCompleted && !BasePowerSources.IsRebuildingBases();
+        switch (basePowerSources.DecideForwardedDraw(packet.SourceId, simulationOwnership.HasAnyLockType(packet.SourceId), sourceObjectExists, finishedLoading))
         {
             case ForwardedDraw.APPLY:
                 // Not ModifyPower: the game ignores that in modes without power requirements, and the player who took

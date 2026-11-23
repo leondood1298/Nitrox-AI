@@ -8,7 +8,7 @@ using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
-internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager, EntityRegistry entityRegistry, SimulationOwnershipData simulationOwnershipData, ScannerRoomDiagnostics scannerRoomDiagnostics, BasePowerSourceAuthority basePowerSourceAuthority, ILogger<EntityMetadataUpdateProcessor> logger) : IAuthPacketProcessor<EntityMetadataUpdate>
+internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager, EntityRegistry entityRegistry, SimulationOwnershipData simulationOwnershipData, ScannerRoomDiagnostics scannerRoomDiagnostics, BasePowerManager basePowerManager, ILogger<EntityMetadataUpdateProcessor> logger) : IAuthPacketProcessor<EntityMetadataUpdate>
 {
     private readonly PlayerManager playerManager = playerManager;
     private readonly EntityRegistry entityRegistry = entityRegistry;
@@ -19,6 +19,12 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
         if (!entityRegistry.TryGetEntityById(packet.Id, out Entity entity))
         {
             logger.ZLogError($"Entity metadata {packet.NewValue.GetType()} updated on an entity unknown to the server {packet.Id}");
+            return;
+        }
+
+        if (GatePowerMetadata(context.Sender, entity, packet.NewValue) is { } powerResult)
+        {
+            await SendResultAsync(context, entity, powerResult);
             return;
         }
 
@@ -33,10 +39,6 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
                 {
                     mapRoom.FabricatorMetadata = crafterMetadata;
                 }
-            }
-            else if (acceptedMetadata is ThermalPlantMetadata && entity.Metadata is PowerSourceMetadata)
-            {
-                // Already folded into the source's power state by TryProcessMetadata; the report is only relayed.
             }
             else if (acceptedMetadata is not MapRoomMetadata)
             {
@@ -56,6 +58,37 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
                     reason: acceptedCrafterMetadata.TechType?.Name ?? "none");
             }
             await SendUpdateToVisiblePlayersAsync(context, acceptedUpdate, entity, acceptedMetadata is MapRoomMetadata);
+        }
+    }
+
+    /// <summary>
+    ///     The arms for base power: each hands the update to <see cref="BasePowerManager" />, which stores what it accepts.
+    /// </summary>
+    /// <returns>Null when the update has nothing to do with base power.</returns>
+    private MetadataUpdateResult? GatePowerMetadata(Player sender, Entity entity, EntityMetadata metadata) => metadata switch
+    {
+        PowerSourceMetadata powerState => basePowerManager.AcceptState(sender, entity, powerState),
+        ThermalPlantMetadata temperatureReport => basePowerManager.AcceptTemperature(entity, temperatureReport),
+        _ when entity.Metadata is PowerSourceMetadata => basePowerManager.RejectReplacement(sender, entity, metadata),
+        _ => null
+    };
+
+    /// <summary>
+    ///     Sends what a manager decided about an update. The manager has already stored what it accepted.
+    /// </summary>
+    private async Task SendResultAsync(AuthProcessorContext context, Entity entity, MetadataUpdateResult result)
+    {
+        switch (result.Outcome)
+        {
+            case MetadataUpdateOutcome.ACCEPT:
+                await SendUpdateToVisiblePlayersAsync(context, new EntityMetadataUpdate(entity.Id, result.Metadata), entity, false);
+                break;
+            case MetadataUpdateOutcome.ACCEPT_AND_ECHO:
+                await SendUpdateToVisiblePlayersAsync(context, new EntityMetadataUpdate(entity.Id, result.Metadata), entity, true);
+                break;
+            case MetadataUpdateOutcome.REJECT_AND_CORRECT:
+                await context.ReplyAsync(new EntityMetadataUpdate(entity.Id, result.Metadata));
+                break;
         }
     }
 
@@ -129,30 +162,6 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
             // Only the camera light and component packets may change this, after their ownership checks.
             logger.ZLogWarning($"Player {sendingPlayer.Name} tried updating camera {entity.Id} state through generic metadata");
             return false;
-        }
-
-        if (metadata is PowerSourceMetadata)
-        {
-            logger.ZLogWarning($"[BasePower] Player {sendingPlayer.Name} tried updating source {entity.Id} through generic metadata");
-            return false;
-        }
-
-        if (entity.Metadata is PowerSourceMetadata && !BasePowerSourceAuthority.MayReplacePowerState(metadata, simulationOwnershipData.GetPlayerForLock(entity.Id) == sendingPlayer))
-        {
-            logger.ZLogWarning($"[BasePower] Player {sendingPlayer.Name} tried replacing the power state of source {entity.Id} with {metadata.GetType().Name} without simulating it");
-            return false;
-        }
-
-        if (metadata is ThermalPlantMetadata temperatureReport)
-        {
-            // temperature is a ratchet (see ThermalPlant.QueryTemperature's Mathf.Max), so drop stale updates instead of
-            // relaying them: every client near a thermal plant reports the same rise, and only the first one is news
-            if (!basePowerSourceAuthority.TryAcceptTemperature(entity, temperatureReport, out ThermalPlantMetadata acceptedTemperature))
-            {
-                return false;
-            }
-            metadata = acceptedTemperature;
-            return true;
         }
 
         if (metadata is CyclopsMetadata requestedCyclops)

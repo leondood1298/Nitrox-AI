@@ -30,8 +30,9 @@ public sealed class BasePowerClientDiagnostics
     internal string? RecordSourceApply(NitroxId? sourceId, PowerSourceMetadata metadata, bool objectFound,
         bool initialSyncCompleted, bool waitScreenWaiting, string reason)
     {
-        return Record(false, "source_apply", objectFound ? "ok" : "missing", null, sourceId, metadata.Power, metadata.MaxPower,
-            initialSyncCompleted, waitScreenWaiting, $"{reason}_{metadata.SourceType}_{metadata.Revision}");
+        BasePowerSourceTypes.TryGetMaxPower(metadata.SourceType, out float maxPower);
+        return Record(false, "source_apply", objectFound ? "ok" : "missing", null, sourceId, metadata.Power, maxPower,
+            initialSyncCompleted, waitScreenWaiting, $"{reason}_{metadata.SourceType}");
     }
 
     public string? RecordAudioTransition(string eventName, bool suppressed, NitroxId? baseId, float power, float maxPower,

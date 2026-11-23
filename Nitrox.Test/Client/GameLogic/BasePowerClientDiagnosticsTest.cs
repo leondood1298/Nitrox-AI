@@ -24,16 +24,16 @@ public sealed class BasePowerClientDiagnosticsTest
     }
 
     [TestMethod]
-    public void SourceTraceIncludesCanonicalTypeAndRevision()
+    public void SourceTraceIncludesTheSourceTypeAndItsCapacity()
     {
         BasePowerClientDiagnostics diagnostics = new();
         NitroxId sourceId = new("22222222-2222-2222-2222-222222222222");
-        PowerSourceMetadata metadata = new(125.25f, 250f, BasePowerSourceType.THERMAL, 17);
+        PowerSourceMetadata metadata = new(125.25f, 0f, BasePowerSourceType.THERMAL);
 
         string line = diagnostics.RecordSourceApply(sourceId, metadata, true, false, true, "metadata")!;
 
         Assert.AreEqual(
-            $"[BPD1] n=1 ep={diagnostics.Epoch} side=C ev=source_apply out=ok base=- source=22222222.2222 power=125.25/250.00 initial=0 wait=1 reason=metadata_thermal_17",
+            $"[BPD1] n=1 ep={diagnostics.Epoch} side=C ev=source_apply out=ok base=- source=22222222.2222 power=125.25/250.00 initial=0 wait=1 reason=metadata_thermal",
             line);
     }
 
@@ -42,12 +42,12 @@ public sealed class BasePowerClientDiagnosticsTest
     {
         BasePowerClientDiagnostics diagnostics = new();
         NitroxId sourceId = new("33333333-3333-3333-3333-333333333333");
-        PowerSourceMetadata metadata = new(0f, 75f, BasePowerSourceType.SOLAR, 4);
+        PowerSourceMetadata metadata = new(0f, 0f, BasePowerSourceType.SOLAR);
 
         string line = diagnostics.RecordSourceApply(sourceId, metadata, false, false, true, "packet")!;
 
         StringAssert.Contains(line, " ev=source_apply out=missing ");
-        StringAssert.Contains(line, " source=33333333.3333 power=0.00/75.00 initial=0 wait=1 reason=packet_solar_4");
+        StringAssert.Contains(line, " source=33333333.3333 power=0.00/75.00 initial=0 wait=1 reason=packet_solar");
     }
 
     [TestMethod]
@@ -69,7 +69,7 @@ public sealed class BasePowerClientDiagnosticsTest
     public void SourceBudgetCannotConsumeReservedAudioEntries()
     {
         BasePowerClientDiagnostics diagnostics = new();
-        PowerSourceMetadata metadata = new(10f, 75f, BasePowerSourceType.SOLAR, 1);
+        PowerSourceMetadata metadata = new(10f, 0f, BasePowerSourceType.SOLAR);
 
         for (int i = 0; i < BasePowerClientDiagnostics.SOURCE_HISTORY_CAPACITY + 10; i++)
         {

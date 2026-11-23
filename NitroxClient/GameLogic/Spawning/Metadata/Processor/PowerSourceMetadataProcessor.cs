@@ -10,22 +10,19 @@ public class PowerSourceMetadataProcessor : EntityMetadataProcessor<PowerSourceM
 {
     public override void ProcessMetadata(GameObject gameObject, PowerSourceMetadata metadata)
     {
-        BasePowerState state = Resolve<BasePowerState>();
         if (gameObject.TryGetComponent(out PowerSource powerSource))
         {
-            // A broadcast can arrive before this object spawns. The snapshot is then older than what is already known,
-            // and the newer state must still be applied or the source keeps its prefab default.
-            bool hasId = gameObject.TryGetNitroxId(out NitroxId sourceId);
-            PowerSourceMetadata accepted = hasId ? state.Reconcile(sourceId, metadata) : metadata;
-            powerSource.SetPower(accepted.Power);
-            BasePowerSources.SetFuelConsumed(powerSource, accepted.SourceType, accepted.FuelConsumed);
-            // The temperature comes from the saved snapshot, never from live power broadcasts, and the game only ever
-            // raises it. Without it a restored thermal plant forgets the peak it reached (e.g. from a geyser).
+            // Whatever arrives here is the newest state: updates come in order, and one that arrived before this
+            // object had spawned was kept for it (see EntityMetadataManager.TakeNewest)
+            powerSource.SetPower(metadata.Power);
+            BasePowerSources.SetFuelConsumed(powerSource, metadata.SourceType, metadata.FuelConsumed);
+            // The game only ever raises the temperature. Without the stored one a restored thermal plant forgets the
+            // peak it reached (e.g. from a geyser).
             if (metadata.Temperature > 0f && gameObject.TryGetComponent(out ThermalPlant thermalPlant))
             {
                 thermalPlant.temperature = Mathf.Max(thermalPlant.temperature, metadata.Temperature);
             }
-            RecordReconciliationApply(hasId ? sourceId : null, accepted, true);
+            RecordReconciliationApply(gameObject.TryGetNitroxId(out NitroxId sourceId) ? sourceId : null, metadata, true);
         }
         else
         {
