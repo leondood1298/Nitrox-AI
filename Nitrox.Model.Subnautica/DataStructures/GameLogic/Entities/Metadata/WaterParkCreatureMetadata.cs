@@ -5,7 +5,7 @@ using BinaryPack.Attributes;
 namespace Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 
 [Serializable, DataContract]
-public class WaterParkCreatureMetadata : EntityMetadata
+public class WaterParkCreatureMetadata : CreatureMetadata
 {
     [DataMember(Order = 1)]
     public float Age { get; init; }
@@ -25,7 +25,7 @@ public class WaterParkCreatureMetadata : EntityMetadata
         // Constructor for serialization. Has to be "protected" for json serialization.
     }
 
-    public WaterParkCreatureMetadata(float age, double matureTime, float timeNextBreed, bool bornInside)
+    public WaterParkCreatureMetadata(float age, double matureTime, float timeNextBreed, bool bornInside, float infectedAmount) : base(infectedAmount)
     {
         Age = age;
         MatureTime = matureTime;
@@ -35,6 +35,6 @@ public class WaterParkCreatureMetadata : EntityMetadata
 
     public override string ToString()
     {
-        return $"[WaterParkCreatureMetadata Age: {Age}, MatureTime: {MatureTime}, TimeNextBreed: {TimeNextBreed}, BornInside: {BornInside}]";
+        return $"[WaterParkCreatureMetadata Age: {Age}, MatureTime: {MatureTime}, TimeNextBreed: {TimeNextBreed}, BornInside: {BornInside}, {base.ToString()}]";
     }
 }

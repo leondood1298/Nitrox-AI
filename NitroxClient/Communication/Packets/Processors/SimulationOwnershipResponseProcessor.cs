@@ -8,10 +8,12 @@ using UnityEngine;
 
 namespace NitroxClient.Communication.Packets.Processors;
 
-internal sealed class SimulationOwnershipResponseProcessor(IMultiplayerSession multiplayerSession, SimulationOwnership simulationOwnershipManager) : IClientPacketProcessor<SimulationOwnershipResponse>
+internal sealed class SimulationOwnershipResponseProcessor(IMultiplayerSession multiplayerSession, SimulationOwnership simulationOwnershipManager, CreatureInfections creatureInfections)
+    : IClientPacketProcessor<SimulationOwnershipResponse>
 {
     private readonly IMultiplayerSession multiplayerSession = multiplayerSession;
     private readonly SimulationOwnership simulationOwnershipManager = simulationOwnershipManager;
+    private readonly CreatureInfections creatureInfections = creatureInfections;
 
     public Task Process(ClientProcessorContext context, SimulationOwnershipResponse response)
     {
@@ -29,6 +31,8 @@ internal sealed class SimulationOwnershipResponseProcessor(IMultiplayerSession m
         if (response.LockAcquired)
         {
             RemoveRemoteController(response.Id);
+            // A creature grabbed by this player: its infection roll ran without the lock
+            creatureInfections.RollIfUndecided(response.Id);
         }
         return Task.CompletedTask;
     }

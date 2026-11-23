@@ -33,7 +33,7 @@ internal sealed class ReefbackBootstrapper : IEntityBootstrapper
     public async Task<WorldEntity> Prepare(WorldEntity entity, DeterministicGenerator generator)
     {
         // See Creature.InitializeOnce
-        entity.Metadata = new StayAtLeashPositionMetadata(entity.Transform.Position);
+        entity.Metadata = new StayAtLeashPositionMetadata(entity.Transform.Position, CreatureMetadata.UNDECIDED);
 
         // From ReefbackLife.Initialize
         if (entity.Transform.LocalScale.X <= 0.8f)

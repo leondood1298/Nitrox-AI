@@ -38,7 +38,8 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
 
         if ((GateEscapePodMetadata(context.Sender, entity, packet.NewValue) ??
              GatePowerMetadata(context.Sender, entity, packet.NewValue) ??
-             GateScannerRoomMetadata(context.Sender, entity, packet.NewValue)) is { } result)
+             GateScannerRoomMetadata(context.Sender, entity, packet.NewValue) ??
+             GateCreatureMetadata(context.Sender, entity, packet.NewValue)) is { } result)
         {
             await SendResultAsync(context, entity, result);
             return;
@@ -92,6 +93,29 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
         _ when ScannerRoomManager.HoldsScannerRoomState(entity) => scannerRoomManager.RejectReplacement(sender, entity, metadata),
         _ => null
     };
+
+    /// <summary>
+    ///     A creature's infection is merged into the creature metadata it already has (see <see cref="CreatureMetadataAuthority" />).
+    ///     The other players get the update as it was sent.
+    /// </summary>
+    /// <returns>Null when the update is no creature metadata.</returns>
+    private MetadataUpdateResult? GateCreatureMetadata(Player sender, Entity entity, EntityMetadata metadata)
+    {
+        if (metadata is not CreatureMetadata requested)
+        {
+            return null;
+        }
+        if (requested is CreatureInfectionMetadata && !CreatureMetadataAuthority.IsFromSimulatingPlayer(simulationOwnershipData.GetPlayerForLock(entity.Id), sender))
+        {
+            return MetadataUpdateResult.Reject;
+        }
+        if (CreatureMetadataAuthority.Merge(entity.Metadata, requested) is not { } accepted)
+        {
+            return MetadataUpdateResult.Reject;
+        }
+        entity.Metadata = accepted;
+        return MetadataUpdateResult.Accept(requested);
+    }
 
     /// <summary>
     ///     Sends what a manager decided about an update. The manager has already stored what it accepted.

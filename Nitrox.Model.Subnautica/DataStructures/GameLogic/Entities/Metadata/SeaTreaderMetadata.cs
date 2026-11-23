@@ -7,7 +7,7 @@ namespace Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 
 [Serializable]
 [DataContract]
-public class SeaTreaderMetadata : EntityMetadata
+public class SeaTreaderMetadata : CreatureMetadata
 {
     [DataMember(Order = 1)]
     public bool ReverseDirection { get; }
@@ -24,7 +24,7 @@ public class SeaTreaderMetadata : EntityMetadata
         // Constructor for serialization. Has to be "protected" for json serialization.
     }
 
-    public SeaTreaderMetadata(bool reverseDirection, float grazingEndTime, NitroxVector3 leashPosition)
+    public SeaTreaderMetadata(bool reverseDirection, float grazingEndTime, NitroxVector3 leashPosition, float infectedAmount) : base(infectedAmount)
     {
         ReverseDirection = reverseDirection;
         GrazingEndTime = grazingEndTime;
@@ -33,6 +33,6 @@ public class SeaTreaderMetadata : EntityMetadata
 
     public override string ToString()
     {
-        return $"[{nameof(SeaTreaderMetadata)} ReverseDirection: {ReverseDirection}, GrazingEndTime: {GrazingEndTime}, LeashPosition: {LeashPosition}]";
+        return $"[{nameof(SeaTreaderMetadata)} ReverseDirection: {ReverseDirection}, GrazingEndTime: {GrazingEndTime}, LeashPosition: {LeashPosition}, {base.ToString()}]";
     }
 }

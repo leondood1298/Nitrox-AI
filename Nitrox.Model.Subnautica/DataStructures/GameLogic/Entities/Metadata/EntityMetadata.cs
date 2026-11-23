@@ -28,15 +28,13 @@ namespace Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 [ProtoInclude(69, typeof(FireExtinguisherHolderMetadata))]
 [ProtoInclude(70, typeof(PlayerMetadata))]
 [ProtoInclude(71, typeof(GhostMetadata))]
-[ProtoInclude(72, typeof(WaterParkCreatureMetadata))]
+// 72 (WaterParkCreatureMetadata), 79 (SeaTreaderMetadata) and 80 (StayAtLeashPositionMetadata) are now included by CreatureMetadata
 [ProtoInclude(73, typeof(NamedColoredMetadata))]
 [ProtoInclude(74, typeof(BeaconMetadata))]
 [ProtoInclude(75, typeof(FlareMetadata))]
 [ProtoInclude(76, typeof(RadiationMetadata))]
 [ProtoInclude(77, typeof(CrashHomeMetadata))]
 [ProtoInclude(78, typeof(EatableMetadata))]
-[ProtoInclude(79, typeof(SeaTreaderMetadata))]
-[ProtoInclude(80, typeof(StayAtLeashPositionMetadata))]
 [ProtoInclude(81, typeof(EggMetadata))]
 [ProtoInclude(82, typeof(PlantableMetadata))]
 [ProtoInclude(83, typeof(FruitPlantMetadata))]
@@ -55,6 +53,7 @@ namespace Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 // Upstream's Cyclops damage sync has not registered this type yet; remove this line once it does.
 [ProtoInclude(203, typeof(CyclopsDamagePointMetadata))]
 [ProtoInclude(204, typeof(MedicalCabinetMetadata))]
+[ProtoInclude(206, typeof(CreatureMetadata))]
 public abstract class EntityMetadata
 {
 }
