@@ -10,16 +10,13 @@ namespace NitroxClient.GameLogic;
 
 /// <summary>
 ///     Makes the cure balls (EnzymeBall) that a Sea Emperor baby drops one set for every player:<br />
-///     - only the player who simulates a baby that is an entity (hatched in the prison) makes its balls, and announces each
-///     ball once the baby lets it go, so that the others get the same ball in the same place, as do players who come later<br />
+///     - only the player who simulates a baby that is an entity (hatched in the prison, or appeared outside, see
+///     <see cref="SeaEmperorBabies" />) makes its balls, and announces each ball as soon as it is made, so that the others get
+///     the same ball in the same place, as do players who come later<br />
 ///     - a ball that cures a creature is used up for everybody<br />
 ///     - a ball cures a creature only in the game of the player who simulates the creature: the others leave the ball where it
 ///     is, so that the cure happens there and is not lost
 /// </summary>
-/// <remarks>
-///     The babies that appear outside after leaving the prison (SeaEmperorBabiesSpawner) are not entities: each game makes its
-///     own, and their balls stay local like before.
-/// </remarks>
 public class EnzymeBalls
 {
     private readonly SimulationOwnership simulationOwnership;
@@ -43,20 +40,23 @@ public class EnzymeBalls
     }
 
     /// <summary>
-    ///     Called after DropEnzymes.ReleaseSpawnedCureBall let <paramref name="ball" /> go into the world.
+    ///     Called when DropEnzymes.SpawnCureBallAsync has made the ball and put it on the baby. The game lets a player click
+    ///     the ball (the cure) while the baby still holds it, so the ball is an entity from now on: the others are given it at
+    ///     once, and it follows the baby for them because this player broadcasts its position.
     /// </summary>
-    public void Released(DropEnzymes dropEnzymes, GameObject ball)
+    public void Spawned(DropEnzymes dropEnzymes)
     {
+        GameObject ball = dropEnzymes.spawnedCureBall;
         if (!ball || ball.TryGetNitroxId(out _) || !TryGetSyncedBabyId(dropEnzymes, out NitroxId babyId) || !simulationOwnership.HasAnyLockType(babyId))
         {
             return;
         }
 
-        // Gives the ball its id and makes this player simulate its drift
+        // Gives the ball its id and makes this player simulate its movement
         items.Dropped(ball, TechType.EnzymeCureBall);
 
-        // The ball was made on the baby, so its cure cinematic was registered under the baby's id. Registering it under the
-        // ball as well lets this player see another player's cure on it.
+        // The ball was made on the baby, so its cure cinematic may have been registered under the baby's id already.
+        // Registering it under the ball as well lets this player see another player's cure on it.
         foreach (PlayerCinematicController controller in ball.GetComponentsInChildren<PlayerCinematicController>(true))
         {
             ball.EnsureComponent<MultiplayerCinematicReference>().AddController(controller);

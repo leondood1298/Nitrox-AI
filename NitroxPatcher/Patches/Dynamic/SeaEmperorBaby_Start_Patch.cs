@@ -1,5 +1,6 @@
 using System.Linq;
 using System.Reflection;
+using NitroxClient.GameLogic;
 
 namespace NitroxPatcher.Patches.Dynamic;
 
@@ -28,6 +29,12 @@ public sealed partial class SeaEmperorBaby_Start_Patch : NitroxPatch, IDynamicPa
 
         // Skip temporary babies created for animation
         if (__instance.name.Contains(IncubatorEggAnimation_OnHatchAnimationEnd_Patch.TEMPORARY_BABY_MARKER))
+        {
+            return;
+        }
+
+        // The babies that appear outside after leaving the prison have no parent either, but have left their mother
+        if (Resolve<SeaEmperorBabies>().IsOutsideBaby(__instance))
         {
             return;
         }

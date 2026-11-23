@@ -99,6 +99,7 @@ namespace NitroxClient
             containerBuilder.RegisterType<CreatureHealthManager>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<CreatureInfections>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<EnzymeBalls>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<SeaEmperorBabies>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<CreatureAttacksOnPlayers>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<StalkerShinyGrabs>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<SandSharkBurrows>().InstancePerLifetimeScope();
