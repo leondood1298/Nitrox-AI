@@ -227,6 +227,46 @@ public sealed class BasePowerSourceAuthorityTest
     }
 
     [TestMethod]
+    public void TemperatureIsStoredNoHigherThanAThermalPlantCanUse()
+    {
+        // Any player may report a temperature. Above 100 a plant's output and gauge no longer change.
+        BasePowerSourceAuthority authority = new();
+        ModuleEntity plant = CreateModule();
+        plant.Metadata = new PowerSourceMetadata(10f, 250f, BasePowerSourceType.THERMAL, 3, temperature: 70f);
+
+        Assert.IsTrue(authority.TryAcceptTemperature(plant, new ThermalPlantMetadata(1e9f), out ThermalPlantMetadata accepted));
+
+        Assert.AreEqual(100f, accepted.Temperature, "What is relayed to the other players is limited as well.");
+        Assert.AreEqual(100f, ((PowerSourceMetadata)plant.Metadata).Temperature);
+        Assert.IsFalse(authority.TryAcceptTemperature(plant, new ThermalPlantMetadata(5e9f), out _), "Nothing above the limit is news.");
+    }
+
+    [TestMethod]
+    public void TemperatureForAPlantWithoutPowerStateIsCheckedTheSameWay()
+    {
+        BasePowerSourceAuthority authority = new();
+        ModuleEntity plant = CreateModule();
+
+        Assert.IsTrue(authority.TryAcceptTemperature(plant, new ThermalPlantMetadata(250f), out ThermalPlantMetadata accepted));
+        Assert.AreEqual(100f, accepted.Temperature);
+        Assert.IsNull(plant.Metadata, "The caller stores the accepted report.");
+        Assert.IsFalse(authority.TryAcceptTemperature(plant, new ThermalPlantMetadata(float.NaN), out _));
+        Assert.IsFalse(authority.TryAcceptTemperature(plant, new ThermalPlantMetadata(float.PositiveInfinity), out _));
+
+        plant.Metadata = new ThermalPlantMetadata(48f);
+        Assert.IsFalse(authority.TryAcceptTemperature(plant, new ThermalPlantMetadata(48f), out _));
+        Assert.IsTrue(authority.TryAcceptTemperature(plant, new ThermalPlantMetadata(49f), out _));
+    }
+
+    [TestMethod]
+    public void OnlyTheSimulatingPlayerOrATemperatureReportMayTouchPowerState()
+    {
+        Assert.IsFalse(BasePowerSourceAuthority.MayReplacePowerState(new BatteryMetadata(100f), senderSimulatesSource: false));
+        Assert.IsTrue(BasePowerSourceAuthority.MayReplacePowerState(new BatteryMetadata(100f), senderSimulatesSource: true));
+        Assert.IsTrue(BasePowerSourceAuthority.MayReplacePowerState(new ThermalPlantMetadata(60f), senderSimulatesSource: false));
+    }
+
+    [TestMethod]
     public void FirstPowerUpdateCarriesOverTemperatureStoredAsPlainThermalMetadata()
     {
         // A newly built plant can get its temperature report before its first power update.

@@ -17,6 +17,14 @@ internal sealed class BasePowerSourceAuthority
     ///     largest source capacity (a nuclear reactor) is not a real request.
     /// </summary>
     internal const float MAX_CONSUMPTION_PER_REQUEST = 2500f;
+
+    /// <summary>
+    ///     Highest thermal plant temperature that is stored. The game has no upper limit for the water temperature
+    ///     itself (a biome setting plus curves, plus up to 60 near a heat source), but a thermal plant treats everything
+    ///     from here up the same: ThermalPlant.AddPower gives full output and ThermalPlant.UpdateUI a full gauge. A
+    ///     higher stored value changes nothing, so no report needs to be believed beyond it.
+    /// </summary>
+    internal const float MAX_THERMAL_TEMPERATURE = 100f;
     private readonly Dictionary<NitroxId, OwnerSequence> lastOwnerSequenceBySource = [];
     private readonly Dictionary<NitroxId, long> highestRevisionBySource = [];
 
@@ -53,14 +61,45 @@ internal sealed class BasePowerSourceAuthority
     {
         lock (lastOwnerSequenceBySource)
         {
-            if (entity.Metadata is not PowerSourceMetadata current || !float.IsFinite(report.Temperature) || report.Temperature <= current.Temperature)
+            if (entity.Metadata is not PowerSourceMetadata current || !float.IsFinite(report.Temperature))
             {
                 return false;
             }
-            entity.Metadata = current.WithTemperature(report.Temperature);
+            float temperature = Math.Min(report.Temperature, MAX_THERMAL_TEMPERATURE);
+            if (temperature <= current.Temperature)
+            {
+                return false;
+            }
+            entity.Metadata = current.WithTemperature(temperature);
             return true;
         }
     }
+
+    /// <summary>
+    ///     Checks a thermal plant temperature report, which any player near the plant may send, and stores it when the
+    ///     plant already has power state. Otherwise the caller stores <paramref name="accepted" /> as the metadata.
+    /// </summary>
+    /// <param name="accepted">The report with its temperature limited to <see cref="MAX_THERMAL_TEMPERATURE" />.</param>
+    /// <returns>False when the report is not a number or not higher than what is stored.</returns>
+    public bool TryAcceptTemperature(Entity entity, ThermalPlantMetadata report, out ThermalPlantMetadata accepted)
+    {
+        accepted = new ThermalPlantMetadata(Math.Min(report.Temperature, MAX_THERMAL_TEMPERATURE));
+        if (entity.Metadata is PowerSourceMetadata)
+        {
+            return TryApplyTemperature(entity, report);
+        }
+        return float.IsFinite(report.Temperature) &&
+               (entity.Metadata is not ThermalPlantMetadata current || accepted.Temperature > current.Temperature);
+    }
+
+    /// <summary>
+    ///     Whether metadata of another kind may take the place of a source's power state. Only the temperature every
+    ///     nearby player measures is taken from anyone (and merged, see <see cref="TryAcceptTemperature" />). Anything
+    ///     else would erase the level, fuel progress and revision, and the source would come back full for the next
+    ///     player who joins.
+    /// </summary>
+    public static bool MayReplacePowerState(EntityMetadata incoming, bool senderSimulatesSource) =>
+        incoming is ThermalPlantMetadata || senderSimulatesSource;
 
     /// <summary>
     ///     Decides what to do with energy that <paramref name="consumerSessionId" /> took from a source it does not
