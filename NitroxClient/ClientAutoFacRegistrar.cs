@@ -101,6 +101,7 @@ namespace NitroxClient
             containerBuilder.RegisterType<EnzymeBalls>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<SeaEmperorBabies>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<CreatureAttacksOnPlayers>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<CreatureAttackEffects>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<StalkerShinyGrabs>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<SandSharkBurrows>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<StalkerFriendships>().InstancePerLifetimeScope();

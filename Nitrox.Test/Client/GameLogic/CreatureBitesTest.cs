@@ -6,31 +6,22 @@ namespace Nitrox.Test.Client.GameLogic;
 public sealed class CreatureBitesTest
 {
     [TestMethod]
-    public void SimulatingPlayersStalkerBitesAndSendsTheBite()
+    public void SimulatingPlayersCreatureBites()
     {
-        Assert.IsTrue(CreatureBites.MayBiteHere(bitesShownFromSimulatingPlayer: true, localPlayerSimulatesCreature: true, movedByAnotherPlayer: false));
-        Assert.IsTrue(CreatureBites.ShouldSend(bitesShownFromSimulatingPlayer: true, localPlayerSimulatesCreature: true));
+        Assert.IsTrue(CreatureBites.MayBiteHere(localPlayerSimulatesCreature: true, movedByAnotherPlayer: false));
     }
 
     [TestMethod]
-    public void CopyOfAnotherPlayersStalkerOnlyShowsTheBitesItIsSent()
+    public void CopyOfAnotherPlayersCreatureOnlyShowsTheBitesItIsSent()
     {
         // Biting on its own as well, it would show a bite twice, or one that never happened where the damage is decided
-        Assert.IsFalse(CreatureBites.MayBiteHere(bitesShownFromSimulatingPlayer: true, localPlayerSimulatesCreature: false, movedByAnotherPlayer: true));
-        Assert.IsFalse(CreatureBites.ShouldSend(bitesShownFromSimulatingPlayer: true, localPlayerSimulatesCreature: false));
+        Assert.IsFalse(CreatureBites.MayBiteHere(localPlayerSimulatesCreature: false, movedByAnotherPlayer: true));
     }
 
     [TestMethod]
-    public void StalkerNobodySimulatesKeepsBitingLocally()
+    public void CreatureNobodySimulatesKeepsBitingLocally()
     {
         // Nobody would send its bites
-        Assert.IsTrue(CreatureBites.MayBiteHere(bitesShownFromSimulatingPlayer: true, localPlayerSimulatesCreature: false, movedByAnotherPlayer: false));
-    }
-
-    [TestMethod]
-    public void OtherCreaturesBiteAsBeforeAndSendNothing()
-    {
-        Assert.IsTrue(CreatureBites.MayBiteHere(bitesShownFromSimulatingPlayer: false, localPlayerSimulatesCreature: false, movedByAnotherPlayer: true));
-        Assert.IsFalse(CreatureBites.ShouldSend(bitesShownFromSimulatingPlayer: false, localPlayerSimulatesCreature: true));
+        Assert.IsTrue(CreatureBites.MayBiteHere(localPlayerSimulatesCreature: false, movedByAnotherPlayer: false));
     }
 }

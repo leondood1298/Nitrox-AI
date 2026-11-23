@@ -4,8 +4,7 @@ using Nitrox.Model.Subnautica.Packets;
 namespace NitroxPatcher.Patches.Dynamic;
 
 /// <summary>
-/// Prevents non simulating players from running locally <see cref="RangedAttackLastTarget.StartCasting"/>.
-/// Broadcasts this event on the simulating player.
+/// Broadcasts <see cref="RangedAttackLastTarget.StartCasting"/> from the simulating player.
 /// </summary>
 public sealed partial class RangedAttackLastTarget_StartCasting_Patch : NitroxPatch, IDynamicPatch
 {

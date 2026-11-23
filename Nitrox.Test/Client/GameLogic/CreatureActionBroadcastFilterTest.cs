@@ -42,6 +42,18 @@ public sealed class CreatureActionBroadcastFilterTest
     }
 
     [TestMethod]
+    public void NoActionIsOnlySentWhenAReplayedActionEnds()
+    {
+        CreatureActionBroadcastFilter filter = new(RESEND_AFTER_SECONDS);
+        NitroxId peeper = new();
+
+        Assert.IsFalse(filter.ShouldSend(peeper, CreatureActionBroadcastFilter.NO_ACTION, 10f), "A creature that never did a replayed action costs nothing.");
+        Assert.IsTrue(filter.ShouldSend(peeper, "AttackLastTarget", 11f));
+        Assert.IsTrue(filter.ShouldSend(peeper, CreatureActionBroadcastFilter.NO_ACTION, 12f));
+        Assert.IsFalse(filter.ShouldSend(peeper, CreatureActionBroadcastFilter.NO_ACTION, 20f), "Doing nothing is not repeated.");
+    }
+
+    [TestMethod]
     public void CreaturesAreTrackedSeparately()
     {
         CreatureActionBroadcastFilter filter = new(RESEND_AFTER_SECONDS);

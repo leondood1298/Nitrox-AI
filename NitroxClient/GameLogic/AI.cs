@@ -30,31 +30,6 @@ public sealed class AI
     ];
 
     /// <summary>
-    /// In the future, ensure all creatures are synced. We want each of them to be individually
-    /// checked (that all their actions are synced) before marking them as synced.
-    /// </summary>
-    private readonly HashSet<Type> syncedCreatureWhitelist =
-    [
-        typeof(ReaperLeviathan), typeof(SeaDragon), typeof(SeaTreader), typeof(GhostLeviathan),
-        // Predators whose only behaviour beyond swimming is to attack what they see. Judged from their classes, not yet
-        // confirmed in game: without this they can never bite a player who is not simulating them.
-        typeof(BoneShark), typeof(Biter), typeof(SpineEel), typeof(Shocker),
-        // Their other behaviour has its own sync: what a Stalker carries (StalkerShinyGrabs), a Sand Shark's burrow (SandSharkBurrows)
-        typeof(Stalker), typeof(SandShark)
-    ];
-
-    /// <summary>
-    ///     Synced creatures whose bites stay with their simulating player's game, which passes a bite on another player's
-    ///     body on to that player (<see cref="CreatureAttacksOnPlayers" />) and shows the bite on every game
-    ///     (<see cref="CreatureBites" />). Every game sees what they aim at and how they attack, but a bite happens where
-    ///     the simulating player saw it land.
-    /// </summary>
-    private readonly HashSet<Type> reportedBiteCreatures =
-    [
-        typeof(Stalker), typeof(SandShark)
-    ];
-
-    /// <summary>
     ///     A creature's action is repeated this often even if it did not change, for players who loaded the creature
     ///     after it was last sent.
     /// </summary>
@@ -72,15 +47,14 @@ public sealed class AI
                                                      .ToDictionary(t => t.FullName, t => t);
     }
 
+    /// <summary>
+    ///     Tells the others which of the actions they replay (<see cref="IsReplayedAction" />) the creature does now, for
+    ///     every creature: only those show on another game, so any other action, or none (ChooseBestAction returns nothing
+    ///     while none of the creature's actions wants to run), is sent as none.
+    /// </summary>
     public void BroadcastNewAction(NitroxId creatureId, Creature creature, CreatureAction newAction)
     {
-        // ChooseBestAction returns nothing while none of the creature's actions wants to run.
-        if (!newAction || !syncedCreatureWhitelist.Contains(creature.GetType()))
-        {
-            return;
-        }
-
-        string actionTypeName = newAction.GetType().FullName;
+        string actionTypeName = newAction && IsReplayedAction(newAction.GetType()) ? newAction.GetType().FullName : CreatureActionBroadcastFilter.NO_ACTION;
         if (actionBroadcastFilter.ShouldSend(creatureId, actionTypeName, Time.realtimeSinceStartup))
         {
             packetSender.Send(new CreatureActionChanged(creatureId, actionTypeName));
@@ -223,44 +197,6 @@ public sealed class AI
             return false;
         }
         return true;
-    }
-
-    public bool IsCreatureActionWhitelisted(CreatureAction creatureAction)
-    {
-        return creatureActionWhitelist.Contains(creatureAction.GetType());
-    }
-
-    public bool IsCreatureWhitelisted(Creature creature)
-    {
-        return syncedCreatureWhitelist.Contains(creature.GetType());
-    }
-
-    /// <summary>
-    ///     True if the bitten player's own copy of this creature does the biting, which its synced target and actions
-    ///     make it do. False for the creatures whose bites the simulating player reports.
-    /// </summary>
-    public bool IsAttackReplayedByVictim(Creature creature)
-    {
-        return IsAttackReplayedByVictim(creature.GetType());
-    }
-
-    internal bool IsAttackReplayedByVictim(Type creatureType)
-    {
-        return syncedCreatureWhitelist.Contains(creatureType) && !reportedBiteCreatures.Contains(creatureType);
-    }
-
-    /// <summary>
-    ///     True if this creature's bites are shown on every game when its simulating player's game bites
-    ///     (<see cref="CreatureBites" />), instead of by each game's copy on its own.
-    /// </summary>
-    public bool AreBitesShownFromSimulatingPlayer(Creature creature)
-    {
-        return AreBitesShownFromSimulatingPlayer(creature.GetType());
-    }
-
-    internal bool AreBitesShownFromSimulatingPlayer(Type creatureType)
-    {
-        return syncedCreatureWhitelist.Contains(creatureType) && reportedBiteCreatures.Contains(creatureType);
     }
 
     /// <summary>
