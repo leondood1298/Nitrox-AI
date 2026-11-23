@@ -1,4 +1,5 @@
 using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Nitrox.Model.Core;
@@ -6,6 +7,7 @@ using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
+using Nitrox.Server.Subnautica.Extensions;
 using Nitrox.Server.Subnautica.Models.Commands;
 using Nitrox.Server.Subnautica.Models.Commands.Core;
 using Nitrox.Server.Subnautica.Models.GameLogic;
@@ -193,6 +195,29 @@ public sealed class DiagnosticsCommandsTest
         context.Replies.Should().HaveCount(2);
         context.Replies[0].Should().StartWith("Base power live trace enabled");
         (await RunAsync(command)).Should().StartWith($"Base power ep={diagnostics.Epoch}: sources=0 ").And.Contain("Anomalies (0):");
+    }
+
+    [TestMethod]
+    public void ServiceContainerCanBuildTheCommandsAndGatesThemForAdmins()
+    {
+        ServiceCollection services = new();
+        services.AddLogging();
+        services.AddWorld();
+        services.AddCommands();
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        // The same entries the command registry is built from, without resolving every other command of the server.
+        CommandHandlerEntry[] entries =
+        [
+            new(provider.GetRequiredService<ScannerRoomCommand>(), typeof(ICommandHandler)),
+            new(provider.GetRequiredService<ScannerMarkCommand>(), typeof(ICommandHandler<string>)),
+            new(provider.GetRequiredService<BasePowerCommand>(), typeof(ICommandHandler)),
+            new(provider.GetRequiredService<BasePowerCommand>(), typeof(ICommandHandler<bool>))
+        ];
+
+        entries.Select(entry => entry.Name).Should().Equal("scannerroom", "scannermark", "basepower", "basepower");
+        entries.Should().OnlyContain(entry => entry.MinimumPermissions == Perms.ADMIN, "these commands print and mark server state");
+        entries.Should().OnlyContain(entry => entry.Description.Length > 0, "the help command lists them by this text");
     }
 
     private static ScannerRoomCommand CreateScannerRoomCommand(ScannerRoomScenarioFixture scenario, ScannerRoomDiagnostics diagnostics) =>
