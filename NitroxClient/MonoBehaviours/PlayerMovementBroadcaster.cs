@@ -160,19 +160,3 @@ public class PlayerMovementBroadcaster : MonoBehaviour
         return false;
     }
 }
-
-internal enum PlayerMovementBroadcastMode
-{
-    SUPPRESSED,
-    NORMAL,
-    SCANNER_CAMERA_ANCHOR
-}
-
-internal enum ScannerAnchorTransition
-{
-    NONE,
-    ENTER,
-    SWITCH,
-    IDENTIFIED,
-    EXIT
-}
