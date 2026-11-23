@@ -40,7 +40,9 @@ internal sealed class BasePowerSourceUpdateProcessor(EntityRegistry entityRegist
     private async Task Reject(AuthProcessorContext context, BasePowerSourceUpdate packet, PowerSourceMetadata canonical, string reason)
     {
         diagnostics.RecordRejected();
-        logger.ZLogWarning($"[BasePower] rejected source {packet.SourceId} update from {context.Sender.Name} #{context.Sender.SessionId}: {reason}");
+        // An owner sends an update per source every second, so a client that keeps being rejected would fill the log.
+        // The count is in the basepower command.
+        logger.ZLogDebug($"[BasePower] rejected source {packet.SourceId} update from {context.Sender.Name} #{context.Sender.SessionId}: {reason}");
         await context.ReplyAsync(Response(packet, canonical, false, reason));
     }
 

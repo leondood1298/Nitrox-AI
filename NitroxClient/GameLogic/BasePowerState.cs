@@ -10,6 +10,17 @@ public sealed class BasePowerState
     private readonly Dictionary<NitroxId, PowerSourceMetadata> canonicalBySource = [];
     private readonly Dictionary<NitroxId, long> nextSequenceBySource = [];
     private readonly HashSet<NitroxId> handedBackSources = [];
+    private readonly Dictionary<NitroxId, Broadcast> lastBroadcastBySource = [];
+
+    /// <summary>
+    ///     What this client last sent for a source it simulates.
+    /// </summary>
+    /// <param name="Time">Time.realtimeSinceStartup when it was sent.</param>
+    public readonly record struct Broadcast(float Time, float Power, float FuelConsumed);
+
+    public Broadcast? GetLastBroadcast(NitroxId sourceId) => lastBroadcastBySource.TryGetValue(sourceId, out Broadcast broadcast) ? broadcast : null;
+
+    public void RecordBroadcast(NitroxId sourceId, Broadcast broadcast) => lastBroadcastBySource[sourceId] = broadcast;
 
     public BasePowerSourceUpdate CreateUpdate(NitroxId sourceId, BasePowerSourceType sourceType, float power, float fuelConsumed = 0f)
     {
@@ -51,6 +62,7 @@ public sealed class BasePowerState
         canonicalBySource.Remove(sourceId);
         nextSequenceBySource.Remove(sourceId);
         handedBackSources.Remove(sourceId);
+        lastBroadcastBySource.Remove(sourceId);
     }
 
     /// <summary>
