@@ -116,7 +116,7 @@ public sealed class WorldServiceScannerRoomSnapshotTest
         ScannerRoomDiagnostics diagnostics = new(NullLogger<ScannerRoomDiagnostics>.Instance);
         ScannerRoomDiagnosticEntry checkpoint = diagnostics.RecordCapturedCheckpoint(
             "save", room, savedState.Snapshot, savedState.InvariantFailure, "serialized_snapshot");
-        Assert.AreEqual(ScannerRoomDiagnosticOutcome.Checkpoint, checkpoint.Outcome);
+        Assert.AreEqual(ScannerRoomDiagnosticOutcome.CHECKPOINT, checkpoint.Outcome);
         Assert.AreEqual(savedState.Snapshot.Fingerprint, checkpoint.StateFingerprint,
             "The save checkpoint must report the serialized fingerprint, not recompute current live state.");
     }
@@ -234,7 +234,7 @@ public sealed class WorldServiceScannerRoomSnapshotTest
         ScannerRoomDiagnosticEntry checkpoint = diagnostics.RecordCapturedCheckpoint(
             "save", room, snapshot, invariantFailure, "serialized_snapshot");
 
-        Assert.AreEqual(ScannerRoomDiagnosticOutcome.InvariantFailure, checkpoint.Outcome);
+        Assert.AreEqual(ScannerRoomDiagnosticOutcome.INVARIANT_FAILURE, checkpoint.Outcome);
         Assert.AreEqual("save_invalid", checkpoint.EventName);
         Assert.AreEqual("duplicate_dock", checkpoint.Reason);
         Assert.AreEqual(snapshot.Fingerprint, checkpoint.StateFingerprint);

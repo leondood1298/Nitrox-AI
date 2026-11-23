@@ -7,16 +7,18 @@ namespace NitroxClient.GameLogic;
 
 /// <summary>
 ///     Reports energy this client consumed from base power sources that another player simulates.
-///     <p />
+///     <para>
 ///     A power source's level is owned by the player simulating it: that player generates, and broadcasts the level to
 ///     everyone else. Things that draw power (docked vehicles, chargers, Scanner Rooms, fabricators) run on the player
 ///     simulating the consumer instead. When those are different players the draw only changed the consumer's local
 ///     copy and was overwritten by the owner's next broadcast, so the base never lost power.
-///     <p />
+///     </para>
+///     <para>
 ///     Only consumers that run on exactly one client report here, by wrapping their update in
 ///     <see cref="EnterConsumer" /> and <see cref="ExitConsumer" />. Consumers that run on every client (base
 ///     spotlights, floodlights, water filtration) must not: the source owner runs them too and already counts them
 ///     once, so reporting would count them once per player.
+///     </para>
 /// </summary>
 public sealed class BasePowerConsumptionForwarder(IPacketSender packetSender, SimulationOwnership simulationOwnership)
 {

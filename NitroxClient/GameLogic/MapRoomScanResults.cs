@@ -12,11 +12,6 @@ public static class MapRoomScanResults
 {
     private const float PICKUP_POSITION_TOLERANCE_SQUARED = 0.01f;
 
-    public static void RemoveLocalResource(NitroxId resourceId)
-    {
-        RemoveLocalResource(resourceId, TechType.None, null);
-    }
-
     public static void RemoveLocalResource(NitroxId resourceId, TechType techType, Vector3 pickupPosition)
     {
         RemoveLocalResource(resourceId, techType, (Vector3?)pickupPosition);

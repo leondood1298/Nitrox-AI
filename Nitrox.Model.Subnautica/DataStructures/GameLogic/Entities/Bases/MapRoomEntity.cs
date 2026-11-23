@@ -140,7 +140,7 @@ public class MapRoomEntity : GlobalRootEntity
 
     public MapRoomCameraRecord? GetCameraRecord(NitroxId cameraId) => CameraRegistry.Find(record => record.CameraId == cameraId);
 
-    public int NormalizeCameraState()
+    internal int NormalizeCameraState()
     {
         CameraRegistry ??= [];
         int changes = 0;
@@ -156,7 +156,6 @@ public class MapRoomEntity : GlobalRootEntity
                 changes++;
             }
         }
-        seenNumbers.Clear();
         int nextNumber = 1;
         foreach (MapRoomCameraRecord record in CameraRegistry)
         {

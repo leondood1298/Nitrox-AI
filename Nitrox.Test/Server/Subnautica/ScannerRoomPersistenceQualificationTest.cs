@@ -124,7 +124,7 @@ public sealed class ScannerRoomPersistenceQualificationTest
         IReadOnlyList<ScannerRoomDiagnosticEntry> recoveryDiagnostics = diagnostics.GetHistory();
         Assert.AreEqual(1, recoveryDiagnostics.Count, $"{serializerName}: recovery should emit one bounded diagnostic.");
         Assert.AreEqual("orphan_recovery", recoveryDiagnostics[0].EventName);
-        Assert.AreEqual(ScannerRoomDiagnosticOutcome.InvariantFailure, recoveryDiagnostics[0].Outcome);
+        Assert.AreEqual(ScannerRoomDiagnosticOutcome.INVARIANT_FAILURE, recoveryDiagnostics[0].Outcome);
         Assert.AreEqual("restored_1", recoveryDiagnostics[0].Reason);
 
         List<GlobalRootEntity> repeatedInitialSync = worldEntityManager.GetInitialSyncGlobalRootEntities(rootOnly: true);
