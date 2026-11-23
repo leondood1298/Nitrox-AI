@@ -16,21 +16,29 @@ namespace NitroxClient.GameLogic;
 /// </summary>
 public sealed class BasePowerSources(IPacketSender packetSender, SimulationOwnership simulationOwnership)
 {
+    /// <summary>
+    ///     The shortest time between two states of one source. A guess, not measured.
+    /// </summary>
     private const float BROADCAST_THROTTLE_SECONDS = 1f;
 
     /// <summary>
     ///     A source whose level does not move is still sent this often. The copy another player holds can drift from
     ///     what that player's own game does to it, and nothing else would put it right while the level is pinned.
+    ///     The number is a guess. The server's basepower command counts on it: it calls a source that was not
+    ///     reported for three times as long frozen.
     /// </summary>
     private const float UNCHANGED_HEARTBEAT_SECONDS = 30f;
 
     /// <summary>
     ///     Share of a source's capacity its level or fuel progress has to move before the new state is worth a packet.
     ///     A source that is charging changes every frame; sending each second of that for every source adds up to one
-    ///     packet per source per second for every player, for a difference nobody can see.
+    ///     packet per source per second for every player, for a difference nobody can see. One percent is a guess.
     /// </summary>
     private const float CHANGE_FRACTION_OF_CAPACITY = 0.01f;
 
+    /// <summary>
+    ///     What a change has to reach at least, whatever the capacity is said to be. A guess at more than float noise.
+    /// </summary>
     private const float MIN_CHANGE = 0.001f;
 
     private readonly Dictionary<NitroxId, Broadcast> lastBroadcastBySource = [];

@@ -14,6 +14,10 @@ namespace NitroxClient.GameLogic;
 /// </summary>
 public sealed partial class MapRoomCameraStates
 {
+    /// <summary>
+    ///     After this long without a battery the log says so; the wait itself goes on. A guess at what is clearly
+    ///     longer than the game takes to make a battery.
+    /// </summary>
     private const float CAMERA_BATTERY_WAIT_SECONDS = 10f;
 
     private readonly LiveMixinManager liveMixinManager;

@@ -54,8 +54,7 @@ internal sealed partial class ScannerRoomManager(IPacketSender packetSender, Ent
     SimulationOwnershipData simulationOwnershipData, PlayerManager playerManager, ScannerRoomDiagnostics diagnostics,
     ILogger<ScannerRoomManager> logger) : ISessionCleaner
 {
-    private const string MAP_ROOM_CAMERA_CLASS_ID = "733fd479-0760-4bc2-a03e-281cbf02bfa4";
-    private static readonly NitroxTechType mapRoomCameraTechType = new("MapRoomCamera");
+    private static readonly NitroxTechType MAP_ROOM_CAMERA_TECH_TYPE = new("MapRoomCamera");
 
     private readonly SemaphoreSlim gate = new(1, 1);
 
@@ -313,9 +312,9 @@ internal sealed partial class ScannerRoomManager(IPacketSender packetSender, Ent
     private bool IsWorldCamera(NitroxId cameraId) => TryGetWorldCamera(cameraId, out _);
 
     private bool TryGetWorldCamera(NitroxId cameraId, [NotNullWhen(true)] out WorldEntity? camera) =>
-        entityRegistry.TryGetEntityById(cameraId, out camera) && mapRoomCameraTechType.Equals(camera.TechType);
+        entityRegistry.TryGetEntityById(cameraId, out camera) && MAP_ROOM_CAMERA_TECH_TYPE.Equals(camera.TechType);
 
-    internal static bool IsCamera(Entity? entity) => entity != null && mapRoomCameraTechType.Equals(entity.TechType);
+    internal static bool IsCamera(Entity? entity) => entity != null && MAP_ROOM_CAMERA_TECH_TYPE.Equals(entity.TechType);
 
     /// <summary>
     ///     A camera as the entity registry has it: in a dock (a child of that room), loose in the world, or in an

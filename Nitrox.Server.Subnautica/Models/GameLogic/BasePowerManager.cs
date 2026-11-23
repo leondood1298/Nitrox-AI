@@ -16,6 +16,10 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic;
 /// </summary>
 internal sealed class BasePowerManager(EntityRegistry entityRegistry, SimulationOwnershipData simulationOwnershipData, BasePowerDiagnostics diagnostics, ILogger<BasePowerManager> logger)
 {
+    /// <summary>
+    ///     How far a reported level or fuel progress may lie outside its range and still be taken (it is clamped). A
+    ///     guess at more than float rounding can add to a value the game itself keeps inside the range.
+    /// </summary>
     private const float POWER_TOLERANCE = 0.01f;
 
     /// <summary>

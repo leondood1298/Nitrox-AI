@@ -17,6 +17,9 @@ namespace NitroxClient.GameLogic;
 /// </summary>
 public sealed partial class MapRoomScans
 {
+    /// <summary>
+    ///     The shortest time between two reports of how far a room's scan has got. A guess, not measured.
+    /// </summary>
     private const float PROGRESS_THROTTLE_SECONDS = 0.2f;
 
     private readonly IPacketSender packetSender;

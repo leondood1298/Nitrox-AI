@@ -23,8 +23,11 @@ namespace NitroxClient.GameLogic;
 /// </summary>
 public sealed class ScannerRoomClientDiagnostics
 {
+    // Guesses, not measurements: enough lines to follow a test step, and a fixed bound on what a long session keeps
+    // in memory.
     internal const int HISTORY_CAPACITY = 128;
     private const int REPEAT_KEY_CAPACITY = 128;
+
     private readonly Queue<string> history = new(HISTORY_CAPACITY);
     private readonly DiagnosticRepeatSampler repeatSampler = new(REPEAT_KEY_CAPACITY);
     private readonly Dictionary<NitroxId, (int Energy, int Health)> componentBands = [];

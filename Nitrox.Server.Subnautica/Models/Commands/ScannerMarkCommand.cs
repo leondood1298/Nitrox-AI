@@ -19,7 +19,7 @@ internal sealed class ScannerMarkCommand(ScannerRoomManager scannerRoomManager, 
     [Description("Writes a marker to the server log, plus a checkpoint with fingerprint per Scanner Room, for example: scannermark D1-before-restart")]
     public async Task Execute(ICommandContext context, [Description("one word naming the test step")] string label)
     {
-        string token = DiagnosticLineFormat.Token(label, 64);
+        string token = DiagnosticLineFormat.Token(label, ScannerRoomDiagnostics.REASON_LENGTH);
         if (token == DiagnosticLineFormat.NOT_APPLICABLE)
         {
             await context.ReplyAsync("The label needs at least one letter or digit; nothing was written.");

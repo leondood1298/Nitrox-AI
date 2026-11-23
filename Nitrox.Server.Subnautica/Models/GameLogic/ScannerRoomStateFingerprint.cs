@@ -22,7 +22,17 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic;
 /// </remarks>
 internal static class ScannerRoomStateFingerprint
 {
-    private static readonly CultureInfo invariantCulture = CultureInfo.InvariantCulture;
+    /// <summary>
+    ///     Part of what is hashed. Raised whenever the fields below or their order change, so that digests written by
+    ///     two versions of this class are never taken for the same state.
+    /// </summary>
+    private const string FORMAT_VERSION = "5";
+
+    /// <summary>
+    ///     How much of the SHA-256 is printed: 8 bytes, 16 hex digits. A guess at what is short enough for a log line
+    ///     and long enough that two states of the handful of rooms in a world do not get the same digest by chance.
+    /// </summary>
+    private const int FINGERPRINT_BYTES = 8;
 
     public static string? Validate(MapRoomEntity room)
     {
@@ -63,8 +73,8 @@ internal static class ScannerRoomStateFingerprint
         Entity[] cameras = GetCameras(room);
         MapRoomMetadata? metadata = room.Metadata as MapRoomMetadata;
 
-        StringBuilder canonical = new(512);
-        AppendField(canonical, "version", "5");
+        StringBuilder canonical = new();
+        AppendField(canonical, "version", FORMAT_VERSION);
         AppendField(canonical, "room", FormatId(room.Id));
         AppendField(canonical, "parent", FormatId(room.ParentId));
         AppendField(canonical, "cellX", Format(room.Cell.X));
@@ -85,7 +95,7 @@ internal static class ScannerRoomStateFingerprint
 
         string canonicalState = canonical.ToString();
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(canonicalState));
-        string fingerprint = Convert.ToHexString(hash.AsSpan(0, 8)).ToLowerInvariant();
+        string fingerprint = Convert.ToHexString(hash.AsSpan(0, FINGERPRINT_BYTES)).ToLowerInvariant();
         return new ScannerRoomStateSnapshot(fingerprint, canonicalState, cameras.Length, metadata?.TypeToScan?.Name ?? "", metadata?.NumNodesScanned ?? 0,
             metadata?.Generation ?? 0, crafting is { Amount: > 0 }, GetDockedCameraId(cameras, 0), GetDockedCameraId(cameras, 1));
     }
@@ -110,7 +120,7 @@ internal static class ScannerRoomStateFingerprint
     private static string CanonicalCamera(Entity camera)
     {
         MapRoomCameraMetadata state = ReadState(camera);
-        StringBuilder canonical = new(160);
+        StringBuilder canonical = new();
         AppendField(canonical, "id", FormatId(camera.Id));
         AppendField(canonical, "dock", Format(state.DockingIndex));
         AppendField(canonical, "number", Format(state.CameraNumber));
@@ -126,7 +136,7 @@ internal static class ScannerRoomStateFingerprint
         {
             return "";
         }
-        StringBuilder canonical = new(96);
+        StringBuilder canonical = new();
         AppendField(canonical, "type", metadata.TechType?.Name);
         AppendField(canonical, "start", Format(metadata.StartTime));
         AppendField(canonical, "duration", Format(metadata.Duration));
@@ -140,14 +150,14 @@ internal static class ScannerRoomStateFingerprint
         value ??= "";
         builder.Append(name);
         builder.Append('=');
-        builder.Append(value.Length.ToString(invariantCulture));
+        builder.Append(value.Length.ToString(CultureInfo.InvariantCulture));
         builder.Append(':');
         builder.Append(value);
         builder.Append(';');
     }
 
     private static string FormatId(NitroxId? id) => id?.ToString() ?? "";
-    private static string Format(int value) => value.ToString(invariantCulture);
-    private static string Format(long value) => value.ToString(invariantCulture);
-    private static string Format(float value) => value.ToString("R", invariantCulture);
+    private static string Format(int value) => value.ToString(CultureInfo.InvariantCulture);
+    private static string Format(long value) => value.ToString(CultureInfo.InvariantCulture);
+    private static string Format(float value) => value.ToString("R", CultureInfo.InvariantCulture);
 }

@@ -14,10 +14,14 @@ public sealed partial class MapRoomScans
 {
     /// <summary>
     ///     How long the same list of types is not reported again. The server is still sent it now and then, because
-    ///     what it adds changes with the world, not with this client's game.
+    ///     what it adds changes with the world, not with this client's game. The number is a guess.
     /// </summary>
     internal const float UNCHANGED_TYPES_REFRESH_SECONDS = 5f;
 
+    /// <summary>
+    ///     A scan range changes in steps of 50, one upgrade (see <see cref="MapRoomUpgradeEffects" />). Anything below
+    ///     this is float noise. A guess.
+    /// </summary>
     private const float RANGE_EPSILON = 0.01f;
 
     /// <summary>

@@ -5,8 +5,15 @@ using UnityEngine;
 
 namespace NitroxClient.GameLogic;
 
+/// <summary>
+///     The line about a reactor's fuel that is shown below the game's own hand text, which only has the stored power:
+///     how many fuel items the reactor holds, the energy left in them, and how long that lasts at full output.
+/// </summary>
 public static class ReactorFuelDisplay
 {
+    private const float SECONDS_PER_MINUTE = 60f;
+    private const int MINUTES_PER_HOUR = 60;
+
     public static string GetStatus(BaseBioReactor reactor)
     {
         float fuelCapacity = 0f;
@@ -15,7 +22,7 @@ public static class ReactorFuelDisplay
         {
             foreach (InventoryItem inventoryItem in (IEnumerable<InventoryItem>)reactor.container)
             {
-                if (inventoryItem?.item == null)
+                if (inventoryItem == null || !inventoryItem.item)
                 {
                     continue;
                 }
@@ -41,9 +48,9 @@ public static class ReactorFuelDisplay
 
     public static string FormatRuntime(float seconds)
     {
-        int totalMinutes = Math.Max(1, Mathf.CeilToInt(seconds / 60f));
-        int hours = totalMinutes / 60;
-        int minutes = totalMinutes % 60;
+        int totalMinutes = Math.Max(1, Mathf.CeilToInt(seconds / SECONDS_PER_MINUTE));
+        int hours = totalMinutes / MINUTES_PER_HOUR;
+        int minutes = totalMinutes % MINUTES_PER_HOUR;
         if (hours == 0)
         {
             return $"{minutes}m";

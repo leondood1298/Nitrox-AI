@@ -21,6 +21,14 @@ namespace NitroxClient.GameLogic;
 /// </summary>
 public sealed class MapRoomCameraDocks(IPacketSender packetSender, SimulationOwnership simulationOwnership, ScannerRoomClientDiagnostics diagnostics)
 {
+    /// <summary>
+    ///     One centimetre. A guess, not measured: far less than the docks of a room are apart, and assumed to be more
+    ///     than the position of one dock differs by between two clients.
+    /// </summary>
+    /// <summary>
+    ///     One centimetre. A guess, not measured: far less than the docks of a room are apart, and assumed to be more
+    ///     than the position of one dock differs by between two clients.
+    /// </summary>
     private const float DOCK_POSITION_SORT_TOLERANCE = 0.01f;
 
     /// <summary>

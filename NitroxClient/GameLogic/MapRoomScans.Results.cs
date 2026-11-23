@@ -13,8 +13,21 @@ namespace NitroxClient.GameLogic;
 /// </summary>
 public sealed partial class MapRoomScans
 {
+    /// <summary>
+    ///     The shortest time between two reports about one result that moves or leaves the range. A guess, not measured.
+    /// </summary>
     private const float RESULT_CHANGE_THROTTLE_SECONDS = 0.5f;
+
+    /// <summary>
+    ///     Ten centimetres, squared: a result of the same type this close to where a resource was picked up is taken
+    ///     for that resource. A guess, not measured.
+    /// </summary>
     private const float PICKUP_POSITION_TOLERANCE_SQUARED = 0.01f;
+
+    /// <summary>
+    ///     One centimetre, squared: a resource the game registers again closer than this to where it was has not
+    ///     moved. A guess at more than float noise.
+    /// </summary>
     private const float MOVED_SQR_DISTANCE_THRESHOLD = 0.0001f;
 
     /// <summary>

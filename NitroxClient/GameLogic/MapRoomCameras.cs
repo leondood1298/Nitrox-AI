@@ -168,7 +168,7 @@ public class MapRoomCameras
             pendingControl.Remove(cameraId);
             // Another player controls the camera, and this client had not heard of it when the player chose it.
             diagnostics.Record("control_apply", "reject", cameraId, reason: "lock_denied");
-            if (Language.main != null)
+            if (Language.main)
             {
                 ErrorMessage.AddMessage(Language.main.Get("Nitrox_DenyOwnershipHand"));
             }

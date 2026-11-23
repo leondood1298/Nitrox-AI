@@ -16,7 +16,17 @@ namespace NitroxClient.GameLogic;
 /// </summary>
 public sealed class MapRoomCameraPreviews(IPacketSender packetSender, ScannerRoomClientDiagnostics diagnostics)
 {
+    /// <summary>
+    ///     Unity's JPEG quality, 1 to 100. A guess, not measured: the picture is shown small on a room's screen, and
+    ///     its bytes have to stay below <see cref="MapRoomCameraPreviewImage.MAX_ENCODED_BYTES" /> or it is dropped.
+    /// </summary>
     private const int PREVIEW_JPEG_QUALITY = 55;
+
+    /// <summary>
+    ///     The size of the texture a picture is decoded into does not matter: Unity's LoadImage replaces it by one of
+    ///     the picture's size.
+    /// </summary>
+    private const int DECODE_TEXTURE_PLACEHOLDER_SIZE = 2;
 
     /// <summary>
     ///     The latest picture another player sent, for as long as it is not on the screens.
@@ -214,7 +224,7 @@ public sealed class MapRoomCameraPreviews(IPacketSender packetSender, ScannerRoo
         Texture2D decoded = null;
         try
         {
-            decoded = new Texture2D(2, 2, TextureFormat.RGB24, mipChain: false);
+            decoded = new Texture2D(DECODE_TEXTURE_PLACEHOLDER_SIZE, DECODE_TEXTURE_PLACEHOLDER_SIZE, TextureFormat.RGB24, mipChain: false);
             if (!ImageConversion.LoadImage(decoded, jpegBytes, markNonReadable: true) ||
                 decoded.width > MapRoomCameraPreviewImage.MAX_DIMENSION ||
                 decoded.height > MapRoomCameraPreviewImage.MAX_DIMENSION)

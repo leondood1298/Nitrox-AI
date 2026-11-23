@@ -25,7 +25,17 @@ public static class DiagnosticLineFormat
     /// </summary>
     public const string NOT_APPLICABLE = "-";
 
+    /// <summary>
+    ///     A guess at what keeps a line readable and still holds the longest event and reason names in use.
+    /// </summary>
     public const int DEFAULT_TOKEN_LENGTH = 48;
+
+    // An id as text is a GUID in its default format: groups of 8, 4, 4, 4 and 12 hex digits with a dash between them.
+    private const int ID_FIRST_GROUP_LENGTH = 8;
+    private const int ID_SECOND_DASH_INDEX = 13;
+    private const int ID_THIRD_DASH_INDEX = 18;
+    private const int ID_FOURTH_GROUP_INDEX = 19;
+    private const int ID_FOURTH_GROUP_LENGTH = 4;
 
     // Seeded randomly so that epochs of different processes (server, client A, client B) do not collide.
     private static int nextEpoch = BitConverter.ToInt32(Guid.NewGuid().ToByteArray(), 0);
@@ -93,16 +103,17 @@ public static class DiagnosticLineFormat
     ///     Shortens an id for a log line.
     /// </summary>
     /// <param name="includeFourthGroup">
-    ///     The cameras of one Scanner Room get ids derived from the room's id and share their first group, as can the
-    ///     pieces of one base. The first half of the fourth group keeps such siblings apart.
+    ///     Ids that are made from one another share their first group, as the pieces of one base can. The fourth
+    ///     group keeps such siblings apart.
     /// </param>
     public static string ShortId(NitroxId? id, bool includeFourthGroup)
     {
         string value = id?.ToString() ?? NOT_APPLICABLE;
-        if (includeFourthGroup && value.Length >= 23 && value[8] == '-' && value[13] == '-' && value[18] == '-')
+        if (includeFourthGroup && value.Length >= ID_FOURTH_GROUP_INDEX + ID_FOURTH_GROUP_LENGTH && value[ID_FIRST_GROUP_LENGTH] == '-' &&
+            value[ID_SECOND_DASH_INDEX] == '-' && value[ID_THIRD_DASH_INDEX] == '-')
         {
-            return $"{value.Substring(0, 8)}.{value.Substring(19, 4)}";
+            return $"{value.Substring(0, ID_FIRST_GROUP_LENGTH)}.{value.Substring(ID_FOURTH_GROUP_INDEX, ID_FOURTH_GROUP_LENGTH)}";
         }
-        return value.Length > 8 ? value.Substring(0, 8) : value;
+        return value.Length > ID_FIRST_GROUP_LENGTH ? value.Substring(0, ID_FIRST_GROUP_LENGTH) : value;
     }
 }

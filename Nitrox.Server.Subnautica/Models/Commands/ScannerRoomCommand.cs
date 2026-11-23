@@ -25,6 +25,10 @@ namespace Nitrox.Server.Subnautica.Models.Commands;
 internal sealed class ScannerRoomCommand(EntityRegistry entityRegistry, ScannerRoomDiagnostics diagnostics, SimulationOwnershipData simulationOwnershipData,
     ScannerRoomManager scannerRoomManager) : ICommandHandler
 {
+    /// <summary>
+    ///     How many of the kept transitions are printed. A guess at what still fits a console window below the rooms
+    ///     and cameras; the server log has the older ones.
+    /// </summary>
     private const int RECENT_ENTRY_LIMIT = 25;
 
     [Description("Lists Scanner Room totals and anomalies, then every room and camera with its locks, then the recent transitions")]

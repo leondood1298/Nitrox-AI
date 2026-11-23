@@ -21,6 +21,9 @@ namespace NitroxClient.GameLogic;
 /// </remarks>
 public sealed partial class MapRoomCameraStates
 {
+    // How far battery and health have to move before the server is told. Guesses, not measured. The battery of a
+    // camera that is flown or recharged changes every frame, and is reported in steps of half a unit of charge.
+    // Health only changes by damage and repair, so its threshold just keeps float noise from being sent.
     private const float ENERGY_REPORT_THRESHOLD = 0.5f;
     private const float HEALTH_REPORT_THRESHOLD = 0.05f;
 

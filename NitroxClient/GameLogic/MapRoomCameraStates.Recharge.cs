@@ -9,6 +9,9 @@ namespace NitroxClient.GameLogic;
 /// </summary>
 public sealed partial class MapRoomCameraStates
 {
+    /// <summary>
+    ///     The game's own number, read from the IL of MapRoomCamera.UpdateEnergyRecharge.
+    /// </summary>
     private const float DOCK_CHARGE_FRACTION_PER_UPDATE = 0.1f;
 
     private readonly BasePowerConsumptionForwarder powerConsumptionForwarder;
