@@ -30,7 +30,9 @@ public class StalkerMetadata : CreatureMetadata
         // Constructor for serialization. Has to be "protected" for json serialization.
     }
 
-    public StalkerMetadata(Optional<NitroxId> friendId, double friendshipEndTime, float infectedAmount, float enzymeEndTime = NO_ENZYME) : base(infectedAmount, enzymeEndTime)
+    public StalkerMetadata(Optional<NitroxId> friendId, double friendshipEndTime, float infectedAmount, float enzymeEndTime = NO_ENZYME, bool hasLeash = false,
+                           Nitrox.Model.DataStructures.Unity.NitroxVector3 leashPosition = default, bool hasSize = false, float size = 0f)
+        : base(infectedAmount, enzymeEndTime, hasLeash, leashPosition, hasSize, size)
     {
         FriendId = friendId;
         FriendshipEndTime = friendshipEndTime;

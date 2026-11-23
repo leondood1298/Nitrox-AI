@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
@@ -43,6 +44,13 @@ internal sealed class EntitySpawnedByClientProcessor(PlayerManager playerManager
                 simulatedEntities = [.. entitySimulation.AssignEntityToPlayer(worldEntity, context.Sender, true)];
                 SimulationOwnershipChange ownershipChangePacket = new(simulatedEntities);
                 await context.SendToOthersAsync(ownershipChangePacket);
+                // The client that made the entity is told too: otherwise it does not know that it simulates it, and a
+                // creature it made (a CrashHome's crashfish, a hatched baby) would neither act nor send its position.
+                List<SimulatedEntity> sendersEntities = simulatedEntities.Where(simulated => simulated.SessionId == context.Sender.SessionId).ToList();
+                if (sendersEntities.Count > 0)
+                {
+                    await context.ReplyAsync(new SimulationOwnershipChange(sendersEntities));
+                }
             }
         }
 

@@ -32,7 +32,9 @@ public class SeaEmperorBabyMetadata : CreatureMetadata
         // Constructor for serialization. Has to be "protected" for json serialization.
     }
 
-    public SeaEmperorBabyMetadata(float scale, int dropCount, int dropLimit, float infectedAmount, float enzymeEndTime = NO_ENZYME) : base(infectedAmount, enzymeEndTime)
+    public SeaEmperorBabyMetadata(float scale, int dropCount, int dropLimit, float infectedAmount, float enzymeEndTime = NO_ENZYME, bool hasLeash = false,
+                                  Nitrox.Model.DataStructures.Unity.NitroxVector3 leashPosition = default, bool hasSize = false, float size = 0f)
+        : base(infectedAmount, enzymeEndTime, hasLeash, leashPosition, hasSize, size)
     {
         Scale = scale;
         DropCount = dropCount;

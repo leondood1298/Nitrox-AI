@@ -15,24 +15,22 @@ public class SeaTreaderMetadata : CreatureMetadata
     [DataMember(Order = 2)]
     public float GrazingEndTime { get; }
 
-    [DataMember(Order = 3)]
-    public NitroxVector3 LeashPosition { get; }
-
     [IgnoreConstructor]
     protected SeaTreaderMetadata()
     {
         // Constructor for serialization. Has to be "protected" for json serialization.
     }
 
-    public SeaTreaderMetadata(bool reverseDirection, float grazingEndTime, NitroxVector3 leashPosition, float infectedAmount, float enzymeEndTime = NO_ENZYME) : base(infectedAmount, enzymeEndTime)
+    /// <param name="leashPosition">The point of its path it walks to, kept on the base like every creature's leash.</param>
+    public SeaTreaderMetadata(bool reverseDirection, float grazingEndTime, NitroxVector3 leashPosition, float infectedAmount, float enzymeEndTime = NO_ENZYME, bool hasLeash = true,
+                              bool hasSize = false, float size = 0f) : base(infectedAmount, enzymeEndTime, hasLeash, leashPosition, hasSize, size)
     {
         ReverseDirection = reverseDirection;
         GrazingEndTime = grazingEndTime;
-        LeashPosition = leashPosition;
     }
 
     public override string ToString()
     {
-        return $"[{nameof(SeaTreaderMetadata)} ReverseDirection: {ReverseDirection}, GrazingEndTime: {GrazingEndTime}, LeashPosition: {LeashPosition}, {base.ToString()}]";
+        return $"[{nameof(SeaTreaderMetadata)} ReverseDirection: {ReverseDirection}, GrazingEndTime: {GrazingEndTime}, {base.ToString()}]";
     }
 }

@@ -16,6 +16,10 @@ public static class SimulationWhitelist
     private static readonly HashSet<NitroxTechType> movementTechTypeWhitelist =
     [
         TechType.Shocker.ToDto(),
+        // Without a simulating player a Bleeder never acts on any game
+        TechType.Bleeder.ToDto(),
+        TechType.ReefbackBaby.ToDto(),
+        TechType.SkyrayNonRoosting.ToDto(),
         TechType.Biter.ToDto(),
         TechType.Blighter.ToDto(),
         TechType.BoneShark.ToDto(),

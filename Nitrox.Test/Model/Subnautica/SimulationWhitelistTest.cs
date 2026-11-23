@@ -25,6 +25,19 @@ public sealed class SimulationWhitelistTest
     }
 
     [TestMethod]
+    [DataRow("Bleeder")]
+    [DataRow("ReefbackBaby")]
+    [DataRow("SkyrayNonRoosting")]
+    [DataRow("Crash")]
+    public void ServerSpawnedCreaturesAreSimulated(string techType)
+    {
+        WorldEntity creature = new(NitroxVector3.Zero, NitroxQuaternion.Identity, NitroxVector3.One, new NitroxTechType(techType), 0, "creature", true, new NitroxId(), null);
+
+        Assert.IsTrue(SimulationWhitelist.ShouldSimulateEntity(creature));
+        Assert.IsTrue(SimulationWhitelist.ShouldSimulateEntityMovement(creature));
+    }
+
+    [TestMethod]
     public void WhoeverIsGivenARoomToSimulateIsGivenWhatIsInIt()
     {
         Assert.IsTrue(SimulationWhitelist.ShouldPropagateSimulation(new MapRoomEntity(new NitroxId(), new NitroxId(), new NitroxInt3(0, 0, 0))));

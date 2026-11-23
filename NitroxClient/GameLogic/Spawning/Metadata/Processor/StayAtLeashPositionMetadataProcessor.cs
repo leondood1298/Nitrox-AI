@@ -8,21 +8,8 @@ public class StayAtLeashPositionMetadataProcessor : EntityMetadataProcessor<Stay
 {
     public override void ProcessMetadata(GameObject gameObject, StayAtLeashPositionMetadata metadata)
     {
-        if (!gameObject.TryGetComponent(out Creature creature))
-        {
-            Log.Error($"Could not find {nameof(Creature)} on {gameObject.name}");
-            return;
-        }
-
-        // Before InitializeOnce, whose infection roll must see that the infection is decided
-        Resolve<CreatureInfections>().ApplyReceived(gameObject, metadata.InfectedAmount);
-
-        if (!creature.isInitialized)
-        {
-            // TODO: When #2137 is merged, only a MetadataHolder to the creature and postfix patch creature.Start to consume it
-            creature.InitializeOnce();
-            creature.isInitialized = true;
-        }
-        creature.leashPosition = metadata.LeashPosition.ToUnity();
+        // Before Creature.InitializeOnce, whose infection roll must see that the infection is decided
+        Resolve<CreatureInfections>().ApplyReceived(gameObject, metadata);
+        Resolve<CreatureLeashes>().ApplyReceived(gameObject, metadata);
     }
 }

@@ -129,9 +129,13 @@ namespace NitroxClient.GameLogic
             throttledPacketSender.SendThrottled(new EntityMetadataUpdate(id, metadata), packet => packet.Id, throttleTime);
         }
 
-        public void BroadcastEntitySpawnedByClient(Entity entity, bool requireRespawn = false)
+        /// <param name="requireSimulation">
+        ///     False for an entity nobody needs to simulate. The server then gives it to nobody; otherwise it gives it to
+        ///     this player and tells it so.
+        /// </param>
+        public void BroadcastEntitySpawnedByClient(Entity entity, bool requireRespawn = false, bool requireSimulation = true)
         {
-            packetSender.Send(new EntitySpawnedByClient(entity, requireRespawn));
+            packetSender.Send(new EntitySpawnedByClient(entity, requireRespawn, requireSimulation));
         }
 
         private IEnumerator SpawnNewEntities(bool coldStart = false)

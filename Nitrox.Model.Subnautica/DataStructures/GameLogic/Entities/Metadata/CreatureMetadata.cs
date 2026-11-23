@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.Serialization;
 using BinaryPack.Attributes;
+using Nitrox.Model.DataStructures.Unity;
 
 namespace Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 
@@ -16,6 +17,7 @@ namespace Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 [ProtoInclude(54, typeof(SeaEmperorBabyMetadata))]
 [ProtoInclude(55, typeof(SandSharkMetadata))]
 [ProtoInclude(56, typeof(StalkerMetadata))]
+[ProtoInclude(57, typeof(CuteFishMetadata))]
 public abstract class CreatureMetadata : EntityMetadata
 {
     /// <summary>
@@ -48,16 +50,52 @@ public abstract class CreatureMetadata : EntityMetadata
     [DataMember(Order = 2)]
     public float EnzymeEndTime { get; set; }
 
+    /// <summary>
+    ///     Whether <see cref="LeashPosition" /> is known. The server seeds it where it spawns a creature; an update that does
+    ///     not carry it leaves the stored one.
+    /// </summary>
+    [DataMember(Order = 3)]
+    public bool HasLeash { get; set; }
+
+    /// <summary>
+    ///     Creature.leashPosition: the place the creature stays around and returns to. The game saves it; without it every
+    ///     game that loads the creature took wherever it was then as its home.
+    /// </summary>
+    [DataMember(Order = 4)]
+    public NitroxVector3 LeashPosition { get; set; }
+
+    /// <summary>
+    ///     Whether <see cref="Size" /> is known.
+    /// </summary>
+    [DataMember(Order = 5)]
+    public bool HasSize { get; set; }
+
+    /// <summary>
+    ///     Creature.Size (0 to 1), which Creature.Start rolls for many creatures. Rolled on each game, a creature was a
+    ///     different size for every player and after every load.
+    /// </summary>
+    [DataMember(Order = 6)]
+    public float Size { get; set; }
+
     [IgnoreConstructor]
     protected CreatureMetadata()
     {
         // Constructor for serialization. Has to be "protected" for json serialization.
     }
 
-    protected CreatureMetadata(float infectedAmount, float enzymeEndTime = NO_ENZYME)
+    /// <remarks>
+    ///     BinaryPack needs a constructor with a parameter for every member, hence the leash and size parameters of every
+    ///     creature metadata's constructor.
+    /// </remarks>
+    protected CreatureMetadata(float infectedAmount, float enzymeEndTime = NO_ENZYME, bool hasLeash = false, NitroxVector3 leashPosition = default, bool hasSize = false,
+                               float size = 0f)
     {
         InfectedAmount = infectedAmount;
         EnzymeEndTime = enzymeEndTime;
+        HasLeash = hasLeash;
+        LeashPosition = leashPosition;
+        HasSize = hasSize;
+        Size = size;
     }
 
     public static bool IsDecided(float infectedAmount)
@@ -65,8 +103,37 @@ public abstract class CreatureMetadata : EntityMetadata
         return infectedAmount >= 0f;
     }
 
+    public CreatureMetadata WithLeash(NitroxVector3 leashPosition)
+    {
+        HasLeash = true;
+        LeashPosition = leashPosition;
+        return this;
+    }
+
+    public CreatureMetadata WithSize(float size)
+    {
+        HasSize = true;
+        Size = size;
+        return this;
+    }
+
+    /// <summary>
+    ///     Keeps what <paramref name="stored" /> knows of the leash and size where this update knows nothing.
+    /// </summary>
+    public void KeepKnownBodyFrom(CreatureMetadata stored)
+    {
+        if (!HasLeash && stored.HasLeash)
+        {
+            WithLeash(stored.LeashPosition);
+        }
+        if (!HasSize && stored.HasSize)
+        {
+            WithSize(stored.Size);
+        }
+    }
+
     public override string ToString()
     {
-        return $"InfectedAmount: {InfectedAmount}, EnzymeEndTime: {EnzymeEndTime}";
+        return $"InfectedAmount: {InfectedAmount}, EnzymeEndTime: {EnzymeEndTime}, Leash: {(HasLeash ? LeashPosition.ToString() : "unknown")}, Size: {(HasSize ? Size.ToString() : "unknown")}";
     }
 }
