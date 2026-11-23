@@ -6,80 +6,12 @@
     x:DataType="vm:UpdatesViewModel"
     xmlns="https://github.com/avaloniaui"
     xmlns:controls="clr-namespace:Nitrox.Launcher.Models.Controls"
-    xmlns:converters="clr-namespace:Nitrox.Launcher.Models.Converters"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-    xmlns:design="clr-namespace:Nitrox.Launcher.Models.Design"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:services="clr-namespace:Nitrox.Launcher.Models.Services"
     xmlns:vm="clr-namespace:Nitrox.Launcher.ViewModels"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:designer="clr-namespace:Nitrox.Launcher.ViewModels.Designer"
-    Classes.official="{Binding UsingOfficialVersion}"
-    Classes.newUpdate="{Binding NewUpdateAvailable}">
-    <UserControl.Styles>
-        <Style Selector=":not(.official)">
-            <Style Selector="^ controls|RecolorImage.updateIcon">
-                <Setter Property="Source" Value="/Assets/Images/store-icons/pirated.png" />
-                <Setter Property="ToolTip.Tip" Value=":(" />
-            </Style>
-            <Style Selector="^ TextBlock.updateHeader">
-                <Setter Property="Text" Value="Unofficial Version Detected" />
-            </Style>
-            <Style Selector="^ TextBlock.updateDescription">
-                <Setter Property="Text">
-                    <MultiBinding StringFormat="{}{0}&#x0a;&#x0a;Your version: {1}&#x0a;Official version: {2}">
-                        <Binding>
-                            <Binding.Source>
-                                <x:String>It looks like you aren't using an official version of Nitrox. If you are not a developer, please download the official version to ensure that you have the best experience.</x:String>
-                            </Binding.Source>
-                        </Binding>
-                        <Binding Path="Version" FallbackValue="." />
-                        <Binding Path="OfficialVersion" FallbackValue="." />
-                    </MultiBinding>
-                </Setter>
-            </Style>
-        </Style>
-
-        <Style Selector=".official">
-            <Style Selector="^ controls|RecolorImage.updateIcon">
-                <Setter Property="Source" Value="/Assets/Images/nitrox-icon.ico" />
-                <Setter Property="ToolTip.Tip" Value="You are the best captain on the planet, I'm not even squiddin'" />
-            </Style>
-        </Style>
-
-        <Style Selector=".official:not(.newUpdate)">
-            <Style Selector="^ TextBlock.updateHeader">
-                <Setter Property="Text" Value="No Update Available" />
-            </Style>
-            <Style Selector="^ TextBlock.updateDescription">
-                <Setter Property="Text">
-                    <MultiBinding StringFormat="{}{0} {1}&#x0a;&#x0a;{2}">
-                        <Binding>
-                            <Binding.Source>
-                                <x:String>You are already using the latest version of Nitrox</x:String>
-                            </Binding.Source>
-                        </Binding>
-                        <Binding Path="Version" FallbackValue="." />
-                        <Binding>
-                            <Binding.Source>
-                                Missing a feature? Check the changelogs if the feature has already been implemented. If you experience any other issues, please contact support.
-                            </Binding.Source>
-                        </Binding>
-                    </MultiBinding>
-                </Setter>
-            </Style>
-        </Style>
-
-        <Style Selector=".official.newUpdate">
-            <Style Selector="^ TextBlock.updateHeader">
-                <Setter Property="Text" Value="New Nitrox Update Available" />
-            </Style>
-            <Style Selector="^ TextBlock.updateDescription">
-                <Setter Property="Text"
-                        Value="Time for an update! A new version of Nitrox is now available to download. Back up your content and get the latest version to start using all the latest features and improvements." />
-            </Style>
-        </Style>
-    </UserControl.Styles>
+    xmlns:designer="clr-namespace:Nitrox.Launcher.ViewModels.Designer">
     <Design.DataContext>
         <designer:DesignUpdatesViewModel />
     </Design.DataContext>
@@ -96,80 +28,31 @@
                 Background="{DynamicResource BrandPanelBackground}"
                 CornerRadius="12"
                 Padding="22">
-                <Grid>
-                    <StackPanel Spacing="10">
-                        <controls:RecolorImage
-                            Classes="updateIcon"
-                            Height="56"
-                            HorizontalAlignment="Center"
-                            Width="56" />
+                <StackPanel Spacing="10">
+                    <controls:RecolorImage
+                        Height="56"
+                        HorizontalAlignment="Center"
+                        Source="/Assets/Images/nitrox-icon.ico"
+                        Width="56" />
 
-                        <StackPanel Spacing="6">
-                            <TextBlock
-                                Classes="updateHeader"
-                                FontSize="16"
-                                FontWeight="Bold"
-                                TextAlignment="Center"
-                                TextWrapping="Wrap" />
+                    <StackPanel Spacing="6">
+                        <TextBlock
+                            FontSize="16"
+                            FontWeight="Bold"
+                            Text="Nitrox-AI build"
+                            TextAlignment="Center"
+                            TextWrapping="Wrap" />
 
-                            <TextBlock
-                                Classes="updateDescription"
-                                FontSize="14"
-                                FontWeight="Normal"
-                                TextAlignment="Center"
-                                TextWrapping="Wrap" />
-
-                            <!-- Download Progress Section -->
-                            <StackPanel IsVisible="{Binding DownloadProgress, Mode=OneWay}" Spacing="8" Margin="0,8,0,0">
-                                <TextBlock
-                                    FontSize="12"
-                                    FontWeight="Normal"
-                                    Text="{Binding DownloadStatus}"
-                                    TextAlignment="Center"
-                                    TextWrapping="Wrap" />
-                                <ProgressBar
-                                    Height="8"
-                                    Minimum="0"
-                                    Maximum="100"
-                                    Value="{Binding DownloadProgress, Mode=OneWay}"
-                                    HorizontalAlignment="Stretch"
-                                    Margin="40,0" />
-                                <Button
-                                    Command="{Binding CancelDownloadCommand}"
-                                    HorizontalAlignment="Center"
-                                    HorizontalContentAlignment="Center"
-                                    Padding="20,8">
-                                    <TextBlock FontSize="12" Text="Cancel" />
-                                </Button>
-                            </StackPanel>
-
-                            <!-- Download Button -->
-                            <Button
-                                Classes="primary"
-                                Command="{Binding DownloadUpdateCommand}"
-                                HorizontalAlignment="Center"
-                                HorizontalContentAlignment="Center"
-                                IsVisible="{Binding !DownloadProgress, Mode=OneWay}"
-                                Margin="0,4,0,0"
-                                Padding="20,8"
-                                ToolTip.ShowOnDisabled="True">
-                                <Button.Styles>
-                                    <Style Selector=":is(Button)">
-                                        <Style Selector="^:not(:disabled)">
-                                            <Setter Property="ToolTip.Tip">Download and install the latest version</Setter>
-                                        </Style>
-                                        <Style Selector="^:disabled">
-                                            <Setter Property="ToolTip.Tip">Please close any servers that are online before updating Nitrox!</Setter>
-                                        </Style>
-                                    </Style>
-                                </Button.Styles>
-                                <TextBlock FontSize="12">
-                                    Download version <Run Text="{Binding OfficialVersion, FallbackValue='.'}" />
-                                </TextBlock>
-                            </Button>
-                        </StackPanel>
+                        <TextBlock
+                            FontSize="14"
+                            FontWeight="Normal"
+                            TextAlignment="Center"
+                            TextWrapping="Wrap">
+                            <Run Text="This build does not check for updates. Official Nitrox releases would replace it and cannot open its worlds. Version:" />
+                            <Run Text="{Binding Version, Mode=OneWay}" />
+                        </TextBlock>
                     </StackPanel>
-                </Grid>
+                </StackPanel>
             </Border>
 
             <!-- Backups Section -->
@@ -201,7 +84,7 @@
                 <TextBlock
                     FontSize="12"
                     Opacity="0.7"
-                    Text="Backups are automatically created before each update. You can restore a previous version by extracting a backup manually." />
+                    Text="Backups of the launcher made by earlier builds before an update. You can restore a previous version by extracting a backup manually." />
 
                 <Border
                     Background="{DynamicResource BrandPanelBackground}"
@@ -287,40 +170,6 @@
                     Opacity="0.5"
                     Text="No backups available" />
             </StackPanel>
-
-            <ItemsControl ItemsSource="{Binding NitroxChangelogs, Mode=OneWay}">
-
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <StackPanel Spacing="18" />
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="design:NitroxChangelog">
-                        <StackPanel Spacing="5">
-                            <Grid>
-                                <TextBlock
-                                    FontSize="20"
-                                    FontWeight="Bold"
-                                    HorizontalAlignment="Left"
-                                    Text="{Binding Version, TargetNullValue='Unknown'}" />
-                                <TextBlock
-                                    FontSize="12"
-                                    FontWeight="Light"
-                                    HorizontalAlignment="Right"
-                                    Text="{Binding Released, Converter={converters:DateToRelativeDateConverter}, FallbackValue='Unknown', TargetNullValue='Unknown'}"
-                                    ToolTip.Tip="{Binding Released}"
-                                    VerticalAlignment="Center" />
-                            </Grid>
-                            <Expander Classes="changelog" Header="View changelog">
-                                <controls:RichTextBlock FontSize="14" Text="{Binding PatchNotes, FallbackValue='Empty', TargetNullValue='Empty'}" />
-                            </Expander>
-                            <Border BorderThickness="0,1,0,0" />
-                        </StackPanel>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
 
         </StackPanel>
     </ScrollViewer>

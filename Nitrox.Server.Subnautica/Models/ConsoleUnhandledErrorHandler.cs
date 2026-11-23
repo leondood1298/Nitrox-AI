@@ -7,6 +7,12 @@ namespace Nitrox.Server.Subnautica.Models;
 
 static class ConsoleUnhandledErrorHandler
 {
+    /// <summary>
+    ///     False when nobody can press a key: the launcher runs the server with a console that is never shown, so waiting
+    ///     kept a crashed server alive forever, holding its port.
+    /// </summary>
+    public static bool WaitForKey { get; set; } = true;
+
     public static void Attach()
     {
         AppDomain.CurrentDomain.UnhandledException += CurrentDomainOnUnhandledException;
@@ -19,7 +25,7 @@ static class ConsoleUnhandledErrorHandler
             Console.WriteLine(ex);
             LogAssemblyPathFromException(ex);
         }
-        if (!Environment.UserInteractive || Console.IsInputRedirected || Console.In == StreamReader.Null)
+        if (!WaitForKey || !Environment.UserInteractive || Console.IsInputRedirected || Console.In == StreamReader.Null)
         {
             return;
         }

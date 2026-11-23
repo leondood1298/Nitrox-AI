@@ -31,6 +31,7 @@ public sealed partial class SubnauticaServerOptions
     [PropertyDescription("Measured in milliseconds. Values less than 1 second will disable auto saving.")]
     public int SaveInterval { get; set; } = (int)TimeSpan.FromMinutes(2).TotalMilliseconds;
 
+    [PropertyDescription("Backups kept as they are after each save. Older ones are thinned to one per hour for a day, then one per day for a week. 0 turns backups off.")]
     [Range(0, int.MaxValue)]
     public int MaxBackups { get; set; } = 10;
 

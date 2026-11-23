@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -46,6 +47,8 @@ internal sealed class Program
                                            .Build();
         startOptions = new ServerStartOptions();
         configuration.Bind(startOptions);
+        // A server run by the launcher has a console nobody sees; waiting for a key there hangs the process forever
+        ConsoleUnhandledErrorHandler.WaitForKey = !startOptions.IsEmbedded;
 
         if (startOptions.GamePath == null)
         {
@@ -62,7 +65,29 @@ internal sealed class Program
         // TODO: Do not depend on Assembly-Csharp types, only game files. Use proxy/stub types which can map to a Subnautica object.
         AssemblyResolver.GamePath = startOptions.GamePath;
 
-        await StartServerAsync(args);
+        try
+        {
+            await StartServerAsync(args);
+        }
+        catch (Exception ex) when (FindStartupFailure(ex) is { } startupFailure)
+        {
+            // Already logged where it happened; the message is for the user as it is, without a stack trace
+            Console.Error.WriteLine(startupFailure.Message);
+            Environment.ExitCode = startupFailure.ExitCode;
+            if (ConsoleUnhandledErrorHandler.WaitForKey && Environment.UserInteractive && !Console.IsInputRedirected)
+            {
+                // A console window of its own would otherwise close before the message can be read
+                Console.WriteLine("Press any key to close . . .");
+                Console.ReadKey(true);
+            }
+        }
+
+        static StartupFailureException? FindStartupFailure(Exception ex) => ex switch
+        {
+            StartupFailureException startupFailure => startupFailure,
+            AggregateException aggregate => aggregate.Flatten().InnerExceptions.OfType<StartupFailureException>().FirstOrDefault(),
+            _ => null
+        };
     }
 
     private static async Task StartServerAsync(string[] args)
@@ -96,6 +121,7 @@ internal sealed class Program
                // Add initialization services - diagnoses the server environment on startup.
                .AddHostedSingletonService<PreventMultiServerInitService>()
                .AddHostedSingletonService<NetworkPortAvailabilityService>()
+               .AddHostedSingletonService<WorldLockService>()
                // Add communication services
                .AddCommands()
                .AddPackets()

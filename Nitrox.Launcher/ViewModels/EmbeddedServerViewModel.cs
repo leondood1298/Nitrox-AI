@@ -45,7 +45,8 @@ internal partial class EmbeddedServerViewModel : RoutableViewModelBase, IServerV
             {
                 return;
             }
-            if (!status.IsOnline)
+            // A server that stopped by itself stays on screen with its last lines, which say why
+            if (!status.IsOnline && model.ServerEntry.LastExitCode is null or 0)
             {
                 model.Back();
             }
@@ -69,7 +70,7 @@ internal partial class EmbeddedServerViewModel : RoutableViewModelBase, IServerV
         if (commandHistory.Count < 1 || commandHistory[commandHistory.LastChangedIndex] != ServerCommand)
         {
             commandHistory.Add(ServerCommand);
-            ServerOutput.Add(new OutputLine
+            ServerEntry.AddOutput(new OutputLine
             {
                 Type = OutputLineType.COMMAND,
                 LocalTime = DateTimeOffset.Now,

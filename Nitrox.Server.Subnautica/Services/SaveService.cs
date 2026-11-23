@@ -1,9 +1,8 @@
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Linq;
 using System.Runtime.CompilerServices;
-using Nitrox.Model.Constants;
-using Nitrox.Model.Platforms.OS.Shared;
+using Nitrox.Model.Serialization;
 using Nitrox.Server.Subnautica.Models.AppEvents;
 using Nitrox.Server.Subnautica.Models.AppEvents.Core;
 using Nitrox.Server.Subnautica.Models.Serialization.World;
@@ -29,11 +28,18 @@ internal sealed class SaveService(Func<WorldService> worldServiceProvider, ISave
         {
             case ServiceActionType.SAVE:
                 string savePath = startOptions.Value.GetServerSavePath();
-                if (!await worldServiceProvider().SaveAsync(savePath, stoppingToken))
+                WorldService worldService = worldServiceProvider();
+                if (!await worldService.SaveAsync(savePath, stoppingToken))
                 {
                     return;
                 }
                 await saveStateTrigger.InvokeAsync(new ISaveState.Args(savePath));
+                if (!worldService.LastSaveChangedWorld)
+                {
+                    // Nothing new to hand to an external tool or to back up
+                    logger.ZLogTrace($"World unchanged since the last save; no post-save command or backup");
+                    return;
+                }
                 ExecutePostSaveCommand();
                 BackUp(savePath);
                 break;
@@ -43,32 +49,78 @@ internal sealed class SaveService(Func<WorldService> worldServiceProvider, ISave
     private void ExecutePostSaveCommand()
     {
         string postSaveCommandPath = options.Value.PostSaveCommandPath;
-        if (!string.IsNullOrWhiteSpace(postSaveCommandPath))
+        if (string.IsNullOrWhiteSpace(postSaveCommandPath))
+        {
+            return;
+        }
+        if (!File.Exists(postSaveCommandPath))
+        {
+            logger.ZLogError($"Post-save file does not exist: {postSaveCommandPath}");
+            return;
+        }
+        try
+        {
+            Process? process = Process.Start(CreatePostSaveStartInfo(postSaveCommandPath));
+            if (process == null)
+            {
+                logger.ZLogError($"Post-save command did not start: {postSaveCommandPath}");
+                return;
+            }
+            logger.ZLogInformation($"Post-save command started: {postSaveCommandPath}");
+            // Reported when it ends, without holding up the next save
+            _ = ReportWhenDoneAsync(process, postSaveCommandPath);
+        }
+        catch (Exception ex)
+        {
+            logger.ZLogError(ex, $"Post-save command failed");
+        }
+    }
+
+    private async Task ReportWhenDoneAsync(Process process, string commandPath)
+    {
+        using (process)
         {
             try
             {
-                // Call external tool for backups, etc
-                if (File.Exists(postSaveCommandPath))
+                await process.WaitForExitAsync();
+                if (process.ExitCode == 0)
                 {
-                    using Process process = Process.Start(new ProcessStartInfo
-                    {
-                        FileName = postSaveCommandPath,
-                        Verb = "open"
-                    });
-                    logger.ZLogInformation($"Post-save command completed successfully: {postSaveCommandPath}");
+                    logger.ZLogInformation($"Post-save command completed successfully: {commandPath}");
                 }
                 else
                 {
-                    logger.ZLogError($"Post-save file does not exist: {postSaveCommandPath}");
+                    logger.ZLogError($"Post-save command ended with exit code {process.ExitCode}: {commandPath}");
                 }
             }
             catch (Exception ex)
             {
-                logger.ZLogError(ex, $"Post-save command failed");
+                logger.ZLogError(ex, $"Post-save command could not be followed");
             }
         }
     }
 
+    /// <summary>
+    ///     How to run the configured command. A PowerShell script, which the option's description promises, could not be
+    ///     started as a program, and opening it through the shell only showed it in an editor.
+    /// </summary>
+    internal static ProcessStartInfo CreatePostSaveStartInfo(string commandPath)
+    {
+        ProcessStartInfo startInfo = Path.GetExtension(commandPath).ToLowerInvariant() switch
+        {
+            ".ps1" => new ProcessStartInfo(OperatingSystem.IsWindows() ? "powershell.exe" : "pwsh") { ArgumentList = { "-NoProfile", "-File", commandPath } },
+            ".bat" or ".cmd" => new ProcessStartInfo("cmd.exe") { ArgumentList = { "/c", commandPath } },
+            _ => new ProcessStartInfo(commandPath)
+        };
+        startInfo.UseShellExecute = false;
+        startInfo.CreateNoWindow = true;
+        startInfo.WorkingDirectory = Path.GetDirectoryName(Path.GetFullPath(commandPath)) ?? "";
+        return startInfo;
+    }
+
+    /// <summary>
+    ///     Zips the generation just saved, without the settings (they hold the passwords) or temporary files, and thins out
+    ///     old backups. The save queue holds the next save back until this is done, so the files cannot change meanwhile.
+    /// </summary>
     private void BackUp(string saveDir)
     {
         if (options.Value.MaxBackups < 1)
@@ -76,50 +128,17 @@ internal sealed class SaveService(Func<WorldService> worldServiceProvider, ISave
             logger.ZLogInformation($"No backup was made (\"{nameof(options.Value.MaxBackups)}\" is equal to 0)");
             return;
         }
-        string backupDir = startOptions.Value.GetServerSaveBackupsPath();
-        string tempOutDir = Path.Combine(backupDir, $"Backup - {DateTime.Now.ToString(PersistanceConstants.BACKUP_DATE_TIME_FORMAT)}");
-        Directory.CreateDirectory(backupDir);
 
         try
         {
-            // Prepare backup location
-            Directory.CreateDirectory(tempOutDir);
-            string newZipFile = $"{tempOutDir}.zip";
-            if (File.Exists(newZipFile))
-            {
-                File.Delete(newZipFile);
-            }
-            foreach (string file in Directory.GetFiles(saveDir))
-            {
-                File.Copy(file, Path.Combine(tempOutDir, Path.GetFileName(file)));
-            }
-
-            FileSystem.Instance.ZipFilesInDirectory(tempOutDir, newZipFile);
-            Directory.Delete(tempOutDir, true);
-            logger.ZLogInformation($"World backed up");
-
-            // Prune old backups
-            FileInfo[] backups = Directory.EnumerateFiles(backupDir)
-                                          .Select(f => new FileInfo(f))
-                                          .Where(f => f is { Extension: ".zip" } info && info.Name.Contains("Backup - "))
-                                          .OrderBy(f => File.GetCreationTime(f.FullName))
-                                          .ToArray();
-            if (backups.Length > options.Value.MaxBackups)
-            {
-                int numBackupsToDelete = backups.Length - Math.Max(1, options.Value.MaxBackups);
-                for (int i = 0; i < numBackupsToDelete; i++)
-                {
-                    backups[i].Delete();
-                }
-            }
+            DateTime now = DateTime.Now;
+            WorldBackups.Create(saveDir, now);
+            IReadOnlyList<string> removed = WorldBackups.Prune(saveDir, options.Value.MaxBackups, now);
+            logger.ZLogInformation($"World backed up{(removed.Count > 0 ? $", {removed.Count} older backup(s) thinned out" : "")}");
         }
         catch (Exception ex)
         {
             logger.ZLogError(ex, $"Error while backing up world");
-            if (Directory.Exists(tempOutDir))
-            {
-                Directory.Delete(tempOutDir, true); // Delete the outZip folder that is sometimes left
-            }
         }
     }
 

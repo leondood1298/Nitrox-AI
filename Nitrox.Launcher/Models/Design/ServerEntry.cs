@@ -126,6 +126,16 @@ internal sealed partial class ServerEntry : ObservableObject
     [ObservableProperty]
     public partial Version Version { get; set; } = NitroxEnvironment.Version;
 
+    /// <summary>
+    ///     <see cref="NitroxSaveFormat" /> of the world, or null for a world nobody has saved yet.
+    /// </summary>
+    public int? SaveFormat { get; private set; }
+
+    /// <summary>
+    ///     Why this build cannot open the world, or null when it can.
+    /// </summary>
+    public string? SaveFormatMismatch => SaveFormat is { } format ? NitroxSaveFormat.DescribeMismatch(Name, format) : null;
+
     internal ServerProcess? Process { get; private set; }
     public AvaloniaList<OutputLine> Output { get; } = [];
     public string? PlayerNamesTooltip => PlayerNames.Count == 0 ? null : string.Join(Environment.NewLine, PlayerNames);
@@ -233,16 +243,21 @@ internal sealed partial class ServerEntry : ObservableObject
         }
 
         Version serverVersion;
-        await using (FileStream stream = new(saveFileVersion, FileMode.Open, FileAccess.Read, FileShare.Read))
+        int? saveFormat;
+        await using (FileStream stream = new(saveFileVersion, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
         {
             SaveFileVersion versionModel;
             try
             {
                 versionModel = JsonSerializer.Deserialize(stream, LauncherJsonSerializerContext.Default.SaveFileVersion);
+                saveFormat = versionModel.SaveFormat;
             }
             catch (Exception)
             {
+                // An empty file is a world the launcher made and nobody has saved yet; an unreadable one is left to the
+                // server, which refuses it with the reason
                 versionModel = new SaveFileVersion(NitroxEnvironment.Version);
+                saveFormat = null;
             }
             serverVersion = versionModel.Version;
         }
@@ -268,6 +283,7 @@ internal sealed partial class ServerEntry : ObservableObject
         AllowKeepInventory = config.KeepInventoryOnDeath;
         IsNewServer = !File.Exists(Path.Combine(saveDir, $"PlayerData{NitroxConstants.SAVE_FILE_ENDING}"));
         Version = serverVersion;
+        SaveFormat = saveFormat;
         LastAccessedTime = File.GetLastWriteTime(File.Exists(Path.Combine(saveDir, $"PlayerData{NitroxConstants.SAVE_FILE_ENDING}"))
                                                      ?
                                                      // This file is affected by server saving
@@ -299,6 +315,7 @@ internal sealed partial class ServerEntry : ObservableObject
         Process = ServerProcess.Start(Path.Combine(savesDir, Name), cts, embedded, existingProcessId);
 
         Output.Clear();
+        LastExitCode = null;
         IsServerStarting = true;
         IsNewServer = false;
         // Set loading state BEFORE IsOnline to ensure UI shows loading first
@@ -365,8 +382,20 @@ internal sealed partial class ServerEntry : ObservableObject
                 await Dispatcher.UIThread.InvokeAsync(() => IsServerClosing = true);
                 await Dispatcher.UIThread.InvokeAsync(async () =>
                 {
-                    while (ProcessEx.ProcessExists(GetServerProcessName(), ex => ex.Id == LastProcessId))
+                    int processId = LastProcessId;
+                    Stopwatch waited = Stopwatch.StartNew();
+                    bool forced = false;
+                    while (ProcessEx.ProcessExists(GetServerProcessName(), ex => ex.Id == processId))
                     {
+                        if (!forced && waited.Elapsed > FORCED_STOP_AFTER)
+                        {
+                            // A server that never got "quit" (hung while loading, or cut off from the launcher) would
+                            // otherwise run hidden forever, holding its port. Its last complete save stays loadable.
+                            forced = true;
+                            AddOutput(new OutputLine { LocalTime = DateTimeOffset.Now, Type = OutputLineType.WARNING_LOG, LogText = $"The server did not stop within {FORCED_STOP_AFTER.TotalMinutes:0} minutes of being asked to and is being ended. Its last complete save is kept." });
+                            using ProcessEx? stuck = ProcessEx.GetFirstProcess(GetServerProcessName(), ex => ex.Id == processId);
+                            stuck?.Terminate();
+                        }
                         try
                         {
                             await CommandQueue.Writer.WriteAsync("quit");
@@ -380,9 +409,11 @@ internal sealed partial class ServerEntry : ObservableObject
                     CommandQueue = Channel.CreateUnbounded<string>();
                     PlayerCount = 0;
                     PlayerNames = [];
+                    // The output stays until the next start: when the server stopped by itself, it says why
+                    LastExitCode = Process?.ExitCode;
+                    AddOutput(new OutputLine { LocalTime = DateTimeOffset.Now, Type = LastExitCode is null or 0 ? OutputLineType.INFO_LOG : OutputLineType.ERROR_LOG, LogText = ServerExitCodes.Describe(LastExitCode) });
                     IsOnline = false;
                     LoadingStage = null;
-                    Output.Clear();
                 });
                 await Dispatcher.UIThread.InvokeAsync(() => IsServerClosing = false);
             }
@@ -394,6 +425,61 @@ internal sealed partial class ServerEntry : ObservableObject
     }
 
     private bool CanOpenSaveFolder() => !string.IsNullOrWhiteSpace(Name);
+
+    /// <summary>
+    ///     How long a server asked to stop may take before it is ended. A save of a large world takes seconds; this only
+    ///     catches a server that cannot hear the request.
+    /// </summary>
+    private static readonly TimeSpan FORCED_STOP_AFTER = TimeSpan.FromMinutes(2);
+
+    /// <summary>
+    ///     Lines of server output kept. Every line used to be kept for the whole session, which grew the launcher's memory
+    ///     and slowed its console in long sessions.
+    /// </summary>
+    internal const int MAX_OUTPUT_LINES = 5000;
+
+    /// <summary>
+    ///     Exit code of the last server process of this world, once it has stopped.
+    /// </summary>
+    public int? LastExitCode { get; private set; }
+
+    private volatile bool isManagementConnected;
+
+    /// <summary>
+    ///     Adds a line to the server console, dropping the oldest beyond <see cref="MAX_OUTPUT_LINES" />.
+    /// </summary>
+    public void AddOutput(OutputLine line)
+    {
+        Output.Add(line);
+        if (Output.Count > MAX_OUTPUT_LINES)
+        {
+            Output.RemoveRange(0, Output.Count - MAX_OUTPUT_LINES);
+        }
+    }
+
+    internal void OnManagementConnected() => isManagementConnected = true;
+
+    /// <summary>
+    ///     The server's link to the launcher dropped. It used to be treated as a stop: "quit" was queued, and a server that
+    ///     only reconnected received it and shut down. Now the server is only marked stopped once its process is gone;
+    ///     while it lives, it reconnects by itself.
+    /// </summary>
+    internal async Task OnManagementConnectionLostAsync(int processId)
+    {
+        isManagementConnected = false;
+        while (!isManagementConnected)
+        {
+            if (!ProcessEx.ProcessExists(GetServerProcessName(), ex => ex.Id == processId))
+            {
+                if (LastProcessId == processId)
+                {
+                    await ResetCtsAsync(true);
+                }
+                return;
+            }
+            await Task.Delay(500);
+        }
+    }
 
     /// <summary>
     ///     The arguments the server is started with for a world of this launcher.
@@ -414,7 +500,14 @@ internal sealed partial class ServerEntry : ObservableObject
         {
             dataPath = parent;
         }
-        return ["--save", Path.GetFileName(Path.TrimEndingDirectorySeparator(saveDir)), "--game-path", gamePath, "--data-path", dataPath];
+        List<string> arguments = ["--save", Path.GetFileName(Path.TrimEndingDirectorySeparator(saveDir)), "--game-path", gamePath, "--data-path", dataPath];
+        // A worlds folder of the launcher's own choice is not "<data folder>/saves", so it is passed on as it is
+        if (savesDir != null)
+        {
+            arguments.Add("--saves-path");
+            arguments.Add(savesDir);
+        }
+        return arguments;
     }
 
     /// <summary>
@@ -472,11 +565,46 @@ internal sealed partial class ServerEntry : ObservableObject
                 }
                 Log.Info($"Starting server:{Environment.NewLine}File: {startInfo.FileName}{Environment.NewLine}Working directory: {startInfo.WorkingDirectory}{Environment.NewLine}Arguments: {string.Join(", ", startInfo.ArgumentList)}");
 
-                serverProcess = ProcessEx.From(startInfo);
+                exitCodeSource = System.Diagnostics.Process.Start(startInfo);
+                serverProcess = ProcessEx.From(exitCodeSource);
             }
             else
             {
-                serverProcess = ProcessEx.From(System.Diagnostics.Process.GetProcessById(processId));
+                exitCodeSource = System.Diagnostics.Process.GetProcessById(processId);
+                serverProcess = ProcessEx.From(exitCodeSource);
+            }
+            try
+            {
+                // The exit code can only be read later through a handle opened while the process still runs
+                _ = exitCodeSource?.Handle;
+            }
+            catch (Exception)
+            {
+                exitCodeSource = null;
+            }
+        }
+
+        /// <summary>
+        ///     Kept past <see cref="Dispose" />, which runs as soon as the server is asked to stop, so that its exit code can
+        ///     be read once it has.
+        /// </summary>
+        private System.Diagnostics.Process? exitCodeSource;
+
+        /// <summary>
+        ///     The exit code once the server has stopped, else null.
+        /// </summary>
+        public int? ExitCode
+        {
+            get
+            {
+                try
+                {
+                    return exitCodeSource is { HasExited: true } ? exitCodeSource.ExitCode : null;
+                }
+                catch (Exception)
+                {
+                    return null;
+                }
             }
         }
 

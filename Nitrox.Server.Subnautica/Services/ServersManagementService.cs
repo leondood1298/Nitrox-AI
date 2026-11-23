@@ -219,7 +219,8 @@ internal sealed class ServersManagementService(PlayerManager playerManager, IPac
     {
         try
         {
-            string info = await File.ReadAllTextAsync(Path.Combine(Path.GetTempPath(), LauncherConstants.GRPC_LISTEN_PORT_TEMP_FILE_NAME));
+            // The server lies in its launcher's folder, which names the launcher's connection file
+            string info = await File.ReadAllTextAsync(Path.Combine(Path.GetTempPath(), LauncherConstants.GetConnectionFileName(NitroxUser.ExecutableRootPath)));
             return ConnectionInfo.From(info);
         }
         catch (Exception)
