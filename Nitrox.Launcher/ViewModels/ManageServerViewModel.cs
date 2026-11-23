@@ -412,13 +412,10 @@ internal partial class ManageServerViewModel : RoutableViewModelBase, IServerVie
                     throw new FileNotFoundException("Selected backup file not found.", backupFile);
                 }
 
-                foreach (string file in Directory.GetFiles(SaveFolderDirectory, "*"))
-                {
-                    TryDeleteFile(file);
-                }
-                await ZipFile.ExtractToDirectoryAsync(backupFile, SaveFolderDirectory, true);
+                string saveDir = SaveFolderDirectory;
+                string? keptBackup = await Task.Run(() => WorldBackups.Restore(saveDir, backupFile, DateTime.Now));
                 await RefreshAndLoadFromAsync(Server, SaveFolderDirectory);
-                LauncherNotifier.Success("Backup restored successfully.");
+                LauncherNotifier.Success(keptBackup == null ? "Backup restored successfully." : $"Backup restored successfully. The state it replaced was kept as \"{Path.GetFileName(keptBackup)}\".");
             }
             catch (Exception ex)
             {

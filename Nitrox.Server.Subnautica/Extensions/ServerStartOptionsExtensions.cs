@@ -1,6 +1,7 @@
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using Nitrox.Model.Serialization;
 
 namespace Nitrox.Server.Subnautica.Extensions;
 
@@ -70,7 +71,7 @@ internal static class ServerStartOptionsExtensions
     private static string GetSavesRoot(ServerStartOptions options) =>
         !string.IsNullOrWhiteSpace(options.SavesPath) && Path.IsPathRooted(options.SavesPath) ? options.SavesPath : NitroxDirectory.SavesPath;
 
-    public static string GetServerSaveBackupsPath(this ServerStartOptions options) => Path.Combine(options.GetServerSavePath(), "backups");
+    public static string GetServerSaveBackupsPath(this ServerStartOptions options) => Path.Combine(options.GetServerSavePath(), WorldBackups.FOLDER_NAME);
 
     public static string GetServerCachePath(this ServerStartOptions options) => NitroxDirectory.CachePath;
 

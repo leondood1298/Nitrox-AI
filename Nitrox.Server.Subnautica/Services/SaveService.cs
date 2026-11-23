@@ -1,9 +1,8 @@
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Linq;
 using System.Runtime.CompilerServices;
-using Nitrox.Model.Constants;
-using Nitrox.Model.Platforms.OS.Shared;
+using Nitrox.Model.Serialization;
 using Nitrox.Server.Subnautica.Models.AppEvents;
 using Nitrox.Server.Subnautica.Models.AppEvents.Core;
 using Nitrox.Server.Subnautica.Models.Serialization.World;
@@ -69,6 +68,10 @@ internal sealed class SaveService(Func<WorldService> worldServiceProvider, ISave
         }
     }
 
+    /// <summary>
+    ///     Zips the generation just saved, without the settings (they hold the passwords) or temporary files, and thins out
+    ///     old backups. The save queue holds the next save back until this is done, so the files cannot change meanwhile.
+    /// </summary>
     private void BackUp(string saveDir)
     {
         if (options.Value.MaxBackups < 1)
@@ -76,50 +79,17 @@ internal sealed class SaveService(Func<WorldService> worldServiceProvider, ISave
             logger.ZLogInformation($"No backup was made (\"{nameof(options.Value.MaxBackups)}\" is equal to 0)");
             return;
         }
-        string backupDir = startOptions.Value.GetServerSaveBackupsPath();
-        string tempOutDir = Path.Combine(backupDir, $"Backup - {DateTime.Now.ToString(PersistanceConstants.BACKUP_DATE_TIME_FORMAT)}");
-        Directory.CreateDirectory(backupDir);
 
         try
         {
-            // Prepare backup location
-            Directory.CreateDirectory(tempOutDir);
-            string newZipFile = $"{tempOutDir}.zip";
-            if (File.Exists(newZipFile))
-            {
-                File.Delete(newZipFile);
-            }
-            foreach (string file in Directory.GetFiles(saveDir))
-            {
-                File.Copy(file, Path.Combine(tempOutDir, Path.GetFileName(file)));
-            }
-
-            FileSystem.Instance.ZipFilesInDirectory(tempOutDir, newZipFile);
-            Directory.Delete(tempOutDir, true);
-            logger.ZLogInformation($"World backed up");
-
-            // Prune old backups
-            FileInfo[] backups = Directory.EnumerateFiles(backupDir)
-                                          .Select(f => new FileInfo(f))
-                                          .Where(f => f is { Extension: ".zip" } info && info.Name.Contains("Backup - "))
-                                          .OrderBy(f => File.GetCreationTime(f.FullName))
-                                          .ToArray();
-            if (backups.Length > options.Value.MaxBackups)
-            {
-                int numBackupsToDelete = backups.Length - Math.Max(1, options.Value.MaxBackups);
-                for (int i = 0; i < numBackupsToDelete; i++)
-                {
-                    backups[i].Delete();
-                }
-            }
+            DateTime now = DateTime.Now;
+            WorldBackups.Create(saveDir, now);
+            IReadOnlyList<string> removed = WorldBackups.Prune(saveDir, options.Value.MaxBackups, now);
+            logger.ZLogInformation($"World backed up{(removed.Count > 0 ? $", {removed.Count} older backup(s) thinned out" : "")}");
         }
         catch (Exception ex)
         {
             logger.ZLogError(ex, $"Error while backing up world");
-            if (Directory.Exists(tempOutDir))
-            {
-                Directory.Delete(tempOutDir, true); // Delete the outZip folder that is sometimes left
-            }
         }
     }
 
