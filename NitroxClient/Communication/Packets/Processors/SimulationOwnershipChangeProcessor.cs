@@ -5,7 +5,8 @@ using NitroxClient.GameLogic;
 
 namespace NitroxClient.Communication.Packets.Processors;
 
-internal sealed class SimulationOwnershipChangeProcessor(SimulationOwnership simulationOwnershipManager, MapRoomCameras mapRoomCameras) : IClientPacketProcessor<SimulationOwnershipChange>
+internal sealed class SimulationOwnershipChangeProcessor(SimulationOwnership simulationOwnershipManager, MapRoomCameras mapRoomCameras, StalkerCameraGrabs stalkerCameraGrabs)
+    : IClientPacketProcessor<SimulationOwnershipChange>
 {
     private readonly SimulationOwnership simulationOwnershipManager = simulationOwnershipManager;
     private readonly MapRoomCameras mapRoomCameras = mapRoomCameras;
@@ -18,8 +19,10 @@ internal sealed class SimulationOwnershipChangeProcessor(SimulationOwnership sim
             simulationOwnershipManager.TreatSimulatedEntity(simulatedEntity);
             if (lockLost)
             {
-                // A Scanner Room camera is controlled with its lock. Without the lock the player cannot stay in its view.
+                // A Scanner Room camera is controlled, and carried by a Stalker, with its lock. Without the lock the
+                // player cannot stay in its view, and the Stalker lets go of it.
                 mapRoomCameras.LockLost(simulatedEntity.Id);
+                stalkerCameraGrabs.LockLost(simulatedEntity.Id);
             }
         }
         return Task.CompletedTask;

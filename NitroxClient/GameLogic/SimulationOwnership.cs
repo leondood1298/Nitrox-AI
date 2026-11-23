@@ -111,7 +111,11 @@ public class SimulationOwnership
             }
 
             StopSimulatingEntity(simulatedEntity.Id);
-            EntityPositionBroadcaster.Instance.StopWatchingEntity(simulatedEntity.Id);
+            // As for a drop, this can arrive before the broadcaster exists (while joining)
+            if (EntityPositionBroadcaster.Instance)
+            {
+                EntityPositionBroadcaster.Instance.StopWatchingEntity(simulatedEntity.Id);
+            }
         }
 
         // Avoid keeping artifacts of the entity's previous ChangesPosition state

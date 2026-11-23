@@ -85,7 +85,7 @@ public sealed class MapRoomCamerasTest
     {
         // Another client holds the camera exclusively because its Stalker carries it. Nobody controls the camera, and
         // a player who asks for it gets it. Marked as controlled here, it would stay unselectable for good.
-        SimulationOwnershipChangeProcessor processor = new(simulationOwnership, cameras);
+        SimulationOwnershipChangeProcessor processor = new(simulationOwnership, cameras, new StalkerCameraGrabs(simulationOwnership, cameras));
 
         await processor.Process(null!, new SimulationOwnershipChange(cameraId, playerB, SimulationLockType.EXCLUSIVE));
 

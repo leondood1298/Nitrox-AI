@@ -1,9 +1,9 @@
-using UnityEngine;
-
 namespace NitroxClient.GameLogic.Simulation;
 
-public sealed class StalkerCameraGrab(CollectShiny collectShiny, GameObject camera) : LockRequestContext
+/// <summary>
+///     The Stalker a Scanner Room camera's lock was asked for.
+/// </summary>
+internal sealed class StalkerCameraGrab(StalkerCameraGrabs.IStalker stalker) : LockRequestContext
 {
-    public CollectShiny CollectShiny { get; } = collectShiny;
-    public GameObject Camera { get; } = camera;
+    public StalkerCameraGrabs.IStalker Stalker { get; } = stalker;
 }
