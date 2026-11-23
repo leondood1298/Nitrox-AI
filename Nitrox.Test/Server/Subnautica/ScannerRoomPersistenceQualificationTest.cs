@@ -14,11 +14,11 @@ namespace Nitrox.Test.Server.Subnautica;
 [TestClass]
 public sealed class ScannerRoomPersistenceQualificationTest
 {
-    private static readonly NitroxId BaseId = new("00000000-0000-0000-0000-000000000101");
-    private static readonly NitroxId RoomId = new("00000000-0000-0000-0000-000000000100");
-    private static readonly NitroxId CameraAId = new("00000000-0000-0000-0000-000000000201");
-    private static readonly NitroxId CameraBId = new("00000000-0000-0000-0000-000000000202");
-    private static readonly NitroxId CameraCId = new("00000000-0000-0000-0000-000000000203");
+    private static readonly NitroxId baseId = new("00000000-0000-0000-0000-000000000101");
+    private static readonly NitroxId roomId = new("00000000-0000-0000-0000-000000000100");
+    private static readonly NitroxId cameraAId = new("00000000-0000-0000-0000-000000000201");
+    private static readonly NitroxId cameraBId = new("00000000-0000-0000-0000-000000000202");
+    private static readonly NitroxId cameraCId = new("00000000-0000-0000-0000-000000000203");
 
     [TestMethod]
     public void JsonRoundTripPreservesCanonicalStateAndQualifiesLateJoinRecovery()
@@ -33,7 +33,7 @@ public sealed class ScannerRoomPersistenceQualificationTest
     {
         // A camera that was never docked has no room record. Its light, battery and health are saved with the camera.
         ServerJsonSerializer serializer = new(NullLogger<ServerJsonSerializer>.Instance);
-        GlobalRootEntity camera = CreateLooseCamera(CameraCId, new NitroxVector3(3f, -40f, 9f));
+        GlobalRootEntity camera = CreateLooseCamera(cameraCId, new NitroxVector3(3f, -40f, 9f));
         camera.Metadata = new MapRoomCameraMetadata(true, 3, 41.5f, 275f, 8);
 
         GlobalRootData restored = RoundTrip(serializer, GlobalRootData.From([camera]), nameof(ServerJsonSerializer));
@@ -50,7 +50,7 @@ public sealed class ScannerRoomPersistenceQualificationTest
     public void FingerprintValidationEnforcesCameraHealthContract()
     {
         MapRoomEntity room = CreateRoom();
-        MapRoomCameraRecord camera = room.GetCameraRecord(CameraAId)!;
+        MapRoomCameraRecord camera = room.GetCameraRecord(cameraAId)!;
 
         camera.Health = MapRoomCameraRecord.MAX_HEALTH;
         Assert.IsNull(ScannerRoomStateFingerprint.Validate(room));
@@ -101,15 +101,15 @@ public sealed class ScannerRoomPersistenceQualificationTest
         List<GlobalRootEntity> initialSync = worldEntityManager.GetInitialSyncGlobalRootEntities(rootOnly: true);
 
         AssertInitialSyncRoots(initialSync, serializerName);
-        Assert.IsTrue(entityRegistry.TryGetEntityById(CameraAId, out GlobalRootEntity _),
+        Assert.IsTrue(entityRegistry.TryGetEntityById(cameraAId, out GlobalRootEntity _),
             $"{serializerName}: docked camera A must be filtered because of dock state, not because it is absent.");
-        Assert.IsFalse(entityRegistry.TryGetEntityById(CameraBId, out Entity _),
+        Assert.IsFalse(entityRegistry.TryGetEntityById(cameraBId, out Entity _),
             $"{serializerName}: the orphaned camera must remain absent as a loose global entity.");
-        Assert.IsTrue(entityRegistry.TryGetEntityById(CameraCId, out GlobalRootEntity _),
+        Assert.IsTrue(entityRegistry.TryGetEntityById(cameraCId, out GlobalRootEntity _),
             $"{serializerName}: existing loose camera C must remain registered for initial sync.");
 
         MapRoomEntity expectedAfterRecovery = CreateRoom();
-        expectedAfterRecovery.RightDockCameraId = CameraBId;
+        expectedAfterRecovery.RightDockCameraId = cameraBId;
         expectedAfterRecovery.DockingRevision = 10;
 
         AssertCanonicalFields(expectedAfterRecovery, restoredRoom, $"{serializerName} initial sync recovery");
@@ -158,7 +158,7 @@ public sealed class ScannerRoomPersistenceQualificationTest
             GlobalRootEntity.GLOBAL_ROOT_LEVEL,
             "scanner-room-base-root",
             true,
-            BaseId,
+            baseId,
             new NitroxTechType("Base"),
             null,
             null,
@@ -167,20 +167,20 @@ public sealed class ScannerRoomPersistenceQualificationTest
         return GlobalRootData.From(
         [
             baseRoot,
-            CreateLooseCamera(CameraAId, new NitroxVector3(11f, -3f, 23f)),
-            CreateLooseCamera(CameraCId, new NitroxVector3(31f, 7f, -9f))
+            CreateLooseCamera(cameraAId, new NitroxVector3(11f, -3f, 23f)),
+            CreateLooseCamera(cameraCId, new NitroxVector3(31f, 7f, -9f))
         ]);
     }
 
     private static MapRoomEntity CreateRoom() => new(
         new NitroxInt3(4, -2, 9),
-        CameraAId,
+        cameraAId,
         null,
         9,
         [
-            new MapRoomCameraRecord(CameraAId, 1, true, 11, 90f, MapRoomCameraRecord.MAX_HEALTH, 12),
-            new MapRoomCameraRecord(CameraBId, 2, false, 4, 44.5f, 55.25f, 6),
-            new MapRoomCameraRecord(CameraCId, 7, true, 8, 22f, 33f, 9)
+            new MapRoomCameraRecord(cameraAId, 1, true, 11, 90f, MapRoomCameraRecord.MAX_HEALTH, 12),
+            new MapRoomCameraRecord(cameraBId, 2, false, 4, 44.5f, 55.25f, 6),
+            new MapRoomCameraRecord(cameraCId, 7, true, 8, 22f, 33f, 9)
         ],
         31,
         44,
@@ -195,10 +195,10 @@ public sealed class ScannerRoomPersistenceQualificationTest
         GlobalRootEntity.GLOBAL_ROOT_LEVEL,
         "scanner-room",
         true,
-        RoomId,
+        roomId,
         new NitroxTechType("MapRoom"),
         new MapRoomMetadata(new NitroxTechType("Gold"), 17, 31, 32),
-        BaseId,
+        baseId,
         []);
 
     private static GlobalRootEntity CreateLooseCamera(NitroxId id, NitroxVector3 position) => new(
@@ -214,13 +214,13 @@ public sealed class ScannerRoomPersistenceQualificationTest
 
     private static MapRoomEntity GetPersistedRoom(GlobalRootData data)
     {
-        GlobalRootEntity baseRoot = data.Entities.Single(entity => entity.Id == BaseId);
-        return baseRoot.ChildEntities.OfType<MapRoomEntity>().Single(entity => entity.Id == RoomId);
+        GlobalRootEntity baseRoot = data.Entities.Single(entity => entity.Id == baseId);
+        return baseRoot.ChildEntities.OfType<MapRoomEntity>().Single(entity => entity.Id == roomId);
     }
 
     private static void AssertInitialSyncRoots(IEnumerable<GlobalRootEntity> roots, string context)
     {
-        string[] expected = [BaseId.ToString(), CameraCId.ToString()];
+        string[] expected = [baseId.ToString(), cameraCId.ToString()];
         Array.Sort(expected, StringComparer.Ordinal);
         string[] actual = roots.Select(root => root.Id.ToString()).Order(StringComparer.Ordinal).ToArray();
 
