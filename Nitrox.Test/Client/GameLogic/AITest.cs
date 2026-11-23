@@ -24,6 +24,14 @@ public sealed class AITest
     }
 
     [TestMethod]
+    public void OnlyTheSimulatingPlayerOrAnUnsharedCreatureStartsAnActionOutOfTurn()
+    {
+        Assert.IsTrue(AI.MayChooseActionHere(false, false));
+        Assert.IsTrue(AI.MayChooseActionHere(true, true));
+        Assert.IsFalse(AI.MayChooseActionHere(true, false));
+    }
+
+    [TestMethod]
     public void ACopyOnlyStartsAndStopsTheActionsItReplays()
     {
         Assert.IsTrue(AI.MayRunActionHere(true, false, true, false));

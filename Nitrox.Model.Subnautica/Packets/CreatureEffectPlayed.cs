@@ -6,7 +6,8 @@ namespace Nitrox.Model.Subnautica.Packets;
 
 /// <summary>
 ///     Something a creature of the sender's game did beyond moving and biting, which the other games play on their copy:
-///     a Gasopod releasing its pods, a Crabsquid's EMP blast, a Mesmer starting or ending its hypnosis of a player. Only the
+///     a Gasopod releasing its pods, a Crabsquid's EMP blast, a Mesmer starting or ending its hypnosis of a player, a Bleeder
+///     latching onto a player. Only the
 ///     creature's simulating player sends it.
 /// </summary>
 [Serializable]
@@ -39,6 +40,11 @@ public class CreatureEffectPlayed : Packet
         GAS_PODS_RELEASED,
         EMP_BLAST_CAST,
         HYPNOSIS_STARTED,
-        HYPNOSIS_ENDED
+        HYPNOSIS_ENDED,
+
+        /// <summary>
+        ///     A Bleeder touched the player <see cref="TargetId" />, who takes it on their arm.
+        /// </summary>
+        BLEEDER_ATTACHED
     }
 }

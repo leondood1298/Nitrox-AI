@@ -98,6 +98,22 @@ public sealed class AI
         return !hasId || simulatedLocally || (actionReplayed && !isPerform);
     }
 
+    /// <summary>
+    ///     Called before Creature.TryStartAction, by which the game starts an action out of turn (a fright, a hit, landing
+    ///     on the ground). Only a creature nobody shares and one this player simulates choose their actions; a copy of
+    ///     another player's creature is told which one it shows.
+    /// </summary>
+    public bool MayChooseAction(Creature creature)
+    {
+        bool hasId = creature.TryGetNitroxId(out NitroxId creatureId);
+        return MayChooseActionHere(hasId, hasId && simulationOwnership.HasAnyLockType(creatureId));
+    }
+
+    public static bool MayChooseActionHere(bool hasId, bool simulatedLocally)
+    {
+        return !hasId || simulatedLocally;
+    }
+
     internal bool IsReplayedAction(Type actionType)
     {
         return creatureActionWhitelist.Contains(actionType);

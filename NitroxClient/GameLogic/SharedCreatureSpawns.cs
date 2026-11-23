@@ -61,6 +61,32 @@ public sealed class SharedCreatureSpawns(SimulationOwnership simulationOwnership
     }
 
     /// <summary>
+    ///     WarpedInCreature.warpOutTime is in Time.time, which each game counts from its own start: it travels in game time.
+    /// </summary>
+    public static double GetWarpOutGameTime(float warpOutTime, float timeNow, double gameTimeNow) => gameTimeNow + (warpOutTime - timeNow);
+
+    public static float GetWarpOutLocalTime(double warpOutGameTime, double gameTimeNow, float timeNow) => timeNow + (float)(warpOutGameTime - gameTimeNow);
+
+    /// <summary>
+    ///     Gives a warped-in creature that came as an entity its time to warp out, so that whichever game simulates it ends
+    ///     it then (WarpedInCreature.Update). One whose time has passed warps out at once.
+    /// </summary>
+    public void ApplyWarpOutTime(GameObject creature, double warpOutGameTime)
+    {
+        if (!DayNightCycle.main)
+        {
+            return;
+        }
+        WarpedInCreature warpedInCreature = creature.EnsureComponent<WarpedInCreature>();
+        if (warpedInCreature.warpInTime < 0f)
+        {
+            warpedInCreature.warpInTime = Time.time;
+        }
+        // Not 0, which WarpedInCreature.Update reads as no time at all
+        warpedInCreature.warpOutTime = Mathf.Max(GetWarpOutLocalTime(warpOutGameTime, DayNightCycle.main.timePassed, Time.time), 0.01f);
+    }
+
+    /// <summary>
     ///     Called before a spawner of the game makes a creature: true if this game makes it.
     /// </summary>
     public bool MaySpawnAt(Vector3 position)
