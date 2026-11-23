@@ -7,7 +7,7 @@ namespace Nitrox.Test.Patcher.Patches.Dynamic;
 [TestClass]
 public sealed class uGUI_MapRoomScanner_Subscription_PatchTest
 {
-    [DataTestMethod]
+    [TestMethod]
     [DataRow("START")]
     [DataRow("ON_DISABLE")]
     public void PatchTargetsExistInCurrentGameAssembly(string fieldName)

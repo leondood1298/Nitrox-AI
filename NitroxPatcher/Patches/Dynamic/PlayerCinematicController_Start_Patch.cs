@@ -20,7 +20,7 @@ public sealed class PlayerCinematicController_Start_Patch : NitroxPatch, IDynami
 		{
 			if (__instance.GetRootParent().gameObject.name != "__LIGHTMAPPED_PREFAB__")
 			{
-				Log.Warn("[PlayerCinematicController_Start_Patch] - No NitroxEntity for \"" + __instance.gameObject.GetFullHierarchyPath() + "\" found!");
+				Log.Warn($"[PlayerCinematicController_Start_Patch] - No NitroxEntity for \"{__instance.gameObject.GetFullHierarchyPath()}\" found!");
 			}
 		}
 		else if (!component.gameObject.GetComponent<Bed>())

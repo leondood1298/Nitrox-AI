@@ -6,7 +6,7 @@ namespace Nitrox.Test.Patcher.Patches.Dynamic;
 [TestClass]
 public sealed class BasePowerRelay_PowerEvent_PatchTest
 {
-    [DataTestMethod]
+    [TestMethod]
     [DataRow("START")]
     [DataRow("POWER_DOWN_EVENT")]
     [DataRow("POWER_UP_EVENT")]
@@ -26,7 +26,7 @@ public sealed class BasePowerRelay_PowerEvent_PatchTest
         }
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(false, false, false)]
     [DataRow(false, true, false)]
     [DataRow(true, true, false)]
@@ -37,7 +37,7 @@ public sealed class BasePowerRelay_PowerEvent_PatchTest
         Assert.AreEqual(expected, BasePowerRelay_PowerEvent_Patch.ShouldTrack(multiplayerActive, initialSyncCompleted));
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(false, false, 10f, 12f, false)]
     [DataRow(false, true, 10f, 12f, false)]
     [DataRow(true, false, 10f, 12f, true)]

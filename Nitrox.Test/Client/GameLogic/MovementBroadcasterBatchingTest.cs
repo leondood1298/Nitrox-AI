@@ -12,11 +12,14 @@ public sealed class MovementBroadcasterBatchingTest
     [TestMethod]
     public void ClientChunkLimitMatchesServerAuthorityLimit()
     {
+        // Both sides are constants on purpose: this fails the build's test run if client and server limits drift apart.
+#pragma warning disable MSTEST0032
         Assert.AreEqual(VehicleMovementsPacketProcessor.MAX_MOVEMENTS_PER_PACKET,
             MovementBroadcaster.MAX_MOVEMENTS_PER_PACKET);
+#pragma warning restore MSTEST0032
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(0, 0)]
     [DataRow(1, 1)]
     [DataRow(MovementBroadcaster.MAX_MOVEMENTS_PER_PACKET, 1)]

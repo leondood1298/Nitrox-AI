@@ -15,7 +15,7 @@ public class MapRoomMetadataProcessor : EntityMetadataProcessor<MapRoomMetadata>
 	{
 		if (!gameObject.TryGetComponent<MapRoomFunctionality>(out var component))
 		{
-			Log.Error("Could not find MapRoomFunctionality on " + gameObject.name);
+			Log.Error($"Could not find MapRoomFunctionality on {gameObject.name}");
 			return;
 		}
 		TechType techType = metadata.TypeToScan.ToUnity();

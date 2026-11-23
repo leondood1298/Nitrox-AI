@@ -29,12 +29,39 @@ internal sealed class BasePowerSourceAuthority
 			BasePowerSourceTypes.TryGetMaxFuelProgress(requested.SourceType, out float maxFuelProgress);
 			float fuelConsumed = Math.Clamp(requested.FuelConsumed, 0f, maxFuelProgress);
             long revision = entity.Metadata is PowerSourceMetadata current ? current.Revision + 1 : 1;
-            accepted = new PowerSourceMetadata(power, maxPower, requested.SourceType, revision, fuelConsumed);
+            // The thermal plant temperature shares this metadata slot and must survive every power update.
+            accepted = new PowerSourceMetadata(power, maxPower, requested.SourceType, revision, fuelConsumed, GetStoredTemperature(entity.Metadata));
             entity.Metadata = accepted;
             lastOwnerSequenceBySource[entity.Id] = new OwnerSequence(senderSessionId, requested.ClientSequence);
             return true;
         }
     }
+
+    /// <summary>
+    ///     Folds a thermal plant temperature report into a source that already has power state, instead of letting it
+    ///     replace that state (which would reset the revision clients order updates by, and make the plant look like
+    ///     it has no saved power). The temperature only ever rises, so an equal or lower report is stale.
+    /// </summary>
+    /// <returns>False when the entity has no power state yet or the report is stale.</returns>
+    public bool TryApplyTemperature(Entity entity, ThermalPlantMetadata report)
+    {
+        lock (lastOwnerSequenceBySource)
+        {
+            if (entity.Metadata is not PowerSourceMetadata current || !float.IsFinite(report.Temperature) || report.Temperature <= current.Temperature)
+            {
+                return false;
+            }
+            entity.Metadata = current.WithTemperature(report.Temperature);
+            return true;
+        }
+    }
+
+    internal static float GetStoredTemperature(EntityMetadata? metadata) => metadata switch
+    {
+        PowerSourceMetadata powerSource => powerSource.Temperature,
+        ThermalPlantMetadata thermalPlant => thermalPlant.Temperature,
+        _ => 0f
+    };
 
     public long GetLastClientSequence(NitroxId sourceId)
     {

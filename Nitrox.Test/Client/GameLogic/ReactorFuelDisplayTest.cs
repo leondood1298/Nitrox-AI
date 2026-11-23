@@ -10,7 +10,7 @@ public sealed class ReactorFuelDisplayTest
 		Assert.AreEqual(0f, ReactorFuelDisplay.CalculateRemainingEnergy(20f, 25f));
 	}
 
-	[DataTestMethod]
+	[TestMethod]
 	[DataRow(30f, "1m")]
 	[DataRow(4800f, "1h 20m")]
 	[DataRow(7200f, "2h")]

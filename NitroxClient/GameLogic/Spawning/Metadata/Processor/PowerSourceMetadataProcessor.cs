@@ -21,11 +21,17 @@ public class PowerSourceMetadataProcessor : EntityMetadataProcessor<PowerSourceM
 			PowerSourceMetadata accepted = hasId ? state.Reconcile(sourceId, metadata) : metadata;
 			component.SetPower(accepted.Power);
 			BasePowerSources.SetFuelConsumed(component, accepted.SourceType, accepted.FuelConsumed);
+			// The temperature comes from the saved snapshot, never from live power broadcasts, and the game only ever
+			// raises it. Without it a restored thermal plant forgets the peak it reached (e.g. from a geyser).
+			if (metadata.Temperature > 0f && gameObject.TryGetComponent(out ThermalPlant thermalPlant))
+			{
+				thermalPlant.temperature = Mathf.Max(thermalPlant.temperature, metadata.Temperature);
+			}
 			RecordReconciliationApply(hasId ? sourceId : null, accepted, true);
 		}
 		else
 		{
-			Log.Error("Could not find PowerSource on " + gameObject.name);
+			Log.Error($"Could not find PowerSource on {gameObject.name}");
 			RecordReconciliationApply(gameObject.TryGetNitroxId(out var sourceId) ? sourceId : null, metadata, false);
 		}
 	}

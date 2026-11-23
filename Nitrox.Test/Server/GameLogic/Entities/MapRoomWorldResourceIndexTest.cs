@@ -195,9 +195,12 @@ public sealed class MapRoomWorldResourceIndexTest
     [TestMethod]
     public void ClientAndServerRangeContractMatches()
     {
+        // Both sides are constants on purpose: this fails the test run if client and server ranges drift apart.
+#pragma warning disable MSTEST0032
         Assert.AreEqual(MapRoomUpgradeEffects.BASE_RANGE, MapRoomWorldResourceIndex.DEFAULT_SCAN_RANGE);
         Assert.AreEqual(MapRoomUpgradeEffects.RANGE_PER_MODULE, MapRoomWorldResourceIndex.SCAN_RANGE_PER_MODULE);
         Assert.AreEqual(MapRoomUpgradeEffects.MAX_RANGE, MapRoomWorldResourceIndex.MAX_SCAN_RANGE);
+#pragma warning restore MSTEST0032
     }
 
     private static WorldEntity World(NitroxId id, NitroxTechType techType, NitroxVector3 position) =>

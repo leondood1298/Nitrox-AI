@@ -19,6 +19,13 @@ public class PowerSourceMetadata : EntityMetadata
 	[DataMember(Order = 5)]
 	public float FuelConsumed { get; }
 
+	/// <summary>
+	///     Highest water temperature a thermal plant has measured (the game only ever raises it). Kept here because an
+	///     entity has a single metadata slot, which this power state already occupies. Zero for other source types.
+	/// </summary>
+	[DataMember(Order = 6)]
+	public float Temperature { get; }
+
 	[IgnoreConstructor]
 	protected PowerSourceMetadata()
 	{
@@ -26,14 +33,17 @@ public class PowerSourceMetadata : EntityMetadata
 
 	// Keep a single public constructor so Newtonsoft.Json can reliably select it.
 	// The optional values preserve compatibility with saves that only contain Power.
-	public PowerSourceMetadata(float power, float maxPower = 0f, BasePowerSourceType sourceType = BasePowerSourceType.UNKNOWN, long revision = 0, float fuelConsumed = 0f)
+	public PowerSourceMetadata(float power, float maxPower = 0f, BasePowerSourceType sourceType = BasePowerSourceType.UNKNOWN, long revision = 0, float fuelConsumed = 0f, float temperature = 0f)
 	{
 		Power = power;
 		MaxPower = maxPower;
 		SourceType = sourceType;
 		Revision = revision;
 		FuelConsumed = fuelConsumed;
+		Temperature = temperature;
 	}
+
+	public PowerSourceMetadata WithTemperature(float temperature) => new(Power, MaxPower, SourceType, Revision, FuelConsumed, temperature);
 
 	public override string ToString()
 	{

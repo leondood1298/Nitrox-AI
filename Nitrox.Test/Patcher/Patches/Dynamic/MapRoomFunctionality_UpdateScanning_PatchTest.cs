@@ -6,7 +6,7 @@ namespace Nitrox.Test.Patcher.Patches.Dynamic;
 [TestClass]
 public sealed class MapRoomFunctionality_UpdateScanning_PatchTest
 {
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(false, false, false)]
     [DataRow(true, true, false)]
     [DataRow(true, false, true)]

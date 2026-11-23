@@ -41,7 +41,7 @@ internal static partial class ServiceCollectionExtensions
     /// <remarks>
     ///     If multiple instances of the same interface type are registered, then the last registered implementation will be used.
     /// </remarks>
-    [GenerateServiceRegistrations(AssignableTo = typeof(IAdminFeature<>), CustomHandler = nameof(AddOpenGenericAsExistingSingleton))]
+    [ScanForTypes(AssignableTo = typeof(IAdminFeature<>), Handler = nameof(AddOpenGenericAsExistingSingleton))]
     internal static partial IServiceCollection AddAdminFeatures(this IServiceCollection services);
 
     [GenerateServiceRegistrations(AssignableTo = typeof(IGameResource), Lifetime = ServiceLifetime.Singleton, AsSelf = true, AsImplementedInterfaces = true)]
@@ -56,10 +56,10 @@ internal static partial class ServiceCollectionExtensions
     [GenerateServiceRegistrations(AssignableTo = typeof(EventTrigger<>), AsSelf = true, AsImplementedInterfaces = false, Lifetime = ServiceLifetime.Singleton)]
     private static partial IServiceCollection AddEventTriggers(this IServiceCollection services);
 
-    [GenerateServiceRegistrations(AssignableTo = typeof(IEvent<>), Lifetime = ServiceLifetime.Singleton, CustomHandler = nameof(AddEvent))]
+    [ScanForTypes(AssignableTo = typeof(IEvent<>), Handler = nameof(AddEvent))]
     private static partial IServiceCollection AddEvents(this IServiceCollection services);
 
-    [GenerateServiceRegistrations(AssignableTo = typeof(ICommandHandlerBase), CustomHandler = nameof(AddCommandHandler))]
+    [ScanForTypes(AssignableTo = typeof(ICommandHandlerBase), Handler = nameof(AddCommandHandler))]
     private static partial IServiceCollection AddCommandHandlers(this IServiceCollection services);
 
     [GenerateServiceRegistrations(AssignableTo = typeof(IArgConverter), Lifetime = ServiceLifetime.Singleton, AsSelf = true, AsImplementedInterfaces = true)]
@@ -103,6 +103,9 @@ internal static partial class ServiceCollectionExtensions
         }
 
         public IServiceCollection AddHostedSingletonService<T>() where T : class, IHostedService => services.AddSingleton<T>().AddHostedService(provider => provider.GetRequiredService<T>());
+        public IServiceCollection AddHostedSingletonService<TService, TImplementation>()
+            where TImplementation : class, TService, IHostedService
+            where TService : class => services.AddSingleton<TService, TImplementation>().AddHostedService(provider => (TImplementation)provider.GetRequiredService(typeof(TService)));
 
         public IServiceCollection AddNitroxOptions(ServerStartOptions startOptions)
         {
@@ -194,13 +197,13 @@ internal static partial class ServiceCollectionExtensions
         /// </summary>
         public IServiceCollection AddPackets()
         {
-            services.AddHostedSingletonService<LiteNetLibServer>()
+            services.AddHostedSingletonService<LiteNetLibServerService>()
                     .AddHostedSingletonService<PacketSerializationService>()
                     .AddHostedSingletonService<PacketRegistryService>()
                     .AddPacketProcessors()
                     .TryAddSingletonLazyArrayProvider<IPacketProcessor>()
                     .AddSingleton<DefaultServerPacketProcessor>()
-                    .AddSingleton<IPacketSender>(provider => provider.GetRequiredService<LiteNetLibServer>());
+                    .AddSingleton<IPacketSender>(provider => provider.GetRequiredService<LiteNetLibServerService>());
             return services;
         }
 

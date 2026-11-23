@@ -61,11 +61,11 @@ internal sealed class ScannerRoomScenarioFixture
         RecordingPacketSender worldPacketSender = new();
         Diagnostics = new ScannerRoomDiagnostics(NullLogger<ScannerRoomDiagnostics>.Instance);
         ControlReleaseFactory = new MapRoomCameraControlReleaseFactory(EntityRegistry, Diagnostics, ControlLifecycle);
-        WorldEntityManager worldEntityManager = new(worldPacketSender, EntityRegistry, null!, null!, null!, Diagnostics, NullLogger<WorldEntityManager>.Instance);
+        WorldEntityManager worldEntityManager = new(worldPacketSender, EntityRegistry, null!, null!, null!, Diagnostics, null!, NullLogger<WorldEntityManager>.Instance);
         dockProcessor = new(EntityRegistry, worldEntityManager, Ownership, ControlReleaseFactory, RoomLifecycle,
             ControlLifecycle, Diagnostics, NullLogger<MapRoomCameraDockProcessor>.Instance);
         controlProcessor = new(Ownership, EntityRegistry, ControlLifecycle, Diagnostics);
-        PlayerManager playerManager = new(null!, null!, NullLogger<PlayerManager>.Instance);
+        PlayerManager playerManager = new(null!, null!, null!, NullLogger<PlayerManager>.Instance);
         deconstructionCleanup = new(EntityRegistry, Ownership, ControlReleaseFactory,
             new MapRoomScanResultSubscriptions(), ControlLifecycle, playerManager, Diagnostics, worldEntityManager);
         EntitySimulation = new(worldPacketSender, EntityRegistry, worldEntityManager, Ownership,

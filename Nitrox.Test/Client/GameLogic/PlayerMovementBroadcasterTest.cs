@@ -7,7 +7,7 @@ namespace Nitrox.Test.Client.GameLogic;
 [TestClass]
 public sealed class PlayerMovementBroadcasterTest
 {
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(false, false, false, (int)PlayerMovementBroadcastMode.SUPPRESSED)]
     [DataRow(true, false, false, (int)PlayerMovementBroadcastMode.NORMAL)]
     [DataRow(false, true, false, (int)PlayerMovementBroadcastMode.NORMAL)]
@@ -29,7 +29,7 @@ public sealed class PlayerMovementBroadcasterTest
         Assert.AreEqual(currentVelocity, PlayerMovementBroadcaster.GetBroadcastVelocity(false, currentVelocity));
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(false, false, false, false, (int)ScannerAnchorTransition.NONE)]
     [DataRow(false, true, true, false, (int)ScannerAnchorTransition.ENTER)]
     [DataRow(true, true, true, true, (int)ScannerAnchorTransition.SWITCH)]

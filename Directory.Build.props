@@ -9,15 +9,23 @@
         <Version>1.9.0.0</Version>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <Prefer32Bit>false</Prefer32Bit>
-        <DebugType>embedded</DebugType>
+        <DebugType>portable</DebugType>
         <Nullable>annotations</Nullable>
         <ImplicitUsings>disable</ImplicitUsings>
-        <PathMap>$(MSBuildProjectDirectory)=$(MSBuildProjectName)</PathMap>
         <EnableNETAnalyzers>true</EnableNETAnalyzers>
         <AccelerateBuildsInVisualStudio>false</AccelerateBuildsInVisualStudio>
         <DisableFastUpToDateCheck>true</DisableFastUpToDateCheck>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+        <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1901;NU1902;NU1903;NU1904;DIMA001;nullable</WarningsNotAsErrors>
         <!-- Disable CET because not everyone running Nitrox uses an up-to-date Windows. See for more info: https://github.com/SubnauticaNitrox/Nitrox/issues/2637 -->
         <CETCompat Condition="'$(_IsWindowsTarget)' == 'true'">false</CETCompat>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(_IsRelease)' == 'true'">
+        <!-- Avoid putting real path to avoid leaking local file system structure of the builder -->
+        <PathMap>$(MSBuildProjectDirectory)=$(MSBuildProjectName)</PathMap>
+        <!-- In DEBUG we need portable PDB to be able to remote debug with Mono -->
+        <DebugType>embedded</DebugType>
     </PropertyGroup>
 
     <!-- Nitrox specific properties -->
@@ -27,6 +35,7 @@
         <NitroxProject>false</NitroxProject>
         <TestLibrary>false</TestLibrary>
         <NitroxLibrary>false</NitroxLibrary>
+        <NitroxExecutable>false</NitroxExecutable>
         <UnityModLibrary>false</UnityModLibrary>
         <GameName>Subnautica</GameName>
         <GameMinimumVersion>82304</GameMinimumVersion>
@@ -34,6 +43,9 @@
 
     <PropertyGroup Condition="$([System.Text.RegularExpressions.Regex]::IsMatch($(MSBuildProjectName), '^Nitrox.*$'))">
         <NitroxProject>true</NitroxProject>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(MSBuildProjectName)' == 'Nitrox.Launcher' or '$(MSBuildProjectName)' == 'Nitrox.Server.Subnautica'">
+        <NitroxExecutable>true</NitroxExecutable>
     </PropertyGroup>
     <PropertyGroup Condition="'$(NitroxProject)' == 'true' and '$(MSBuildProjectName)' != 'Nitrox.Test'">
         <NitroxLibrary>true</NitroxLibrary>
@@ -89,7 +101,7 @@
 
     <!-- Set internals visible for all projects for Nitrox.Test (excluding Nitrox.Test itself) -->
     <Choose>
-        <When Condition="'$(NitroxLibrary)' == 'true'">
+        <When Condition="'$(NitroxLibrary)' == 'true' OR '$(NitroxExecutable)' == 'true'">
             <ItemGroup>
                 <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
                     <_Parameter1>Nitrox.Test</_Parameter1>

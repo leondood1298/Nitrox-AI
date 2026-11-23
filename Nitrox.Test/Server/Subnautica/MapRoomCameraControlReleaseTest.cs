@@ -6,7 +6,7 @@ namespace Nitrox.Test.Server.Subnautica;
 [TestClass]
 public sealed class MapRoomCameraControlReleaseTest
 {
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(false, false, true)]
     [DataRow(true, true, true)]
     [DataRow(true, false, false)]
@@ -15,7 +15,7 @@ public sealed class MapRoomCameraControlReleaseTest
         Assert.AreEqual(expected, MapRoomCameraControlProcessor.CanAcknowledgeRelease(hasOwner, senderOwnsLock));
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(true, 0, false, true)]
     [DataRow(false, 0, false, false)]
     [DataRow(true, 1, false, true)]

@@ -12,6 +12,7 @@ using Nitrox.Model.Networking;
 using Nitrox.Server.Subnautica.Models.AppEvents;
 using Nitrox.Server.Subnautica.Models.Communication;
 using Nitrox.Server.Subnautica.Models.Logging.ZLogger;
+using Nitrox.Server.Subnautica.Services;
 using NitroxClient.Communication.Exceptions;
 using NitroxClient.Communication.NetworkingLayer.LiteNetLib;
 using ZLogger.Providers;
@@ -29,9 +30,9 @@ public sealed class NitroxNetworkProtocolIntegrationTest
         ushort port = GetAvailableUdpPort();
         using LoggerFactory loggerFactory = new([new ZLoggerAtomicConsoleLoggerProvider(new ZLoggerConsoleOptions())]);
         SessionManager sessionManager = new(new ISessionCleaner.Trigger(() => []), loggerFactory.CreateLogger<SessionManager>());
-        LiteNetLibServer server = new(null!, sessionManager, null!, null!,
+        LiteNetLibServerService server = new(null!, sessionManager, null!, null!,
                                             Options.Create(new SubnauticaServerOptions { ServerPort = port, MaxConnections = 4 }),
-                                            loggerFactory.CreateLogger<LiteNetLibServer>());
+                                            new TaskQueueService(), loggerFactory.CreateLogger<LiteNetLibServerService>());
 
         await server.StartAsync(CancellationToken.None);
         try
@@ -74,6 +75,7 @@ public sealed class NitroxNetworkProtocolIntegrationTest
     public async Task ProductionClientReportsRejectedProtocolEpoch()
     {
         ushort port = GetAvailableUdpPort();
+        string otherEpochKey = $"nitrox-ai/{NitroxNetworkProtocol.Epoch + 1}";
         EventBasedNetListener listener = new();
         NetManager server = new(listener, NitroxEnvironment.IsReleaseMode ? new Crc32cLayer() : null)
         {
@@ -83,7 +85,7 @@ public sealed class NitroxNetworkProtocolIntegrationTest
         {
             Thread.Sleep(2_500);
             LiteNetLib.Utils.NetDataWriter rejectionData = new();
-            rejectionData.Put("nitrox-ai/3");
+            rejectionData.Put(otherEpochKey);
             request.Reject(rejectionData);
         };
         server.Start(port);
@@ -93,7 +95,7 @@ public sealed class NitroxNetworkProtocolIntegrationTest
         {
             Func<Task> connect = async () => await ConnectProductionClientAsync(client, port);
             MultiplayerProtocolMismatchException exception = (await connect.Should().ThrowAsync<MultiplayerProtocolMismatchException>()).Which;
-            exception.ServerConnectionKey.Should().Be("nitrox-ai/3");
+            exception.ServerConnectionKey.Should().Be(otherEpochKey);
             exception.ClientConnectionKey.Should().Be(NitroxNetworkProtocol.ConnectionKey);
             client.IsRunning.Should().BeFalse("a rejected attempt must release LiteNetLib's threads and socket");
         }

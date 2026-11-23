@@ -11,6 +11,7 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Helper;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities.Spawning;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
+using Nitrox.Server.Subnautica.Services.Core;
 
 namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 
@@ -24,29 +25,30 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 internal sealed class WorldEntityManager
 {
     private readonly BatchEntitySpawner batchEntitySpawner;
-    private readonly IPacketSender packetSender;
+    private readonly ConcurrentDictionary<NitroxInt3, Lazy<Task<int>>> batchRegistrationTasks = new();
     private readonly EntityRegistry entityRegistry;
     private readonly MapRoomScanResultSubscriptions mapRoomScanResultSubscriptions;
     private readonly ScannerRoomDiagnostics scannerRoomDiagnostics;
+
+    private readonly Lock globalRootEntitiesLock = new();
+    private readonly ILogger<WorldEntityManager> logger;
+    private readonly IPacketSender packetSender;
+    private readonly PlayerManager playerManager;
+    private readonly IProgressReporter progressReporter;
+
+    private readonly Lock worldEntitiesLock = new();
 
     /// <summary>
     ///     Global root entities that are always visible.
     /// </summary>
     internal Dictionary<NitroxId, GlobalRootEntity> globalRootEntitiesById = [];
 
-    private readonly Lock globalRootEntitiesLock = new();
-    private readonly ILogger<WorldEntityManager> logger;
-    private readonly PlayerManager playerManager;
-
-    private readonly Lock worldEntitiesLock = new();
-    private readonly ConcurrentDictionary<NitroxInt3, Lazy<Task<int>>> batchRegistrationTasks = new();
-
     /// <summary>
     ///     World entities can disappear if you go out of range.
     /// </summary>
     internal Dictionary<AbsoluteEntityCell, Dictionary<NitroxId, WorldEntity>> worldEntitiesByCell = [];
 
-    public WorldEntityManager(IPacketSender packetSender, EntityRegistry entityRegistry, BatchEntitySpawner batchEntitySpawner, PlayerManager playerManager, MapRoomScanResultSubscriptions mapRoomScanResultSubscriptions, ScannerRoomDiagnostics scannerRoomDiagnostics, ILogger<WorldEntityManager> logger)
+    public WorldEntityManager(IPacketSender packetSender, EntityRegistry entityRegistry, BatchEntitySpawner batchEntitySpawner, PlayerManager playerManager, MapRoomScanResultSubscriptions mapRoomScanResultSubscriptions, ScannerRoomDiagnostics scannerRoomDiagnostics, IProgressReporter progressReporter, ILogger<WorldEntityManager> logger)
     {
         this.packetSender = packetSender;
         this.entityRegistry = entityRegistry;
@@ -55,6 +57,7 @@ internal sealed class WorldEntityManager
         this.mapRoomScanResultSubscriptions = mapRoomScanResultSubscriptions;
         this.scannerRoomDiagnostics = scannerRoomDiagnostics;
         this.logger = logger;
+        this.progressReporter = progressReporter;
     }
 
     public List<GlobalRootEntity> GetGlobalRootEntities(bool rootOnly = false)
@@ -253,65 +256,32 @@ internal sealed class WorldEntityManager
         }
     }
 
-    public Task LoadAllUnspawnedEntitiesAsync(CancellationToken token)
+    public async Task LoadAllUnspawnedEntitiesAsync(CancellationToken token)
     {
-        return ProcessBatchGridAsync(
-            SubnauticaMap.DimensionsInBatches,
-            async batchId =>
+        int totalBatches = SubnauticaMap.DimensionsInBatches.X * SubnauticaMap.DimensionsInBatches.Y * SubnauticaMap.DimensionsInBatches.Z;
+        int batchesLoaded = 0;
+
+        for (int x = 0; x < SubnauticaMap.DimensionsInBatches.X; x++)
+        {
+            token.ThrowIfCancellationRequested();
+            for (int y = 0; y < SubnauticaMap.DimensionsInBatches.Y; y++)
             {
-                int spawned = await LoadUnspawnedEntitiesAsync(batchId, true);
-                logger.ZLogDebug($"Loaded {spawned} entities from batch ({batchId.X}, {batchId.Y}, {batchId.Z})");
-            },
-            percentage => logger.ZLogInformation($"Loading : {percentage}%"),
-            token);
-    }
-
-    internal static async Task ProcessBatchGridAsync(
-        NitroxInt3 dimensionsInBatches,
-        Func<NitroxInt3, Task> processBatch,
-        Action<int> reportPercentage,
-        CancellationToken token)
-    {
-        ArgumentNullException.ThrowIfNull(processBatch);
-        ArgumentNullException.ThrowIfNull(reportPercentage);
-
-        if (dimensionsInBatches.X < 0 || dimensionsInBatches.Y < 0 || dimensionsInBatches.Z < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(dimensionsInBatches), dimensionsInBatches, "Batch-grid dimensions cannot be negative.");
-        }
-
-        token.ThrowIfCancellationRequested();
-        reportPercentage(0);
-        token.ThrowIfCancellationRequested();
-
-        long totalBatches = checked((long)dimensionsInBatches.X * dimensionsInBatches.Y * dimensionsInBatches.Z);
-        if (totalBatches == 0)
-        {
-            reportPercentage(100);
-            return;
-        }
-
-        long batchesProcessed = 0;
-        int lastReportedPercentage = 0;
-
-        for (int x = 0; x < dimensionsInBatches.X; x++)
-        {
-            for (int y = 0; y < dimensionsInBatches.Y; y++)
-            {
-                for (int z = 0; z < dimensionsInBatches.Z; z++)
+                for (int z = 0; z < SubnauticaMap.DimensionsInBatches.Z; z++)
                 {
-                    token.ThrowIfCancellationRequested();
-                    await processBatch(new(x, y, z));
-                    token.ThrowIfCancellationRequested();
-                    batchesProcessed++;
+                    int spawned = await LoadUnspawnedEntitiesAsync(new(x, y, z), true);
+
+                    logger.LogEntitiesLoadedFromBatch(spawned, x, y, z);
+
+                    batchesLoaded++;
                 }
             }
 
-            int percentage = (int)(batchesProcessed * 100 / totalBatches);
-            if (percentage > lastReportedPercentage)
+            if (batchesLoaded > 0)
             {
-                reportPercentage(percentage);
-                lastReportedPercentage = percentage;
+                float progress = (float)batchesLoaded / totalBatches;
+                int percentage = (int)(100f * progress);
+                logger.ZLogInformation($"Loading : {percentage}%");
+                await progressReporter.ReportProgressAsync($"Loading entities: {percentage}%", progress);
             }
         }
     }

@@ -59,7 +59,7 @@ public sealed class ScannerRoomClientDiagnosticsTest
         Assert.IsTrue(diagnostics.GetHistory()[2].EndsWith("reason=e75_h75"));
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(100f, 100)]
     [DataRow(75.01f, 100)]
     [DataRow(75f, 75)]
@@ -72,7 +72,7 @@ public sealed class ScannerRoomClientDiagnosticsTest
         Assert.AreEqual(expected, ScannerRoomClientDiagnostics.EnergyBand(value));
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(400f, 100)]
     [DataRow(300.01f, 100)]
     [DataRow(300f, 75)]

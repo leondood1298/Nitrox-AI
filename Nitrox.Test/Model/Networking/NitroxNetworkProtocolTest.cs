@@ -9,11 +9,12 @@ public sealed class NitroxNetworkProtocolTest
         Assert.IsTrue(NitroxNetworkProtocol.IsCompatible(NitroxNetworkProtocol.ConnectionKey));
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow("nitrox")]
     [DataRow("nitrox-ai/0")]
     [DataRow("nitrox-ai/1")]
-    [DataRow("nitrox-ai/3")]
+    [DataRow("nitrox-ai/2")]
+    [DataRow("nitrox-ai/4")]
     [DataRow("")]
     [DataRow(null)]
     public void OtherConnectionKeysAreIncompatible(string? connectionKey)
@@ -21,7 +22,7 @@ public sealed class NitroxNetworkProtocolTest
         Assert.IsFalse(NitroxNetworkProtocol.IsCompatible(connectionKey));
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow("nitrox-ai/0", 0)]
     [DataRow("nitrox-ai/1", 1)]
     [DataRow("nitrox-ai/2", 2)]
@@ -31,7 +32,7 @@ public sealed class NitroxNetworkProtocolTest
         Assert.AreEqual(expectedEpoch, epoch);
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow("nitrox")]
     [DataRow("nitrox-ai/")]
     [DataRow("nitrox-ai/-1")]

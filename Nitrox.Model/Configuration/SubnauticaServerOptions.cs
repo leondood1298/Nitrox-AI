@@ -4,7 +4,6 @@ using Microsoft.Extensions.Options;
 using Nitrox.Model.Constants;
 using Nitrox.Model.DataStructures.GameLogic;
 using Nitrox.Model.Serialization;
-using Nitrox.Model.Server;
 
 namespace Nitrox.Model.Configuration;
 
@@ -75,9 +74,6 @@ public sealed partial class SubnauticaServerOptions
     public bool MarkDeathPointsWithBeacon { get; set; }
     public bool PvpEnabled { get; set; } = true;
     public bool AutoSave { get; set; } = true;
-
-    [PropertyDescription("Possible values:", typeof(ServerSerializerMode))]
-    public ServerSerializerMode SerializerMode { get; set; } = ServerSerializerMode.JSON;
 
     [PropertyDescription("When true, will reject any build actions detected as desynced")]
     public bool SafeBuilding { get; set; } = true;

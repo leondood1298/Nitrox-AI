@@ -161,7 +161,7 @@ public sealed class ScannerRoomScenarioTest
         Assert.AreSame(scenario.PlayerB, scenario.Ownership.GetPlayerForLock(ScannerRoomScenarioFixture.CameraAId));
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(1425)]
     [DataRow(2410)]
     public async Task TwoCamerasRacingOneDockSlotProduceExactlyOneWinner(int seed)
@@ -201,7 +201,7 @@ public sealed class ScannerRoomScenarioTest
         }
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(1533)]
     [DataRow(2576)]
     public async Task TwoPlayersRacingOneCameraControlLockProduceExactlyOneWinner(int seed)
@@ -239,7 +239,7 @@ public sealed class ScannerRoomScenarioTest
         }
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(1425)]
     [DataRow(2410)]
     [DataRow(2576)]

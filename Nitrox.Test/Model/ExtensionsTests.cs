@@ -1,4 +1,4 @@
-﻿namespace Nitrox.Model;
+namespace Nitrox.Model;
 
 [TestClass]
 public class ExtensionsTest
@@ -24,7 +24,7 @@ public class ExtensionsTest
     public void RemoveAllFast_ThrowsErrorIfFixedSizeList()
     {
         string[] list = ["one", "two", "three"];
-        Assert.ThrowsException<NotSupportedException>(() => list.RemoveAllFast((object)null, static (item, _) => item == "one"));
+        Assert.Throws<NotSupportedException>(() => list.RemoveAllFast((object)null, static (item, _) => item == "one"));
     }
 
     [TestMethod]
@@ -93,6 +93,7 @@ public class ExtensionsTest
         new[] { "blabla", "--other=test", "--nitrox", @"C:\a\path" }.GetCommandArgs("--other").Should().BeEquivalentTo("test");
         new[] { "blabla", "--other=test", "other2", "--nitrox", @"C:\a\path" }.GetCommandArgs("--other").Should().BeEquivalentTo("test");
         new[] { "blabla", "--other", "test", "other2", "--nitrox", @"C:\a\path" }.GetCommandArgs("--other").Should().BeEquivalentTo("test", "other2");
+        new[] { "blabla", "--other", "test", "other2", "--nitrox-host-home", "/home/steamuser" }.GetCommandArgs("--nitrox-host-home").Should().BeEquivalentTo("/home/steamuser");
     }
 
     [Flags]

@@ -65,7 +65,7 @@ public sealed class MapRoomScanResultChangedProcessorTest
         scenario.EntityRegistry.AddEntity(new WorldEntity(new NitroxVector3(301f, 0f, 0f), NitroxQuaternion.Identity,
             NitroxVector3.One, quartz, 0, resourceId.ToString(), true, resourceId, null));
         Assert.IsTrue(scenario.Ownership.TryToAcquire(scenario.Room.Id, scenario.PlayerA, SimulationLockType.TRANSIENT));
-        PlayerManager playerManager = new(null!, null!, NullLogger<PlayerManager>.Instance);
+        PlayerManager playerManager = new(null!, null!, null!, NullLogger<PlayerManager>.Instance);
         MapRoomScanResultChangedProcessor processor = new(scenario.EntityRegistry, scenario.Ownership, playerManager, new MapRoomScanResultSubscriptions());
         RecordingSender sender = new();
         MapRoomScanResultChanged unload = new(scenario.Room.Id, 5, resourceId.ToString(), quartz, new NitroxVector3(10f, 0f, 0f),

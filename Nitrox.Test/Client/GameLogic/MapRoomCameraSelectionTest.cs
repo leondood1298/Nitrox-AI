@@ -14,7 +14,7 @@ namespace Nitrox.Test.Client.GameLogic;
 [TestClass]
 public sealed class MapRoomCameraSelectionTest
 {
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(false, false, false, false, true)]
     [DataRow(true, false, false, false, false)]
     [DataRow(true, false, false, true, true)]
@@ -27,7 +27,7 @@ public sealed class MapRoomCameraSelectionTest
         Assert.AreEqual(expected, MapRoomCameras.CanSelectForControl(pending, local, remote, active));
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(0f, 100f, 1f, 1f)]
     [DataRow(99.5f, 100f, 1f, 0.5f)]
     [DataRow(100f, 100f, 1f, 0f)]

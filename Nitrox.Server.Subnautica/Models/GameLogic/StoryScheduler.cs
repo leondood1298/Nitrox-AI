@@ -3,21 +3,21 @@ using System.Linq;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
+using Nitrox.Server.Subnautica.Services;
 
 namespace Nitrox.Server.Subnautica.Models.GameLogic
 {
-    internal class StoryScheduler(IPacketSender packetSender, PdaManager pdaManager, StoryManager storyManager, TimeService timeService, PlayerManager playerManager)
+    internal class StoryScheduler(IPacketSender packetSender, PdaManager pdaManager, StoryManager storyManager, TimeService timeService)
     {
         private readonly IPacketSender packetSender = packetSender;
         private readonly PdaManager pdaManager = pdaManager;
-        private readonly PlayerManager playerManager = playerManager;
         private readonly ThreadSafeDictionary<string, NitroxScheduledGoal> scheduledStories = [];
         private readonly StoryManager storyManager = storyManager;
         private readonly TimeService timeService = timeService;
 
         private float ElapsedSecondsFloat => (float)timeService.GameTime.TotalSeconds;
 
-        public void ScheduleStoriesIfNotInPast(IList<NitroxScheduledGoal> storyGoals)
+        public async Task ScheduleStoriesIfNotInPast(IList<NitroxScheduledGoal> storyGoals)
         {
             for (int i = storyGoals.Count - 1; i >= 0; i--)
             {
@@ -28,7 +28,7 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic
                 {
                     if (newStoryGoal.TimeExecute <= alreadyScheduledGoal.TimeExecute)
                     {
-                        UnscheduleStory(alreadyScheduledGoal.GoalKey);
+                        await UnscheduleStory(alreadyScheduledGoal.GoalKey);
                     }
                     continue;
                 }
@@ -62,7 +62,7 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic
         ///     When the server starts, it happens that there are still some goals that were supposed to happen
         ///     but didn't, so to make sure that they happen on at least one client, we postpone its execution
         /// </param>
-        public void UnscheduleStory(string storyGoalKey, bool becauseOfTime = false)
+        public async Task UnscheduleStory(string storyGoalKey, bool becauseOfTime = false)
         {
             if (!scheduledStories.TryGetValue(storyGoalKey, out NitroxScheduledGoal scheduledGoal))
             {
@@ -73,7 +73,7 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic
             if (becauseOfTime && !IsTrackedStory(storyGoalKey))
             {
                 scheduledGoal.TimeExecute = ElapsedSecondsFloat + 15;
-                packetSender.SendPacketToAllAsync(new Schedule(scheduledGoal.TimeExecute, storyGoalKey, scheduledGoal.GoalType));
+                await packetSender.SendPacketToAllAsync(new Schedule(scheduledGoal.TimeExecute, storyGoalKey, scheduledGoal.GoalType));
                 return;
             }
             scheduledStories.Remove(storyGoalKey);

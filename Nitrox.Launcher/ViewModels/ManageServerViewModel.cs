@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.CodeAnalysis;
@@ -27,12 +27,12 @@ using Config = Nitrox.Model.Configuration.SubnauticaServerOptions;
 
 namespace Nitrox.Launcher.ViewModels;
 
-internal partial class ManageServerViewModel : RoutableViewModelBase
+internal partial class ManageServerViewModel : RoutableViewModelBase, IServerViewModel
 {
     private readonly string[] advancedSettingsDeniedFields =
     [
         "password", "filename", nameof(Config.ServerPort), nameof(Config.MaxConnections), nameof(Config.PortForward), nameof(Config.SaveInterval), nameof(Config.Seed), nameof(Config.GameMode), nameof(Config.DisableConsole),
-        nameof(Config.LanDiscovery), nameof(Config.DefaultPlayerPerm), nameof(Config.KeepInventoryOnDeath), nameof(Config.PvpEnabled), nameof(Config.SerializerMode)
+        nameof(Config.LanDiscovery), nameof(Config.DefaultPlayerPerm), nameof(Config.KeepInventoryOnDeath), nameof(Config.PvpEnabled)
     ];
 
     private readonly DialogService dialogService;
@@ -90,6 +90,9 @@ internal partial class ManageServerViewModel : RoutableViewModelBase
     public partial bool ServerIsOnline { get; set; }
 
     [ObservableProperty]
+    public partial bool ServerIsLoading { get; set; }
+
+    [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(UndoCommand), nameof(BackCommand), nameof(RestoreBackupCommand), nameof(StartServerCommand))]
     [Range(1, 1000)]
     [NotifyDataErrorInfo]
@@ -145,6 +148,7 @@ internal partial class ManageServerViewModel : RoutableViewModelBase
                 return;
             }
             vm.ServerIsOnline = status.IsOnline;
+            vm.ServerIsLoading = status.IsLoading;
             vm.ServerPlayerCount = status.PlayerCount;
         });
     }
@@ -179,6 +183,7 @@ internal partial class ManageServerViewModel : RoutableViewModelBase
         }
         Server = entry;
         ServerIsOnline = Server.IsOnline;
+        ServerIsLoading = Server.IsLoading;
         ServerName = Server.Name;
         ServerIcon = Server.ServerIcon;
         ServerPassword = Server.Password;
