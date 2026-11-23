@@ -107,6 +107,9 @@ Update this file after each completed work slice. Keep entries short; link the P
 - [x] Publish GitHub release `custom-build-1.16.25-final` as an intermediate milestone with Phase 1 and all formal rows still open
 - [x] Fast-forward and recreate `agent/nitrox-ai-development` at released `master` after GitHub's automatic branch deletion
 
+- [x] Keep light, battery and health on the camera itself when no room has a record for it (never docked, dropped after pickup, room removed); move it into the record on first dock and back out on deconstruction
+- [x] Restore the game's docked-camera recharge rule (a tenth of capacity per update) and keep energy the base could only partly supply
+
 ## Remaining
 
 - [ ] Retest D0 from an unpolluted checkpoint with both clients present for construction; test camera movement observation in both directions, have the non-builder perform pickup/drop/redock, preserve both client logs, and compare canonical IDs/counts throughout

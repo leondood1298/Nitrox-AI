@@ -124,6 +124,13 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
             return true;
         }
 
+        if (metadata is MapRoomCameraMetadata)
+        {
+            // Only the camera light and component packets may change this, after their ownership checks.
+            logger.ZLogWarning($"Player {sendingPlayer.Name} tried updating camera {entity.Id} state through generic metadata");
+            return false;
+        }
+
         if (metadata is PowerSourceMetadata)
         {
             logger.ZLogWarning($"[BasePower] Player {sendingPlayer.Name} tried updating source {entity.Id} through generic metadata");

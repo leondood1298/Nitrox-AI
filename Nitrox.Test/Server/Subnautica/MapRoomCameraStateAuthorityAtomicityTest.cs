@@ -25,7 +25,7 @@ public sealed class MapRoomCameraStateAuthorityAtomicityTest
             ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
         MapRoomCameraLightProcessor processor = new(
             scenario.Ownership, scenario.EntityRegistry,
-            scenario.ControlLifecycle, scenario.Diagnostics);
+            scenario.ControlLifecycle, scenario.Diagnostics, scenario.LooseCameraState);
         BlockingBroadcastPacketSender sender = new();
 
         Task process = Task.Run(() => processor.Process(new AuthProcessorContext(scenario.PlayerA, sender),
@@ -71,7 +71,7 @@ public sealed class MapRoomCameraStateAuthorityAtomicityTest
             SimulationLockType.TRANSIENT));
         MapRoomCameraLightProcessor processor = new(
             scenario.Ownership, scenario.EntityRegistry,
-            scenario.ControlLifecycle, scenario.Diagnostics);
+            scenario.ControlLifecycle, scenario.Diagnostics, scenario.LooseCameraState);
         BlockingBroadcastPacketSender sender = new();
 
         await processor.Process(new AuthProcessorContext(scenario.PlayerA, sender),
@@ -93,7 +93,7 @@ public sealed class MapRoomCameraStateAuthorityAtomicityTest
         ScannerRoomScenarioFixture scenario = await CreateDockedScenarioAsync();
         Assert.IsTrue(scenario.Ownership.TryToAcquire(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA,
             SimulationLockType.EXCLUSIVE));
-        MapRoomCameraComponentStateProcessor processor = new(scenario.Ownership, scenario.EntityRegistry, scenario.Diagnostics);
+        MapRoomCameraComponentStateProcessor processor = new(scenario.Ownership, scenario.EntityRegistry, scenario.Diagnostics, scenario.LooseCameraState);
         BlockingBroadcastPacketSender sender = new();
 
         Task process = Task.Run(() => processor.Process(new AuthProcessorContext(scenario.PlayerA, sender),
@@ -140,7 +140,7 @@ public sealed class MapRoomCameraStateAuthorityAtomicityTest
         Assert.IsFalse(scenario.Ownership.TryGetLock(ScannerRoomScenarioFixture.CameraAId, out _));
         Assert.IsTrue(scenario.Ownership.TryToAcquire(ScannerRoomScenarioFixture.RoomId, scenario.PlayerA,
             SimulationLockType.TRANSIENT));
-        MapRoomCameraComponentStateProcessor processor = new(scenario.Ownership, scenario.EntityRegistry, scenario.Diagnostics);
+        MapRoomCameraComponentStateProcessor processor = new(scenario.Ownership, scenario.EntityRegistry, scenario.Diagnostics, scenario.LooseCameraState);
         BlockingBroadcastPacketSender sender = new();
 
         Task process = Task.Run(() => processor.Process(new AuthProcessorContext(scenario.PlayerA, sender),
