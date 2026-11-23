@@ -34,8 +34,9 @@ public class RocketMetadataProcessor : EntityMetadataProcessor<RocketMetadata>
 
         using (PacketSuppressor<EntityMetadataUpdate>.Suppress())
         {
-            UpdateElevator(rocket, metadata);
+            // The elevator only exists from the gantry on, and a rocket that has just spawned is at stage 0
             UpdateStage(rocket, metadata);
+            UpdateElevator(rocket, metadata);
             UpdatePreflightChecks(rocket, metadata);
         }
     }
@@ -98,9 +99,26 @@ public class RocketMetadataProcessor : EntityMetadataProcessor<RocketMetadata>
             if (!rocketPreflightCheckManager.preflightChecks.Contains(completedCheck))
             {
                 CompletePreflightCheck(rocket, completedCheck);
-                rocketPreflightCheckManager.CompletePreflightCheck(completedCheck);
+                MarkPreflightCheckComplete(rocketPreflightCheckManager, completedCheck);
             }
         }
+
+        // The game makes the rocket launchable through a delayed RocketReady, which also plays the "ready" voice line
+        if (rocketPreflightCheckManager.ReturnRocketReadyForLaunch(false) && !rocketPreflightCheckManager.rocketReadyDelay)
+        {
+            rocketPreflightCheckManager.stageThreeAnimator.SetBool("ready", true);
+            rocketPreflightCheckManager.rocketReadyDelay = true;
+        }
+    }
+
+    /// <summary>
+    ///     What <see cref="RocketPreflightCheckManager.CompletePreflightCheck" /> does without its voice lines: they belong to
+    ///     the player who completed the check, and a joiner would hear every completed check again.
+    /// </summary>
+    private static void MarkPreflightCheckComplete(RocketPreflightCheckManager rocketPreflightCheckManager, PreflightCheck preflightCheck)
+    {
+        rocketPreflightCheckManager.preflightChecks.Add(preflightCheck);
+        rocketPreflightCheckManager.preflightCheckScreenHolder.BroadcastMessage("SetPreflightCheckComplete", preflightCheck, SendMessageOptions.DontRequireReceiver);
     }
 
     private void CompletePreflightCheck(Rocket rocket, PreflightCheck preflightCheck)

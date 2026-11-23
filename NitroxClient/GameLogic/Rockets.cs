@@ -40,7 +40,11 @@ namespace NitroxClient.GameLogic
                 return;
             }
 
-            RocketLaunch(NitroxEntity.RequireObjectFrom(rocketId));
+            // A player who has not loaded the rocket cannot be inside it, and so does not take part in the launch
+            if (NitroxEntity.TryGetObjectFrom(rocketId, out GameObject rocketObject))
+            {
+                RocketLaunch(rocketObject);
+            }
         }
 
         public void RocketLaunch(GameObject rocketObject)

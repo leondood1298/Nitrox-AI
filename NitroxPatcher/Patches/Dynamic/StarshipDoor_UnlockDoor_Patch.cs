@@ -1,7 +1,6 @@
 ﻿using System.Reflection;
 using NitroxClient.GameLogic;
 using Nitrox.Model.DataStructures;
-using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 
 namespace NitroxPatcher.Patches.Dynamic;
 
@@ -9,12 +8,16 @@ public sealed partial class StarshipDoor_UnlockDoor_Patch : NitroxPatch, IDynami
 {
     private static readonly MethodInfo TARGET_METHOD = Reflect.Method((StarshipDoor t) => t.UnlockDoor());
 
-    public static void Prefix(StarshipDoor __instance)
+    public static void Prefix(StarshipDoor __instance, out bool __state)
     {
-        if (__instance.doorLocked && __instance.TryGetIdOrWarn(out NitroxId id))
+        __state = __instance.doorLocked;
+    }
+
+    public static void Postfix(StarshipDoor __instance, bool __state)
+    {
+        if (__state && __instance.TryGetIdOrWarn(out NitroxId id))
         {
-            StarshipDoorMetadata starshipDoorMetadata = new(!__instance.doorLocked, __instance.doorOpen);
-            Resolve<Entities>().BroadcastMetadataUpdate(id, starshipDoorMetadata);
+            Resolve<Entities>().EntityMetadataChangedImmediately(__instance, id);
         }
     }
 }

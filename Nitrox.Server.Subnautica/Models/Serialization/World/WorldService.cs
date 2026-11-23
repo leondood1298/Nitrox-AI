@@ -41,6 +41,7 @@ internal class WorldService : IHostedService
     private readonly TimeService timeService;
     private readonly SaveDataUpgrade[] upgrades;
     private readonly WorldEntityManager worldEntityManager;
+    private readonly ActiveTeleporters activeTeleporters;
     public IServerSerializer Serializer { get; private set; }
     private string FileEnding => Serializer?.FileEnding ?? "";
 
@@ -62,6 +63,7 @@ internal class WorldService : IHostedService
         ScannerRoomManager scannerRoomManager,
         IProgressReporter progressReporter,
         IOptions<ServerStartOptions> startOptions,
+        ActiveTeleporters activeTeleporters,
         ILogger<WorldService> logger)
     {
         this.options = options;
@@ -80,6 +82,7 @@ internal class WorldService : IHostedService
         this.scannerRoomManager = scannerRoomManager;
         this.progressReporter = progressReporter;
         this.startOptions = startOptions;
+        this.activeTeleporters = activeTeleporters;
         this.logger = logger;
 
         Serializer = jsonSerializer;
@@ -107,7 +110,7 @@ internal class WorldService : IHostedService
             WorldData = new()
             {
                 ParsedBatchCells = batchEntitySpawner.SerializableParsedBatches,
-                GameData = GameData.From(pdaManager, storyManager.StoryGoalData, storyScheduler, storyManager, timeService)
+                GameData = GameData.From(pdaManager, storyManager.StoryGoalData, storyScheduler, storyManager, timeService, activeTeleporters)
             },
             PlayerData = PlayerData.From(playerManager.GetAllPlayers()),
             GlobalRootData = GlobalRootData.From(globalRootEntities),
@@ -413,6 +416,8 @@ internal class WorldService : IHostedService
             storyManager.AuroraWarningTimeMs = pWorldData.WorldData.GameData.StoryTiming.AuroraWarningTime ?? timeService.GameTime.TotalMilliseconds;
             // +27 is from CrashedShipExploder.IsExploded, -480 is from the default time (see TimeService)
             storyManager.AuroraRealExplosionTime = TimeSpan.FromSeconds(pWorldData.WorldData.GameData.StoryTiming.AuroraRealExplosionTime ?? storyManager.AuroraCountdownTimeMs * 0.001 + 27 - TimeService.DEFAULT_STARTING_GAME_TIME_SECONDS);
+            // Precursor teleporters
+            activeTeleporters.Load(pWorldData.WorldData.GameData.ActiveTeleporters);
         }
         finally
         {
