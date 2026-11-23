@@ -10,7 +10,8 @@ using UnityEngine;
 namespace NitroxClient.GameLogic;
 
 /// <summary>
-///     The base power sources (solar panel, thermal plant, bioreactor, nuclear reactor) as this client sees them. The
+///     The base power sources (solar panel, thermal plant, bioreactor, nuclear reactor) and the Lifepod's power cells,
+///     which follow the same rules, as this client sees them. The
 ///     player simulating a source generates its power and tells everyone its level as entity metadata; this holds the
 ///     rules for that and what the client has to remember per source in between.
 /// </summary>
@@ -137,24 +138,51 @@ public sealed class BasePowerSources(IPacketSender packetSender, SimulationOwner
 
     public static BasePowerSourceType GetSourceType(Component component)
     {
-        if (TryGetOwner(component, out SolarPanel _))
+        return ClassifySource(TryGetOwner(component, out SolarPanel _), TryGetOwner(component, out ThermalPlant _), TryGetOwner(component, out BaseBioReactor _),
+                              TryGetOwner(component, out BaseNuclearReactor _), IsEscapePodCell(component));
+    }
+
+    /// <summary>
+    ///     The kind of source a power source is, from what it belongs to.
+    /// </summary>
+    /// <param name="regenerates">It has a RegeneratePowerSource: a power cell of the Lifepod.</param>
+    public static BasePowerSourceType ClassifySource(bool solarPanel, bool thermalPlant, bool bioreactor, bool nuclearReactor, bool regenerates)
+    {
+        if (solarPanel)
         {
             return BasePowerSourceType.SOLAR;
         }
-        if (TryGetOwner(component, out ThermalPlant _))
+        if (thermalPlant)
         {
             return BasePowerSourceType.THERMAL;
         }
-        if (TryGetOwner(component, out BaseBioReactor _))
+        if (bioreactor)
         {
             return BasePowerSourceType.BIOREACTOR;
         }
-        if (TryGetOwner(component, out BaseNuclearReactor _))
+        if (nuclearReactor)
         {
             return BasePowerSourceType.NUCLEAR;
         }
-        return BasePowerSourceType.UNKNOWN;
+        return regenerates ? BasePowerSourceType.ESCAPE_POD : BasePowerSourceType.UNKNOWN;
     }
+
+    /// <summary>
+    ///     A Lifepod power cell: a PowerSource that a RegeneratePowerSource refills (RegeneratePowerSource.Start, the
+    ///     game's only caller of PowerSource.SetPower).
+    /// </summary>
+    public static bool IsEscapePodCell(Component component) => component && TryGetOwner(component, out RegeneratePowerSource _);
+
+    /// <summary>
+    ///     Whether PowerSource.SetPower may change a source's level in this client's game.
+    ///     <para>
+    ///     The game calls it only to regenerate a Lifepod cell. A cell is refilled by the player who simulates it, who
+    ///     tells everyone the level; regenerating it in every game would give each player energy of their own. Nitrox
+    ///     applies received levels without SetPower (PowerSourceMetadataProcessor), and the other callers in Nitrox
+    ///     concern sources that are no cell or that this client simulates.
+    ///     </para>
+    /// </summary>
+    public static bool SetsPowerHere(bool isEscapePodCell, bool hasId, bool simulatedLocally) => !isEscapePodCell || !hasId || simulatedLocally;
 
     public static float GetFuelConsumed(Component component)
     {
@@ -216,6 +244,32 @@ public sealed class BasePowerSources(IPacketSender packetSender, SimulationOwner
     {
         bool hasId = owner.TryGetNitroxId(out NitroxId sourceId);
         return CanSimulate(hasId, hasId && simulationOwnership.HasAnyLockType(sourceId), IsRebuildingBases());
+    }
+
+    /// <inheritdoc cref="SetsPowerHere(bool, bool, bool)" />
+    public bool SetsPowerHere(PowerSource source)
+    {
+        // The cell check last: it searches the hierarchy, and nearly every source this is asked about has no id or is
+        // simulated here.
+        bool hasId = source.TryGetNitroxId(out NitroxId sourceId);
+        bool simulatedLocally = hasId && simulationOwnership.HasAnyLockType(sourceId);
+        return SetsPowerHere(!simulatedLocally && hasId && IsEscapePodCell(source), hasId, simulatedLocally);
+    }
+
+    /// <summary>
+    ///     Tells everyone the level of a Lifepod cell this client simulates, when it moved enough to matter or is due as
+    ///     a heartbeat (see <see cref="ShouldBroadcast" />). A cell has no update of its own like a solar panel, so this is
+    ///     called after its level was set and from its once-a-second relay check, which also sends the first state of a
+    ///     cell the server has none for and the state of a cell whose simulation moved to this client.
+    /// </summary>
+    public void BroadcastIfSimulatedCell(PowerSource source)
+    {
+        if (!source || !source.TryGetNitroxId(out NitroxId sourceId) || !simulationOwnership.HasAnyLockType(sourceId) || !IsEscapePodCell(source))
+        {
+            return;
+        }
+        // The cell's own PowerSource carries its id (EscapePodPowerCellEntitySpawner)
+        BroadcastIfSimulated(source, source);
     }
 
     /// <summary>

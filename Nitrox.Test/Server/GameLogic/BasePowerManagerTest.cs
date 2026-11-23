@@ -519,6 +519,85 @@ public sealed class BasePowerManagerTest
         Assert.AreEqual(900f, sources.Single(source => source.Source == unsimulated).State.Power);
     }
 
+    [TestMethod]
+    public void ALifepodCellsStateFromItsSimulatingPlayerIsStored()
+    {
+        Entity cell = AddCell(simulator);
+
+        Assert.IsTrue(manager.TryAccept(simulator, cell, new PowerSourceMetadata(17.5f, 0f, BasePowerSourceType.ESCAPE_POD), out PowerSourceMetadata accepted, out string reason), reason);
+
+        Assert.AreEqual(17.5f, accepted.Power);
+        Assert.AreSame(accepted, cell.Metadata);
+    }
+
+    [TestMethod]
+    public void ALifepodCellsStateFromAnotherPlayerIsRefused()
+    {
+        // Every player's game has its own copy of the cells; only the simulating player's level counts.
+        Entity cell = AddCell(simulator);
+        cell.Metadata = new PowerSourceMetadata(10f, 0f, BasePowerSourceType.ESCAPE_POD);
+
+        Assert.IsFalse(manager.TryAccept(otherPlayer, cell, new PowerSourceMetadata(25f, 0f, BasePowerSourceType.ESCAPE_POD), out _, out string reason));
+
+        StringAssert.Contains(reason, "does not own source simulation");
+        Assert.AreEqual(10f, ((PowerSourceMetadata)cell.Metadata).Power);
+    }
+
+    [TestMethod]
+    public void ALifepodCellTakesNoOtherSourceTypeAndNoOtherEntityTakesTheCellType()
+    {
+        Entity cell = AddCell(simulator);
+        Entity panel = AddSource(BasePowerSourceType.SOLAR, simulator);
+
+        Assert.IsFalse(manager.TryAccept(simulator, cell, new PowerSourceMetadata(10f, 0f, BasePowerSourceType.SOLAR), out _, out _));
+        Assert.IsFalse(manager.TryAccept(simulator, panel, new PowerSourceMetadata(10f, 0f, BasePowerSourceType.ESCAPE_POD), out _, out _));
+        Assert.IsNull(cell.Metadata);
+        Assert.IsNull(panel.Metadata);
+    }
+
+    [TestMethod]
+    public void ALifepodCellLevelAboveTheBoundIsRefused()
+    {
+        // The bound only refuses garbage; the real capacity is prefab data the server does not know.
+        Entity cell = AddCell(simulator);
+        BasePowerSourceTypes.TryGetMaxPower(BasePowerSourceType.ESCAPE_POD, out float bound);
+
+        Assert.IsFalse(manager.TryAccept(simulator, cell, new PowerSourceMetadata(bound * 2, 0f, BasePowerSourceType.ESCAPE_POD), out _, out _));
+        Assert.IsFalse(BasePowerSourceTypes.TryGetCapacity(BasePowerSourceType.ESCAPE_POD, out _), "No capacity is claimed for a cell.");
+    }
+
+    [TestMethod]
+    public void ADrawFromALifepodCellGoesToItsSimulatingPlayerAlsoBeforeItsFirstReport()
+    {
+        // A cell is known as a power source by its entity until its level was reported.
+        Entity cell = AddCell(simulator);
+
+        ConsumptionRoute route = manager.RouteConsumption(otherPlayer, cell, 5f, out ServerPlayer forwardTo, out PowerSourceMetadata accepted);
+
+        Assert.AreEqual(ConsumptionRoute.FORWARD_TO_SIMULATOR, route);
+        Assert.AreSame(simulator, forwardTo);
+        Assert.IsNull(accepted);
+    }
+
+    [TestMethod]
+    public void ADrawFromALifepodCellNobodySimulatesIsTakenOffTheStoredLevelByTheServer()
+    {
+        Entity cell = AddCell(null);
+        cell.Metadata = new PowerSourceMetadata(20f, 0f, BasePowerSourceType.ESCAPE_POD);
+
+        ConsumptionRoute route = manager.RouteConsumption(otherPlayer, cell, 5f, out ServerPlayer forwardTo, out PowerSourceMetadata accepted);
+
+        Assert.AreEqual(ConsumptionRoute.APPLIED_BY_SERVER, route);
+        Assert.IsNull(forwardTo);
+        Assert.AreEqual(15f, accepted.Power);
+        Assert.AreSame(accepted, cell.Metadata);
+    }
+
+    private Entity AddCell(ServerPlayer simulatedBy)
+    {
+        return Add(new EscapePodPowerCellEntity(new NitroxId(), 0, new NitroxId()), simulatedBy);
+    }
+
     private Entity AddSource(BasePowerSourceType sourceType, ServerPlayer simulatedBy)
     {
         Entity source;

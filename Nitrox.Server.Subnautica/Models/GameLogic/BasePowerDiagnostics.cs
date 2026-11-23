@@ -355,8 +355,8 @@ internal sealed class BasePowerDiagnostics(ILogger<BasePowerDiagnostics>? logger
         NitroxId? id = state?.Id ?? sourceId;
         BasePowerSourceType type = shown?.SourceType ?? state?.Type ?? BasePowerSourceType.UNKNOWN;
         float power = shown?.Power ?? state?.Power ?? 0f;
-        // A source's capacity follows from its type; zero for a type the server does not know
-        BasePowerSourceTypes.TryGetMaxPower(type, out float maxPower);
+        // A source's capacity follows from its type; zero for a type whose capacity the server does not know
+        BasePowerSourceTypes.TryGetCapacity(type, out float maxPower);
         string amount = consumption is { } consumed
             ? FormattableString.Invariant($"{consumed.Amount:F3} total={consumed.Total:F3}")
             : $"{DiagnosticLineFormat.NOT_APPLICABLE} total={DiagnosticLineFormat.NOT_APPLICABLE}";

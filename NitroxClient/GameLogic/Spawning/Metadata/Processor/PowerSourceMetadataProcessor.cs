@@ -14,7 +14,9 @@ public class PowerSourceMetadataProcessor : EntityMetadataProcessor<PowerSourceM
         {
             // Whatever arrives here is the newest state: updates come in order, and one that arrived before this
             // object had spawned was kept for it (see EntityMetadataManager.TakeNewest)
-            powerSource.SetPower(metadata.Power);
+            // What PowerSource.SetPower does, without it: that is the game's regeneration of a Lifepod cell, which only
+            // the player simulating the cell may run (PowerSource_SetPower_Patch)
+            powerSource.power = Mathf.Clamp(metadata.Power, 0f, powerSource.maxPower);
             BasePowerSources.SetFuelConsumed(powerSource, metadata.SourceType, metadata.FuelConsumed);
             // The game only ever raises the temperature. Without the stored one a restored thermal plant forgets the
             // peak it reached (e.g. from a geyser).

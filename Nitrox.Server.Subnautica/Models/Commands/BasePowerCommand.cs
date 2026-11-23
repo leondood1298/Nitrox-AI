@@ -44,9 +44,15 @@ internal sealed class BasePowerCommand(BasePowerManager basePowerManager, BasePo
             Entity source = snapshot.Source;
             PowerSourceMetadata metadata = snapshot.State;
             Player? owner = snapshot.Simulator;
-            BasePowerSourceTypes.TryGetMaxPower(metadata.SourceType, out float maxPower);
-            totalPower += metadata.Power;
-            totalCapacity += maxPower;
+            // A Lifepod cell's capacity is prefab data the server does not know; its level is shown without one and is
+            // left out of the totals.
+            bool capacityKnown = BasePowerSourceTypes.TryGetCapacity(metadata.SourceType, out float maxPower);
+            if (capacityKnown)
+            {
+                totalPower += metadata.Power;
+                totalCapacity += maxPower;
+            }
+            string capacityText = capacityKnown ? maxPower.ToString("F2", CultureInfo.InvariantCulture) : "?";
             recorded.TryGetValue(source.Id, out BasePowerSourceDiagnostics record);
             string name = $"{metadata.SourceType} {DiagnosticLineFormat.ShortId(source.Id, true)}";
             string ownerText = "<none>";
@@ -81,7 +87,7 @@ internal sealed class BasePowerCommand(BasePowerManager basePowerManager, BasePo
                 ? string.Create(CultureInfo.InvariantCulture, $"last update {sinceLastUpdate.TotalSeconds:F1}s ago by #{DiagnosticLineFormat.Session(record.LastOwner)}")
                 : "no update since server start";
             lines.Add(string.Create(CultureInfo.InvariantCulture,
-                $"- {name}: {metadata.Power:F2}/{maxPower:F2}{fuelText}, owner={ownerText}, {updateText}, updates={record.AcceptedUpdates} rejected={record.RejectedUpdates} handed back={record.HandBacks}{FormatConsumers(record.Consumers)}, id={source.Id}, parent={source.ParentId?.ToString() ?? "<none>"}"));
+                $"- {name}: {metadata.Power:F2}/{capacityText}{fuelText}, owner={ownerText}, {updateText}, updates={record.AcceptedUpdates} rejected={record.RejectedUpdates} handed back={record.HandBacks}{FormatConsumers(record.Consumers)}, id={source.Id}, parent={source.ParentId?.ToString() ?? "<none>"}"));
         }
 
         StringBuilder output = new();

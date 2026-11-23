@@ -19,10 +19,14 @@ internal sealed class EscapePodChangedProcessor(PlayerManager remotePlayerManage
         {
             EscapePod? escapePod = null;
 
-            if (packet.EscapePodId.HasValue)
+            // A pod this player has not loaded cannot hold the other player's model; it is then shown on its own.
+            if (packet.EscapePodId.HasValue && NitroxEntity.TryGetObjectFrom(packet.EscapePodId.Value, out GameObject? pod))
             {
-                GameObject sub = NitroxEntity.RequireObjectFrom(packet.EscapePodId.Value);
-                escapePod = sub.GetComponent<EscapePod>();
+                escapePod = pod.GetComponent<EscapePod>();
+            }
+            else if (packet.EscapePodId.HasValue)
+            {
+                Log.Debug($"[{nameof(EscapePodChangedProcessor)}] Escape pod {packet.EscapePodId.Value} is not loaded here");
             }
 
             remotePlayer.Value.SetEscapePod(escapePod);
