@@ -1,5 +1,8 @@
-﻿using Nitrox.Model.DataStructures;
+﻿using System.Collections.Generic;
+using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
+using Nitrox.Model.Subnautica.Packets;
+using NitroxClient.Communication.Abstract;
 using NitroxClient.GameLogic.Spawning.Metadata;
 using NitroxClient.MonoBehaviours;
 
@@ -13,11 +16,54 @@ public class MedicalCabinets
 {
     private readonly Entities entities;
     private readonly EntityMetadataManager entityMetadataManager;
+    private readonly IPacketSender packetSender;
 
-    public MedicalCabinets(Entities entities, EntityMetadataManager entityMetadataManager)
+    /// <summary>
+    ///     The cabinets whose timer this game has reported, once per loaded cabinet.
+    /// </summary>
+    private readonly HashSet<MedicalCabinet> timersReported = [];
+
+    public MedicalCabinets(Entities entities, EntityMetadataManager entityMetadataManager, IPacketSender packetSender)
     {
         this.entities = entities;
         this.entityMetadataManager = entityMetadataManager;
+        this.packetSender = packetSender;
+    }
+
+    /// <summary>
+    ///     Called after MedicalCabinet.Update.
+    /// </summary>
+    /// <param name="hadMedKit">Whether the cabinet held a medkit before the update.</param>
+    public void Updated(MedicalCabinet cabinet, bool hadMedKit)
+    {
+        // While joining, a cabinet still runs on the timer the game started when loading it, not on the stored one.
+        if (!Multiplayer.Main || !Multiplayer.Main.InitialSyncCompleted)
+        {
+            return;
+        }
+        ReportTimerOnce(cabinet);
+        if (!hadMedKit && cabinet.hasMedKit)
+        {
+            BroadcastState(cabinet);
+        }
+    }
+
+    /// <summary>
+    ///     Until a cabinet is clicked or its medkit appears, the server has no state for it and each game would run the
+    ///     timer it started on its own clock. The server keeps the first timer a game reports and gives it to the others.
+    /// </summary>
+    private void ReportTimerOnce(MedicalCabinet cabinet)
+    {
+        if (timersReported.Contains(cabinet) || !cabinet.TryGetNitroxId(out NitroxId id))
+        {
+            return;
+        }
+        // MedicalCabinet.Start has not run yet when there is no state
+        if (entityMetadataManager.TryExtract(cabinet, out EntityMetadata metadata) && metadata is MedicalCabinetMetadata state)
+        {
+            timersReported.Add(cabinet);
+            packetSender.Send(new MedicalCabinetTimerStarted(id, state));
+        }
     }
 
     /// <summary>

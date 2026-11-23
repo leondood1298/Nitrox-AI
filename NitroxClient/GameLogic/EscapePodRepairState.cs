@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Nitrox.Model.DataStructures;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication;
@@ -24,6 +25,15 @@ public class EscapePodRepairState
     public bool TryGetLatest(NitroxId podId, out EscapePodMetadata metadata)
     {
         return latestByPod.TryGetValue(podId, out metadata);
+    }
+
+    /// <summary>
+    ///     Whether a repaired state the server sent is another player's repair, which this game announces with the pod's
+    ///     power-up sound. While joining or in the intro it is the stored state.
+    /// </summary>
+    public static bool IsRepairToAnnounce(bool initialSyncCompleted, IntroCinematicMode introCinematicMode)
+    {
+        return initialSyncCompleted && introCinematicMode == IntroCinematicMode.COMPLETED;
     }
 
     /// <summary>

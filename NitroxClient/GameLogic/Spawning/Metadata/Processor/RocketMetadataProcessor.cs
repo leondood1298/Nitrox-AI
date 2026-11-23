@@ -67,20 +67,42 @@ public class RocketMetadataProcessor : EntityMetadataProcessor<RocketMetadata>
         {
             bool lastStageToBuild = stage == metadata.CurrentStage - 1;
 
-            GameObject build = rocket.StartRocketConstruction();
-
             // We only want to use construction bots for the last constructed stage (just in case the client is out dated by multiple stages).
             // For all others, just force the completion of that stage.
             if (lastStageToBuild && allowConstructorBots)
             {
+                // Another player builds this stage now: it sounds as it does for the builder
+                GameObject build = rocket.StartRocketConstruction();
                 rocketConstructor.SendBuildBots(build);
             }
             else
             {
+                GameObject build = StartRocketConstructionSilently(rocket);
                 VFXConstructing vfxConstructing = build.GetComponent<VFXConstructing>();
                 vfxConstructing.EndGracefully();
             }
         }
+    }
+
+    /// <summary>
+    ///     What <see cref="Rocket.StartRocketConstruction" /> does without its stage sounds: a rocket that is restored for
+    ///     a player who joins or arrives would play them once for every stage built before.
+    /// </summary>
+    private static GameObject StartRocketConstructionSilently(Rocket rocket)
+    {
+        rocket.isBuilding = true;
+        GameObject stageObject = rocket.stageObjects[rocket.currentRocketStage];
+        stageObject.SetActive(true);
+        VFXConstructing vfxConstructing = stageObject.GetComponent<VFXConstructing>();
+        if (vfxConstructing)
+        {
+            vfxConstructing.timeToConstruct = rocket.timeToConstruct;
+            vfxConstructing.StartConstruction();
+        }
+        rocket.isReady = false;
+        rocket.BroadcastMessage("SetBuildingAnimationScreen");
+        rocket.AdvanceRocketStage();
+        return rocket.stageObjects[rocket.currentRocketStage - 1];
     }
 
     private void UpdatePreflightChecks(Rocket rocket, RocketMetadata metadata)

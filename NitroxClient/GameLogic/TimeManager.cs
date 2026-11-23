@@ -106,6 +106,14 @@ public partial class TimeManager
     /// </summary>
     public static readonly TimeSpan RECENTLY_PROCESSED_DELAY = TimeSpan.FromSeconds(3);
 
+    /// <summary>
+    ///     While this game plays the rocket's ending, the ending decides the time of day, as in single player:
+    ///     <see cref="LaunchRocket.StartEndCinematic" /> sets it for the sky of the launch and pauses it. The server's time
+    ///     is still registered but not shown, and nothing of the ending's time is sent.
+    /// </summary>
+    /// <remarks>The mod sets <see cref="LaunchRocket.launchStarted" /> only in a game that plays the ending.</remarks>
+    public bool IsTimeDecidedByEnding => LaunchRocket.launchStarted;
+
     public TimeManager(NtpSyncer ntpSyncer)
     {
         this.ntpSyncer = ntpSyncer;
@@ -137,7 +145,7 @@ public partial class TimeManager
 
         // The server sends time updates to every connected session, so one can arrive before the game scene is loaded.
         // The values are kept above, DayNightCycle takes them up when it updates.
-        if (!DayNightCycle.main)
+        if (!DayNightCycle.main || IsTimeDecidedByEnding)
         {
             return;
         }

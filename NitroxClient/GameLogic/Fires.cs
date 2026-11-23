@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using Nitrox.Model.Core;
@@ -201,6 +202,46 @@ namespace NitroxClient.GameLogic
             {
                 remoteDouseRates.TryAdd(fireId, []);
                 remoteDouseRates[fireId][sessionId.Value] = douseRate;
+            }
+        }
+
+        /// <summary>
+        ///     Gives a fire that is loaded the strength it had left when it was last sprayed.
+        /// </summary>
+        public void RestoreHealth(Fire fire, float health)
+        {
+            // As in Douse(): never below 0.1 without an explicit extinguish
+            fire.livemixin.health = Mathf.Clamp(health, 0.1f, fire.livemixin.maxHealth);
+            ShowHealth(fire);
+
+            // Fire.Start() creates the flames a moment after the fire is loaded, at full size; they take the fire's
+            // strength the next time it is doused
+            if (!fire.fireFX)
+            {
+                UWE.CoroutineHost.StartCoroutine(ShowHealthOnceFlamesExist(fire));
+            }
+        }
+
+        private static IEnumerator ShowHealthOnceFlamesExist(Fire fire)
+        {
+            while (fire && !fire.fireFX)
+            {
+                yield return null;
+            }
+            if (fire)
+            {
+                ShowHealth(fire);
+            }
+        }
+
+        /// <summary>
+        ///     Douse(0) sizes the fire, its flames and its sound by its health.
+        /// </summary>
+        private static void ShowHealth(Fire fire)
+        {
+            using (PacketSuppressor<FireDoused>.Suppress())
+            {
+                fire.Douse(0f);
             }
         }
 

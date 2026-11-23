@@ -25,7 +25,7 @@ public class WaterParkCreatureMetadata : CreatureMetadata
         // Constructor for serialization. Has to be "protected" for json serialization.
     }
 
-    public WaterParkCreatureMetadata(float age, double matureTime, float timeNextBreed, bool bornInside, float infectedAmount) : base(infectedAmount)
+    public WaterParkCreatureMetadata(float age, double matureTime, float timeNextBreed, bool bornInside, float infectedAmount, float enzymeEndTime = NO_ENZYME) : base(infectedAmount, enzymeEndTime)
     {
         Age = age;
         MatureTime = matureTime;

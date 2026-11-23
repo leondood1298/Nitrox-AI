@@ -94,10 +94,17 @@ namespace NitroxClient
             containerBuilder.RegisterType<BasePowerConsumptionForwarder>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<BasePowerClientDiagnostics>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<BasePowerRelayAudioSuppressor>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<FiltrationMachines>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<LiveMixinManager>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<CreatureHealthManager>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<CreatureInfections>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<EnzymeBalls>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<SeaEmperorBabies>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<CreatureAttacksOnPlayers>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<StalkerShinyGrabs>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<SandSharkBurrows>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<StalkerFriendships>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<CreatureBites>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<Entities>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<MedicalCabinets>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<PdaNotifications>().InstancePerLifetimeScope();

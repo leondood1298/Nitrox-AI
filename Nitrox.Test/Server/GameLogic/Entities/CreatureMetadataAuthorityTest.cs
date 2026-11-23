@@ -54,6 +54,56 @@ public sealed class CreatureMetadataAuthorityTest
     }
 
     [TestMethod]
+    public void BuriedSandSharkStaysBuriedWhenItsInfectionChanges()
+    {
+        SandSharkMetadata stored = new(true, leashPosition, NitroxQuaternion.Identity, CreatureMetadata.UNDECIDED);
+
+        CreatureMetadata? accepted = CreatureMetadataAuthority.Merge(stored, new CreatureInfectionMetadata(1f));
+
+        SandSharkMetadata sandShark = accepted.Should().BeOfType<SandSharkMetadata>().Subject;
+        sandShark.Buried.Should().BeTrue();
+        sandShark.BurryPosition.Should().Be(leashPosition);
+        sandShark.InfectedAmount.Should().Be(1f);
+    }
+
+    [TestMethod]
+    public void SandSharkGoingUnderKeepsTheDecidedInfection()
+    {
+        SandSharkMetadata stored = new(false, NitroxVector3.Zero, NitroxQuaternion.Identity, 1f);
+        SandSharkMetadata buried = new(true, leashPosition, NitroxQuaternion.Identity, CreatureMetadata.UNDECIDED);
+
+        CreatureMetadata? accepted = CreatureMetadataAuthority.Merge(stored, buried);
+
+        accepted.Should().BeSameAs(buried);
+        accepted!.InfectedAmount.Should().Be(1f);
+    }
+
+    [TestMethod]
+    public void StalkerKeepsItsFriendWhenCured()
+    {
+        NitroxId friendId = new();
+        StalkerMetadata stored = new(Optional.Of(friendId), 1500d, 1f);
+
+        CreatureMetadata? accepted = CreatureMetadataAuthority.Merge(stored, new CreatureInfectionMetadata(0f));
+
+        StalkerMetadata stalker = accepted.Should().BeOfType<StalkerMetadata>().Subject;
+        stalker.FriendId.Value.Should().Be(friendId);
+        stalker.FriendshipEndTime.Should().Be(1500d);
+        stalker.InfectedAmount.Should().Be(0f);
+    }
+
+    [TestMethod]
+    public void NewFriendshipKeepsTheDecidedInfection()
+    {
+        StalkerMetadata friendship = new(Optional.Of(new NitroxId()), 900d, CreatureMetadata.UNDECIDED);
+
+        CreatureMetadata? accepted = CreatureMetadataAuthority.Merge(new CreatureInfectionMetadata(0.6f), friendship);
+
+        accepted.Should().BeSameAs(friendship);
+        accepted!.InfectedAmount.Should().Be(0.6f);
+    }
+
+    [TestMethod]
     public void InfectionOfACreatureWithNothingStoredIsStoredAsItIs()
     {
         CreatureInfectionMetadata requested = new(1f);
@@ -86,6 +136,79 @@ public sealed class CreatureMetadataAuthorityTest
         WaterParkCreatureMetadata requested = new(0f, 300d, 200f, false, 0.4f);
 
         CreatureMetadataAuthority.Merge(new CreatureInfectionMetadata(CreatureMetadata.UNDECIDED), requested)!.InfectedAmount.Should().Be(0.4f);
+    }
+
+    [TestMethod]
+    public void HeroPeeperKeepsItsDecidedInfectionWhenItsEnzymeIsSentWithoutOne()
+    {
+        CreatureInfectionMetadata stored = new(0.5f);
+
+        CreatureMetadata? accepted = CreatureMetadataAuthority.Merge(stored, new CreatureInfectionMetadata(CreatureMetadata.UNDECIDED, 1060f));
+
+        accepted!.InfectedAmount.Should().Be(0.5f);
+        accepted.EnzymeEndTime.Should().Be(1060f);
+    }
+
+    [TestMethod]
+    public void InfectionUpdateDoesNotTakeAwayAHeroPeepersEnzyme()
+    {
+        CreatureInfectionMetadata stored = new(1f, 1060f);
+
+        CreatureMetadata? accepted = CreatureMetadataAuthority.Merge(stored, new CreatureInfectionMetadata(0f));
+
+        accepted!.InfectedAmount.Should().Be(0f);
+        accepted.EnzymeEndTime.Should().Be(1060f);
+    }
+
+    [TestMethod]
+    public void NewerEnzymeOfAHeroPeeperIsKept()
+    {
+        CreatureMetadataAuthority.Merge(new CreatureInfectionMetadata(0f, 1060f), new CreatureInfectionMetadata(0f, 2000f))!.EnzymeEndTime.Should().Be(2000f);
+    }
+
+    [TestMethod]
+    public void ContainedHeroPeeperKeepsItsEnzymeWhenItGrows()
+    {
+        WaterParkCreatureMetadata stored = new(0.5f, 300d, 200f, true, 0f, CreatureMetadata.LASTING_ENZYME);
+        WaterParkCreatureMetadata grown = new(0.6f, 300d, 200f, true, CreatureMetadata.UNDECIDED);
+
+        CreatureMetadata? accepted = CreatureMetadataAuthority.Merge(stored, grown);
+
+        accepted.Should().BeSameAs(grown);
+        accepted!.EnzymeEndTime.Should().Be(CreatureMetadata.LASTING_ENZYME);
+        accepted.InfectedAmount.Should().Be(0f);
+    }
+
+    [TestMethod]
+    public void OutsideBabysDropsOnlyAddUp()
+    {
+        SeaEmperorBabyMetadata stored = new(2.02f, 3, 5, CreatureMetadata.UNDECIDED);
+
+        CreatureMetadata? accepted = CreatureMetadataAuthority.Merge(stored, new SeaEmperorBabyMetadata(2.02f, 1, 5, CreatureMetadata.UNDECIDED));
+
+        accepted.Should().BeOfType<SeaEmperorBabyMetadata>().Which.DropCount.Should().Be(3);
+    }
+
+    [TestMethod]
+    public void OutsideBabysNextDropIsStored()
+    {
+        SeaEmperorBabyMetadata requested = new(2.02f, 4, 5, CreatureMetadata.UNDECIDED);
+
+        CreatureMetadataAuthority.Merge(new SeaEmperorBabyMetadata(2.02f, 3, 5, CreatureMetadata.UNDECIDED), requested).Should().BeSameAs(requested);
+    }
+
+    [TestMethod]
+    public void OutsideBabyKeepsItsCureWhenItDrops()
+    {
+        SeaEmperorBabyMetadata stored = new(2.02f, 3, 5, 0f, 1060f);
+
+        CreatureMetadata? accepted = CreatureMetadataAuthority.Merge(stored, new SeaEmperorBabyMetadata(2.02f, 2, 5, CreatureMetadata.UNDECIDED));
+
+        SeaEmperorBabyMetadata baby = accepted.Should().BeOfType<SeaEmperorBabyMetadata>().Subject;
+        baby.DropCount.Should().Be(3);
+        baby.Scale.Should().Be(2.02f);
+        baby.InfectedAmount.Should().Be(0f);
+        baby.EnzymeEndTime.Should().Be(1060f);
     }
 
     [TestMethod]

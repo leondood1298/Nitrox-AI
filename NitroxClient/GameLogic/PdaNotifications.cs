@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
@@ -36,9 +37,11 @@ public class PdaNotifications
     }
 
     /// <summary>
-    ///     Leaves the PDA with exactly the markers the server kept for this player, once the PDA's content is restored.
+    ///     Leaves the PDA with the markers the server kept for this player, once the PDA's content is restored.
     /// </summary>
-    public void Restore(List<PdaNotification> stored)
+    /// <param name="stored">The markers the server kept when this player began joining.</param>
+    /// <param name="ofSnapshotEntries">The markers the entries of the snapshot can have.</param>
+    public void Restore(List<PdaNotification> stored, ISet<PdaNotification> ofSnapshotEntries)
     {
         NotificationManager manager = NotificationManager.main;
         if (!manager)
@@ -48,17 +51,18 @@ public class PdaNotifications
         }
 
         // PDALog.Deserialize took the log's clock before the initial sync set the game time. Its next update would mark
-        // every log entry written in between as new.
+        // every log entry written in between as new. Entries of other games can be timed a little after this game's
+        // clock; the stored markers say whether they are new.
         if (DayNightCycle.main)
         {
-            PDALog.time = DayNightCycle.main.timePassedAsFloat;
+            PDALog.time = GetLogClock(DayNightCycle.main.timePassedAsFloat, PDALog.entries.Values.Select(entry => entry.timestamp));
         }
 
         List<PdaNotification> current = manager.notifications.Keys
                                                .Where(id => PdaNotification.IsKept((int)id.group))
                                                .Select(id => new PdaNotification((PdaNotificationGroup)id.group, id.key))
                                                .ToList();
-        Compare(current, stored, out List<PdaNotification> toRemove, out List<PdaNotification> toAdd);
+        Compare(current, stored, ofSnapshotEntries, out List<PdaNotification> toRemove, out List<PdaNotification> toAdd);
 
         using (PacketSuppressor<PdaNotificationChanged>.Suppress())
         {
@@ -90,14 +94,58 @@ public class PdaNotifications
     }
 
     /// <summary>
-    ///     What has to change so that the markers the PDA has are the stored ones.
+    ///     What has to change so that the markers the PDA has are the stored ones. A marker of an entry the snapshot does
+    ///     not have is kept: the entry came by packet while this player was joining, after the server made the snapshot,
+    ///     and the server keeps the marker for this player.
     /// </summary>
-    internal static void Compare(IEnumerable<PdaNotification> current, IEnumerable<PdaNotification> stored, out List<PdaNotification> toRemove, out List<PdaNotification> toAdd)
+    internal static void Compare(IEnumerable<PdaNotification> current, IEnumerable<PdaNotification> stored, ISet<PdaNotification> ofSnapshotEntries, out List<PdaNotification> toRemove,
+                                 out List<PdaNotification> toAdd)
     {
         HashSet<PdaNotification> currentSet = [.. current];
         HashSet<PdaNotification> storedSet = [.. stored];
-        toRemove = currentSet.Where(notification => !storedSet.Contains(notification)).ToList();
+        toRemove = currentSet.Where(notification => !storedSet.Contains(notification) && ofSnapshotEntries.Contains(notification)).ToList();
         toAdd = storedSet.Where(notification => !currentSet.Contains(notification)).ToList();
+    }
+
+    /// <summary>
+    ///     The markers the entries of a snapshot can have: the blueprints' (KnownTech.UnreadAdd) and the log's and the
+    ///     encyclopedia's, time capsules included.
+    /// </summary>
+    /// <param name="techTypeKeys">The known blueprints, keyed as the game keys their markers (TechTypeExtensions.EncodeKey).</param>
+    internal static HashSet<PdaNotification> GetMarkersOfEntries(IEnumerable<string> techTypeKeys, IEnumerable<string> logKeys, IEnumerable<string> encyclopediaKeys)
+    {
+        HashSet<PdaNotification> markers = [];
+        markers.UnionWith(techTypeKeys.SelectMany(PdaNotification.ForBlueprint));
+        markers.UnionWith(logKeys.Select(key => new PdaNotification(PdaNotificationGroup.LOG, key)));
+        markers.UnionWith(encyclopediaKeys.Select(key => new PdaNotification(PdaNotificationGroup.ENCYCLOPEDIA, key)));
+        return markers;
+    }
+
+    public static HashSet<PdaNotification> GetMarkersOfEntries(InitialPlayerSync sync)
+    {
+        InitialPDAData pdaData = sync.PDAData;
+        return GetMarkersOfEntries(pdaData.KnownTechTypes.Select(techType => techType.ToUnity().EncodeKey()),
+                                   pdaData.PDALogEntries.Select(entry => entry.Key),
+                                   pdaData.EncyclopediaEntries.Concat(sync.CollectedTimeCapsules.Select(capsule => capsule.Id)));
+    }
+
+    /// <summary>
+    ///     The log's clock after joining: the game time, or the time of the latest entry if that is later. PDALog.OnUpdate
+    ///     marks the entries timed between its last clock and the game time, which the stored markers decided already for
+    ///     the entries this player joined with.
+    /// </summary>
+    internal static float GetLogClock(float now, IEnumerable<float> entryTimes)
+    {
+        return entryTimes.Aggregate(now, Math.Max);
+    }
+
+    /// <summary>
+    ///     Whether PDALog.OnUpdate may move the log's clock to the game time. A correction of the game clock can move it
+    ///     back, after which the log would mark every entry timed since the corrected time again as new.
+    /// </summary>
+    public static bool MayAdvanceLogClock()
+    {
+        return !DayNightCycle.main || DayNightCycle.main.timePassedAsFloat >= PDALog.time;
     }
 
     /// <summary>

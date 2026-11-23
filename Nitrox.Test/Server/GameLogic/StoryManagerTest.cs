@@ -100,4 +100,37 @@ public sealed class StoryManagerTest
         storyManager.StoryGoalData.RadioQueue.Should().BeEmpty();
         storyScheduler.ContainsScheduledStory("PrecursorGunAimCheck").Should().BeFalse();
     }
+
+    [TestMethod]
+    public async Task ClearAuroraFollowUps_TakesBackWhatTheRestoringPlayersGameReported()
+    {
+        StoryScheduler storyScheduler = new(packetSender, pdaManager, storyManager, timeService);
+        storyManager.AddCompletedStory("RadioAfterExplosion");
+        storyManager.AddCompletedStory("OnPlayRadioAfterExplosion");
+        storyManager.QueueRadioStory("RadioLaterAfterExplosion");
+        storyScheduler.ScheduleStory(NitroxScheduledGoal.From(10000f, "GoalScheduledAfterExplosion", 0)).Should().BeTrue();
+        storyManager.ExpectAuroraFollowUps(1);
+
+        bool cleared = await storyManager.ClearAuroraFollowUpsAsync(1, ["RadioAfterExplosion", "OnPlayRadioAfterExplosion", "RadioLaterAfterExplosion", "GoalScheduledAfterExplosion"], storyScheduler);
+
+        cleared.Should().BeTrue();
+        storyManager.ContainsCompletedStory("RadioAfterExplosion").Should().BeFalse();
+        storyManager.ContainsCompletedStory("OnPlayRadioAfterExplosion").Should().BeFalse();
+        storyManager.StoryGoalData.RadioQueue.Should().BeEmpty();
+        storyScheduler.ContainsScheduledStory("GoalScheduledAfterExplosion").Should().BeFalse();
+    }
+
+    [TestMethod]
+    public async Task ClearAuroraFollowUps_IgnoresReportsOfOtherPlayersAndRepeats()
+    {
+        StoryScheduler storyScheduler = new(packetSender, pdaManager, storyManager, timeService);
+        storyManager.AddCompletedStory("Goal_Kept");
+        storyManager.ExpectAuroraFollowUps(1);
+
+        (await storyManager.ClearAuroraFollowUpsAsync(2, ["Goal_Kept"], storyScheduler)).Should().BeFalse("only the restoring player's game reports");
+        (await storyManager.ClearAuroraFollowUpsAsync(1, [], storyScheduler)).Should().BeTrue();
+        (await storyManager.ClearAuroraFollowUpsAsync(1, ["Goal_Kept"], storyScheduler)).Should().BeFalse("a restore is reported once");
+
+        storyManager.ContainsCompletedStory("Goal_Kept").Should().BeTrue();
+    }
 }

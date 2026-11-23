@@ -171,6 +171,30 @@ public sealed class MapRoomCameraStatesTest
     }
 
     [TestMethod]
+    [DataRow(40f, 100f, true, true)]
+    [DataRow(99.5f, 100f, true, true)]
+    [DataRow(99.6f, 100f, true, false)]
+    [DataRow(100f, 100f, true, false)]
+    [DataRow(40f, 100f, false, false)]
+    [DataRow(0f, 0f, true, false)]
+    public void CameraAnotherPlayerRechargesIsHeardChargingWhileItsReportedBatteryIsBelowFullAndItsBaseHasPower(float reportedEnergy, float capacity,
+        bool basePowered, bool expected)
+    {
+        Assert.AreEqual(expected, MapRoomCameraStates.IsRechargedByAnotherPlayer(reportedEnergy, capacity, basePowered));
+    }
+
+    [TestMethod]
+    [DataRow(0f, true)]
+    [DataRow(0.04f, true)]
+    [DataRow(0.05f, false)]
+    [DataRow(250f, false)]
+    [DataRow(400f, false)]
+    public void CameraRemovedByAnotherPlayerWasKilledOnlyIfItsLastReportedHealthIsZero(float reportedHealth, bool expected)
+    {
+        Assert.AreEqual(expected, MapRoomCameraStates.WasKilled(reportedHealth));
+    }
+
+    [TestMethod]
     public void NothingIsReportedWhileTheBatteryIsBeingPutIn()
     {
         states.Apply(camera, new MapRoomCameraMetadata(false, 60f, 400f, 2, 1));

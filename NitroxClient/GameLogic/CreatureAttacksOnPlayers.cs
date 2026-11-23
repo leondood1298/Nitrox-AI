@@ -15,7 +15,8 @@ namespace NitroxClient.GameLogic;
 /// </summary>
 /// <remarks>
 ///     Creatures whose attacks are synced through <see cref="AI" /> are left out: for those, the attacked player's own
-///     copy of the creature does the attacking.
+///     copy of the creature does the attacking. Stalkers and Sand Sharks are synced through <see cref="AI" /> too, but
+///     their bites are still reported (<see cref="AI.IsAttackReplayedByVictim(Creature)" />).
 /// </remarks>
 public sealed class CreatureAttacksOnPlayers(IPacketSender packetSender, SimulationOwnership simulationOwnership, AI ai)
 {
@@ -57,7 +58,7 @@ public sealed class CreatureAttacksOnPlayers(IPacketSender packetSender, Simulat
         {
             return false;
         }
-        if (!ShouldReport(true, simulationOwnership.HasAnyLockType(creatureId), ai.IsCreatureWhitelisted(creature)))
+        if (!ShouldReport(true, simulationOwnership.HasAnyLockType(creatureId), ai.IsAttackReplayedByVictim(creature)))
         {
             return false;
         }
@@ -77,7 +78,7 @@ public sealed class CreatureAttacksOnPlayers(IPacketSender packetSender, Simulat
             return;
         }
 
-        if (ShouldReport(true, simulationOwnership.HasAnyLockType(creatureId), ai.IsCreatureWhitelisted(creature)))
+        if (ShouldReport(true, simulationOwnership.HasAnyLockType(creatureId), ai.IsAttackReplayedByVictim(creature)))
         {
             packetSender.Send(new CreatureAttackedPlayer(creatureId, remotePlayerIdentifier.RemotePlayer.SessionId, originalDamage, type));
         }
@@ -95,7 +96,7 @@ public sealed class CreatureAttacksOnPlayers(IPacketSender packetSender, Simulat
         }
 
         return ShouldLeaveToSimulatingPlayer(true, simulationOwnership.HasAnyLockType(creatureId), creature.GetComponent<RemotelyControlled>(),
-                                             ai.IsCreatureWhitelisted(creature), reportedAttacksBeingApplied > 0);
+                                             ai.IsAttackReplayedByVictim(creature), reportedAttacksBeingApplied > 0);
     }
 
     public void ApplyReported(CreatureAttackedPlayer attack)

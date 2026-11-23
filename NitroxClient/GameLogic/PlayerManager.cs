@@ -22,6 +22,11 @@ public class PlayerManager
     public OnCreateDelegate OnCreate;
     public OnRemoveDelegate OnRemove;
 
+    /// <summary>
+    ///     A remote player's body exists and carries their id, some time after <see cref="OnCreate" />.
+    /// </summary>
+    public OnBodyCreatedDelegate OnBodyCreated;
+
     public PlayerManager(PlayerModelManager playerModelManager, PlayerVitalsManager playerVitalsManager, FMODWhitelist fmodWhitelist)
     {
         this.playerModelManager = playerModelManager;
@@ -83,6 +88,11 @@ public class PlayerManager
         return remotePlayer;
     }
 
+    public void BodyCreated(RemotePlayer remotePlayer)
+    {
+        OnBodyCreated?.Invoke(remotePlayer);
+    }
+
     public void RemovePlayer(SessionId sessionId)
     {
         if (sessionsById.TryGetValue(sessionId, out RemotePlayer player))
@@ -94,9 +104,36 @@ public class PlayerManager
         }
     }
 
+    /// <summary>
+    ///     The hand of the remote player nearest to <paramref name="position" /> who holds a tool of type
+    ///     <typeparamref name="T" />.
+    /// </summary>
+    /// <returns>Null when no remote player holds such a tool.</returns>
+    public Transform? FindNearestHandHolding<T>(Vector3 position) where T : PlayerTool
+    {
+        Transform? nearestHand = null;
+        float nearestDistance = float.MaxValue;
+        foreach (RemotePlayer player in sessionsById.Values)
+        {
+            // A drawn tool hangs from the attach point; a holstered one is moved back into the inventory
+            if (!player.ItemAttachPoint || !player.ItemAttachPoint.GetComponentInChildren<T>())
+            {
+                continue;
+            }
+            float distance = Vector3.Distance(position, player.ItemAttachPoint.position);
+            if (distance < nearestDistance)
+            {
+                nearestDistance = distance;
+                nearestHand = player.ItemAttachPoint;
+            }
+        }
+        return nearestHand;
+    }
+
     /// <returns>Remote players + You => X + 1</returns>
     public int GetTotalPlayerCount() => sessionsById.Count + 1;
 
     public delegate void OnCreateDelegate(SessionId sessionId, RemotePlayer remotePlayer);
     public delegate void OnRemoveDelegate(SessionId sessionId, RemotePlayer remotePlayer);
+    public delegate void OnBodyCreatedDelegate(RemotePlayer remotePlayer);
 }

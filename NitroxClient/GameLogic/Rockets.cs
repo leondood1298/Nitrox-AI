@@ -14,16 +14,18 @@ public class Rockets
 
     private readonly IPacketSender packetSender;
     private readonly PlayerManager playerManager;
+    private readonly TimeCapsules timeCapsules;
 
     /// <summary>
     ///     A launch was asked for and the server has not answered yet. Further clicks would only ask again.
     /// </summary>
     private bool launchRequested;
 
-    public Rockets(IPacketSender packetSender, PlayerManager playerManager)
+    public Rockets(IPacketSender packetSender, PlayerManager playerManager, TimeCapsules timeCapsules)
     {
         this.packetSender = packetSender;
         this.playerManager = playerManager;
+        this.timeCapsules = timeCapsules;
     }
 
     /// <summary>
@@ -88,7 +90,8 @@ public class Rockets
 
         // Code extracted from LaunchRocket::OnHandClick
         LaunchRocket.SetLaunchStarted();
-        PlayerTimeCapsule.main.Submit(null);
+        // With several rockets the game's single capsule may show another rocket's capsule
+        timeCapsules.SubmitCapsuleOfRocket(rocketObject);
         launchRocket.StartCoroutine(launchRocket.StartEndCinematic());
         HandReticle.main.RequestCrosshairHide();
 

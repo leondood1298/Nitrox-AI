@@ -22,6 +22,8 @@ internal sealed class AuroraCommand(StoryManager storyManager, StoryScheduler st
                 await storyManager.BroadcastExplodeAurora(false);
                 break;
             case AuroraAction.RESTORE:
+                // What followed from the explosion is named in the story's data, which this player's game reports
+                storyManager.ExpectAuroraFollowUps(context.OriginId);
                 await storyManager.BroadcastRestoreAurora(storyScheduler);
                 break;
             case AuroraAction.EXPLODE:

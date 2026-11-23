@@ -179,6 +179,12 @@ public class Items
         {
             Log.Debug($"Dropping item: {droppedItem}");
         }
+
+        // Pickupable.Drop leaves the player's smell, which a Stalker that picks the item up befriends (see StalkerFriendships)
+        if (gameObject.TryGetComponent(out Smell smell) && Player.mainObject && smell.owner == Player.mainObject && Player.mainObject.TryGetNitroxId(out NitroxId playerId))
+        {
+            packetSender.Send(new DroppedItemSmell(id, playerId, smell.strength, smell.falloff));
+        }
     }
 
     /// <summary>

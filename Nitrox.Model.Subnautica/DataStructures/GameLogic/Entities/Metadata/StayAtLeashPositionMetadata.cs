@@ -17,7 +17,7 @@ public class StayAtLeashPositionMetadata : CreatureMetadata
         // Constructor for serialization. Has to be "protected" for json serialization.
     }
 
-    public StayAtLeashPositionMetadata(NitroxVector3 leashPosition, float infectedAmount) : base(infectedAmount)
+    public StayAtLeashPositionMetadata(NitroxVector3 leashPosition, float infectedAmount, float enzymeEndTime = NO_ENZYME) : base(infectedAmount, enzymeEndTime)
     {
         LeashPosition = leashPosition;
     }

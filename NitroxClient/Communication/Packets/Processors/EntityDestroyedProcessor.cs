@@ -7,7 +7,8 @@ using UnityEngine;
 
 namespace NitroxClient.Communication.Packets.Processors;
 
-public sealed class EntityDestroyedProcessor(Entities entities, SimulationOwnership simulationOwnership, BasePowerSources basePowerSources) : IClientPacketProcessor<EntityDestroyed>
+public sealed class EntityDestroyedProcessor(Entities entities, SimulationOwnership simulationOwnership, BasePowerSources basePowerSources, MapRoomCameraStates mapRoomCameraStates)
+    : IClientPacketProcessor<EntityDestroyed>
 {
     public const DamageType DAMAGE_TYPE_RUN_ORIGINAL = (DamageType)100;
 
@@ -33,6 +34,12 @@ public sealed class EntityDestroyedProcessor(Entities entities, SimulationOwners
 
         using (PacketSuppressor<EntityDestroyed>.Suppress())
         {
+            // A Scanner Room camera dies only in its simulating player's game; it is removed below as an item.
+            if (gameObject.TryGetComponent(out MapRoomCamera camera))
+            {
+                mapRoomCameraStates.ShowDestructionIfKilled(camera);
+            }
+
             // This type of check could get out of control if there are many types with custom destroy logic. If we get a couple more, move to separate processors.
             if (gameObject.TryGetComponent(out Vehicle vehicle))
             {

@@ -19,6 +19,10 @@ internal sealed class RadioPlayPendingMessageProcessor : IClientPacketProcessor<
         if (!PendingRadioMessages.TryMoveToFront(storyGoalManager.pendingRadioMessages, packet.MessageKey))
         {
             Log.Debug($"Radio message {packet.MessageKey} played by another player is not pending here");
+            // On the loading screen the snapshot may still bring the message as pending; this keeps it out
+            // (PendingRadioMessages.Merge). The server has the goal complete, and a snapshot made later brings it without
+            // running what it triggers either.
+            storyGoalManager.completedGoals.Add(PendingRadioMessages.GetPlayedGoal(packet.MessageKey));
             return Task.CompletedTask;
         }
         storyGoalManager.ExecutePendingRadioMessage();

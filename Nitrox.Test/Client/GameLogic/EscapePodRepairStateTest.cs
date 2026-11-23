@@ -1,4 +1,5 @@
 using Nitrox.Model.DataStructures;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 
 namespace NitroxClient.GameLogic;
@@ -37,5 +38,21 @@ public sealed class EscapePodRepairStateTest
         state.Remember(new NitroxId(), new EscapePodMetadata(true, true));
 
         Assert.IsFalse(state.TryGetLatest(podId, out _));
+    }
+
+    [TestMethod]
+    public void ARepairAnotherPlayerMadeWhileThisOnePlaysIsAnnounced()
+    {
+        Assert.IsTrue(EscapePodRepairState.IsRepairToAnnounce(true, IntroCinematicMode.COMPLETED));
+    }
+
+    [TestMethod]
+    [DataRow(false, IntroCinematicMode.COMPLETED)]
+    [DataRow(true, IntroCinematicMode.WAITING)]
+    [DataRow(true, IntroCinematicMode.PLAYING)]
+    [DataRow(true, IntroCinematicMode.SINGLEPLAYER)]
+    public void TheStoredRepairStateGivenWhileJoiningOrInTheIntroIsNotAnnounced(bool initialSyncCompleted, IntroCinematicMode introCinematicMode)
+    {
+        Assert.IsFalse(EscapePodRepairState.IsRepairToAnnounce(initialSyncCompleted, introCinematicMode));
     }
 }

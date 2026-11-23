@@ -29,6 +29,12 @@ internal sealed class SetIntroCinematicModeProcessor(PlayerManager playerManager
                 return Task.CompletedTask;
             }
 
+            if (!TakesMode(localPlayer.IntroCinematicMode, packet.Mode))
+            {
+                Log.Debug($"Ignored intro mode {packet.Mode} from the server, this game's intro is {localPlayer.IntroCinematicMode}");
+                return Task.CompletedTask;
+            }
+
             if (packet.PartnerId.HasValue)
             {
                 playerCinematics.IntroCinematicPartnerId = packet.PartnerId;
@@ -41,10 +47,21 @@ internal sealed class SetIntroCinematicModeProcessor(PlayerManager playerManager
         if (playerManager.TryFind(packet.SessionId, out RemotePlayer remotePlayer))
         {
             remotePlayer.PlayerContext.IntroCinematicMode = packet.Mode;
+            playerCinematics.RemoteIntroModeChanged(packet.SessionId, packet.Mode);
             return Task.CompletedTask;
         }
 
         Log.Debug($"SetIntroCinematicMode couldn't find Player with id {packet.SessionId}. This is normal if player has not yet officially joined.");
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    ///     Whether this game takes a mode the server gives its player. A START is only for a game that waits for a partner:
+    ///     the player may have chosen to play alone at the moment the server paired it, and the server then lets the
+    ///     partner wait again (IntroCinematicPairing.ReleasePartnerAsync).
+    /// </summary>
+    internal static bool TakesMode(IntroCinematicMode current, IntroCinematicMode given)
+    {
+        return given != IntroCinematicMode.START || current == IntroCinematicMode.WAITING;
     }
 }

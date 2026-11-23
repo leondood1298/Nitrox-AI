@@ -10,6 +10,6 @@ public sealed class PdaNotificationInitialSyncProcessor : InitialSyncProcessor
         AddDependency<PdaInitialSyncProcessor>();
         AddDependency<StoryGoalInitialSyncProcessor>();
 
-        AddStep(sync => pdaNotifications.Restore(sync.UnreadPdaNotifications));
+        AddStep(sync => pdaNotifications.Restore(sync.UnreadPdaNotifications, PdaNotifications.GetMarkersOfEntries(sync)));
     }
 }

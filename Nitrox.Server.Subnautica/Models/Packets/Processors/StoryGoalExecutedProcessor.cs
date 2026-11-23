@@ -37,6 +37,12 @@ internal sealed class StoryGoalExecutedProcessor(IPacketSender packetSender, Sto
                 break;
         }
         await storyScheduler.UnscheduleStory(packet.Key);
-        await context.SendToOthersAsync(packet);
+        // The others got the goal when the server first had it complete, and a joiner gets it with the snapshot. Executed
+        // again, it does nothing in their games: StoryGoal.Execute queues a radio message only when the goal is new, and
+        // adding a log or encyclopedia entry that is there already does nothing.
+        if (added)
+        {
+            await context.SendToOthersAsync(packet);
+        }
     }
 }

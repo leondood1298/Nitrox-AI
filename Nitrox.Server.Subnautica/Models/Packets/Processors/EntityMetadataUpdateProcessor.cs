@@ -39,7 +39,9 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
         if ((GateEscapePodMetadata(context.Sender, entity, packet.NewValue) ??
              GatePowerMetadata(context.Sender, entity, packet.NewValue) ??
              GateScannerRoomMetadata(context.Sender, entity, packet.NewValue) ??
-             GateCreatureMetadata(context.Sender, entity, packet.NewValue)) is { } result)
+             GateCreatureMetadata(context.Sender, entity, packet.NewValue) ??
+             GateFiltrationMachineMetadata(context.Sender, entity, packet.NewValue) ??
+             GateTimeCapsuleMetadata(context.Sender, entity, packet.NewValue)) is { } result)
         {
             await SendResultAsync(context, entity, result);
             return;
@@ -96,7 +98,7 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
 
     /// <summary>
     ///     A creature's infection is merged into the creature metadata it already has (see <see cref="CreatureMetadataAuthority" />).
-    ///     The other players get the update as it was sent.
+    ///     The other players get an infection update as it was sent, other creature metadata as it was merged.
     /// </summary>
     /// <returns>Null when the update is no creature metadata.</returns>
     private MetadataUpdateResult? GateCreatureMetadata(Player sender, Entity entity, EntityMetadata metadata)
@@ -114,7 +116,58 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
             return MetadataUpdateResult.Reject;
         }
         entity.Metadata = accepted;
-        return MetadataUpdateResult.Accept(requested);
+        // Other creature metadata is sent as merged (a Sea Emperor baby's drops only add up)
+        return MetadataUpdateResult.Accept(requested is CreatureInfectionMetadata ? requested : accepted);
+    }
+
+    /// <summary>
+    ///     A water filtration machine's timers come from the player simulating it (see
+    ///     <see cref="FiltrationMachineMetadataAuthority" />). They are the machine's only metadata: another kind would
+    ///     take their place, and the machine would start from zero for the next player who joins and after a restart.
+    /// </summary>
+    /// <returns>Null when the update has nothing to do with a filtration machine.</returns>
+    private MetadataUpdateResult? GateFiltrationMachineMetadata(Player sender, Entity entity, EntityMetadata metadata)
+    {
+        if (metadata is FiltrationMachineMetadata requested)
+        {
+            bool fromSimulatingPlayer = simulationOwnershipData.GetPlayerForLock(entity.Id) == sender;
+            if (!FiltrationMachineMetadataAuthority.TryAccept(entity, requested, fromSimulatingPlayer, out FiltrationMachineMetadata? accepted))
+            {
+                return MetadataUpdateResult.Reject;
+            }
+            entity.Metadata = accepted;
+            return MetadataUpdateResult.Accept(accepted);
+        }
+        if (entity.Metadata is FiltrationMachineMetadata)
+        {
+            logger.ZLogWarning($"Player {sender.Name} tried replacing the timers of filtration machine {entity.Id} with {metadata.GetType().Name}");
+            return MetadataUpdateResult.Reject;
+        }
+        return null;
+    }
+
+    /// <summary>
+    ///     Every game asks the game's online service with its own account whether a time capsule lies at a spot and what it
+    ///     holds. The first answer is kept for everybody; a later one gets the kept answer back.
+    /// </summary>
+    /// <returns>Null when the update is no answer about a time capsule.</returns>
+    private MetadataUpdateResult? GateTimeCapsuleMetadata(Player sender, Entity entity, EntityMetadata metadata)
+    {
+        if (metadata is not TimeCapsuleMetadata answer)
+        {
+            return null;
+        }
+        switch (entity.Metadata)
+        {
+            case null:
+                entity.Metadata = answer;
+                return MetadataUpdateResult.Accept(answer);
+            case TimeCapsuleMetadata kept:
+                return MetadataUpdateResult.RejectAndCorrect(kept);
+            default:
+                logger.ZLogWarningOnce($"Player {sender.Name} tried replacing the {entity.Metadata.GetType().Name} of {entity.Id} with a time capsule");
+                return MetadataUpdateResult.Reject;
+        }
     }
 
     /// <summary>
