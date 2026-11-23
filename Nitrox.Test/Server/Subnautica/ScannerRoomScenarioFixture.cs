@@ -1,3 +1,4 @@
+using System.Net;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -11,6 +12,8 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Packets;
+using Nitrox.Server.Subnautica.Models.AppEvents;
+using Nitrox.Server.Subnautica.Models.Communication;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Bases;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
@@ -39,6 +42,7 @@ internal sealed class ScannerRoomScenarioFixture
     private readonly MapRoomDeconstructionCleanup deconstructionCleanup;
     private readonly SimulationOwnershipRequestProcessor ownershipRequestProcessor;
     private readonly PlaceBaseProcessor placeBaseProcessor;
+    private readonly RecordingPacketSender worldPacketSender = new();
     private readonly PickupItemPacketProcessor pickupProcessor;
     private readonly EntitySpawnedByClientProcessor spawnProcessor;
 
@@ -68,7 +72,6 @@ internal sealed class ScannerRoomScenarioFixture
 
         // Dock processing only uses the world manager when it must persist a previously untracked
         // loose camera. All fixture cameras are registered, so unrelated world services stay absent.
-        RecordingPacketSender worldPacketSender = new();
         Diagnostics = new ScannerRoomDiagnostics(NullLogger<ScannerRoomDiagnostics>.Instance);
         ControlReleaseFactory = new MapRoomCameraControlReleaseFactory(EntityRegistry, Diagnostics, ControlLifecycle);
         WorldEntityManager worldEntityManager = new(worldPacketSender, EntityRegistry, null!, null!, null!, Diagnostics, null!, NullLogger<WorldEntityManager>.Instance);
@@ -175,6 +178,18 @@ internal sealed class ScannerRoomScenarioFixture
         camera.Metadata = clientMetadata;
         await spawnProcessor.Process(new AuthProcessorContext(player, requestPacketSender), new EntitySpawnedByClient(camera, true, true));
         return requestPacketSender.Packets;
+    }
+
+    /// <summary>
+    ///     Runs the simulation cleanup of a player who left.
+    /// </summary>
+    /// <returns>The packets that cleanup sent.</returns>
+    internal async Task<IReadOnlyList<Packet>> DisconnectAsync(ServerPlayer player)
+    {
+        int alreadySent = worldPacketSender.Packets.Count;
+        await EntitySimulation.OnEventAsync(new ISessionCleaner.Args(
+            new SessionManager.Session(player.SessionId, new IPEndPoint(IPAddress.Loopback, 11000)), 1));
+        return worldPacketSender.Packets.Skip(alreadySent).ToList();
     }
 
     /// <summary>

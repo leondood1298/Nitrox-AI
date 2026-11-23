@@ -43,7 +43,14 @@ internal sealed class MapRoomCameraControlProcessor(SimulationOwnershipData simu
 
         if (packet.IsControlling)
         {
+            bool takenFromAnotherPlayer = simulationOwnershipData.TryGetLock(packet.CameraId, out SimulationOwnershipData.PlayerLock previousLock) &&
+                                          previousLock.Player != context.Sender;
             bool granted = simulationOwnershipData.TryAcquire(packet.CameraId, context.Sender, SimulationLockType.EXCLUSIVE);
+            if (!granted && takenFromAnotherPlayer && CanPreempt(previousLock.LockType, controlLifecycle.IsActiveController(packet.CameraId, previousLock.Player.SessionId)))
+            {
+                simulationOwnershipData.ForceAcquire(packet.CameraId, context.Sender, SimulationLockType.EXCLUSIVE);
+                granted = true;
+            }
             SessionId controller = granted ? context.Sender.SessionId : simulationOwnershipData.GetPlayerForLock(packet.CameraId)?.SessionId ?? context.Sender.SessionId;
             MapRoomCameraControl response = CreateResponse(packet, granted, controller);
             if (granted)
@@ -51,6 +58,12 @@ internal sealed class MapRoomCameraControlProcessor(SimulationOwnershipData simu
                 controlLifecycle.BeginPreviewAcquisition(packet.CameraId, context.Sender.SessionId);
                 diagnostics.RecordAccepted("control_acquire", GetRoom(packet.MapRoomId), packet.CameraId, context.Sender.SessionId, packet.CameraIndex);
                 await context.SendToAllAsync(response);
+                if (takenFromAnotherPlayer)
+                {
+                    // The player who simulated the camera, or whose Stalker carried it, holds a lock in the ordinary
+                    // simulation bookkeeping of their client. That only ends when they are told who has it now.
+                    await context.SendToOthersAsync(new SimulationOwnershipChange(packet.CameraId, context.Sender.SessionId, SimulationLockType.EXCLUSIVE));
+                }
             }
             else
             {
@@ -82,6 +95,15 @@ internal sealed class MapRoomCameraControlProcessor(SimulationOwnershipData simu
     }
 
     internal static bool CanAcknowledgeRelease(bool hasOwner, bool senderOwnsLock) => !hasOwner || senderOwnsLock;
+
+    /// <summary>
+    ///     An exclusive lock on a camera is either camera control, granted here, or the generic lock a client takes
+    ///     while its Stalker carries the camera. The second kind is given to any client that asks and is only given back
+    ///     when that client says so, so it must not keep players out: a Stalker that unloads mid-carry would leave the
+    ///     camera uncontrollable until its simulating player disconnects. In the game a carried camera can be controlled.
+    /// </summary>
+    internal static bool CanPreempt(SimulationLockType heldLockType, bool holderIsActiveController) =>
+        heldLockType == SimulationLockType.EXCLUSIVE && !holderIsActiveController;
 
     /// <summary>
     ///     Ends the control lock of <paramref name="sender" />. A camera out in the world keeps them as its simulating
