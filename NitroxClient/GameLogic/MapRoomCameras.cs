@@ -17,6 +17,12 @@ namespace NitroxClient.GameLogic;
 /// </summary>
 public class MapRoomCameras
 {
+    /// <summary>
+    ///     The direction of a click on a screen, which takes the camera the screen is at. Cycling goes on to the next
+    ///     camera (1) or back to the previous one (-1).
+    /// </summary>
+    public const int CLICK_DIRECTION = 0;
+
     private readonly IPacketSender packetSender;
     private readonly IMultiplayerSession multiplayerSession;
     private readonly SimulationOwnership simulationOwnership;
@@ -44,6 +50,12 @@ public class MapRoomCameras
     /// </summary>
     private readonly HashSet<int> loggedUnavailableCameras = [];
 
+    /// <summary>
+    ///     True while the game's method runs that was held back until the lock was granted. That run comes past
+    ///     <see cref="TryStartControl" /> a second time, which lets it through.
+    /// </summary>
+    private bool runningGrantedStart;
+
     public MapRoomCameras(IPacketSender packetSender, IMultiplayerSession multiplayerSession, SimulationOwnership simulationOwnership, ScannerRoomClientDiagnostics diagnostics)
     {
         this.packetSender = packetSender;
@@ -53,14 +65,14 @@ public class MapRoomCameras
     }
 
     /// <summary>
-    ///     The camera a screen would give the player: on a click (direction 0), or when the player cycles to the next
-    ///     or previous one. The game itself is asked, and its screen is left as it was.
+    ///     The camera a screen would give the player: on a click (<see cref="CLICK_DIRECTION" />), or when the player
+    ///     cycles to the next or previous one. The game itself is asked, and its screen is left as it was.
     /// </summary>
     public static MapRoomCamera PeekCamera(MapRoomScreen screen, int direction)
     {
         int index = screen.currentIndex;
         screen.currentIndex = screen.NormalizeIndex(index + direction);
-        MapRoomCamera camera = screen.FindCamera(direction == 0 ? 1 : direction);
+        MapRoomCamera camera = screen.FindCamera(direction == CLICK_DIRECTION ? 1 : direction);
         screen.currentIndex = index;
         return camera;
     }
@@ -75,6 +87,10 @@ public class MapRoomCameras
     /// <returns>True if the game may go on right away: there is no camera to take, or this player holds its lock.</returns>
     public bool TryStartControl(MapRoomScreen screen, int direction, Action runVanilla)
     {
+        if (runningGrantedStart)
+        {
+            return true;
+        }
         MapRoomCamera camera = PeekCamera(screen, direction);
         if (!camera || camera == screen.currentCamera || !camera.TryGetNitroxId(out NitroxId cameraId) || simulationOwnership.HasExclusiveLock(cameraId))
         {
@@ -176,7 +192,15 @@ public class MapRoomCameras
         }
         if (start.Screen)
         {
-            start.RunVanilla();
+            runningGrantedStart = true;
+            try
+            {
+                start.RunVanilla();
+            }
+            finally
+            {
+                runningGrantedStart = false;
+            }
         }
         if (pendingControl.Remove(cameraId))
         {

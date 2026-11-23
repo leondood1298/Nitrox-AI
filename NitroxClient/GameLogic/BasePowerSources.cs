@@ -203,6 +203,13 @@ public sealed class BasePowerSources(IPacketSender packetSender, SimulationOwner
         return owner || component.TryGetComponentInParent(out owner, true);
     }
 
+    /// <summary>
+    ///     Whether a source generates its power in this client's game: in the game of the player who simulates it, and
+    ///     in everybody's if it is no synchronized entity. Reactors need the stricter <see cref="CanSimulate(Component)" />.
+    /// </summary>
+    /// <param name="owner">The solar panel or thermal plant component, which carries the Nitrox id.</param>
+    public bool GeneratesHere(Component owner) => !owner.TryGetNitroxId(out NitroxId sourceId) || simulationOwnership.HasAnyLockType(sourceId);
+
     /// <inheritdoc cref="CanSimulate(bool, bool, bool)" />
     /// <param name="owner">The solar panel, thermal plant or reactor component, which carries the Nitrox id.</param>
     public bool CanSimulate(Component owner)

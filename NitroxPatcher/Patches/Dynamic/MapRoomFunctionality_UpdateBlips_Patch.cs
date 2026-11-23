@@ -11,16 +11,7 @@ public sealed partial class MapRoomFunctionality_UpdateBlips_Patch : NitroxPatch
 {
     private static readonly MethodInfo TARGET_METHOD = Reflect.Method((MapRoomFunctionality t) => t.UpdateBlips());
 
-    public static void Prefix(MapRoomFunctionality __instance, out int __state)
-    {
-        __state = __instance.numNodesScanned;
-    }
+    public static void Prefix(MapRoomFunctionality __instance, out int __state) => __state = __instance.numNodesScanned;
 
-    public static void Postfix(MapRoomFunctionality __instance, int __state)
-    {
-        if (__instance.numNodesScanned != __state)
-        {
-            Resolve<MapRoomScans>().NodeScanned(__instance);
-        }
-    }
+    public static void Postfix(MapRoomFunctionality __instance, int __state) => Resolve<MapRoomScans>().BlipsUpdated(__instance, __state);
 }

@@ -128,11 +128,12 @@ public sealed partial class MapRoomScans
     }
 
     /// <summary>
-    ///     Called after the number of results the room's scan has revealed changed in this client's game.
+    ///     Called after the game updated the room's hologram, which is where its scan reveals the next result.
     /// </summary>
-    public void NodeScanned(MapRoomFunctionality mapRoom)
+    /// <param name="nodesScannedBefore">How many results the scan had revealed before that update.</param>
+    public void BlipsUpdated(MapRoomFunctionality mapRoom, int nodesScannedBefore)
     {
-        if (TryGetRoom(mapRoom, out IRoom? room))
+        if (mapRoom.numNodesScanned != nodesScannedBefore && TryGetRoom(mapRoom, out IRoom? room))
         {
             NodeScanned(room);
         }

@@ -14,6 +14,15 @@ public static class ReactorFuelDisplay
     private const float SECONDS_PER_MINUTE = 60f;
     private const int MINUTES_PER_HOUR = 60;
 
+    /// <summary>
+    ///     Called after the game set a bioreactor's hand text (BaseBioReactor.OnHover). Sets it again, with the fuel
+    ///     line below the game's own.
+    /// </summary>
+    public static void ShowHandText(BaseBioReactor reactor) => ShowHandText("UseBaseBioReactor", reactor._powerSource, GetStatus(reactor));
+
+    /// <inheritdoc cref="ShowHandText(BaseBioReactor)" />
+    public static void ShowHandText(BaseNuclearReactor reactor) => ShowHandText("UseBaseNuclearReactor", reactor._powerSource, GetStatus(reactor));
+
     public static string GetStatus(BaseBioReactor reactor)
     {
         float fuelCapacity = 0f;
@@ -56,6 +65,13 @@ public static class ReactorFuelDisplay
             return $"{minutes}m";
         }
         return minutes == 0 ? $"{hours}h" : $"{hours}h {minutes}m";
+    }
+
+    /// <param name="gameTextKey">The language key of the game's own line, which takes the stored power and the capacity.</param>
+    private static void ShowHandText(string gameTextKey, PowerSource powerSource, string fuelStatus)
+    {
+        string gameText = Language.main.GetFormat(gameTextKey, Mathf.RoundToInt(powerSource.GetPower()), Mathf.RoundToInt(powerSource.GetMaxPower()));
+        HandReticle.main.SetText(HandReticle.TextType.Hand, $"{gameText}\n{fuelStatus}", false, GameInput.Button.LeftHand);
     }
 
     private static string FormatStatus(int itemCount, string itemLabelKey, float fuelCapacity, float fuelConsumed, float powerPerSecond)

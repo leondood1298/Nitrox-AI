@@ -1,5 +1,4 @@
 using System.Reflection;
-using Nitrox.Model.DataStructures;
 using NitroxClient.GameLogic;
 
 namespace NitroxPatcher.Patches.Dynamic;
@@ -8,13 +7,7 @@ public sealed partial class ThermalPlant_AddPower_Patch : NitroxPatch, IDynamicP
 {
     private static readonly MethodInfo TARGET_METHOD = Reflect.Method((ThermalPlant t) => t.AddPower());
 
-    public static bool Prefix(ThermalPlant __instance)
-    {
-        return !__instance.TryGetNitroxId(out NitroxId id) || Resolve<SimulationOwnership>().HasAnyLockType(id);
-    }
+    public static bool Prefix(ThermalPlant __instance) => Resolve<BasePowerSources>().GeneratesHere(__instance);
 
-    public static void Postfix(ThermalPlant __instance)
-    {
-        Resolve<BasePowerSources>().BroadcastIfSimulated(__instance, __instance.powerSource);
-    }
+    public static void Postfix(ThermalPlant __instance) => Resolve<BasePowerSources>().BroadcastIfSimulated(__instance, __instance.powerSource);
 }
