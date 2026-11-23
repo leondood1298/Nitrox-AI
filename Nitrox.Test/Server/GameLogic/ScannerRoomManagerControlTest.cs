@@ -468,6 +468,18 @@ public sealed class ScannerRoomManagerControlTest
     }
 
     [TestMethod]
+    public async Task ControlledScannerCameraIsRecognisedOnlyForItsController()
+    {
+        ScannerRoomScenarioFixture scenario = new();
+        Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, cameraId, 0, true)).Granted);
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, cameraId, true)).Granted);
+
+        Assert.IsTrue(scenario.Manager.IsControlledBy(cameraId, scenario.PlayerA));
+        Assert.IsFalse(scenario.Manager.IsControlledBy(cameraId, scenario.PlayerB));
+        Assert.IsFalse(scenario.Manager.IsControlledBy(new NitroxId("00000000-0000-0000-0000-000000000900"), scenario.PlayerA), "Only Scanner Room cameras are covered.");
+    }
+
+    [TestMethod]
     public async Task JoiningPlayerIsToldWhoControlsWhichCameraAndIsSentItsPicture()
     {
         ScannerRoomScenarioFixture scenario = new();

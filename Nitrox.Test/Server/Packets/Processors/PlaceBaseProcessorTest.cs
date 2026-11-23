@@ -7,7 +7,7 @@ using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Test.Server.GameLogic;
 using Packet = Nitrox.Model.Packets.Packet;
 
-namespace Nitrox.Test.Server.Subnautica;
+namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
 /// <summary>
 ///     A Scanner Room can be the first piece of a new base. It then reaches the server nested inside the base instead
@@ -15,7 +15,7 @@ namespace Nitrox.Test.Server.Subnautica;
 ///     docking of its two default cameras are only accepted from that owner.
 /// </summary>
 [TestClass]
-public sealed class MapRoomStandaloneOwnershipTest
+public sealed class PlaceBaseProcessorTest
 {
     private static readonly NitroxId baseId = new("00000000-0000-0000-0000-000000000300");
     private static readonly NitroxId standaloneRoomId = baseId.Increment();

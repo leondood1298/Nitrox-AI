@@ -279,6 +279,33 @@ public sealed class EntityMetadataUpdateProcessorTest
     }
 
     [TestMethod]
+    public async Task RefusedRequestCanBeRepeatedWithTheStateFromTheAnswer()
+    {
+        // A client applies its own scan target before the server has seen it. Nobody else's update tells it what the
+        // room's state really is, and with a stale generation all its later requests would be refused as well.
+        MapRoomEntity room = AddRoom(new MapRoomMetadata(quartz, 4, 2), simulator);
+        await Send(otherPlayer, room, new MapRoomMetadata(titanium, 0, 1));
+        MapRoomMetadata answer = (MapRoomMetadata)ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, otherPlayer).Single().NewValue;
+
+        await Send(otherPlayer, room, new MapRoomMetadata(titanium, 0, answer.Generation));
+
+        Assert.AreEqual(titanium, ((MapRoomMetadata)room.Metadata).TypeToScan);
+    }
+
+    [TestMethod]
+    public async Task RoomThatNeverScannedAnswersWithAnIdleState()
+    {
+        MapRoomEntity room = AddRoom(null, simulator);
+
+        await Send(otherPlayer, room, new MapRoomMetadata(titanium, 0, 5));
+
+        MapRoomMetadata answer = (MapRoomMetadata)ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, otherPlayer).Single().NewValue;
+        Assert.AreEqual(NitroxTechType.None, answer.TypeToScan);
+        Assert.AreEqual(0, answer.Generation);
+        Assert.IsNull(room.Metadata, "The refused request changed nothing.");
+    }
+
+    [TestMethod]
     public async Task ScanProgressThatIsNoNewsIsAnsweredWithTheStoredState()
     {
         MapRoomEntity room = AddRoom(new MapRoomMetadata(quartz, 4, 2), simulator);

@@ -20,7 +20,7 @@ namespace Nitrox.Test.Server.GameLogic;
 ///     changing them. They are handed copies the manager takes at one moment; nothing holds a room still for them.
 /// </summary>
 [TestClass]
-public sealed class ScannerRoomManagerSnapshotTest
+public sealed class ScannerRoomManagerTest
 {
     private static readonly NitroxTechType quartz = new("Quartz");
 
