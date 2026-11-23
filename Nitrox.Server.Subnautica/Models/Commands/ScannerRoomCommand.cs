@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Server.Subnautica.Models.Commands.Core;
@@ -72,7 +73,7 @@ internal sealed class ScannerRoomCommand(EntityRegistry entityRegistry, ScannerR
         await context.ReplyAsync(output.ToString());
     }
 
-    private static string ShortId(Nitrox.Model.DataStructures.NitroxId? id)
+    private static string ShortId(NitroxId? id)
     {
         string value = id?.ToString() ?? "-";
         return value.Length > 8 ? value[..8] : value;

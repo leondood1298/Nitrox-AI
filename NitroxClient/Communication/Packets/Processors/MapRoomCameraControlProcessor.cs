@@ -6,8 +6,6 @@ namespace NitroxClient.Communication.Packets.Processors;
 
 internal sealed class MapRoomCameraControlProcessor(MapRoomCameras mapRoomCameras) : IClientPacketProcessor<MapRoomCameraControl>
 {
-    private readonly MapRoomCameras mapRoomCameras = mapRoomCameras;
-
     public Task Process(ClientProcessorContext context, MapRoomCameraControl packet)
     {
         mapRoomCameras.ProcessControl(packet);

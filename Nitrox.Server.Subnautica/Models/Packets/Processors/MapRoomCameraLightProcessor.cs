@@ -12,11 +12,6 @@ internal sealed class MapRoomCameraLightProcessor(SimulationOwnershipData simula
     EntityRegistry entityRegistry, MapRoomCameraControlLifecycle controlLifecycle,
     ScannerRoomDiagnostics diagnostics, MapRoomLooseCameraState looseCameraState) : IAuthPacketProcessor<MapRoomCameraLight>
 {
-    private readonly SimulationOwnershipData simulationOwnershipData = simulationOwnershipData;
-    private readonly EntityRegistry entityRegistry = entityRegistry;
-    private readonly MapRoomCameraControlLifecycle controlLifecycle = controlLifecycle;
-    private readonly ScannerRoomDiagnostics diagnostics = diagnostics;
-
     public async Task Process(AuthProcessorContext context, MapRoomCameraLight packet)
     {
         MapRoomEntity? mapRoom = FindUniqueRoom(packet.CameraId, out int registrations);
@@ -130,7 +125,7 @@ internal sealed class MapRoomCameraLightProcessor(SimulationOwnershipData simula
         await sendTask;
     }
 
-    private MapRoomEntity? FindUniqueRoom(Nitrox.Model.DataStructures.NitroxId cameraId, out int registrations)
+    private MapRoomEntity? FindUniqueRoom(NitroxId cameraId, out int registrations)
     {
         MapRoomEntity? found = null;
         registrations = 0;

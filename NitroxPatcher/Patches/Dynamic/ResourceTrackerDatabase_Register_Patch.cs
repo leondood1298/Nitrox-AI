@@ -10,15 +10,8 @@ public sealed partial class ResourceTrackerDatabase_Register_Patch : NitroxPatch
 
     public static void Prefix(string uniqueId, TechType resourceTechType, out Vector3? __state)
     {
-        __state = null;
-        foreach (ResourceTrackerDatabase.ResourceInfo info in ResourceTrackerDatabase.GetNodes(resourceTechType))
-        {
-            if (info.uniqueId == uniqueId)
-            {
-                __state = info.position;
-                return;
-            }
-        }
+        ResourceTrackerDatabase.ResourceInfo existing = FindNode(uniqueId, resourceTechType);
+        __state = existing != null ? existing.position : null;
     }
 
     public static void Postfix(string uniqueId, Vector3 resourcePosition, TechType resourceTechType, Vector3? __state)
@@ -27,15 +20,7 @@ public sealed partial class ResourceTrackerDatabase_Register_Patch : NitroxPatch
         {
             return;
         }
-        ResourceTrackerDatabase.ResourceInfo moved = null;
-        foreach (ResourceTrackerDatabase.ResourceInfo info in ResourceTrackerDatabase.GetNodes(resourceTechType))
-        {
-            if (info.uniqueId == uniqueId)
-            {
-                moved = info;
-                break;
-            }
-        }
+        ResourceTrackerDatabase.ResourceInfo moved = FindNode(uniqueId, resourceTechType);
         if (moved == null)
         {
             return;
@@ -45,5 +30,17 @@ public sealed partial class ResourceTrackerDatabase_Register_Patch : NitroxPatch
         {
             broadcaster.BroadcastMoved(mapRoom, moved);
         }
+    }
+
+    private static ResourceTrackerDatabase.ResourceInfo FindNode(string uniqueId, TechType techType)
+    {
+        foreach (ResourceTrackerDatabase.ResourceInfo info in ResourceTrackerDatabase.GetNodes(techType))
+        {
+            if (info.uniqueId == uniqueId)
+            {
+                return info;
+            }
+        }
+        return null;
     }
 }

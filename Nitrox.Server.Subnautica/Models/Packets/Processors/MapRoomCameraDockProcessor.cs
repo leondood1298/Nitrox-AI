@@ -15,14 +15,6 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
     MapRoomLooseCameraState looseCameraState, ILogger<MapRoomCameraDockProcessor> logger) : IAuthPacketProcessor<MapRoomCameraDock>
 {
     private const string MAP_ROOM_CAMERA_CLASS_ID = "733fd479-0760-4bc2-a03e-281cbf02bfa4";
-    private readonly EntityRegistry entityRegistry = entityRegistry;
-    private readonly WorldEntityManager worldEntityManager = worldEntityManager;
-    private readonly SimulationOwnershipData simulationOwnershipData = simulationOwnershipData;
-    private readonly MapRoomCameraControlReleaseFactory cameraControlReleaseFactory = cameraControlReleaseFactory;
-    private readonly MapRoomLifecycle roomLifecycle = roomLifecycle;
-    private readonly MapRoomCameraControlLifecycle controlLifecycle = controlLifecycle;
-    private readonly ScannerRoomDiagnostics diagnostics = diagnostics;
-    private readonly ILogger<MapRoomCameraDockProcessor> logger = logger;
     private readonly object dockingLock = new();
 
     public async Task Process(AuthProcessorContext context, MapRoomCameraDock packet)
@@ -196,7 +188,7 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
     internal static bool IsRequestedStateCanonical(bool isDocked, NitroxId cameraId, NitroxId? slotCameraId, bool cameraDocked) =>
         isDocked ? slotCameraId == cameraId : slotCameraId == null && !cameraDocked;
 
-    private bool TryTransferRegistration(MapRoomEntity targetRoom, Nitrox.Model.DataStructures.NitroxId cameraId)
+    private bool TryTransferRegistration(MapRoomEntity targetRoom, NitroxId cameraId)
     {
         MapRoomEntity? sourceRoom = null;
         MapRoomCameraRecord? sourceRecord = null;

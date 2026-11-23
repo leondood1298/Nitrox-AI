@@ -1,8 +1,10 @@
 using System.Collections.Generic;
 using Nitrox.Model.DataStructures;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication.Abstract;
 using NitroxClient.MonoBehaviours;
+using UnityEngine;
 
 namespace NitroxClient.GameLogic;
 
@@ -14,7 +16,7 @@ public sealed class MapRoomScanResultBroadcaster(IPacketSender packetSender, Thr
         {
             return;
         }
-        List<Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases.MapRoomScanResultRecord> results = [];
+        List<MapRoomScanResultRecord> results = [];
         foreach (ResourceTrackerDatabase.ResourceInfo info in mapRoom.resourceNodes)
         {
             if (IsCurrentInRangeResult(mapRoom, info))
@@ -133,12 +135,12 @@ public sealed class MapRoomScanResultBroadcaster(IPacketSender packetSender, Thr
     }
 
     internal static MapRoomScanResultChanged CreateChangedPacket(NitroxId roomId, long generation,
-        ResourceTrackerDatabase.ResourceInfo info, bool removed, bool isRangeExit, UnityEngine.Vector3 scanOrigin, float scanRange) =>
+        ResourceTrackerDatabase.ResourceInfo info, bool removed, bool isRangeExit, Vector3 scanOrigin, float scanRange) =>
         new(roomId, generation, info.uniqueId, info.techType.ToDto(), info.position.ToDto(), removed, isRangeExit,
             scanOrigin.ToDto(), scanRange);
 
     internal static MapRoomScanResultSnapshot CreateSnapshotPacket(NitroxId roomId, long generation,
-        List<Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases.MapRoomScanResultRecord> results,
-        UnityEngine.Vector3 scanOrigin, float scanRange) =>
+        List<MapRoomScanResultRecord> results,
+        Vector3 scanOrigin, float scanRange) =>
         new(roomId, generation, results, scanOrigin.ToDto(), scanRange);
 }
