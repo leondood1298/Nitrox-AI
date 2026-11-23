@@ -36,7 +36,9 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
             return;
         }
 
-        if ((GatePowerMetadata(context.Sender, entity, packet.NewValue) ?? GateScannerRoomMetadata(context.Sender, entity, packet.NewValue)) is { } result)
+        if ((GateEscapePodMetadata(context.Sender, entity, packet.NewValue) ??
+             GatePowerMetadata(context.Sender, entity, packet.NewValue) ??
+             GateScannerRoomMetadata(context.Sender, entity, packet.NewValue)) is { } result)
         {
             await SendResultAsync(context, entity, result);
             return;
@@ -48,6 +50,21 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
             entity.Metadata = acceptedMetadata;
             await SendUpdateToVisiblePlayersAsync(context, new EntityMetadataUpdate(packet.Id, acceptedMetadata), entity, false);
         }
+    }
+
+    /// <summary>
+    ///     A pod's repair state is its only metadata. Any other kind would take its place, and the pod and its radio would
+    ///     come back broken for the next player who joins and after a restart.
+    /// </summary>
+    /// <returns>Null when the update is no replacement of a pod's repair state.</returns>
+    private MetadataUpdateResult? GateEscapePodMetadata(Player sender, Entity entity, EntityMetadata metadata)
+    {
+        if (entity is not EscapePodEntity || metadata is EscapePodMetadata)
+        {
+            return null;
+        }
+        logger.ZLogWarning($"Player {sender.Name} tried replacing the repair state of escape pod {entity.Id} with {metadata.GetType().Name}");
+        return MetadataUpdateResult.Reject;
     }
 
     /// <summary>

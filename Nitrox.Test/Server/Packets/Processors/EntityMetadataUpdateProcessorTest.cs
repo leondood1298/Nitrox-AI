@@ -1,6 +1,7 @@
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using Nitrox.Model.DataStructures;
+using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
@@ -19,7 +20,8 @@ namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 ///     The gate every entity metadata update passes on the server. Covered here: the arms for base power, whose state
 ///     only the player simulating the source decides, and the arms for Scanner Rooms, whose scan target any player who
 ///     sees the room may choose while scan progress belongs to the room's simulating player. A room's fabricator is a
-///     child entity whose state any player may set, like any other fabricator's.
+///     child entity whose state any player may set, like any other fabricator's. A Lifepod's repair state can only be
+///     merged with another repair state, never replaced.
 /// </summary>
 [TestClass]
 public sealed class EntityMetadataUpdateProcessorTest
@@ -457,6 +459,42 @@ public sealed class EntityMetadataUpdateProcessorTest
         await processor.Process(new AuthProcessorContext(simulator, packetSender), new EntityMetadataUpdate(new NitroxId(), new MapRoomCameraMetadata(false, 50f)));
 
         Assert.AreEqual(0, packetSender.ReceivedCalls().Count());
+    }
+
+    [TestMethod]
+    public async Task OtherMetadataCannotTakeThePlaceOfAPodsRepairState()
+    {
+        // With something else in its one metadata slot, the pod and its radio would come back broken for the next
+        // player who joins and after a restart.
+        EscapePodMetadata repaired = new(true, true);
+        EscapePodEntity pod = new(NitroxVector3.Zero, new NitroxId(), repaired);
+        entityRegistry.AddEntity(pod);
+
+        foreach (Player sender in new[] { simulator, otherPlayer })
+        {
+            await Send(sender, pod, new BatteryMetadata(100f));
+            await Send(sender, pod, new CrafterMetadata(new NitroxTechType("FirstAidKit"), 1f, 2f, 1, 0));
+            await Send(sender, pod, new PowerSourceMetadata(40f, 0f, BasePowerSourceType.SOLAR));
+            await Send(sender, pod, new MapRoomMetadata(quartz, 0));
+        }
+
+        Assert.AreSame(repaired, pod.Metadata);
+        Assert.AreEqual(0, packetSender.ReceivedCalls().Count());
+    }
+
+    [TestMethod]
+    public async Task APodsRepairStateIsMergedAndSentToTheOthers()
+    {
+        EscapePodEntity pod = new(NitroxVector3.Zero, new NitroxId(), new EscapePodMetadata(true, false));
+        entityRegistry.AddEntity(pod);
+
+        await Send(otherPlayer, pod, new EscapePodMetadata(false, true));
+
+        EscapePodMetadata stored = (EscapePodMetadata)pod.Metadata;
+        Assert.IsTrue(stored.PodRepaired, "A repair is never undone.");
+        Assert.IsTrue(stored.RadioRepaired);
+        Assert.IsTrue(((EscapePodMetadata)ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, simulator).Single().NewValue).PodRepaired);
+        Assert.AreEqual(0, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, otherPlayer).Count);
     }
 
     private Task Send(Player sender, Entity entity, EntityMetadata metadata)
