@@ -2,8 +2,9 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
+using Nitrox.Server.Subnautica.Models.Serialization;
 
-namespace Nitrox.Server.Subnautica.Models.Serialization;
+namespace Nitrox.Test.Server.Serialization;
 
 [TestClass]
 public sealed class ServerJsonSerializerTest
