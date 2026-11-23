@@ -120,7 +120,12 @@ public class Items
         WorldEntity droppedItem;
         List<Entity> childrenEntities = GetPrefabChildren(gameObject, id, entityMetadataManager).ToList();
         // Reflects the tool's actual current battery state (if any); never assumes a default one, since a dropped item always already exists.
-        BatteryChildEntityHelper.TryPopulateInstalledBattery(gameObject, childrenEntities, id, entityMetadataManager, allowDefaultBattery: false);
+        // A Scanner Room camera's battery is not an entity of its own: its energy is synced with the camera itself
+        // (see Battery_charge_set_Patch), so it must not be announced as a child here.
+        if (!gameObject.GetComponent<MapRoomCamera>())
+        {
+            BatteryChildEntityHelper.TryPopulateInstalledBattery(gameObject, childrenEntities, id, entityMetadataManager, allowDefaultBattery: false);
+        }
 
         // If the item is dropped in a WaterPark we need to handle it differently
         NitroxId parentId = null;
