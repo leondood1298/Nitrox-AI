@@ -395,6 +395,33 @@ internal sealed partial class ServerEntry : ObservableObject
 
     private bool CanOpenSaveFolder() => !string.IsNullOrWhiteSpace(Name);
 
+    /// <summary>
+    ///     The arguments the server is started with for a world of this launcher.
+    ///     <para>
+    ///     The server works out where its worlds, logs and backups are from its own command line. Without the data folder it
+    ///     falls back to the default one, so a launcher started with another data folder (--data-path) showed its worlds but
+    ///     the server opened, or newly created, a world of the same name in the default folder.
+    ///     </para>
+    /// </summary>
+    /// <param name="saveDir">Full path of the world's folder.</param>
+    /// <param name="launcherDataPath">The launcher's own data folder, used when the world does not lie in a "saves" folder.</param>
+    internal static List<string> GetServerArguments(string saveDir, string gamePath, string launcherDataPath)
+    {
+        // The server looks for a world in <data folder>/saves/<name>
+        string? savesDir = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(saveDir));
+        string dataPath = launcherDataPath;
+        if (savesDir != null && string.Equals(Path.GetFileName(savesDir), SAVES_FOLDER_NAME, StringComparison.OrdinalIgnoreCase) && Path.GetDirectoryName(savesDir) is { Length: > 0 } parent)
+        {
+            dataPath = parent;
+        }
+        return ["--save", Path.GetFileName(Path.TrimEndingDirectorySeparator(saveDir)), "--game-path", gamePath, "--data-path", dataPath];
+    }
+
+    /// <summary>
+    ///     The folder under the data folder in which the server keeps its worlds (NitroxDirectory.SavesPath).
+    /// </summary>
+    private const string SAVES_FOLDER_NAME = "saves";
+
     internal class ServerProcess : IDisposable
     {
         private ProcessEx? serverProcess;
@@ -406,7 +433,6 @@ internal sealed partial class ServerEntry : ObservableObject
             cts.Token.Register(Dispose);
             if (processId <= 0)
             {
-                string saveName = Path.GetFileName(saveDir);
                 string launcherPath = NitroxUser.ExecutableRootPath;
                 if (string.IsNullOrWhiteSpace(launcherPath))
                 {
@@ -417,16 +443,13 @@ internal sealed partial class ServerEntry : ObservableObject
                 ProcessStartInfo startInfo = new(serverFile)
                 {
                     WorkingDirectory = launcherPath,
-                    ArgumentList =
-                    {
-                        "--save",
-                        saveName,
-                        "--game-path",
-                        NitroxUser.GamePath
-                    },
                     WindowStyle = isEmbeddedMode ? ProcessWindowStyle.Hidden : ProcessWindowStyle.Normal,
                     CreateNoWindow = isEmbeddedMode
                 };
+                foreach (string argument in GetServerArguments(saveDir, NitroxUser.GamePath, NitroxDirectory.ConfigPath))
+                {
+                    startInfo.ArgumentList.Add(argument);
+                }
                 // On Steam Deck, start through user-wide .dotnet. The default is system-wide which might not work.
                 if (IsSteamOs())
                 {
