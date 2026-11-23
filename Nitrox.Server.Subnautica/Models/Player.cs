@@ -188,6 +188,13 @@ namespace Nitrox.Server.Subnautica.Models
             return true;
         }
 
+        /// <summary>
+        ///     Where the player is now. Inside a base or Cyclops the body is held by the sub, so a Cyclops that moved since
+        ///     the player last walked has taken the player along; <see cref="Position" /> only changes when the player
+        ///     moves.
+        /// </summary>
+        public NitroxVector3 CurrentPosition => Entity?.Transform is { Parent: not null } transform ? transform.Position : Position;
+
         public void Teleport(NitroxVector3 destination, Optional<NitroxId> subRootID, IPacketSender packetSender)
         {
             PlayerTeleported playerTeleported = new(Name, Position, destination, subRootID);
