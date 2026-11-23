@@ -185,7 +185,8 @@ public class RemotePlayer : INitroxPlayer
         AnimationController.UpdatePlayerAnimations = true;
         AnimationController.Velocity = MovementHelper.GetCorrectedVelocity(position, velocity, Body.transform.position, Time.fixedDeltaTime);
 
-        // If in a subroot the position will be relative to the subroot
+        // The rotations are sent relative to a base the player is in (the position is sent in world space)
+        Vector3 worldPosition = position;
         if (SubRoot && SubRoot.isBase)
         {
             Quaternion vehicleAngle = SubRoot.transform.rotation;
@@ -193,6 +194,17 @@ public class RemotePlayer : INitroxPlayer
             position += SubRoot.transform.position;
             bodyRotation = vehicleAngle * bodyRotation;
             aimingRotation = vehicleAngle * aimingRotation;
+        }
+
+        // A player who stopped sends no further packet (PlayerMovementThrottle), so the corrective speed computed
+        // above would never be taken back and the body would drift or spin: it is put in place instead
+        if (PlayerMovementThrottle.IsStop(velocity.magnitude))
+        {
+            AnimationController.Velocity = Vector3.zero;
+            Body.transform.SetPositionAndRotation(worldPosition, bodyRotation);
+            RigidBody.velocity = Vector3.zero;
+            RigidBody.angularVelocity = Vector3.zero;
+            return;
         }
 
         RigidBody.velocity = AnimationController.Velocity;
