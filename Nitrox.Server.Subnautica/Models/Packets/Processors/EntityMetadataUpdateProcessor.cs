@@ -8,7 +8,7 @@ using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
-internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager, EntityRegistry entityRegistry, SimulationOwnershipData simulationOwnershipData, ScannerRoomDiagnostics scannerRoomDiagnostics, ILogger<EntityMetadataUpdateProcessor> logger) : IAuthPacketProcessor<EntityMetadataUpdate>
+internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager, EntityRegistry entityRegistry, SimulationOwnershipData simulationOwnershipData, ScannerRoomDiagnostics scannerRoomDiagnostics, BasePowerSourceAuthority basePowerSourceAuthority, ILogger<EntityMetadataUpdateProcessor> logger) : IAuthPacketProcessor<EntityMetadataUpdate>
 {
     private readonly PlayerManager playerManager = playerManager;
     private readonly EntityRegistry entityRegistry = entityRegistry;
@@ -33,6 +33,10 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
                 {
                     mapRoom.FabricatorMetadata = crafterMetadata;
                 }
+            }
+            else if (acceptedMetadata is ThermalPlantMetadata && entity.Metadata is PowerSourceMetadata)
+            {
+                // Already folded into the source's power state by TryProcessMetadata; the report is only relayed.
             }
             else if (acceptedMetadata is not MapRoomMetadata)
             {
@@ -129,6 +133,11 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
         return metadata switch
         {
             PlayerMetadata playerMetadata => ProcessPlayerMetadata(sendingPlayer, entity, playerMetadata),
+
+            // temperature is a ratchet (see ThermalPlant.QueryTemperature's Mathf.Max), so drop stale updates instead of
+            // relaying them: every client near a thermal plant reports the same rise, and only the first one is news
+            ThermalPlantMetadata thermalPlantMetadata when entity.Metadata is PowerSourceMetadata => basePowerSourceAuthority.TryApplyTemperature(entity, thermalPlantMetadata),
+            ThermalPlantMetadata thermalPlantMetadata => entity.Metadata is not ThermalPlantMetadata currentMetadata || thermalPlantMetadata.Temperature > currentMetadata.Temperature,
 
             // Allow metadata updates from any player by default
             _ => true

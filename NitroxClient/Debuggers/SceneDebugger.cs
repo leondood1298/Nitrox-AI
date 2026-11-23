@@ -449,7 +449,7 @@ public class SceneDebugger : AbstractDebugger
                 {
                     GUILayout.Label(method.ToString());
 
-                    if (method.GetParameters().Any()) // TODO: Allow methods with parameters to be called.
+                    if (method.GetParameters().Length != 0) // TODO: Allow methods with parameters to be called.
                     {
                         continue;
                     }
@@ -477,7 +477,14 @@ public class SceneDebugger : AbstractDebugger
         }
 
         SelectedObject = item;
-        selectedComponentID = default;
+        selectedComponentID = 0;
+    }
+
+    public void InspectGameObject(GameObject item)
+    {
+        UpdateSelectedObject(item);
+        ActiveTab = GetTab("GameObject").Value;
+        Enabled = true;
     }
 
     public void JumpToComponent(Component item)

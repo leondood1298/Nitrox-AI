@@ -38,7 +38,7 @@ public class RemoteBedController : MonoBehaviour
 		bed = GetComponent<Bed>();
 		if (!bed)
 		{
-			Log.Error("[BedSync] No Bed component found on " + base.gameObject.name);
+			Log.Error($"[BedSync] No Bed component found on {base.gameObject.name}");
 			Object.Destroy(this);
 		}
 	}

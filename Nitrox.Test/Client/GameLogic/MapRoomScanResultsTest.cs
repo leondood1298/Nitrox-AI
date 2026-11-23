@@ -117,7 +117,7 @@ public sealed class MapRoomScanResultsTest
         Assert.AreSame(canonical, local[0]);
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(false, false, true)]
     [DataRow(false, true, true)]
     [DataRow(true, false, false)]
@@ -195,7 +195,7 @@ public sealed class MapRoomScanResultsTest
         Assert.AreEqual("nearby-resource", local[0].uniqueId);
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(false, false, true)]
     [DataRow(false, true, true)]
     [DataRow(true, true, true)]
@@ -212,7 +212,7 @@ public sealed class MapRoomScanResultsTest
         Assert.IsFalse(MapRoomFunctionality_StartScanning_Patch.ShouldPublishImmediately(TechType.ShaleChunk));
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(0L, 1L, true, 1, 0, true, true)]
     [DataRow(1L, 1L, true, 1, 0, true, false)]
     [DataRow(0L, 1L, false, 1, 0, true, false)]

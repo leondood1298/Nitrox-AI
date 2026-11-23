@@ -13,7 +13,7 @@ public sealed class BasePowerSourceAuthorityTest
     private readonly SessionId firstOwner = (ushort)1;
     private readonly SessionId secondOwner = (ushort)2;
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(BasePowerSourceType.SOLAR, 75f)]
     [DataRow(BasePowerSourceType.THERMAL, 250f)]
     [DataRow(BasePowerSourceType.BIOREACTOR, 500f)]
@@ -61,7 +61,7 @@ public sealed class BasePowerSourceAuthorityTest
         Assert.AreEqual(1, authority.GetLastClientSequence(source.Id));
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(float.NaN)]
     [DataRow(float.PositiveInfinity)]
     [DataRow(-1f)]
@@ -88,7 +88,7 @@ public sealed class BasePowerSourceAuthorityTest
         Assert.AreEqual(75f, accepted.Power);
     }
 
-	[DataTestMethod]
+	[TestMethod]
 	[DataRow(BasePowerSourceType.BIOREACTOR, 420f)]
 	[DataRow(BasePowerSourceType.NUCLEAR, 12345f)]
 	public void AcceptsAndPersistsReactorFuelProgress(BasePowerSourceType sourceType, float fuelConsumed)
@@ -102,7 +102,7 @@ public sealed class BasePowerSourceAuthorityTest
 		Assert.AreEqual(fuelConsumed, ((PowerSourceMetadata)source.Metadata).FuelConsumed);
 	}
 
-	[DataTestMethod]
+	[TestMethod]
 	[DataRow(BasePowerSourceType.SOLAR, 1f)]
 	[DataRow(BasePowerSourceType.BIOREACTOR, 841f)]
 	[DataRow(BasePowerSourceType.NUCLEAR, 20001f)]
@@ -155,6 +155,55 @@ public sealed class BasePowerSourceAuthorityTest
         Assert.IsFalse(authority.TryApply(source, firstOwner, new BasePowerSourceUpdate(source.Id, BasePowerSourceType.SOLAR, 20f, 1, isServerResponse: true), out _, out _));
         Assert.IsFalse(authority.TryApply(source, firstOwner, Request(source.Id, BasePowerSourceType.UNKNOWN, 0f, 1), out _, out _));
         Assert.IsFalse(authority.TryApply(source, firstOwner, Request(source.Id, BasePowerSourceType.SOLAR, 20f, 0), out _, out _));
+    }
+
+    [TestMethod]
+    public void TemperatureReportIsKeptAlongsidePowerStateWithoutResettingRevision()
+    {
+        // A thermal plant reports its temperature through generic metadata while its power state lives in the same
+        // slot. Replacing that state would restart the revision clients order power updates by.
+        BasePowerSourceAuthority authority = new();
+        ModuleEntity plant = CreateModule();
+        plant.Metadata = new PowerSourceMetadata(120f, 250f, BasePowerSourceType.THERMAL, 500);
+
+        Assert.IsTrue(authority.TryApplyTemperature(plant, new ThermalPlantMetadata(63f)));
+
+        PowerSourceMetadata afterReport = (PowerSourceMetadata)plant.Metadata;
+        Assert.AreEqual(63f, afterReport.Temperature);
+        Assert.AreEqual(120f, afterReport.Power);
+        Assert.AreEqual(500, afterReport.Revision);
+
+        Assert.IsTrue(authority.TryApply(plant, firstOwner, Request(plant.Id, BasePowerSourceType.THERMAL, 121f, 1), out PowerSourceMetadata afterPower, out string reason), reason);
+        Assert.AreEqual(501, afterPower.Revision);
+        Assert.AreEqual(63f, afterPower.Temperature, "A power update must not drop the stored temperature.");
+    }
+
+    [TestMethod]
+    public void TemperatureOnlyRisesAndNeedsExistingPowerState()
+    {
+        BasePowerSourceAuthority authority = new();
+        ModuleEntity plant = CreateModule();
+        Assert.IsFalse(authority.TryApplyTemperature(plant, new ThermalPlantMetadata(40f)), "Without power state the report is stored as ordinary metadata instead.");
+
+        plant.Metadata = new PowerSourceMetadata(10f, 250f, BasePowerSourceType.THERMAL, 3, temperature: 70f);
+        Assert.IsFalse(authority.TryApplyTemperature(plant, new ThermalPlantMetadata(70f)));
+        Assert.IsFalse(authority.TryApplyTemperature(plant, new ThermalPlantMetadata(55f)));
+        Assert.IsFalse(authority.TryApplyTemperature(plant, new ThermalPlantMetadata(float.NaN)));
+        Assert.AreEqual(70f, ((PowerSourceMetadata)plant.Metadata).Temperature);
+    }
+
+    [TestMethod]
+    public void FirstPowerUpdateCarriesOverTemperatureStoredAsPlainThermalMetadata()
+    {
+        // A newly built plant can get its temperature report before its first power update.
+        BasePowerSourceAuthority authority = new();
+        ModuleEntity plant = CreateModule();
+        plant.Metadata = new ThermalPlantMetadata(48f);
+
+        Assert.IsTrue(authority.TryApply(plant, firstOwner, Request(plant.Id, BasePowerSourceType.THERMAL, 5f, 1), out PowerSourceMetadata accepted, out string reason), reason);
+
+        Assert.AreEqual(48f, accepted.Temperature);
+        Assert.AreEqual(1, accepted.Revision);
     }
 
     private static BasePowerSourceUpdate Request(NitroxId id, BasePowerSourceType sourceType, float power, long sequence, float fuelConsumed = 0f) => new(id, sourceType, power, sequence, fuelConsumed: fuelConsumed);

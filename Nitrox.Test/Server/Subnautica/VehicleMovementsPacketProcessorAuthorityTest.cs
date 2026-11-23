@@ -19,7 +19,7 @@ namespace Nitrox.Test.Server.Subnautica;
 [TestClass]
 public sealed class VehicleMovementsPacketProcessorAuthorityTest
 {
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(0, false)]
     [DataRow(1, true)]
     [DataRow(VehicleMovementsPacketProcessor.MAX_MOVEMENTS_PER_PACKET, true)]

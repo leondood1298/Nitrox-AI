@@ -15,7 +15,7 @@ public sealed class MapRoomCameraPreviewImageTest
         Assert.AreEqual(192, height);
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(257, 192)]
     [DataRow(256, 257)]
     [DataRow(0, 192)]

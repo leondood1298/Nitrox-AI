@@ -108,30 +108,7 @@
                                 <Setter Property="Opacity" Value="0.5" />
                             </Style>
                         </StackPanel.Styles>
-                        <Panel>
-                            <StackPanel IsVisible="{Binding ServerIsOnline}" Orientation="Horizontal">
-                                <Ellipse Fill="{DynamicResource BrandOnColor}" Margin="0,0,6,0" />
-                                <TextBlock IsVisible="{Binding ServerIsOnline}" Text="Online" />
-                            </StackPanel>
-                            <StackPanel IsVisible="{Binding !ServerIsOnline}" Orientation="Horizontal">
-                                <Ellipse Fill="{DynamicResource BrandOffColor}" Margin="0,0,6,0" />
-                                <TextBlock IsVisible="{Binding !ServerIsOnline}" Text="Offline" />
-                            </StackPanel>
-                        </Panel>
-                        <TextBlock Text="{Binding Server.GameMode, Converter={converters:ToStringConverter}, FallbackValue=Survival}" />
-                        <TextBlock TextWrapping="NoWrap" Background="Transparent"
-                                   Classes.online="{Binding Server.IsOnline, FallbackValue=False}"
-                                   ToolTip.Tip="{Binding Server.PlayerNamesTooltip, FallbackValue=''}">
-                            <Run Text="{Binding Server.PlayerCount, FallbackValue=0}" />
-                            <Run Text=" / " />
-                            <Run Text="{Binding Server.MaxPlayers, FallbackValue=100}" />
-                            <Run Text=" playing" />
-                            <TextBlock.Styles>
-                                <Style Selector="TextBlock.online:pointerover">
-                                    <Setter Property="TextDecorations" Value="Underline" />
-                                </Style>
-                            </TextBlock.Styles>
-                        </TextBlock>
+                        <controls:ServerStatusControl DataContext="{Binding Server}" />
                     </StackPanel>
 
                     <Grid ColumnDefinitions="*,200">
@@ -191,7 +168,7 @@
                         <TextBox
                             IsEnabled="{Binding !ServerIsOnline}"
                             Text="{Binding ServerName, Converter={converters:TrimConverter}}"
-                            Watermark="My server">
+                            PlaceholderText="My server">
                             <Interaction.Behaviors>
                                 <behaviors:FocusOnViewShowBehavior />
                             </Interaction.Behaviors>
@@ -208,7 +185,7 @@
                             Classes="revealPasswordButton"
                             IsEnabled="{Binding !ServerIsOnline}"
                             Text="{Binding ServerPassword, Converter={converters:TrimConverter}}"
-                            Watermark="Server password" />
+                            PlaceholderText="Server password" />
                     </StackPanel>
                 </Grid>
 
@@ -237,7 +214,7 @@
                             IsReadOnly="{Binding !Server.IsNewServer}"
                             MaxLength="30"
                             Text="{Binding ServerSeed}"
-                            Watermark="Server seed">
+                            PlaceholderText="Server seed">
                             <TextBox.Styles>
                                 <Style Selector="TextBox[IsReadOnly=False]">
                                     <Setter Property="ToolTip.Tip" Value="Leave blank to automatically generate when the server is first run" />
@@ -282,7 +259,7 @@
                             IsEnabled="{Binding !ServerIsOnline}"
                             MaxLength="9"
                             Text="{Binding ServerAutoSaveInterval, Converter={converters:IntToStringConverter}}"
-                            Watermark="Autosave interval"
+                            PlaceholderText="Autosave interval"
                             design:NitroxAttached.IsNumericInput="True" />
                     </StackPanel>
                 </Grid>
@@ -298,7 +275,7 @@
                             IsEnabled="{Binding !ServerIsOnline}"
                             MaxLength="9"
                             Text="{Binding ServerMaxPlayers, Converter={converters:IntToStringConverter}}"
-                            Watermark="Enter a player limit"
+                            PlaceholderText="Enter a player limit"
                             design:NitroxAttached.IsNumericInput="True" />
                     </StackPanel>
 
@@ -312,7 +289,7 @@
                             IsEnabled="{Binding !ServerIsOnline}"
                             MaxLength="5"
                             Text="{Binding ServerPort, Converter={converters:IntToStringConverter}}"
-                            Watermark="Enter a port number"
+                            PlaceholderText="Enter a port number"
                             design:NitroxAttached.IsNumericInput="True" />
                     </StackPanel>
                 </Grid>

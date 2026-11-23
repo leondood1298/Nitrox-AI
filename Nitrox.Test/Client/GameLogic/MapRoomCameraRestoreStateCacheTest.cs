@@ -176,7 +176,7 @@ public sealed class MapRoomCameraRestoreStateCacheTest
         Assert.AreEqual(75f, state.Component!.Energy);
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(false, false, false, false)]
     [DataRow(true, false, false, true)]
     [DataRow(false, true, false, true)]
@@ -189,7 +189,7 @@ public sealed class MapRoomCameraRestoreStateCacheTest
             batteryInitializing, restoreBarrier));
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(false, false, false, false)]
     [DataRow(true, false, false, true)]
     [DataRow(true, true, false, false)]
@@ -202,7 +202,7 @@ public sealed class MapRoomCameraRestoreStateCacheTest
             initialSyncCompleted, hasKnownState));
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(false, false, false)]
     [DataRow(false, true, false)]
     [DataRow(true, true, false)]
@@ -214,7 +214,7 @@ public sealed class MapRoomCameraRestoreStateCacheTest
             initialSyncCompleted, hasKnownState));
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(true, true, true, true, true)]
     [DataRow(true, true, true, false, false)]
     [DataRow(true, true, false, false, false)]

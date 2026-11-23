@@ -29,14 +29,6 @@ public sealed class ScannerRoomPersistenceQualificationTest
     }
 
     [TestMethod]
-    public void ProtoBufRoundTripPreservesCanonicalStateAndQualifiesLateJoinRecovery()
-    {
-        QualifyPersistenceAndInitialSync(
-            new SubnauticaServerProtoBufSerializer(NullLogger<SubnauticaServerProtoBufSerializer>.Instance),
-            nameof(SubnauticaServerProtoBufSerializer));
-    }
-
-    [TestMethod]
     public void FingerprintValidationEnforcesCameraHealthContract()
     {
         MapRoomEntity room = CreateRoom();
@@ -80,6 +72,7 @@ public sealed class ScannerRoomPersistenceQualificationTest
             null!,
             new MapRoomScanResultSubscriptions(),
             diagnostics,
+            null!,
             NullLogger<WorldEntityManager>.Instance);
 
         foreach (GlobalRootEntity root in restoredData.Entities)

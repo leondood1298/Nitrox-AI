@@ -14,7 +14,7 @@ namespace Nitrox.Test.Server.Subnautica;
 [TestClass]
 public sealed class MapRoomCameraComponentStateValidationTest
 {
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(0f, 0f, true)]
     [DataRow(100f, 400f, true)]
     [DataRow(-0.01f, 400f, false)]
@@ -37,7 +37,7 @@ public sealed class MapRoomCameraComponentStateValidationTest
         Assert.IsFalse(MapRoomCameraComponentStateProcessor.IsValidComponentState(100f, float.NegativeInfinity));
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(100f, 100)]
     [DataRow(75.01f, 100)]
     [DataRow(75f, 75)]
@@ -50,7 +50,7 @@ public sealed class MapRoomCameraComponentStateValidationTest
         Assert.AreEqual(expected, MapRoomCameraComponentStateProcessor.GetEnergyBand(value));
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(400f, 100)]
     [DataRow(300.01f, 100)]
     [DataRow(300f, 75)]

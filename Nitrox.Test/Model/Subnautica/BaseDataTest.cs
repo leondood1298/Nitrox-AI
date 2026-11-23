@@ -55,7 +55,7 @@ public sealed class BaseDataTest
         Assert.IsFalse(hasOccupiedCell);
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(ushort.MaxValue)]
     [DataRow(ushort.MaxValue + 1)]
     public void ZeroRunsAcrossUShortBoundaryAreValid(int size)

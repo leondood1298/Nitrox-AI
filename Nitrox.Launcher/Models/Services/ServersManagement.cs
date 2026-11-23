@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia.Threading;
 using Grpc.Core;
 using MagicOnion.Server.Hubs;
 using Nitrox.Launcher.Models.Design;
@@ -32,17 +33,44 @@ internal sealed class ServersManagement(ServerService serverService) : Streaming
         return CompletedTask;
     }
 
-    public ValueTask AddOutputLine(string category, DateTimeOffset? localTime, int level, string message)
+    public async ValueTask AddOutputLine(string category, DateTimeOffset? localTime, int level, string message)
+    {
+        try
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                ServerEntry? entry = serverService.GetServerEntryByAnyOf(processId, saveName);
+                if (entry != null)
+                {
+
+                    // First output received, server is no longer starting
+                    entry.IsServerStarting = false;
+                    entry.Output.Add(new OutputLine
+                    {
+                        LogText = message,
+                        LocalTime = localTime,
+                        Type = (OutputLineType)level
+                    });
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex);
+            throw;
+        }
+    }
+
+    public ValueTask SetLoadingProgress(string stage, float progress)
     {
         try
         {
             ServerEntry? entry = serverService.GetServerEntryByAnyOf(processId, saveName);
-            entry?.Output.Add(new OutputLine
+            if (entry != null)
             {
-                LogText = message,
-                LocalTime = localTime,
-                Type = (OutputLineType)level
-            });
+                entry.LoadingStage = stage;
+                entry.LoadingProgress = progress;
+            }
         }
         catch (Exception ex)
         {

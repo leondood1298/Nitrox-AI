@@ -7,7 +7,7 @@ namespace Nitrox.Test.Server.Subnautica;
 [TestClass]
 public sealed class MapRoomCameraDockValidationTest
 {
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(true, false, true)]
     [DataRow(false, true, true)]
     [DataRow(true, true, true)]
@@ -17,7 +17,7 @@ public sealed class MapRoomCameraDockValidationTest
         Assert.AreEqual(expected, MapRoomCameraDockProcessor.IsKnownCamera(validWorldCamera, registeredCamera));
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(true, true, true, 0, true)]
     [DataRow(true, true, true, 1, true)]
     [DataRow(false, true, true, 0, false)]
@@ -29,7 +29,7 @@ public sealed class MapRoomCameraDockValidationTest
         Assert.AreEqual(expected, MapRoomCameraDockProcessor.CanBootstrapRestoredCamera(isDocked, senderOwnsRoom, slotAvailable, registeredCameraCount));
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(true, SimulationLockType.EXCLUSIVE, true, true)]
     [DataRow(true, SimulationLockType.EXCLUSIVE, false, false)]
     [DataRow(false, SimulationLockType.EXCLUSIVE, true, false)]
@@ -41,7 +41,7 @@ public sealed class MapRoomCameraDockValidationTest
             senderOwnsLock, lockType, senderIsActiveController));
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(false, false, true, true)]
     [DataRow(true, false, true, false)]
     [DataRow(false, true, true, false)]

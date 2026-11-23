@@ -16,15 +16,15 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CommunityToolkit.Mvvm.Messaging;
 using Nitrox.Launcher.Models.Exceptions;
+using Nitrox.Launcher.Models.Serialization;
 using Nitrox.Model.Configuration;
+using Nitrox.Model.Constants;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures.GameLogic;
 using Nitrox.Model.Helper;
 using Nitrox.Model.Logger;
 using Nitrox.Model.Platforms.OS.Shared;
 using Nitrox.Model.Serialization;
-using Nitrox.Model.Server;
-using Nitrox.Server.Subnautica.Models.Serialization;
 
 namespace Nitrox.Launcher.Models.Design;
 
@@ -71,8 +71,21 @@ internal sealed partial class ServerEntry : ObservableObject
     [ObservableProperty]
     public partial bool IsOnline { get; set; }
 
+    public bool IsLoading => LoadingStage != null && LoadingProgress < 1.0f;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsLoading))]
+    public partial string? LoadingStage { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsLoading))]
+    public partial float LoadingProgress { get; set; }
+
     [ObservableProperty]
     public partial bool IsServerClosing { get; set; }
+
+    [ObservableProperty]
+    public partial bool IsServerStarting { get; set; }
 
     [ObservableProperty]
     public partial DateTime LastAccessedTime { get; set; } = DateTime.Now;
@@ -162,14 +175,8 @@ internal sealed partial class ServerEntry : ObservableObject
         Directory.CreateDirectory(saveDir);
 
         SubnauticaServerOptions config = NitroxConfig.Load<SubnauticaServerOptions>(saveDir);
-        string fileEnding = config.SerializerMode switch
-        {
-            ServerSerializerMode.JSON => ServerJsonSerializer.FILE_ENDING,
-            ServerSerializerMode.PROTOBUF => ServerProtoBufSerializer.FILE_ENDING,
-            _ => throw new NotImplementedException()
-        };
 
-        await File.WriteAllTextAsync(Path.Combine(saveDir, $"Version{fileEnding}"), (string?)null);
+        await File.WriteAllTextAsync(Path.Combine(saveDir, $"Version{NitroxConstants.SAVE_FILE_ENDING}"), (string?)null);
         config.GameMode = saveGameMode;
         NitroxConfig.CreateFile(saveDir, config);
 
@@ -217,14 +224,8 @@ internal sealed partial class ServerEntry : ObservableObject
         }
 
         SubnauticaServerOptions config = NitroxConfig.Load<SubnauticaServerOptions>(saveDir);
-        string fileEnding = config.SerializerMode switch
-        {
-            ServerSerializerMode.JSON => ServerJsonSerializer.FILE_ENDING,
-            ServerSerializerMode.PROTOBUF => ServerProtoBufSerializer.FILE_ENDING,
-            _ => throw new NotImplementedException()
-        };
 
-        string saveFileVersion = Path.Combine(saveDir, $"Version{fileEnding}");
+        string saveFileVersion = Path.Combine(saveDir, $"Version{NitroxConstants.SAVE_FILE_ENDING}");
         if (!File.Exists(saveFileVersion))
         {
             Log.Warn($"Tried loading invalid save directory at '{saveDir}', Version file is missing");
@@ -234,26 +235,16 @@ internal sealed partial class ServerEntry : ObservableObject
         Version serverVersion;
         await using (FileStream stream = new(saveFileVersion, FileMode.Open, FileAccess.Read, FileShare.Read))
         {
-            switch (config.SerializerMode)
+            SaveFileVersion versionModel;
+            try
             {
-                case ServerSerializerMode.JSON:
-                    SaveFileVersion versionModel;
-                    try
-                    {
-                        versionModel = JsonSerializer.Deserialize<SaveFileVersion>(stream);
-                    }
-                    catch (Exception)
-                    {
-                        versionModel = new SaveFileVersion(NitroxEnvironment.Version);
-                    }
-                    serverVersion = versionModel.Version;
-                    break;
-                case ServerSerializerMode.PROTOBUF:
-                    serverVersion = new ServerProtoBufSerializer(null).Deserialize<SaveFileVersion>(stream)?.Version ?? NitroxEnvironment.Version;
-                    break;
-                default:
-                    throw new NotImplementedException();
+                versionModel = JsonSerializer.Deserialize(stream, LauncherJsonSerializerContext.Default.SaveFileVersion);
             }
+            catch (Exception)
+            {
+                versionModel = new SaveFileVersion(NitroxEnvironment.Version);
+            }
+            serverVersion = versionModel.Version;
         }
 
         string prevName = Name;
@@ -275,15 +266,15 @@ internal sealed partial class ServerEntry : ObservableObject
         AllowCommands = !config.DisableConsole;
         AllowPvP = config.PvpEnabled;
         AllowKeepInventory = config.KeepInventoryOnDeath;
-        IsNewServer = !File.Exists(Path.Combine(saveDir, $"PlayerData{fileEnding}"));
+        IsNewServer = !File.Exists(Path.Combine(saveDir, $"PlayerData{NitroxConstants.SAVE_FILE_ENDING}"));
         Version = serverVersion;
-        LastAccessedTime = File.GetLastWriteTime(File.Exists(Path.Combine(saveDir, $"PlayerData{fileEnding}"))
+        LastAccessedTime = File.GetLastWriteTime(File.Exists(Path.Combine(saveDir, $"PlayerData{NitroxConstants.SAVE_FILE_ENDING}"))
                                                      ?
                                                      // This file is affected by server saving
-                                                     Path.Combine(saveDir, $"PlayerData{fileEnding}")
+                                                     Path.Combine(saveDir, $"PlayerData{NitroxConstants.SAVE_FILE_ENDING}")
                                                      :
                                                      // If the above file doesn't exist (server was never ran), use the Version file instead
-                                                     Path.Combine(saveDir, $"Version{fileEnding}"));
+                                                     Path.Combine(saveDir, $"Version{NitroxConstants.SAVE_FILE_ENDING}"));
         return true;
     }
 
@@ -308,7 +299,11 @@ internal sealed partial class ServerEntry : ObservableObject
         Process = ServerProcess.Start(Path.Combine(savesDir, Name), cts, embedded, existingProcessId);
 
         Output.Clear();
+        IsServerStarting = true;
         IsNewServer = false;
+        // Set loading state BEFORE IsOnline to ensure UI shows loading first
+        LoadingStage = "Starting...";
+        LoadingProgress = 0f;
         IsOnline = true;
     }
 
@@ -345,7 +340,10 @@ internal sealed partial class ServerEntry : ObservableObject
         switch (e.PropertyName)
         {
             case nameof(IsOnline) when LastProcessId > 0:
-                WeakReferenceMessenger.Default.Send(new ServerStatusMessage(LastProcessId, IsOnline, PlayerCount));
+                WeakReferenceMessenger.Default.Send(new ServerStatusMessage(LastProcessId, IsOnline, PlayerCount, IsLoading));
+                break;
+            case nameof(IsLoading) when LastProcessId > 0:
+                WeakReferenceMessenger.Default.Send(new ServerStatusMessage(LastProcessId, IsOnline, PlayerCount, IsLoading));
                 break;
         }
         base.OnPropertyChanged(e);
@@ -383,6 +381,7 @@ internal sealed partial class ServerEntry : ObservableObject
                     PlayerCount = 0;
                     PlayerNames = [];
                     IsOnline = false;
+                    LoadingStage = null;
                     Output.Clear();
                 });
                 await Dispatcher.UIThread.InvokeAsync(() => IsServerClosing = false);
@@ -442,7 +441,7 @@ internal sealed partial class ServerEntry : ObservableObject
                 // Assist server with finding launcher location.
                 if (Directory.Exists(launcherPath))
                 {
-                    startInfo.EnvironmentVariables.Add(NitroxUser.LAUNCHER_PATH_ENV_KEY, launcherPath);
+                    startInfo.EnvironmentVariables[NitroxUser.LAUNCHER_PATH_ENV_KEY] = launcherPath;
                 }
                 if (isEmbeddedMode)
                 {

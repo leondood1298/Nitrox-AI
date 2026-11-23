@@ -59,7 +59,7 @@ public sealed class MapRoomCameraPreviewProcessorTest
         Assert.IsTrue(accepted.Granted);
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(0)]
     [DataRow(-1)]
     [DataRow(MapRoomCameraPreview.MAX_LOOSE_CAMERA_NUMBER + 1)]
