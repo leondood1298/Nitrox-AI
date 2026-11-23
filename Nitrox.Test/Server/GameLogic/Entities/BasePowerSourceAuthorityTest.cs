@@ -33,6 +33,40 @@ public sealed class BasePowerSourceAuthorityTest
     }
 
     [TestMethod]
+    public void RevisionKeepsRisingWhenAReactorIsBuiltAgainUnderTheSameId()
+    {
+        // Deconstructing a reactor to a ghost and finishing it again keeps its id, but the rebuilt piece arrives as
+        // a new entity with fresh state. Players who saw revision 41 would ignore everything below it.
+        BasePowerSourceAuthority authority = new();
+        InteriorPieceEntity reactor = CreateInterior();
+        reactor.Metadata = new PowerSourceMetadata(900f, 2500f, BasePowerSourceType.NUCLEAR, 40);
+        Assert.IsTrue(authority.TryApply(reactor, firstOwner, Request(reactor.Id, BasePowerSourceType.NUCLEAR, 910f, 1), out PowerSourceMetadata beforeRebuild, out _));
+        Assert.AreEqual(41, beforeRebuild.Revision);
+
+        InteriorPieceEntity rebuilt = InteriorPieceEntity.MakeEmpty();
+        rebuilt.Id = reactor.Id;
+        rebuilt.Metadata = new PowerSourceMetadata(910f, 2500f, BasePowerSourceType.NUCLEAR);
+        Assert.IsTrue(authority.TryApply(rebuilt, firstOwner, Request(rebuilt.Id, BasePowerSourceType.NUCLEAR, 915f, 2), out PowerSourceMetadata afterRebuild, out _));
+
+        Assert.AreEqual(42, afterRebuild.Revision);
+    }
+
+    [TestMethod]
+    public void RevisionKeepsRisingWhenTheServerAppliesConsumptionAfterARebuild()
+    {
+        BasePowerSourceAuthority authority = new();
+        ModuleEntity panel = CreateModule();
+        panel.Metadata = new PowerSourceMetadata(30f, 75f, BasePowerSourceType.SOLAR, 12);
+        Assert.AreEqual(ConsumptionRoute.APPLIED_BY_SERVER, authority.RouteConsumption(panel, null, secondOwner, 5f, out PowerSourceMetadata first, out _));
+        Assert.AreEqual(13, first.Revision);
+
+        panel.Metadata = new PowerSourceMetadata(25f, 75f, BasePowerSourceType.SOLAR);
+        Assert.AreEqual(ConsumptionRoute.APPLIED_BY_SERVER, authority.RouteConsumption(panel, null, secondOwner, 5f, out PowerSourceMetadata second, out _));
+
+        Assert.AreEqual(14, second.Revision);
+    }
+
+    [TestMethod]
     public void RejoinedPlayerOnReusedSessionIdCanRestartClientSequence()
     {
         // A client restarts its counter at 1 on every join, and the server hands the same session id out again

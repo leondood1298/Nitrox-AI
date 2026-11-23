@@ -18,6 +18,7 @@ internal sealed class BasePowerSourceAuthority
     /// </summary>
     internal const float MAX_CONSUMPTION_PER_REQUEST = 2500f;
     private readonly Dictionary<NitroxId, OwnerSequence> lastOwnerSequenceBySource = [];
+    private readonly Dictionary<NitroxId, long> highestRevisionBySource = [];
 
     public bool TryApply(Entity entity, SessionId senderSessionId, BasePowerSourceUpdate requested, out PowerSourceMetadata accepted, out string rejectionReason)
     {
@@ -34,9 +35,8 @@ internal sealed class BasePowerSourceAuthority
             float power = Math.Clamp(requested.Power, 0f, maxPower);
             BasePowerSourceTypes.TryGetMaxFuelProgress(requested.SourceType, out float maxFuelProgress);
             float fuelConsumed = Math.Clamp(requested.FuelConsumed, 0f, maxFuelProgress);
-            long revision = entity.Metadata is PowerSourceMetadata current ? current.Revision + 1 : 1;
             // The thermal plant temperature shares this metadata slot and must survive every power update.
-            accepted = new PowerSourceMetadata(power, maxPower, requested.SourceType, revision, fuelConsumed, GetStoredTemperature(entity.Metadata));
+            accepted = new PowerSourceMetadata(power, maxPower, requested.SourceType, NextRevision(entity), fuelConsumed, GetStoredTemperature(entity.Metadata));
             entity.Metadata = accepted;
             lastOwnerSequenceBySource[entity.Id] = new OwnerSequence(senderSessionId, requested.ClientSequence);
             return true;
@@ -101,10 +101,24 @@ internal sealed class BasePowerSourceAuthority
             }
 
             accepted = new PowerSourceMetadata(Math.Max(0f, current.Power - amount), current.MaxPower, current.SourceType,
-                current.Revision + 1, current.FuelConsumed, current.Temperature);
+                NextRevision(entity), current.FuelConsumed, current.Temperature);
             entity.Metadata = accepted;
             return ConsumptionRoute.APPLIED_BY_SERVER;
         }
+    }
+
+    /// <summary>
+    ///     The revision of the next state of a source. Clients ignore states with a lower revision than they have seen,
+    ///     so it must never go down for an id. The stored state alone does not guarantee that: a reactor that is
+    ///     deconstructed and built again keeps its id but comes back as a new entity whose state starts at zero.
+    /// </summary>
+    private long NextRevision(Entity entity)
+    {
+        long stored = entity.Metadata is PowerSourceMetadata current ? current.Revision : 0;
+        highestRevisionBySource.TryGetValue(entity.Id, out long highest);
+        long next = Math.Max(stored, highest) + 1;
+        highestRevisionBySource[entity.Id] = next;
+        return next;
     }
 
     internal static float GetStoredTemperature(EntityMetadata? metadata) => metadata switch

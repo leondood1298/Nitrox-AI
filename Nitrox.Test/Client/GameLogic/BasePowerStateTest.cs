@@ -49,6 +49,25 @@ public sealed class BasePowerStateTest
     }
 
     [TestMethod]
+    public void DestroyedSourceIsForgotten()
+    {
+        BasePowerState state = new();
+        NitroxId source = new();
+        state.TryApply(source, new PowerSourceMetadata(40f, 75f, BasePowerSourceType.SOLAR, 900), out _);
+        state.CreateUpdate(source, BasePowerSourceType.SOLAR, 40f);
+        state.DecideForwardedDraw(source, simulatedLocally: true, sourceObjectExists: false, finishedLoading: true);
+
+        state.Forget(source);
+
+        Assert.IsFalse(state.TryGet(source, out _));
+        Assert.IsTrue(state.TryApply(source, new PowerSourceMetadata(10f, 75f, BasePowerSourceType.SOLAR, 1), out PowerSourceMetadata accepted),
+            "State kept for a destroyed entity must not outrank a later one.");
+        Assert.AreEqual(10f, accepted.Power);
+        Assert.AreEqual(1, state.CreateUpdate(source, BasePowerSourceType.SOLAR, 10f).ClientSequence);
+        Assert.AreEqual(ForwardedDraw.HAND_BACK, state.DecideForwardedDraw(source, simulatedLocally: true, sourceObjectExists: false, finishedLoading: true));
+    }
+
+    [TestMethod]
     public void ClientSequencesAreMonotonicAndIndependentPerSource()
     {
         BasePowerState state = new();

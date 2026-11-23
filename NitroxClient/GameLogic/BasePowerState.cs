@@ -43,6 +43,17 @@ public sealed class BasePowerState
     public bool TryGet(NitroxId sourceId, out PowerSourceMetadata metadata) => canonicalBySource.TryGetValue(sourceId, out metadata);
 
     /// <summary>
+    ///     Drops everything known about a source that no longer exists, so that nothing kept for it can be mistaken
+    ///     for the state of a later entity.
+    /// </summary>
+    public void Forget(NitroxId sourceId)
+    {
+        canonicalBySource.Remove(sourceId);
+        nextSequenceBySource.Remove(sourceId);
+        handedBackSources.Remove(sourceId);
+    }
+
+    /// <summary>
     ///     Decides what to do with energy another player took from a source the server says this client simulates. A
     ///     hand-back is decided at most once per source.
     /// </summary>
