@@ -6,7 +6,6 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.Packets;
-using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Test.Server.Helper;
 using static Nitrox.Server.Subnautica.Models.GameLogic.ScannerRoomManager;
 using ServerPlayer = Nitrox.Server.Subnautica.Models.Player;

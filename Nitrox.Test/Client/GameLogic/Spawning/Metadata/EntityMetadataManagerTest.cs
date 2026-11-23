@@ -1,4 +1,3 @@
-using System.Reflection;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using NitroxClient.Communication.Abstract;
