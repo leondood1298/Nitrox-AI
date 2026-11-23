@@ -7,7 +7,6 @@ using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Test.Model.Subnautica;
 using Nitrox.Test.Server.Helper;
-using Nitrox.Test.Server.Subnautica;
 using Packet = Nitrox.Model.Packets.Packet;
 using ServerPlayer = Nitrox.Server.Subnautica.Models.Player;
 

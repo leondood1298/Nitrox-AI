@@ -9,7 +9,6 @@ using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.Serialization;
-using Nitrox.Test.Server.Subnautica;
 using Packet = Nitrox.Model.Packets.Packet;
 
 namespace Nitrox.Test.Server.GameLogic;

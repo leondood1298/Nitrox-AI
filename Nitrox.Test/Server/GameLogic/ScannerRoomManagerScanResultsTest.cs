@@ -8,12 +8,13 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Packets;
+using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Test.Server.Helper;
-using Nitrox.Test.Server.Subnautica;
 using static Nitrox.Server.Subnautica.Models.GameLogic.ScannerRoomManager;
+using ServerPlayer = Nitrox.Server.Subnautica.Models.Player;
 
-namespace Nitrox.Server.Subnautica.Models.GameLogic;
+namespace Nitrox.Test.Server.GameLogic;
 
 /// <summary>
 ///     What a room's scan has found: the rules for what the simulating player reports, and what the manager stores and
@@ -294,9 +295,9 @@ public sealed class ScannerRoomManagerScanResultsTest
     {
         ConnectedPlayers players = new();
         ScannerRoomScenarioFixture scenario = new(playerManager: players.PlayerManager);
-        Player simulator = players.Connect("Simulator");
-        Player watcher = players.Connect("Watcher");
-        Player stranger = players.Connect("Stranger");
+        ServerPlayer simulator = players.Connect("Simulator");
+        ServerPlayer watcher = players.Connect("Watcher");
+        ServerPlayer stranger = players.Connect("Stranger");
         NitroxId known = new("00000000-0000-0000-0000-000000000301");
         scenario.StartScan(simulator, scenario.Room, quartz);
         scenario.EntityRegistry.AddEntity(World(known, quartz, new NitroxVector3(10f, 0f, 0f)));
@@ -319,8 +320,8 @@ public sealed class ScannerRoomManagerScanResultsTest
     {
         ConnectedPlayers players = new();
         ScannerRoomScenarioFixture scenario = new(playerManager: players.PlayerManager);
-        Player simulator = players.Connect("Simulator");
-        Player watcher = players.Connect("Watcher");
+        ServerPlayer simulator = players.Connect("Simulator");
+        ServerPlayer watcher = players.Connect("Watcher");
         MapRoomScanResultRecord found = new("found", quartz, new NitroxVector3(20f, 0f, 0f));
         scenario.StartScan(simulator, scenario.Room, quartz);
         await scenario.ReportScanAsync(simulator, scenario.Room, found);
@@ -358,8 +359,8 @@ public sealed class ScannerRoomManagerScanResultsTest
     {
         ConnectedPlayers players = new();
         ScannerRoomScenarioFixture scenario = new(playerManager: players.PlayerManager);
-        Player simulator = players.Connect("Simulator");
-        Player watcher = players.Connect("Watcher");
+        ServerPlayer simulator = players.Connect("Simulator");
+        ServerPlayer watcher = players.Connect("Watcher");
         scenario.StartScan(simulator, scenario.Room, quartz);
         await scenario.Manager.SetSubscriptionAsync(simulator, scenario.Room.Id, true);
         await scenario.Manager.SetSubscriptionAsync(watcher, scenario.Room.Id, true);

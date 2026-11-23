@@ -6,9 +6,11 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
+using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
+using ServerPlayer = Nitrox.Server.Subnautica.Models.Player;
 
-namespace Nitrox.Server.Subnautica.Models.GameLogic;
+namespace Nitrox.Test.Server.GameLogic;
 
 [TestClass]
 public sealed class BasePowerManagerTest
@@ -17,8 +19,8 @@ public sealed class BasePowerManagerTest
     private SimulationOwnershipData simulationOwnershipData;
     private BasePowerDiagnostics diagnostics;
     private BasePowerManager manager;
-    private Player simulator;
-    private Player otherPlayer;
+    private ServerPlayer simulator;
+    private ServerPlayer otherPlayer;
 
     [TestInitialize]
     public void Init()
@@ -329,7 +331,7 @@ public sealed class BasePowerManagerTest
         Entity reactor = AddSource(BasePowerSourceType.NUCLEAR, simulator);
         reactor.Metadata = new PowerSourceMetadata(900f, 0f, BasePowerSourceType.NUCLEAR);
 
-        ConsumptionRoute route = manager.RouteConsumption(otherPlayer, reactor, 12.5f, out Player routedTo, out PowerSourceMetadata accepted);
+        ConsumptionRoute route = manager.RouteConsumption(otherPlayer, reactor, 12.5f, out ServerPlayer routedTo, out PowerSourceMetadata accepted);
 
         Assert.AreEqual(ConsumptionRoute.FORWARD_TO_SIMULATOR, route);
         Assert.AreSame(simulator, routedTo);
@@ -354,7 +356,7 @@ public sealed class BasePowerManagerTest
         Entity plant = AddSource(BasePowerSourceType.THERMAL, null);
         plant.Metadata = new PowerSourceMetadata(30f, 0f, BasePowerSourceType.THERMAL, 61f);
 
-        Assert.AreEqual(ConsumptionRoute.APPLIED_BY_SERVER, manager.RouteConsumption(otherPlayer, plant, 10f, out Player routedTo, out PowerSourceMetadata accepted));
+        Assert.AreEqual(ConsumptionRoute.APPLIED_BY_SERVER, manager.RouteConsumption(otherPlayer, plant, 10f, out ServerPlayer routedTo, out PowerSourceMetadata accepted));
         Assert.IsNull(routedTo);
         Assert.AreEqual(20f, accepted.Power);
         Assert.AreEqual(61f, accepted.Temperature);
@@ -463,7 +465,7 @@ public sealed class BasePowerManagerTest
         Assert.AreEqual(900f, sources.Single(source => source.Source == unsimulated).State.Power);
     }
 
-    private Entity AddSource(BasePowerSourceType sourceType, Player simulatedBy)
+    private Entity AddSource(BasePowerSourceType sourceType, ServerPlayer simulatedBy)
     {
         Entity source;
         if (sourceType is BasePowerSourceType.SOLAR or BasePowerSourceType.THERMAL)
@@ -483,9 +485,9 @@ public sealed class BasePowerManagerTest
         return source;
     }
 
-    private static Player CreatePlayer(ushort sessionId)
+    private static ServerPlayer CreatePlayer(ushort sessionId)
     {
-        return new Player(sessionId, sessionId, $"Player{sessionId}", false, null, NitroxVector3.Zero, NitroxQuaternion.Identity, new NitroxId(), Optional.Empty, Perms.PLAYER,
+        return new ServerPlayer(sessionId, sessionId, $"Player{sessionId}", false, null, NitroxVector3.Zero, NitroxQuaternion.Identity, new NitroxId(), Optional.Empty, Perms.PLAYER,
                           new PlayerStatsData(100, 100, 100, 100, 100, 0), SubnauticaGameMode.SURVIVAL, [], [], new Dictionary<string, NitroxId>(), new Dictionary<string, float>(),
                           new Dictionary<string, PingInstancePreference>(), [], false, true);
     }

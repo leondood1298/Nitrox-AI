@@ -1,6 +1,7 @@
 using Nitrox.Model.DataStructures;
+using NitroxClient.GameLogic;
 
-namespace NitroxClient.GameLogic;
+namespace Nitrox.Test.Client.GameLogic;
 
 [TestClass]
 public sealed class BasePowerConsumptionLedgerTest

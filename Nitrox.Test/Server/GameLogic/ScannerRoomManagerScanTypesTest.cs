@@ -6,11 +6,12 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.Packets;
+using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Test.Server.Helper;
-using Nitrox.Test.Server.Subnautica;
 using static Nitrox.Server.Subnautica.Models.GameLogic.ScannerRoomManager;
+using ServerPlayer = Nitrox.Server.Subnautica.Models.Player;
 
-namespace Nitrox.Server.Subnautica.Models.GameLogic;
+namespace Nitrox.Test.Server.GameLogic;
 
 /// <summary>
 ///     The types a room offers to scan for.
@@ -95,8 +96,8 @@ public sealed class ScannerRoomManagerScanTypesTest
     {
         ConnectedPlayers players = new();
         ScannerRoomScenarioFixture scenario = new(playerManager: players.PlayerManager);
-        Player simulator = players.Connect("Simulator");
-        Player watcher = players.Connect("Watcher");
+        ServerPlayer simulator = players.Connect("Simulator");
+        ServerPlayer watcher = players.Connect("Watcher");
         scenario.StartScan(simulator, scenario.Room, quartz);
         await scenario.Manager.SetSubscriptionAsync(watcher, scenario.Room.Id, true);
         MapRoomScanTypesReport report = new(scenario.Room.Id, [titanium, quartz], [quartz, titanium], NitroxVector3.Zero, 300f);

@@ -1,6 +1,6 @@
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
-using Nitrox.Test.Server.Subnautica;
+using Nitrox.Test.Server.GameLogic;
 
 namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 

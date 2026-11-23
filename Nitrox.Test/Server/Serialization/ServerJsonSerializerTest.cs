@@ -6,7 +6,7 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 namespace Nitrox.Server.Subnautica.Models.Serialization;
 
 [TestClass]
-public sealed class PowerSourceMetadataSerializationTest
+public sealed class ServerJsonSerializerTest
 {
     private readonly ServerJsonSerializer serializer = new(NullLogger<ServerJsonSerializer>.Instance);
 

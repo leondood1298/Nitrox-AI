@@ -3,6 +3,7 @@ using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Packets;
+using Nitrox.Test.Server.GameLogic;
 using Packet = Nitrox.Model.Packets.Packet;
 
 namespace Nitrox.Test.Server.Subnautica;

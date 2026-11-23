@@ -4,7 +4,7 @@ using NitroxClient.MonoBehaviours;
 namespace Nitrox.Test.Client.MonoBehaviours;
 
 [TestClass]
-public sealed class NitroxEntityIdentityGuardTest
+public sealed class NitroxEntityTest
 {
     [TestMethod]
     public void StaleDuplicateCannotClaimCanonicalObjectsRegistration()

@@ -9,8 +9,8 @@ using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
+using Nitrox.Test.Server.GameLogic;
 using Nitrox.Test.Server.Helper;
-using Nitrox.Test.Server.Subnautica;
 using NSubstitute;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;

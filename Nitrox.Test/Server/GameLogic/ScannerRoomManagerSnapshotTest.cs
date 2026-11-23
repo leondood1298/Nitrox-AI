@@ -7,12 +7,13 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Packets;
+using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
 using Nitrox.Server.Subnautica.Models.Serialization;
-using Nitrox.Test.Server.Subnautica;
+using ServerPlayer = Nitrox.Server.Subnautica.Models.Player;
 
-namespace Nitrox.Server.Subnautica.Models.GameLogic;
+namespace Nitrox.Test.Server.GameLogic;
 
 /// <summary>
 ///     A save, a joining player's sync and the diagnostics read Scanner Rooms on their own threads while packets keep
@@ -296,7 +297,7 @@ public sealed class ScannerRoomManagerSnapshotTest
     /// <summary>
     ///     Docks a camera in one room and then in the other, a number of times, as the player who simulates it.
     /// </summary>
-    private static async Task MoveBetweenRoomsAsync(ScannerRoomScenarioFixture scenario, NitroxId cameraId, Player simulator, MapRoomEntity firstRoom, MapRoomEntity secondRoom,
+    private static async Task MoveBetweenRoomsAsync(ScannerRoomScenarioFixture scenario, NitroxId cameraId, ServerPlayer simulator, MapRoomEntity firstRoom, MapRoomEntity secondRoom,
         int dockingIndex)
     {
         for (int round = 0; round < 200; round++)

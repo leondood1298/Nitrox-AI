@@ -12,7 +12,7 @@ using Nitrox.Server.Subnautica.Models.Commands;
 using Nitrox.Server.Subnautica.Models.Commands.Core;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
-using Nitrox.Test.Server.Subnautica;
+using Nitrox.Test.Server.GameLogic;
 
 namespace Nitrox.Test.Server.Commands;
 

@@ -26,7 +26,7 @@ using NSubstitute;
 using Packet = Nitrox.Model.Packets.Packet;
 using ServerPlayer = Nitrox.Server.Subnautica.Models.Player;
 
-namespace Nitrox.Test.Server.Subnautica;
+namespace Nitrox.Test.Server.GameLogic;
 
 /// <summary>
 ///     Deterministic in-process Scanner Room server: the real <see cref="ScannerRoomManager" /> on a real entity

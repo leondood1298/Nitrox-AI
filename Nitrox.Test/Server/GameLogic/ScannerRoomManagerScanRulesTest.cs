@@ -1,13 +1,14 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
-using NitroxClient.GameLogic;
-using Microsoft.Extensions.Logging.Abstractions;
+using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
+using NitroxClient.GameLogic;
 
-namespace Nitrox.Server.Subnautica.Models.GameLogic;
+namespace Nitrox.Test.Server.GameLogic;
 
 [TestClass]
 public sealed class ScannerRoomManagerScanRulesTest

@@ -2,7 +2,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NitroxClient.MonoBehaviours;
 using UnityEngine;
 
-namespace Nitrox.Test.Client.GameLogic;
+namespace Nitrox.Test.Client.MonoBehaviours;
 
 [TestClass]
 public sealed class PlayerMovementBroadcasterTest

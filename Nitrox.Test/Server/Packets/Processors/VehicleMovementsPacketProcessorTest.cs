@@ -10,12 +10,12 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.MultiplayerSession;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
-using Nitrox.Server.Subnautica.Models.Packets.Processors;
+using Nitrox.Test.Server.GameLogic;
 
-namespace Nitrox.Test.Server.Subnautica;
+namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
 [TestClass]
-public sealed class VehicleMovementsPacketProcessorAuthorityTest
+public sealed class VehicleMovementsPacketProcessorTest
 {
     [TestMethod]
     [DataRow(0, false)]

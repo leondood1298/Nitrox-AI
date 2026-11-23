@@ -11,7 +11,6 @@ using Nitrox.Server.Subnautica.Extensions;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
 using Nitrox.Server.Subnautica.Models.Packets.Processors;
-using Nitrox.Test.Server.Subnautica;
 using Packet = Nitrox.Model.Packets.Packet;
 
 namespace Nitrox.Test.Server.GameLogic;

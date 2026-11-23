@@ -1,4 +1,6 @@
-namespace NitroxClient.GameLogic;
+using NitroxClient.GameLogic;
+
+namespace Nitrox.Test.Client.GameLogic;
 
 [TestClass]
 public sealed class ReactorFuelDisplayTest
