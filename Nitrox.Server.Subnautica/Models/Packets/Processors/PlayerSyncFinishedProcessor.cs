@@ -1,13 +1,12 @@
 using Nitrox.Server.Subnautica.Models.Communication;
 using Nitrox.Server.Subnautica.Models.GameLogic;
-using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
 using Nitrox.Server.Subnautica.Services;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
 internal class PlayerSyncFinishedProcessor(SessionManager sessionManager, JoiningManager joiningManager, HibernateService hibernateService, BedOccupancy bedOccupancy, PlayerAnimationStates animationStates,
-    EntitySimulation entitySimulation)
+    ScannerRoomManager scannerRoomManager)
     : IAuthPacketProcessor<PlayerSyncFinished>
 {
     private readonly SessionManager sessionManager = sessionManager;
@@ -35,6 +34,6 @@ internal class PlayerSyncFinishedProcessor(SessionManager sessionManager, Joinin
             await context.ReplyAsync(switchedOn);
         }
         // And who is controlling which Scanner Room camera.
-        await entitySimulation.SendCameraControlGrantsAsync(context.Sender.SessionId);
+        await scannerRoomManager.SendControlGrantsAsync(context.Sender.SessionId);
     }
 }

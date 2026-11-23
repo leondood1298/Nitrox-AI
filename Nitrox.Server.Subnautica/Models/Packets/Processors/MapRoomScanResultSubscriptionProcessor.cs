@@ -1,34 +1,12 @@
-using System.Linq;
-using Nitrox.Model.DataStructures.Unity;
-using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
-using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
+using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
-internal sealed class MapRoomScanResultSubscriptionProcessor(EntityRegistry entityRegistry, MapRoomScanResultSubscriptions subscriptions) : IAuthPacketProcessor<MapRoomScanResultSubscription>
+internal sealed class MapRoomScanResultSubscriptionProcessor(ScannerRoomManager scannerRoomManager) : IAuthPacketProcessor<MapRoomScanResultSubscription>
 {
     public async Task Process(AuthProcessorContext context, MapRoomScanResultSubscription packet)
     {
-        if (!entityRegistry.TryGetEntityById(packet.MapRoomId, out MapRoomEntity room))
-        {
-            return;
-        }
-        subscriptions.Set(packet.MapRoomId, context.Sender.SessionId, packet.Subscribed);
-        if (!packet.Subscribed)
-        {
-            return;
-        }
-        await context.ReplyAsync(CreateSnapshot(room));
-    }
-
-    private static MapRoomScanResultSnapshot CreateSnapshot(MapRoomEntity room)
-    {
-        lock (room)
-        {
-            return new MapRoomScanResultSnapshot(room.Id, room.ScanResultGeneration,
-                room.ScanResults.Select(result => new MapRoomScanResultRecord(result.ResourceId, result.TechType, result.Position)).ToList(),
-                NitroxVector3.Zero, 0f, room.ScanResultRevision, true, true);
-        }
+        await scannerRoomManager.SetSubscriptionAsync(context.Sender, packet.MapRoomId, packet.Subscribed);
     }
 }

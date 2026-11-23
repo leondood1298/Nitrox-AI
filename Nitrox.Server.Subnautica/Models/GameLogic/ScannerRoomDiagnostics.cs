@@ -268,7 +268,8 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
     private ScannerRoomDiagnosticEntry RecordCore(ScannerRoomDiagnosticOutcome outcome, string eventName, MapRoomEntity? room,
         NitroxId? cameraId, SessionId? sessionId, int? slot, string? reason, ScannerRoomStateSnapshot? capturedSnapshot)
     {
-        // Read before taking any other lock: callers may hold the room's lock, never the lock table's.
+        // The room is a copy, or the live room handed over by the Scanner Room manager from inside its gate, so it
+        // does not change while it is read here.
         string roomLock = DescribeLock(room?.Id);
         string cameraLock = DescribeLock(cameraId);
         ScannerRoomStateSnapshot? snapshot = capturedSnapshot;
@@ -281,14 +282,11 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
         }
         else if (room != null)
         {
-            lock (room)
+            dockingRevision = room.DockingRevision;
+            cameraCount = room.CameraRegistry?.Count ?? 0;
+            if (outcome is ScannerRoomDiagnosticOutcome.CHECKPOINT or ScannerRoomDiagnosticOutcome.INVARIANT_FAILURE)
             {
-                dockingRevision = room.DockingRevision;
-                cameraCount = room.CameraRegistry?.Count ?? 0;
-                if (outcome is ScannerRoomDiagnosticOutcome.CHECKPOINT or ScannerRoomDiagnosticOutcome.INVARIANT_FAILURE)
-                {
-                    snapshot = ScannerRoomStateFingerprint.Create(room);
-                }
+                snapshot = ScannerRoomStateFingerprint.Create(room);
             }
         }
         ScannerRoomDiagnosticEntry entry;

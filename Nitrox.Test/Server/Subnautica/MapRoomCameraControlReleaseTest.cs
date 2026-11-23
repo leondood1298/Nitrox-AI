@@ -1,4 +1,4 @@
-using Nitrox.Server.Subnautica.Models.Packets.Processors;
+using Nitrox.Server.Subnautica.Models.GameLogic;
 
 namespace Nitrox.Test.Server.Subnautica;
 
@@ -11,7 +11,7 @@ public sealed class MapRoomCameraControlReleaseTest
     [DataRow(true, false, false)]
     public void ReleaseIsIdempotentButCannotClearAnotherPlayersLock(bool hasOwner, bool senderOwnsLock, bool expected)
     {
-        Assert.AreEqual(expected, MapRoomCameraControlProcessor.CanAcknowledgeRelease(hasOwner, senderOwnsLock));
+        Assert.AreEqual(expected, ScannerRoomManager.CanAcknowledgeRelease(hasOwner, senderOwnsLock));
     }
 
     [TestMethod]
@@ -23,6 +23,6 @@ public sealed class MapRoomCameraControlReleaseTest
     [DataRow(true, 2, false, false)]
     public void LooseControlRequiresKnownWorldCameraOrOneUndockedRegistration(bool validWorldCamera, int registrations, bool docked, bool expected)
     {
-        Assert.AreEqual(expected, MapRoomCameraControlProcessor.IsValidLooseAssociation(validWorldCamera, registrations, docked));
+        Assert.AreEqual(expected, ScannerRoomManager.IsValidLooseAssociation(validWorldCamera, registrations, docked));
     }
 }

@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
@@ -22,7 +23,7 @@ namespace Nitrox.Server.Subnautica.Models.Commands;
 /// </summary>
 [RequiresPermission(Perms.ADMIN)]
 internal sealed class ScannerRoomCommand(EntityRegistry entityRegistry, ScannerRoomDiagnostics diagnostics, SimulationOwnershipData simulationOwnershipData,
-    MapRoomCameraControlLifecycle controlLifecycle) : ICommandHandler
+    ScannerRoomManager scannerRoomManager) : ICommandHandler
 {
     private const int RECENT_ENTRY_LIMIT = 25;
     private static readonly NitroxTechType mapRoomCameraTechType = new("MapRoomCamera");
@@ -30,9 +31,8 @@ internal sealed class ScannerRoomCommand(EntityRegistry entityRegistry, ScannerR
     [Description("Lists Scanner Room totals and anomalies, then every room and camera with its locks, then the recent transitions")]
     public async Task Execute(ICommandContext context)
     {
-        MapRoomEntity[] rooms = entityRegistry.GetEntities<MapRoomEntity>()
-                                              .OrderBy(room => room.Id.ToString(), StringComparer.Ordinal)
-                                              .ToArray();
+        // Copies of all rooms from one moment, ordered by id. Nothing below can change what the server holds.
+        MapRoomEntity[] rooms = scannerRoomManager.GetSnapshots().Select(snapshot => snapshot.Room).ToArray();
         List<string> anomalies = [];
         List<RoomView> roomViews = [];
         Dictionary<NitroxId, int> registrations = [];
@@ -150,47 +150,44 @@ internal sealed class ScannerRoomCommand(EntityRegistry entityRegistry, ScannerR
     }
 
     /// <summary>
-    ///     Reads a room and its camera records under the room's lock, the lock the packet processors change them
-    ///     under, so the docks, revisions, records and fingerprint of one room belong to the same moment.
+    ///     Reads a room and its camera records from a copy the Scanner Room manager took inside its gate, the gate the
+    ///     packet processors change them in, so the docks, revisions, records and fingerprint of one room belong to the
+    ///     same moment.
     /// </summary>
     private static RoomView ReadRoom(MapRoomEntity room)
     {
-        lock (room)
+        ScannerRoomStateSnapshot snapshot = ScannerRoomStateFingerprint.Create(room);
+        List<CameraView> cameras = [];
+        foreach (MapRoomCameraRecord? record in room.CameraRegistry ?? [])
         {
-            ScannerRoomStateSnapshot snapshot = ScannerRoomStateFingerprint.Create(room);
-            List<CameraView> cameras = [];
-            foreach (MapRoomCameraRecord? record in room.CameraRegistry ?? [])
+            if (record?.CameraId == null)
             {
-                if (record?.CameraId == null)
-                {
-                    continue;
-                }
-                lock (record)
-                {
-                    int slot = record.CameraId == snapshot.LeftDockCameraId ? 0 : record.CameraId == snapshot.RightDockCameraId ? 1 : -1;
-                    cameras.Add(new CameraView(record.CameraId, record.CameraNumber, slot, record.LightOn, record.LightRevision,
-                        record.Energy, record.Health, record.ComponentRevision));
-                }
+                continue;
             }
-            return new RoomView(room.Id, snapshot, ScannerRoomStateFingerprint.Validate(room), [.. cameras.OrderBy(camera => camera.Number)]);
+            int slot = record.CameraId == snapshot.LeftDockCameraId ? 0 : record.CameraId == snapshot.RightDockCameraId ? 1 : -1;
+            cameras.Add(new CameraView(record.CameraId, record.CameraNumber, slot, record.LightOn, record.LightRevision,
+                record.Energy, record.Health, record.ComponentRevision));
         }
+        return new RoomView(room.Id, snapshot, ScannerRoomStateFingerprint.Validate(room), [.. cameras.OrderBy(camera => camera.Number)]);
     }
 
+    /// <summary>
+    ///     A camera without a room record keeps its state on its entity as one object that is replaced as a whole, so
+    ///     one read of it is one moment.
+    /// </summary>
     private static CameraView ReadLooseCamera(WorldEntity camera)
     {
-        lock (camera)
-        {
-            MapRoomCameraMetadata state = camera.Metadata as MapRoomCameraMetadata ?? new MapRoomCameraMetadata();
-            return new CameraView(camera.Id, 0, -1, state.LightOn, state.LightRevision, state.Energy, state.Health, state.ComponentRevision);
-        }
+        MapRoomCameraMetadata state = camera.Metadata as MapRoomCameraMetadata ?? new MapRoomCameraMetadata();
+        return new CameraView(camera.Id, 0, -1, state.LightOn, state.LightRevision, state.Energy, state.Health, state.ComponentRevision);
     }
 
     private CameraLocks ReadCameraLocks(CameraView camera, List<string> anomalies)
     {
         bool hasLock = simulationOwnershipData.TryGetLock(camera.Id, out SimulationOwnershipData.PlayerLock playerLock);
         bool inWorld = entityRegistry.TryGetEntityById(camera.Id, out WorldEntity worldEntity) && mapRoomCameraTechType.Equals(worldEntity.TechType);
+        bool hasController = scannerRoomManager.TryGetController(camera.Id, out SessionId controller);
         bool holderControls = hasLock && playerLock.LockType == SimulationLockType.EXCLUSIVE &&
-                              controlLifecycle.IsActiveController(camera.Id, playerLock.Player.SessionId);
+                              hasController && controller == playerLock.Player.SessionId;
         string control = holderControls ? DiagnosticLineFormat.Session(playerLock.Player.SessionId) : DiagnosticLineFormat.NOT_APPLICABLE;
         string where = camera.Slot >= 0 ? string.Create(CultureInfo.InvariantCulture, $"slot{camera.Slot}") : inWorld ? "world" : "away";
 
@@ -198,7 +195,7 @@ internal sealed class ScannerRoomCommand(EntityRegistry entityRegistry, ScannerR
         {
             anomalies.Add($"camera {ShortCamera(camera.Id)} is locked exclusively by {playerLock.Player.Name} #{playerLock.Player.SessionId} who is not piloting it: a Stalker carrying it, or a lock that was never released (a player who takes control of the camera takes this lock over)");
         }
-        if (!holderControls && controlLifecycle.HasActiveController(camera.Id))
+        if (!holderControls && hasController)
         {
             control = "stale";
             anomalies.Add($"camera {ShortCamera(camera.Id)} has a pilot on record who does not hold its exclusive lock");

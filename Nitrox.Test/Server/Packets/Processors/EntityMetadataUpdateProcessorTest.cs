@@ -9,17 +9,22 @@ using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
 using Nitrox.Test.Server.Helper;
+using Nitrox.Test.Server.Subnautica;
 using NSubstitute;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
 /// <summary>
 ///     The gate every entity metadata update passes on the server. Covered here: the arms for base power, whose state
-///     only the player simulating the source decides.
+///     only the player simulating the source decides, and the arms for Scanner Rooms, whose scan target any player who
+///     sees the room may choose while scan progress and the fabricator belong to the room's simulating player.
 /// </summary>
 [TestClass]
 public sealed class EntityMetadataUpdateProcessorTest
 {
+    private static readonly NitroxTechType quartz = new("Quartz");
+    private static readonly NitroxTechType titanium = new("Titanium");
+
     private ConnectedPlayers players;
     private EntityRegistry entityRegistry;
     private SimulationOwnershipData simulationOwnershipData;
@@ -38,9 +43,11 @@ public sealed class EntityMetadataUpdateProcessorTest
         simulationOwnershipData = new SimulationOwnershipData();
         diagnostics = new BasePowerDiagnostics();
         BasePowerManager basePowerManager = new(entityRegistry, simulationOwnershipData, diagnostics, NullLogger<BasePowerManager>.Instance);
-        processor = new EntityMetadataUpdateProcessor(players.PlayerManager, entityRegistry, simulationOwnershipData,
-            new ScannerRoomDiagnostics(NullLogger<ScannerRoomDiagnostics>.Instance), basePowerManager, NullLogger<EntityMetadataUpdateProcessor>.Instance);
         packetSender = Substitute.For<IPacketSender>();
+        ScannerRoomManager scannerRoomManager = ScannerRoomScenarioFixture.CreateManager(entityRegistry, simulationOwnershipData,
+            new ScannerRoomDiagnostics(NullLogger<ScannerRoomDiagnostics>.Instance), packetSender, players.PlayerManager);
+        processor = new EntityMetadataUpdateProcessor(players.PlayerManager, entityRegistry, simulationOwnershipData, scannerRoomManager, basePowerManager,
+            NullLogger<EntityMetadataUpdateProcessor>.Instance);
         simulator = players.Connect("Simulator");
         otherPlayer = players.Connect("Other");
         thirdPlayer = players.Connect("Third");
@@ -190,9 +197,132 @@ public sealed class EntityMetadataUpdateProcessorTest
         Assert.AreEqual(0, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, otherPlayer).Count);
     }
 
+    [TestMethod]
+    public async Task ScanTargetFromAnyPlayerIsStoredAndSentToEveryoneWithTheSender()
+    {
+        // The server sets the generation and revision, which the sender does not have yet.
+        MapRoomEntity room = AddRoom(new MapRoomMetadata(quartz, 4, 2, 6), simulator);
+
+        await Send(otherPlayer, room, new MapRoomMetadata(titanium, 0, 2, 6));
+
+        MapRoomMetadata stored = (MapRoomMetadata)room.Metadata;
+        Assert.AreEqual(titanium, stored.TypeToScan);
+        Assert.AreEqual(0, stored.NumNodesScanned);
+        Assert.AreEqual(3, stored.Generation);
+        Assert.AreEqual(7, stored.Revision);
+        Assert.AreEqual(3, room.ScanResultGeneration, "A new target starts a new generation of results.");
+        foreach (Player receiver in new[] { simulator, otherPlayer, thirdPlayer })
+        {
+            MapRoomMetadata sent = (MapRoomMetadata)ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, receiver).Single().NewValue;
+            Assert.AreEqual(titanium, sent.TypeToScan);
+            Assert.AreEqual(3, sent.Generation);
+            Assert.AreEqual(7, sent.Revision);
+        }
+    }
+
+    [TestMethod]
+    public async Task ScanProgressFromTheSimulatingPlayerIsStoredAndSentToEveryone()
+    {
+        MapRoomEntity room = AddRoom(new MapRoomMetadata(quartz, 4, 2, 6), simulator);
+
+        await Send(simulator, room, new MapRoomMetadata(quartz, 5, 2, 6));
+
+        MapRoomMetadata stored = (MapRoomMetadata)room.Metadata;
+        Assert.AreEqual(5, stored.NumNodesScanned);
+        Assert.AreEqual(2, stored.Generation);
+        Assert.AreEqual(7, stored.Revision);
+        Assert.AreEqual(3, packetSender.ReceivedCalls().Count());
+    }
+
+    [TestMethod]
+    public async Task ScanProgressFromAPlayerWhoDoesNotSimulateTheRoomIsAnsweredWithTheStoredState()
+    {
+        MapRoomEntity room = AddRoom(new MapRoomMetadata(quartz, 4, 2, 6), simulator);
+
+        await Send(otherPlayer, room, new MapRoomMetadata(quartz, 9, 2, 6));
+
+        Assert.AreEqual(4, ((MapRoomMetadata)room.Metadata).NumNodesScanned);
+        Assert.AreEqual(4, ((MapRoomMetadata)ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, otherPlayer).Single().NewValue).NumNodesScanned,
+            "Its own screen shows the count it sent until it is given the real one.");
+        Assert.AreEqual(1, packetSender.ReceivedCalls().Count());
+    }
+
+    [TestMethod]
+    public async Task ScanRequestBasedOnAnOutdatedStateIsAnsweredWithTheStoredState()
+    {
+        MapRoomEntity room = AddRoom(new MapRoomMetadata(quartz, 4, 2, 6), simulator);
+
+        await Send(otherPlayer, room, new MapRoomMetadata(titanium, 0, 1, 3));
+
+        Assert.AreEqual(quartz, ((MapRoomMetadata)room.Metadata).TypeToScan);
+        MapRoomMetadata correction = (MapRoomMetadata)ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, otherPlayer).Single().NewValue;
+        Assert.AreEqual(quartz, correction.TypeToScan);
+        Assert.AreEqual(2, correction.Generation, "With the generation and revision it is given, its next request can be accepted.");
+        Assert.AreEqual(6, correction.Revision);
+        Assert.AreEqual(1, packetSender.ReceivedCalls().Count());
+    }
+
+    [TestMethod]
+    public async Task ScanStateForSomethingThatIsNoScannerRoomIsNotStoredAndNobodyIsTold()
+    {
+        ModuleEntity locker = AddSource(null, simulator);
+
+        await Send(simulator, locker, new MapRoomMetadata(quartz, 0));
+
+        Assert.IsNull(locker.Metadata);
+        Assert.AreEqual(0, packetSender.ReceivedCalls().Count());
+    }
+
+    [TestMethod]
+    public async Task FabricatorStateFromTheSimulatingPlayerIsStoredWithTheRoomAndSentToTheOthers()
+    {
+        MapRoomEntity room = AddRoom(new MapRoomMetadata(quartz, 4, 2, 6), simulator);
+        CrafterMetadata crafting = new(new NitroxTechType("MapRoomHUDChip"), 12.5f, 4f, 1, 0);
+
+        await Send(simulator, room, crafting);
+
+        Assert.AreSame(crafting, room.FabricatorMetadata);
+        Assert.AreEqual(quartz, ((MapRoomMetadata)room.Metadata).TypeToScan, "The room's scan state is another thing and stays.");
+        Assert.AreSame(crafting, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, otherPlayer).Single().NewValue);
+        Assert.AreSame(crafting, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, thirdPlayer).Single().NewValue);
+        Assert.AreEqual(0, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, simulator).Count);
+    }
+
+    [TestMethod]
+    public async Task FabricatorStateFromAPlayerWhoDoesNotSimulateTheRoomIsNotStoredAndNobodyIsTold()
+    {
+        MapRoomEntity room = AddRoom(new MapRoomMetadata(quartz, 4, 2, 6), simulator);
+
+        await Send(otherPlayer, room, new CrafterMetadata(new NitroxTechType("MapRoomHUDChip"), 12.5f, 4f, 1, 0));
+
+        Assert.IsNull(room.FabricatorMetadata);
+        Assert.AreEqual(0, packetSender.ReceivedCalls().Count());
+    }
+
+    [TestMethod]
+    public async Task CameraStateSentAsMetadataIsNotStoredAndNobodyIsTold()
+    {
+        // Light, battery and health of a camera only change through their own packets, which check who may set them.
+        ModuleEntity camera = AddSource(null, simulator);
+
+        await Send(simulator, camera, new MapRoomCameraMetadata(true, 9, 1f, 1f, 9));
+
+        Assert.IsNull(camera.Metadata);
+        Assert.AreEqual(0, packetSender.ReceivedCalls().Count());
+    }
+
     private Task Send(Player sender, Entity entity, EntityMetadata metadata)
     {
         return processor.Process(new AuthProcessorContext(sender, packetSender), new EntityMetadataUpdate(entity.Id, metadata));
+    }
+
+    private MapRoomEntity AddRoom(MapRoomMetadata scanState, Player simulatedBy)
+    {
+        MapRoomEntity room = new(new NitroxId(), new NitroxId(), new NitroxInt3(1, 0, 2)) { Metadata = scanState };
+        room.BeginScanResultGeneration(scanState.Generation);
+        entityRegistry.AddEntity(room);
+        Assert.IsTrue(simulationOwnershipData.TryAcquire(room.Id, simulatedBy, SimulationLockType.TRANSIENT));
+        return room;
     }
 
     private ModuleEntity AddSource(EntityMetadata metadata, Player simulatedBy)

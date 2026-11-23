@@ -6,7 +6,6 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.GameLogic;
-using Nitrox.Server.Subnautica.Models.Packets.Processors;
 using Packet = Nitrox.Model.Packets.Packet;
 
 namespace Nitrox.Test.Server.Subnautica;
@@ -98,7 +97,7 @@ public sealed class MapRoomCameraControlRefusalTest
     [DataRow(0f, 100f, SubnauticaGameMode.CREATIVE, null)]
     public void GameRuleForAControllableCamera(float energy, float health, SubnauticaGameMode gameMode, string? expectedRefusal)
     {
-        Assert.AreEqual(expectedRefusal, MapRoomCameraControlProcessor.GetUnusableReason(energy, health, gameMode));
+        Assert.AreEqual(expectedRefusal, ScannerRoomManager.GetUnusableReason(energy, health, gameMode));
     }
 
     [TestMethod]
@@ -114,8 +113,8 @@ public sealed class MapRoomCameraControlRefusalTest
         MapRoomCameraControl release = sent.OfType<MapRoomCameraControl>().Single(packet => packet.CameraId == cameraId);
         Assert.IsFalse(release.IsControlling, "Everyone is told that the first camera is free again.");
         Assert.AreEqual(scenario.PlayerA.SessionId, release.ControllerSessionId);
-        Assert.IsFalse(scenario.ControlLifecycle.IsActiveController(cameraId, scenario.PlayerA.SessionId));
-        Assert.IsTrue(scenario.ControlLifecycle.IsActiveController(otherCameraId, scenario.PlayerA.SessionId));
+        Assert.IsFalse(scenario.IsController(cameraId, scenario.PlayerA.SessionId));
+        Assert.IsTrue(scenario.IsController(otherCameraId, scenario.PlayerA.SessionId));
         Assert.IsTrue(scenario.Ownership.TryGetLock(cameraId, out SimulationOwnershipData.PlayerLock firstCameraLock));
         Assert.AreEqual(SimulationLockType.TRANSIENT, firstCameraLock.LockType, "A camera out in the world keeps a simulating player.");
         Assert.IsTrue((await scenario.ControlLooseAsync(scenario.PlayerB, cameraId, true)).Granted, "Another player can take the first camera.");
@@ -131,7 +130,7 @@ public sealed class MapRoomCameraControlRefusalTest
         Assert.IsTrue((await scenario.ControlLooseAsync(scenario.PlayerA, otherCameraId, true)).Granted);
 
         Assert.IsNull(scenario.Ownership.GetPlayerForLock(cameraId));
-        Assert.IsFalse(scenario.ControlLifecycle.HasActiveController(cameraId));
+        Assert.IsFalse(scenario.HasController(cameraId));
     }
 
     [TestMethod]
@@ -145,7 +144,7 @@ public sealed class MapRoomCameraControlRefusalTest
         MapRoomCameraControl lateRelease = await scenario.ControlLooseAsync(scenario.PlayerA, cameraId, false);
 
         Assert.IsTrue(lateRelease.Granted);
-        Assert.IsTrue(scenario.ControlLifecycle.IsActiveController(otherCameraId, scenario.PlayerA.SessionId), "The second camera is untouched.");
+        Assert.IsTrue(scenario.IsController(otherCameraId, scenario.PlayerA.SessionId), "The second camera is untouched.");
     }
 
     [TestMethod]
@@ -157,6 +156,6 @@ public sealed class MapRoomCameraControlRefusalTest
 
         Assert.IsFalse((await scenario.ControlLooseAsync(scenario.PlayerA, otherCameraId, true)).Granted);
 
-        Assert.IsTrue(scenario.ControlLifecycle.IsActiveController(cameraId, scenario.PlayerA.SessionId));
+        Assert.IsTrue(scenario.IsController(cameraId, scenario.PlayerA.SessionId));
     }
 }

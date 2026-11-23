@@ -1,8 +1,6 @@
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
-using Nitrox.Model.Packets;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.GameLogic;
@@ -23,18 +21,18 @@ public sealed class MapRoomCameraComponentStateValidationTest
     [DataRow(100f, 400.01f, false)]
     public void RequiresCanonicalComponentRange(float energy, float health, bool expected)
     {
-        Assert.AreEqual(expected, MapRoomCameraComponentStateProcessor.IsValidComponentState(energy, health));
+        Assert.AreEqual(expected, ScannerRoomManager.IsValidComponentState(energy, health));
     }
 
     [TestMethod]
     public void RejectsNonFiniteValues()
     {
-        Assert.IsFalse(MapRoomCameraComponentStateProcessor.IsValidComponentState(float.NaN, 400f));
-        Assert.IsFalse(MapRoomCameraComponentStateProcessor.IsValidComponentState(float.PositiveInfinity, 400f));
-        Assert.IsFalse(MapRoomCameraComponentStateProcessor.IsValidComponentState(float.NegativeInfinity, 400f));
-        Assert.IsFalse(MapRoomCameraComponentStateProcessor.IsValidComponentState(100f, float.NaN));
-        Assert.IsFalse(MapRoomCameraComponentStateProcessor.IsValidComponentState(100f, float.PositiveInfinity));
-        Assert.IsFalse(MapRoomCameraComponentStateProcessor.IsValidComponentState(100f, float.NegativeInfinity));
+        Assert.IsFalse(ScannerRoomManager.IsValidComponentState(float.NaN, 400f));
+        Assert.IsFalse(ScannerRoomManager.IsValidComponentState(float.PositiveInfinity, 400f));
+        Assert.IsFalse(ScannerRoomManager.IsValidComponentState(float.NegativeInfinity, 400f));
+        Assert.IsFalse(ScannerRoomManager.IsValidComponentState(100f, float.NaN));
+        Assert.IsFalse(ScannerRoomManager.IsValidComponentState(100f, float.PositiveInfinity));
+        Assert.IsFalse(ScannerRoomManager.IsValidComponentState(100f, float.NegativeInfinity));
     }
 
     [TestMethod]
@@ -47,7 +45,7 @@ public sealed class MapRoomCameraComponentStateValidationTest
     [DataRow(0f, 0)]
     public void EnergyBandsOnlyLogMeaningfulThresholdCrossings(float value, int expected)
     {
-        Assert.AreEqual(expected, MapRoomCameraComponentStateProcessor.GetEnergyBand(value));
+        Assert.AreEqual(expected, ScannerRoomManager.GetEnergyBand(value));
     }
 
     [TestMethod]
@@ -60,7 +58,7 @@ public sealed class MapRoomCameraComponentStateValidationTest
     [DataRow(0f, 0)]
     public void HealthBandsAreNormalizedToCameraMaximum(float value, int expected)
     {
-        Assert.AreEqual(expected, MapRoomCameraComponentStateProcessor.GetHealthBand(value));
+        Assert.AreEqual(expected, ScannerRoomManager.GetHealthBand(value));
     }
 
     [TestMethod]
@@ -82,39 +80,35 @@ public sealed class MapRoomCameraComponentStateValidationTest
         ScannerRoomScenarioFixture scenario = await CreateDockedScenarioAsync();
         Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.RoomId, scenario.PlayerA, SimulationLockType.TRANSIENT));
         Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerB, SimulationLockType.EXCLUSIVE));
-        MapRoomCameraComponentStateProcessor processor = new(scenario.Ownership, scenario.EntityRegistry, scenario.Diagnostics, scenario.LooseCameraState);
-        RecordingPacketSender roomSender = new();
-        RecordingPacketSender cameraSender = new();
+        MapRoomCameraComponentStateProcessor processor = new(scenario.Manager);
 
         using Barrier start = new(2);
         Task roomWrite = Task.Run(async () =>
         {
             start.SignalAndWait();
             await processor.Process(
-                new AuthProcessorContext(scenario.PlayerA, roomSender),
+                scenario.Context(scenario.PlayerA),
                 new MapRoomCameraComponentState(ScannerRoomScenarioFixture.CameraAId, 80f, 90f));
         });
         Task cameraWrite = Task.Run(async () =>
         {
             start.SignalAndWait();
             await processor.Process(
-                new AuthProcessorContext(scenario.PlayerB, cameraSender),
+                scenario.Context(scenario.PlayerB),
                 new MapRoomCameraComponentState(ScannerRoomScenarioFixture.CameraAId, 25f, 50f));
         });
         await Task.WhenAll(roomWrite, cameraWrite);
 
-        MapRoomCameraComponentState rejected = roomSender.Single<MapRoomCameraComponentState>();
+        // The room's simulating player is answered alone, the camera's controller through the one broadcast.
+        MapRoomCameraComponentState rejected = scenario.SentTo<MapRoomCameraComponentState>(scenario.PlayerA).Single();
         Assert.IsFalse(rejected.Granted);
-        Assert.AreEqual(1, roomSender.DirectPackets);
-        Assert.AreEqual(0, roomSender.BroadcastPackets);
 
-        MapRoomCameraComponentState accepted = cameraSender.Single<MapRoomCameraComponentState>();
+        MapRoomCameraComponentState accepted = scenario.SentToAll<MapRoomCameraComponentState>().Single();
         Assert.IsTrue(accepted.Granted);
         Assert.AreEqual(25f, accepted.Energy);
         Assert.AreEqual(50f, accepted.Health);
         Assert.AreEqual(1, accepted.Revision);
-        Assert.AreEqual(0, cameraSender.DirectPackets);
-        Assert.AreEqual(1, cameraSender.BroadcastPackets);
+        Assert.AreEqual(0, scenario.SentTo<MapRoomCameraComponentState>(scenario.PlayerB).Count);
 
         MapRoomCameraRecord record = scenario.Room.GetCameraRecord(ScannerRoomScenarioFixture.CameraAId)!;
         Assert.AreEqual(25f, record.Energy);
@@ -128,14 +122,13 @@ public sealed class MapRoomCameraComponentStateValidationTest
         ScannerRoomScenarioFixture scenario = await CreateDockedScenarioAsync();
         Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.RoomId, scenario.PlayerA, SimulationLockType.TRANSIENT));
         Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerB, SimulationLockType.TRANSIENT));
-        MapRoomCameraComponentStateProcessor processor = new(scenario.Ownership, scenario.EntityRegistry, scenario.Diagnostics, scenario.LooseCameraState);
-        RecordingPacketSender sender = new();
+        MapRoomCameraComponentStateProcessor processor = new(scenario.Manager);
 
         await processor.Process(
-            new AuthProcessorContext(scenario.PlayerA, sender),
+            scenario.Context(scenario.PlayerA),
             new MapRoomCameraComponentState(ScannerRoomScenarioFixture.CameraAId, 90f, 80f));
 
-        MapRoomCameraComponentState response = sender.Single<MapRoomCameraComponentState>();
+        MapRoomCameraComponentState response = scenario.Sent<MapRoomCameraComponentState>().Single();
         Assert.IsTrue(response.Granted);
         Assert.AreEqual(1, response.Revision);
         MapRoomCameraRecord record = scenario.Room.GetCameraRecord(ScannerRoomScenarioFixture.CameraAId)!;
@@ -149,14 +142,13 @@ public sealed class MapRoomCameraComponentStateValidationTest
     {
         ScannerRoomScenarioFixture scenario = await CreateDockedScenarioAsync();
         Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.RoomId, scenario.PlayerA, SimulationLockType.TRANSIENT));
-        MapRoomCameraComponentStateProcessor processor = new(scenario.Ownership, scenario.EntityRegistry, scenario.Diagnostics, scenario.LooseCameraState);
-        RecordingPacketSender sender = new();
-        AuthProcessorContext context = new(scenario.PlayerA, sender);
+        MapRoomCameraComponentStateProcessor processor = new(scenario.Manager);
+        AuthProcessorContext context = scenario.Context(scenario.PlayerA);
 
         await processor.Process(context, new MapRoomCameraComponentState(ScannerRoomScenarioFixture.CameraAId, 75f, 50f));
         await processor.Process(context, new MapRoomCameraComponentState(ScannerRoomScenarioFixture.CameraAId, 75f, 50f));
 
-        MapRoomCameraComponentState[] responses = sender.All<MapRoomCameraComponentState>();
+        MapRoomCameraComponentState[] responses = scenario.Sent<MapRoomCameraComponentState>().ToArray();
         Assert.AreEqual(2, responses.Length);
         Assert.IsTrue(responses.All(response => response.Granted));
         Assert.IsTrue(responses.All(response => response.Revision == 1));
@@ -168,36 +160,30 @@ public sealed class MapRoomCameraComponentStateValidationTest
     [TestMethod]
     public async Task ConcurrentAcceptedResponsesUseAtomicValuesAndRevisions()
     {
-        ScannerRoomScenarioFixture scenario = await CreateDockedScenarioAsync();
-        Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.RoomId, scenario.PlayerA, SimulationLockType.TRANSIENT));
         using BlockingLogger logger = new();
-        ScannerRoomDiagnostics diagnostics = new(logger);
-        MapRoomCameraComponentStateProcessor processor = new(scenario.Ownership, scenario.EntityRegistry, diagnostics, scenario.LooseCameraState);
-        RecordingPacketSender firstSender = new();
-        RecordingPacketSender secondSender = new();
+        ScannerRoomScenarioFixture scenario = await CreateDockedScenarioAsync(logger);
+        Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.RoomId, scenario.PlayerA, SimulationLockType.TRANSIENT));
+        MapRoomCameraComponentStateProcessor processor = new(scenario.Manager);
         MapRoomCameraRecord record = scenario.Room.GetCameraRecord(ScannerRoomScenarioFixture.CameraAId)!;
+        logger.BlockNextEntry();
 
         Task firstWrite = Task.Run(() => processor.Process(
-            new AuthProcessorContext(scenario.PlayerA, firstSender),
+            scenario.Context(scenario.PlayerA),
             new MapRoomCameraComponentState(ScannerRoomScenarioFixture.CameraAId, 10f, 10f)));
 
-        bool firstReachedDiagnostics = logger.FirstEntry.Wait(TimeSpan.FromSeconds(5));
+        bool firstReachedDiagnostics = logger.BlockedEntry.Wait(TimeSpan.FromSeconds(5));
         Task? secondWrite = null;
-        bool secondMutationCompleted = false;
+        bool secondWaited = false;
         if (firstReachedDiagnostics)
         {
             secondWrite = Task.Run(() => processor.Process(
-                new AuthProcessorContext(scenario.PlayerA, secondSender),
+                scenario.Context(scenario.PlayerA),
                 new MapRoomCameraComponentState(ScannerRoomScenarioFixture.CameraAId, 50f, 50f)));
-            secondMutationCompleted = SpinWait.SpinUntil(() =>
-            {
-                lock (record)
-                {
-                    return record.ComponentRevision == 2;
-                }
-            }, TimeSpan.FromSeconds(5));
+            // The first write is paused before it has left the Scanner Room manager, which handles one request at a
+            // time, so the second one cannot have changed the camera yet.
+            secondWaited = !SpinWait.SpinUntil(() => record.ComponentRevision == 2, TimeSpan.FromMilliseconds(250));
         }
-        logger.ReleaseFirstEntry.Set();
+        logger.ReleaseBlockedEntry.Set();
         await firstWrite;
         if (secondWrite is not null)
         {
@@ -205,9 +191,11 @@ public sealed class MapRoomCameraComponentStateValidationTest
         }
 
         Assert.IsTrue(firstReachedDiagnostics, "The first accepted transition did not reach diagnostics.");
-        Assert.IsTrue(secondMutationCompleted, "The second writer did not mutate while the first response was paused.");
-        MapRoomCameraComponentState firstResponse = firstSender.Single<MapRoomCameraComponentState>();
-        MapRoomCameraComponentState secondResponse = secondSender.Single<MapRoomCameraComponentState>();
+        Assert.IsTrue(secondWaited, "The second writer changed the camera while the first accepted change was still being handled.");
+        MapRoomCameraComponentState[] responses = scenario.SentToAll<MapRoomCameraComponentState>().ToArray();
+        Assert.AreEqual(2, responses.Length);
+        MapRoomCameraComponentState firstResponse = responses[0];
+        MapRoomCameraComponentState secondResponse = responses[1];
         Assert.AreEqual(10f, firstResponse.Energy);
         Assert.AreEqual(10f, firstResponse.Health);
         Assert.AreEqual(1, firstResponse.Revision);
@@ -224,76 +212,38 @@ public sealed class MapRoomCameraComponentStateValidationTest
     {
         ScannerRoomScenarioFixture scenario = await CreateDockedScenarioAsync();
         Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.RoomId, scenario.PlayerA, SimulationLockType.TRANSIENT));
-        MapRoomCameraComponentStateProcessor processor = new(scenario.Ownership, scenario.EntityRegistry, scenario.Diagnostics, scenario.LooseCameraState);
-        RecordingPacketSender sender = new();
+        MapRoomCameraComponentStateProcessor processor = new(scenario.Manager);
 
         await processor.Process(
-            new AuthProcessorContext(scenario.PlayerA, sender),
+            scenario.Context(scenario.PlayerA),
             new MapRoomCameraComponentState(ScannerRoomScenarioFixture.CameraAId, 100f, 400.01f));
 
-        Assert.IsFalse(sender.Single<MapRoomCameraComponentState>().Granted);
+        Assert.IsFalse(scenario.Sent<MapRoomCameraComponentState>().Single().Granted);
         MapRoomCameraRecord record = scenario.Room.GetCameraRecord(ScannerRoomScenarioFixture.CameraAId)!;
         Assert.AreEqual(MapRoomCameraRecord.MAX_ENERGY, record.Energy);
         Assert.AreEqual(MapRoomCameraRecord.MAX_HEALTH, record.Health);
         Assert.AreEqual(0, record.ComponentRevision);
     }
 
-    private static async Task<ScannerRoomScenarioFixture> CreateDockedScenarioAsync()
+    private static async Task<ScannerRoomScenarioFixture> CreateDockedScenarioAsync(ILogger<ScannerRoomDiagnostics>? diagnosticsLog = null)
     {
-        ScannerRoomScenarioFixture scenario = new();
+        ScannerRoomScenarioFixture scenario = new(diagnosticsLog: diagnosticsLog);
         MapRoomCameraDock dock = await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true);
         Assert.IsTrue(dock.Granted);
         return scenario;
     }
 
-    private sealed class RecordingPacketSender : IPacketSender
-    {
-        private readonly List<Packet> packets = [];
-        private readonly object sync = new();
-
-        internal int DirectPackets { get; private set; }
-        internal int BroadcastPackets { get; private set; }
-
-        public ValueTask SendPacketAsync<T>(T packet, SessionId sessionId) where T : Packet
-        {
-            lock (sync)
-            {
-                packets.Add(packet);
-                DirectPackets++;
-            }
-            return ValueTask.CompletedTask;
-        }
-
-        public ValueTask SendPacketToAllAsync<T>(T packet) where T : Packet
-        {
-            lock (sync)
-            {
-                packets.Add(packet);
-                BroadcastPackets++;
-            }
-            return ValueTask.CompletedTask;
-        }
-
-        public ValueTask SendPacketToOthersAsync<T>(T packet, SessionId excludedSessionId) where T : Packet =>
-            throw new NotSupportedException();
-
-        internal T Single<T>() where T : Packet => All<T>().Single();
-
-        internal T[] All<T>() where T : Packet
-        {
-            lock (sync)
-            {
-                return packets.OfType<T>().ToArray();
-            }
-        }
-    }
-
+    /// <summary>
+    ///     Holds up one log entry, when asked to, until the test lets it go.
+    /// </summary>
     private sealed class BlockingLogger : ILogger<ScannerRoomDiagnostics>, IDisposable
     {
-        private int entries;
+        private int blockNext;
 
-        internal ManualResetEventSlim FirstEntry { get; } = new();
-        internal ManualResetEventSlim ReleaseFirstEntry { get; } = new();
+        internal ManualResetEventSlim BlockedEntry { get; } = new();
+        internal ManualResetEventSlim ReleaseBlockedEntry { get; } = new();
+
+        internal void BlockNextEntry() => Volatile.Write(ref blockNext, 1);
 
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
         public bool IsEnabled(LogLevel logLevel) => true;
@@ -301,17 +251,17 @@ public sealed class MapRoomCameraComponentStateValidationTest
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
             Func<TState, Exception?, string> formatter)
         {
-            if (Interlocked.Increment(ref entries) == 1)
+            if (Interlocked.Exchange(ref blockNext, 0) == 1)
             {
-                FirstEntry.Set();
-                ReleaseFirstEntry.Wait(TimeSpan.FromSeconds(5));
+                BlockedEntry.Set();
+                ReleaseBlockedEntry.Wait(TimeSpan.FromSeconds(5));
             }
         }
 
         public void Dispose()
         {
-            FirstEntry.Dispose();
-            ReleaseFirstEntry.Dispose();
+            BlockedEntry.Dispose();
+            ReleaseBlockedEntry.Dispose();
         }
     }
 }

@@ -4,10 +4,10 @@ using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 
-namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities;
+namespace Nitrox.Server.Subnautica.Models.GameLogic;
 
 [TestClass]
-public sealed class MapRoomMetadataAuthorityTest
+public sealed class ScannerRoomManagerScanMetadataTest
 {
     private static readonly NitroxTechType quartz = new("Quartz");
     private static readonly NitroxTechType titanium = new("Titanium");
@@ -18,7 +18,7 @@ public sealed class MapRoomMetadataAuthorityTest
         MapRoomMetadata current = new(quartz, 8, 3, 12);
         MapRoomMetadata requested = new(titanium, 8, 3, 12);
 
-        bool result = MapRoomMetadataAuthority.TryAccept(current, requested, out MapRoomMetadata accepted);
+        bool result = ScannerRoomManager.TryAcceptScanMetadata(current, requested, out MapRoomMetadata accepted);
 
         Assert.IsTrue(result);
         Assert.AreEqual(titanium, accepted.TypeToScan);
@@ -33,7 +33,7 @@ public sealed class MapRoomMetadataAuthorityTest
         MapRoomMetadata current = new(quartz, 2, 4, 9);
         MapRoomMetadata requested = new(quartz, 3, 4, 9);
 
-        bool result = MapRoomMetadataAuthority.TryAccept(current, requested, out MapRoomMetadata accepted);
+        bool result = ScannerRoomManager.TryAcceptScanMetadata(current, requested, out MapRoomMetadata accepted);
 
         Assert.IsTrue(result);
         Assert.AreEqual(3, accepted.NumNodesScanned);
@@ -46,10 +46,10 @@ public sealed class MapRoomMetadataAuthorityTest
     {
         MapRoomMetadata current = new(quartz, 2, 4, 9);
 
-        Assert.IsTrue(MapRoomMetadataAuthority.IsProgressUpdate(current, new MapRoomMetadata(quartz, 3, 4, 9)));
-        Assert.IsFalse(MapRoomMetadataAuthority.IsProgressUpdate(current, new MapRoomMetadata(titanium, 3, 4, 9)));
-        Assert.IsFalse(MapRoomMetadataAuthority.IsProgressUpdate(current, new MapRoomMetadata(quartz, 1, 4, 9)));
-        Assert.IsFalse(MapRoomMetadataAuthority.IsProgressUpdate(null, new MapRoomMetadata(quartz, 1)));
+        Assert.IsTrue(ScannerRoomManager.IsScanProgress(current, new MapRoomMetadata(quartz, 3, 4, 9)));
+        Assert.IsFalse(ScannerRoomManager.IsScanProgress(current, new MapRoomMetadata(titanium, 3, 4, 9)));
+        Assert.IsFalse(ScannerRoomManager.IsScanProgress(current, new MapRoomMetadata(quartz, 1, 4, 9)));
+        Assert.IsFalse(ScannerRoomManager.IsScanProgress(null, new MapRoomMetadata(quartz, 1)));
     }
 
     [TestMethod]
@@ -58,7 +58,7 @@ public sealed class MapRoomMetadataAuthorityTest
         MapRoomMetadata current = new(quartz, 2, 4, 9);
         MapRoomMetadata requested = new(titanium, 0, 3, 9);
 
-        Assert.IsFalse(MapRoomMetadataAuthority.TryAccept(current, requested, out MapRoomMetadata accepted));
+        Assert.IsFalse(ScannerRoomManager.TryAcceptScanMetadata(current, requested, out MapRoomMetadata accepted));
         Assert.AreSame(current, accepted);
     }
 
@@ -68,7 +68,7 @@ public sealed class MapRoomMetadataAuthorityTest
         MapRoomMetadata current = new(quartz, 2, 4, 9);
         MapRoomMetadata requested = new(titanium, 0, 4, 8);
 
-        Assert.IsFalse(MapRoomMetadataAuthority.TryAccept(current, requested, out MapRoomMetadata accepted));
+        Assert.IsFalse(ScannerRoomManager.TryAcceptScanMetadata(current, requested, out MapRoomMetadata accepted));
         Assert.AreSame(current, accepted);
     }
 
@@ -77,8 +77,8 @@ public sealed class MapRoomMetadataAuthorityTest
     {
         MapRoomMetadata current = new(quartz, 2, 4, 9);
 
-        Assert.IsFalse(MapRoomMetadataAuthority.TryAccept(current, new MapRoomMetadata(quartz, 2, 4, 9), out _));
-        Assert.IsFalse(MapRoomMetadataAuthority.TryAccept(current, new MapRoomMetadata(quartz, 1, 4, 9), out _));
+        Assert.IsFalse(ScannerRoomManager.TryAcceptScanMetadata(current, new MapRoomMetadata(quartz, 2, 4, 9), out _));
+        Assert.IsFalse(ScannerRoomManager.TryAcceptScanMetadata(current, new MapRoomMetadata(quartz, 1, 4, 9), out _));
     }
 
     [TestMethod]
@@ -86,7 +86,7 @@ public sealed class MapRoomMetadataAuthorityTest
     {
         MapRoomMetadata requested = new(quartz, 0);
 
-        Assert.IsTrue(MapRoomMetadataAuthority.TryAccept(null, requested, out MapRoomMetadata accepted));
+        Assert.IsTrue(ScannerRoomManager.TryAcceptScanMetadata(null, requested, out MapRoomMetadata accepted));
         Assert.AreEqual(1, accepted.Generation);
         Assert.AreEqual(1, accepted.Revision);
     }
@@ -98,7 +98,7 @@ public sealed class MapRoomMetadataAuthorityTest
         room.BeginScanResultGeneration(3);
         room.TryApplyScanResult(3, new MapRoomScanResultRecord("old", quartz, NitroxVector3.Zero));
 
-        Assert.IsTrue(MapRoomMetadataAuthority.TryAcceptAndApply(room, new MapRoomMetadata(titanium, 2, 3, 8), out MapRoomMetadata accepted));
+        Assert.IsTrue(ScannerRoomManager.TryApplyScanMetadata(room, new MapRoomMetadata(titanium, 2, 3, 8), out MapRoomMetadata accepted));
 
         Assert.AreSame(accepted, room.Metadata);
         Assert.AreEqual(4, room.ScanResultGeneration);
@@ -112,7 +112,7 @@ public sealed class MapRoomMetadataAuthorityTest
         room.BeginScanResultGeneration(3);
         room.TryApplyScanResult(3, new MapRoomScanResultRecord("current", quartz, NitroxVector3.Zero));
 
-        Assert.IsTrue(MapRoomMetadataAuthority.TryAcceptAndApply(room, new MapRoomMetadata(quartz, 3, 3, 8), out _));
+        Assert.IsTrue(ScannerRoomManager.TryApplyScanMetadata(room, new MapRoomMetadata(quartz, 3, 3, 8), out _));
 
         Assert.AreEqual(3, room.ScanResultGeneration);
         Assert.AreEqual(1, room.ScanResults.Count);

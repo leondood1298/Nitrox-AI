@@ -4,7 +4,7 @@ using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
-internal sealed class PDAScanFinishedPacketProcessor(PdaManager pdaManager, WorldEntityManager worldEntityManager) : IAuthPacketProcessor<PDAScanFinished>
+internal sealed class PDAScanFinishedPacketProcessor(PdaManager pdaManager, WorldEntityManager worldEntityManager, ScannerRoomManager scannerRoomManager) : IAuthPacketProcessor<PDAScanFinished>
 {
     private readonly PdaManager pdaManager = pdaManager;
     private readonly WorldEntityManager worldEntityManager = worldEntityManager;
@@ -21,6 +21,7 @@ internal sealed class PDAScanFinishedPacketProcessor(PdaManager pdaManager, Worl
         {
             if (packet.Destroy)
             {
+                await scannerRoomManager.EntityRemovedAsync(context.Sender, packet.Id);
                 worldEntityManager.TryDestroyEntity(packet.Id, out _);
             }
             else

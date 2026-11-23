@@ -44,11 +44,8 @@ public sealed class DiagnosticsCommandsTest
     public async Task ScannerRoomCommandStatesTotalsAndAnomaliesBeforeTheListing()
     {
         ScannerRoomScenarioFixture scenario = new();
-        lock (scenario.Room)
-        {
-            scenario.Room.SetDockedCamera(0, ScannerRoomScenarioFixture.CameraAId);
-            scenario.Room.GetOrAssignCameraNumber(ScannerRoomScenarioFixture.CameraAId, 1);
-        }
+        scenario.Room.SetDockedCamera(0, ScannerRoomScenarioFixture.CameraAId);
+        scenario.Room.GetOrAssignCameraNumber(ScannerRoomScenarioFixture.CameraAId, 1);
         // Camera B is held exclusively without anyone piloting it, as after a Stalker grab that never ended.
         Assert.IsTrue(scenario.Ownership.TryAcquire(ScannerRoomScenarioFixture.CameraBId, scenario.PlayerB, SimulationLockType.EXCLUSIVE));
         ScannerRoomDiagnostics diagnostics = new(NullLogger<ScannerRoomDiagnostics>.Instance, scenario.Ownership);
@@ -110,7 +107,8 @@ public sealed class DiagnosticsCommandsTest
         CapturingLogger<ScannerRoomDiagnostics> scannerLog = new();
         CapturingLogger<BasePowerDiagnostics> powerLog = new();
         ScannerRoomDiagnostics diagnostics = new(scannerLog);
-        ScannerMarkCommand command = new(new EntityRegistry(NullLogger<EntityRegistry>.Instance), diagnostics, new BasePowerDiagnostics(powerLog));
+        ScannerRoomManager noRooms = ScannerRoomScenarioFixture.CreateManager(new EntityRegistry(NullLogger<EntityRegistry>.Instance), new SimulationOwnershipData(), diagnostics);
+        ScannerMarkCommand command = new(noRooms, diagnostics, new BasePowerDiagnostics(powerLog));
         RecordingCommandContext context = new();
 
         await command.Execute(context, "T1 Start");
@@ -126,7 +124,7 @@ public sealed class DiagnosticsCommandsTest
     public async Task ScannerMarkCheckpointsEveryRoomAndRejectsAnEmptyLabel()
     {
         ScannerRoomScenarioFixture scenario = new();
-        ScannerMarkCommand command = new(scenario.EntityRegistry, scenario.Diagnostics, new BasePowerDiagnostics());
+        ScannerMarkCommand command = new(scenario.Manager, scenario.Diagnostics, new BasePowerDiagnostics());
         RecordingCommandContext context = new();
 
         await command.Execute(context, "!!!");
@@ -205,6 +203,10 @@ public sealed class DiagnosticsCommandsTest
         services.AddLogging();
         services.AddWorld();
         services.AddCommands();
+        // The commands read Scanner Rooms through their manager. What the manager needs beyond the world state
+        // (network delivery, the player list, loading the world) is not part of this, so it is put together here.
+        services.AddSingleton(provider => ScannerRoomScenarioFixture.CreateManager(provider.GetRequiredService<EntityRegistry>(),
+            provider.GetRequiredService<SimulationOwnershipData>(), provider.GetRequiredService<ScannerRoomDiagnostics>()));
         using ServiceProvider provider = services.BuildServiceProvider();
 
         // The same entries the command registry is built from, without resolving every other command of the server.
@@ -222,7 +224,7 @@ public sealed class DiagnosticsCommandsTest
     }
 
     private static ScannerRoomCommand CreateScannerRoomCommand(ScannerRoomScenarioFixture scenario, ScannerRoomDiagnostics diagnostics) =>
-        new(scenario.EntityRegistry, diagnostics, scenario.Ownership, scenario.ControlLifecycle);
+        new(scenario.EntityRegistry, diagnostics, scenario.Ownership, scenario.Manager);
 
     private static async Task<string> RunAsync(ICommandHandler command)
     {

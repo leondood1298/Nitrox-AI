@@ -17,8 +17,7 @@ internal sealed class EntitySimulation : ISessionCleaner
     private const SimulationLockType DEFAULT_ENTITY_SIMULATION_LOCKTYPE = SimulationLockType.TRANSIENT;
     private readonly EntityRegistry entityRegistry;
     private readonly ILogger<EntitySimulation> logger;
-    private readonly MapRoomCameraControlReleaseFactory cameraControlReleaseFactory;
-    private readonly MapRoomCameraControlLifecycle cameraControlLifecycle;
+    private readonly ScannerRoomManager scannerRoomManager;
 
     private readonly IPacketSender packetSender;
     private readonly PlayerManager playerManager;
@@ -27,16 +26,14 @@ internal sealed class EntitySimulation : ISessionCleaner
 
     public EntitySimulation(IPacketSender packetSender, EntityRegistry entityRegistry, WorldEntityManager worldEntityManager,
         SimulationOwnershipData simulationOwnershipData, PlayerManager playerManager,
-        MapRoomCameraControlReleaseFactory cameraControlReleaseFactory, MapRoomCameraControlLifecycle cameraControlLifecycle,
-        ILogger<EntitySimulation> logger)
+        ScannerRoomManager scannerRoomManager, ILogger<EntitySimulation> logger)
     {
         this.packetSender = packetSender;
         this.entityRegistry = entityRegistry;
         this.worldEntityManager = worldEntityManager;
         this.simulationOwnershipData = simulationOwnershipData;
         this.playerManager = playerManager;
-        this.cameraControlReleaseFactory = cameraControlReleaseFactory;
-        this.cameraControlLifecycle = cameraControlLifecycle;
+        this.scannerRoomManager = scannerRoomManager;
         this.logger = logger;
     }
 
@@ -118,7 +115,7 @@ internal sealed class EntitySimulation : ISessionCleaner
                 continue;
             }
             // A Scanner Room camera being controlled stays with its controller; control ends through its own lifecycle
-            if (!IsControlledScannerCamera(worldEntity.Id, simulatingPlayer) && simulationOwnershipData.RevokeIfOwner(worldEntity.Id, simulatingPlayer))
+            if (!scannerRoomManager.IsControlledBy(worldEntity.Id, simulatingPlayer) && simulationOwnershipData.RevokeIfOwner(worldEntity.Id, simulatingPlayer))
             {
                 yield return worldEntity;
             }
@@ -171,8 +168,13 @@ internal sealed class EntitySimulation : ISessionCleaner
     public List<SimulatedEntity> AssignGlobalRootEntitiesAndGetData(Player player)
     {
         List<SimulatedEntity> simulatedEntities = [];
-        foreach (GlobalRootEntity entity in worldEntityManager.GetInitialSyncGlobalRootEntities())
+        HashSet<NitroxId> dockedCameraIds = scannerRoomManager.GetDockedCameraIds();
+        foreach (GlobalRootEntity entity in worldEntityManager.GetGlobalRootEntities())
         {
+            if (dockedCameraIds.Contains(entity.Id))
+            {
+                continue;
+            }
             simulationOwnershipData.TryAcquirePreservingExistingExclusive(entity.Id, player, SimulationLockType.TRANSIENT, out _);
             if (!simulationOwnershipData.TryGetLock(entity.Id, out SimulationOwnershipData.PlayerLock playerLock))
             {
@@ -258,99 +260,31 @@ internal sealed class EntitySimulation : ISessionCleaner
         return entityRegistry.TryGetEntityById(entityId, out WorldEntity worldEntity) && SimulationWhitelist.ShouldSimulateEntityMovement(worldEntity);
     }
 
-    public async Task EntityDestroyedAsync(NitroxId id)
+    public void EntityDestroyed(NitroxId id)
     {
-        using IDisposable? lifecycleGate = cameraControlReleaseFactory.IsScannerCamera(id)
-            ? await cameraControlLifecycle.EnterAsync(id)
-            : null;
-        await EntityDestroyedWithLifecycleGateAsync(id);
-    }
-
-    internal async Task EntityDestroyedWithLifecycleGateAsync(NitroxId id)
-    {
-        if (simulationOwnershipData.RevokeOwnerOfId(id, out SimulationOwnershipData.PlayerLock revokedLock) &&
-            cameraControlReleaseFactory.TryCreate(id, revokedLock, "destroy", out MapRoomCameraControl release))
-        {
-            await packetSender.SendPacketToAllAsync(release);
-        }
+        simulationOwnershipData.RevokeOwnerOfId(id);
     }
 
     public async Task OnEventAsync(ISessionCleaner.Args args)
     {
-        IReadOnlyList<IDisposable> lifecycleGates = await cameraControlLifecycle.EnterManyAsync(
-            cameraControlReleaseFactory.GetScannerCameraIds());
-        try
+        // Control of Scanner Room cameras ends first, with its own packet; only then may another player be given
+        // ordinary simulation of what the session held.
+        List<SimulationOwnershipData.RevokedLock> revokedLocks = await scannerRoomManager.RevokeLocksOfSessionAsync(args.Session.Id);
+        List<NitroxId> revokedEntityIds = revokedLocks.Select(revoked => revoked.EntityId).ToList();
+        List<Entity> revokedEntities = entityRegistry.GetEntities(revokedEntityIds);
+        List<NitroxId> unregisteredRevokedIds = revokedEntityIds.Except(revokedEntities.Select(entity => entity.Id)).ToList();
+
+        List<SimulatedEntity> ownershipChanges = [];
+        AssignEntitiesToOtherPlayers(args.Session.Id, revokedEntities, ownershipChanges, false);
+        await BroadcastSimulationChanges(ownershipChanges);
+
+        // Locks on ids that are not registered entities (a docked Scanner Room camera, for example) cannot be
+        // reassigned; players are told to forget them.
+        if (unregisteredRevokedIds.Count > 0)
         {
-            List<SimulationOwnershipData.RevokedLock> revokedLocks = simulationOwnershipData.RevokeAllLocksForOwner(args.Session.Id);
-            List<NitroxId> revokedEntityIds = revokedLocks.Select(revoked => revoked.EntityId).ToList();
-            List<Entity> revokedEntities = entityRegistry.GetEntities(revokedEntityIds);
-            List<NitroxId> unregisteredRevokedIds = revokedEntityIds.Except(revokedEntities.Select(entity => entity.Id)).ToList();
-
-            foreach (SimulationOwnershipData.RevokedLock revokedLock in revokedLocks)
-            {
-                if (cameraControlReleaseFactory.TryCreate(revokedLock.EntityId, revokedLock.Lock, "disconnect", out MapRoomCameraControl release))
-                {
-                    await packetSender.SendPacketToAllAsync(release);
-                }
-            }
-
-            // Release control first; only then may another player receive ordinary simulation.
-            List<SimulatedEntity> ownershipChanges = [];
-            AssignEntitiesToOtherPlayers(args.Session.Id, revokedEntities, ownershipChanges, false);
-            await BroadcastSimulationChanges(ownershipChanges);
-
-            // Locks on ids that are not registered entities (a docked Scanner Room camera, for example) cannot be
-            // reassigned; players are told to forget them.
-            if (unregisteredRevokedIds.Count > 0)
-            {
-                logger.ZLogInformation($"Dropping {unregisteredRevokedIds.Count} unregistered simulation lock(s) after session {args.Session.Id} disconnected");
-                await packetSender.SendPacketToAllAsync(new DropSimulationOwnership(unregisteredRevokedIds));
-            }
+            logger.ZLogInformation($"Dropping {unregisteredRevokedIds.Count} unregistered simulation lock(s) after session {args.Session.Id} disconnected");
+            await packetSender.SendPacketToAllAsync(new DropSimulationOwnership(unregisteredRevokedIds));
         }
-        finally
-        {
-            MapRoomCameraControlLifecycle.ReleaseReverse(lifecycleGates);
-        }
-    }
-
-    /// <summary>
-    ///     Tells a player who has just joined which Scanner Room cameras are being controlled, and by whom. Control is
-    ///     announced when it is granted, which they missed: such a camera would stay frozen for them while its controller
-    ///     flies it, and their Scanner Room screen would offer it for control.
-    /// </summary>
-    public async Task SendCameraControlGrantsAsync(SessionId joinedSessionId)
-    {
-        IReadOnlyList<NitroxId> controlledCameraIds = cameraControlLifecycle.GetControlledCameras();
-        if (controlledCameraIds.Count == 0)
-        {
-            return;
-        }
-
-        // A release keeps the camera's gate until its packet is queued. Holding the gates here keeps one from slipping
-        // in between reading a grant and sending it, which would leave the joined player with a controller for good.
-        using IDisposable lifecycleGates = await cameraControlLifecycle.EnterTogetherAsync(controlledCameraIds);
-        foreach (NitroxId cameraId in controlledCameraIds)
-        {
-            if (simulationOwnershipData.TryGetLock(cameraId, out SimulationOwnershipData.PlayerLock controlLock) &&
-                controlLock.LockType == SimulationLockType.EXCLUSIVE &&
-                cameraControlLifecycle.IsActiveController(cameraId, controlLock.Player.SessionId) &&
-                cameraControlReleaseFactory.TryCreateCurrentGrant(cameraId, controlLock.Player.SessionId, out MapRoomCameraControl grant))
-            {
-                await packetSender.SendPacketAsync(grant, joinedSessionId);
-            }
-        }
-    }
-
-    /// <summary>
-    ///     Whether <paramref name="player" /> is controlling this Scanner Room camera right now. Control is only ended by
-    ///     the camera's own lifecycle (release, pickup, docking, destruction, disconnect), never as a side effect of the
-    ///     player losing sight of the camera or handing off its movement.
-    /// </summary>
-    internal bool IsControlledScannerCamera(NitroxId id, Player player)
-    {
-        return simulationOwnershipData.TryGetLock(id, out SimulationOwnershipData.PlayerLock currentLock) &&
-               currentLock.Player.SessionId == player.SessionId && currentLock.LockType == SimulationLockType.EXCLUSIVE &&
-               cameraControlReleaseFactory.IsScannerCamera(id);
     }
 
     public void AssignEntitiesToOtherPlayers(SessionId oldSessionId, IEnumerable<Entity> entities, List<SimulatedEntity> ownershipChanges, bool propagate)

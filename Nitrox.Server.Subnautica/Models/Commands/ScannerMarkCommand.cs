@@ -5,7 +5,6 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.Helper;
 using Nitrox.Server.Subnautica.Models.Commands.Core;
 using Nitrox.Server.Subnautica.Models.GameLogic;
-using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 
 namespace Nitrox.Server.Subnautica.Models.Commands;
 
@@ -15,7 +14,7 @@ namespace Nitrox.Server.Subnautica.Models.Commands;
 ///     anything is built.
 /// </summary>
 [RequiresPermission(Perms.ADMIN)]
-internal sealed class ScannerMarkCommand(EntityRegistry entityRegistry, ScannerRoomDiagnostics diagnostics, BasePowerDiagnostics basePowerDiagnostics) : ICommandHandler<string>
+internal sealed class ScannerMarkCommand(ScannerRoomManager scannerRoomManager, ScannerRoomDiagnostics diagnostics, BasePowerDiagnostics basePowerDiagnostics) : ICommandHandler<string>
 {
     [Description("Writes a marker to the server log, plus a checkpoint with fingerprint per Scanner Room, for example: scannermark D1-before-restart")]
     public async Task Execute(ICommandContext context, [Description("one word naming the test step")] string label)
@@ -29,9 +28,8 @@ internal sealed class ScannerMarkCommand(EntityRegistry entityRegistry, ScannerR
 
         diagnostics.RecordMark(token);
         basePowerDiagnostics.RecordMark(token);
-        MapRoomEntity[] rooms = entityRegistry.GetEntities<MapRoomEntity>()
-                                              .OrderBy(room => room.Id.ToString(), StringComparer.Ordinal)
-                                              .ToArray();
+        // Copies of all rooms from one moment, ordered by id.
+        MapRoomEntity[] rooms = scannerRoomManager.GetSnapshots().Select(snapshot => snapshot.Room).ToArray();
         string[] fingerprints = new string[rooms.Length];
         for (int index = 0; index < rooms.Length; index++)
         {

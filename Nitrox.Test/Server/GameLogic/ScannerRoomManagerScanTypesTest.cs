@@ -5,10 +5,10 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.Packets;
 
-namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities;
+namespace Nitrox.Server.Subnautica.Models.GameLogic;
 
 [TestClass]
-public sealed class MapRoomScanTypesAuthorityTest
+public sealed class ScannerRoomManagerScanTypesTest
 {
     private static readonly NitroxTechType quartz = new("Quartz");
     private static readonly NitroxTechType titanium = new("Titanium");
@@ -18,7 +18,7 @@ public sealed class MapRoomScanTypesAuthorityTest
     {
         MapRoomEntity room = CreateRoom();
 
-        Assert.IsTrue(MapRoomScanTypesAuthority.TryApply(room, Snapshot(room, [titanium, quartz]), [], NitroxVector3.Zero, out List<NitroxTechType> accepted, out long revision));
+        Assert.IsTrue(ScannerRoomManager.TryApplyScanTypes(room, Snapshot(room, [titanium, quartz]), [], NitroxVector3.Zero, out List<NitroxTechType> accepted, out long revision));
 
         CollectionAssert.AreEqual(new[] { quartz, titanium }, accepted);
         Assert.AreEqual(1, revision);
@@ -29,14 +29,14 @@ public sealed class MapRoomScanTypesAuthorityTest
     public void AcceptsReplayIdempotentlyAndRejectsInvalidTypesAndWrongRoom()
     {
         MapRoomEntity room = CreateRoom();
-        Assert.IsTrue(MapRoomScanTypesAuthority.TryApply(room, Snapshot(room, [quartz]), [], NitroxVector3.Zero, out _, out long revision));
+        Assert.IsTrue(ScannerRoomManager.TryApplyScanTypes(room, Snapshot(room, [quartz]), [], NitroxVector3.Zero, out _, out long revision));
 
-        Assert.IsTrue(MapRoomScanTypesAuthority.TryApply(room, Snapshot(room, [quartz]), [], NitroxVector3.Zero, out List<NitroxTechType> replay, out long replayRevision));
-        Assert.IsFalse(MapRoomScanTypesAuthority.TryApply(room, Snapshot(room, [quartz, quartz]), [], NitroxVector3.Zero, out _, out _));
-        Assert.IsFalse(MapRoomScanTypesAuthority.TryApply(room, Snapshot(room, [NitroxTechType.None]), [], NitroxVector3.Zero, out _, out _));
-        Assert.IsFalse(MapRoomScanTypesAuthority.TryApply(room, Snapshot(room, [quartz], [titanium, titanium]), [], NitroxVector3.Zero, out _, out _));
-        Assert.IsFalse(MapRoomScanTypesAuthority.TryApply(room, Snapshot(room, [quartz], [NitroxTechType.None]), [], NitroxVector3.Zero, out _, out _));
-        Assert.IsFalse(MapRoomScanTypesAuthority.TryApply(room,
+        Assert.IsTrue(ScannerRoomManager.TryApplyScanTypes(room, Snapshot(room, [quartz]), [], NitroxVector3.Zero, out List<NitroxTechType> replay, out long replayRevision));
+        Assert.IsFalse(ScannerRoomManager.TryApplyScanTypes(room, Snapshot(room, [quartz, quartz]), [], NitroxVector3.Zero, out _, out _));
+        Assert.IsFalse(ScannerRoomManager.TryApplyScanTypes(room, Snapshot(room, [NitroxTechType.None]), [], NitroxVector3.Zero, out _, out _));
+        Assert.IsFalse(ScannerRoomManager.TryApplyScanTypes(room, Snapshot(room, [quartz], [titanium, titanium]), [], NitroxVector3.Zero, out _, out _));
+        Assert.IsFalse(ScannerRoomManager.TryApplyScanTypes(room, Snapshot(room, [quartz], [NitroxTechType.None]), [], NitroxVector3.Zero, out _, out _));
+        Assert.IsFalse(ScannerRoomManager.TryApplyScanTypes(room,
             new MapRoomScanTypesSnapshot(new NitroxId(), [titanium], [titanium], NitroxVector3.Zero, 300f), [], NitroxVector3.Zero, out _, out _));
         Assert.AreEqual(revision, replayRevision);
         CollectionAssert.AreEqual(new[] { quartz }, replay);
@@ -48,8 +48,8 @@ public sealed class MapRoomScanTypesAuthorityTest
     {
         MapRoomEntity room = CreateRoom();
 
-        Assert.IsTrue(MapRoomScanTypesAuthority.TryApply(room, Snapshot(room, [], []), [], NitroxVector3.Zero, out List<NitroxTechType> accepted, out long revision));
-        Assert.IsTrue(MapRoomScanTypesAuthority.TryApply(room, Snapshot(room, [], []), [], NitroxVector3.Zero, out _, out long replayRevision));
+        Assert.IsTrue(ScannerRoomManager.TryApplyScanTypes(room, Snapshot(room, [], []), [], NitroxVector3.Zero, out List<NitroxTechType> accepted, out long revision));
+        Assert.IsTrue(ScannerRoomManager.TryApplyScanTypes(room, Snapshot(room, [], []), [], NitroxVector3.Zero, out _, out long replayRevision));
         Assert.AreEqual(0, accepted.Count);
         Assert.AreEqual(1, revision);
         Assert.AreEqual(revision, replayRevision);
@@ -67,7 +67,7 @@ public sealed class MapRoomScanTypesAuthorityTest
             World(new NitroxTechType("ShaleChunk"), new NitroxVector3(301f, 0f, 0f))
         ];
 
-        Assert.IsTrue(MapRoomScanTypesAuthority.TryApply(room, Snapshot(room, [lead], [quartz]), worldEntities, NitroxVector3.Zero,
+        Assert.IsTrue(ScannerRoomManager.TryApplyScanTypes(room, Snapshot(room, [lead], [quartz]), worldEntities, NitroxVector3.Zero,
             out List<NitroxTechType> accepted, out _));
 
         CollectionAssert.AreEqual(new[] { lead, quartz }, accepted);
@@ -78,11 +78,11 @@ public sealed class MapRoomScanTypesAuthorityTest
     {
         MapRoomEntity room = CreateRoom();
 
-        Assert.IsFalse(MapRoomScanTypesAuthority.TryApply(room,
+        Assert.IsFalse(ScannerRoomManager.TryApplyScanTypes(room,
             new MapRoomScanTypesSnapshot(room.Id, [], [], new NitroxVector3(float.PositiveInfinity, 0f, 0f), 300f), [], NitroxVector3.Zero, out _, out _));
-        Assert.IsFalse(MapRoomScanTypesAuthority.TryApply(room,
+        Assert.IsFalse(ScannerRoomManager.TryApplyScanTypes(room,
             new MapRoomScanTypesSnapshot(room.Id, [], [], NitroxVector3.Zero, 501f), [], NitroxVector3.Zero, out _, out _));
-        Assert.IsFalse(MapRoomScanTypesAuthority.TryApply(room,
+        Assert.IsFalse(ScannerRoomManager.TryApplyScanTypes(room,
             new MapRoomScanTypesSnapshot(room.Id, [], [], new NitroxVector3(513f, 0f, 0f), 300f), [], NitroxVector3.Zero, out _, out _));
     }
 

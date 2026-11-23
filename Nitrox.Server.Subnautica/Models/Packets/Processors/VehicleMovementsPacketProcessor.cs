@@ -3,7 +3,7 @@ using System.Linq;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
-using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
+using Nitrox.Model.Core;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
@@ -11,7 +11,7 @@ using Nitrox.Server.Subnautica.Models.Packets.Core;
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
 internal sealed class VehicleMovementsPacketProcessor(EntityRegistry entityRegistry,
-    SimulationOwnershipData simulationOwnershipData, MapRoomCameraControlLifecycle cameraControlLifecycle,
+    SimulationOwnershipData simulationOwnershipData, ScannerRoomManager scannerRoomManager,
     ILogger<VehicleMovementsPacketProcessor> logger)
     : IAuthPacketProcessor<VehicleMovements>
 {
@@ -21,7 +21,6 @@ internal sealed class VehicleMovementsPacketProcessor(EntityRegistry entityRegis
 
     private readonly EntityRegistry entityRegistry = entityRegistry;
     private readonly SimulationOwnershipData simulationOwnershipData = simulationOwnershipData;
-    private readonly MapRoomCameraControlLifecycle cameraControlLifecycle = cameraControlLifecycle;
     private readonly ILogger<VehicleMovementsPacketProcessor> logger = logger;
 
     public async Task Process(AuthProcessorContext context, VehicleMovements packet)
@@ -34,9 +33,9 @@ internal sealed class VehicleMovementsPacketProcessor(EntityRegistry entityRegis
 
         // Scanner Room topology is relevant only to known camera entries. Capture it at most once,
         // on first use, so every camera in this packet observes one consistent snapshot without
-        // making ordinary vehicle/creature movement enumerate and lock every Scanner Room.
-        Lazy<Dictionary<NitroxId, CameraRegistrationState>> registrationStates =
-            new(() => GetCameraRegistrationStates(packet.Data));
+        // making ordinary vehicle/creature movement ask about every Scanner Room.
+        Lazy<IReadOnlyDictionary<NitroxId, ScannerRoomManager.CameraRegistrationState>> registrationStates =
+            new(() => scannerRoomManager.GetCameraRegistrationStates(packet.Data.Select(movement => movement?.Id)));
         List<(MovementData Movement, WorldEntity? Entity, bool RequiresCanonicalControl)> candidates =
             new(packet.Data.Count);
         foreach (MovementData movementData in packet.Data)
@@ -51,8 +50,8 @@ internal sealed class VehicleMovementsPacketProcessor(EntityRegistry entityRegis
             {
                 bool validWorldCamera = string.Equals(
                     worldEntity.TechType?.Name, "MapRoomCamera", StringComparison.Ordinal);
-                CameraRegistrationState registrationState = default;
-                if (validWorldCamera || cameraControlLifecycle.IsKnown(movementData.Id))
+                ScannerRoomManager.CameraRegistrationState registrationState = default;
+                if (scannerRoomManager.IsScannerCamera(movementData.Id))
                 {
                     registrationStates.Value.TryGetValue(movementData.Id,
                         out registrationState);
@@ -90,9 +89,9 @@ internal sealed class VehicleMovementsPacketProcessor(EntityRegistry entityRegis
                 simulationOwnershipData.TryGetLock(movementData.Id, out SimulationOwnershipData.PlayerLock candidateLock) &&
                 candidateLock.Player == context.Sender &&
                 candidateLock.LockType == SimulationLockType.EXCLUSIVE &&
-                cameraControlLifecycle.IsActiveController(movementData.Id, context.Sender.SessionId) &&
+                IsController(movementData.Id, context.Sender) &&
                 registrationStates.Value.TryGetValue(movementData.Id,
-                    out CameraRegistrationState fallbackRegistrationState) &&
+                    out ScannerRoomManager.CameraRegistrationState fallbackRegistrationState) &&
                 fallbackRegistrationState.IsExactlyOneRegistration)
             {
                 candidates.Add((movementData, null, true));
@@ -120,8 +119,7 @@ internal sealed class VehicleMovementsPacketProcessor(EntityRegistry entityRegis
                         (!simulationOwnershipData.TryGetLock(movementData.Id, out SimulationOwnershipData.PlayerLock playerLock) ||
                          playerLock.Player != context.Sender ||
                          playerLock.LockType != SimulationLockType.EXCLUSIVE ||
-                         !cameraControlLifecycle.IsActiveController(
-                             movementData.Id, context.Sender.SessionId)))
+                         !IsController(movementData.Id, context.Sender)))
                     {
                         nonExclusiveScannerCount++;
                         continue;
@@ -171,69 +169,8 @@ internal sealed class VehicleMovementsPacketProcessor(EntityRegistry entityRegis
         }
     }
 
-    private Dictionary<NitroxId, CameraRegistrationState> GetCameraRegistrationStates(
-        IEnumerable<MovementData> movements)
-    {
-        HashSet<NitroxId> requestedIds = [];
-        foreach (MovementData? movement in movements)
-        {
-            if (movement?.Id != null)
-            {
-                requestedIds.Add(movement.Id);
-            }
-        }
-
-        Dictionary<NitroxId, CameraRegistrationState> states =
-            requestedIds.ToDictionary(cameraId => cameraId,
-                _ => default(CameraRegistrationState));
-        foreach (MapRoomEntity room in entityRegistry.GetEntities<MapRoomEntity>())
-        {
-            lock (room)
-            {
-                foreach (MapRoomCameraRecord? record in room.CameraRegistry)
-                {
-                    if (record?.CameraId != null &&
-                        states.TryGetValue(record.CameraId,
-                            out CameraRegistrationState state))
-                    {
-                        states[record.CameraId] = new CameraRegistrationState(
-                            state.Registrations + 1, state.DockedAssociations);
-                    }
-                }
-                IncrementDockedAssociation(states, room.LeftDockCameraId);
-                IncrementDockedAssociation(states, room.RightDockCameraId);
-            }
-        }
-        return states;
-    }
-
-    private static void IncrementDockedAssociation(
-        Dictionary<NitroxId, CameraRegistrationState> states, NitroxId? cameraId)
-    {
-        if (cameraId != null &&
-            states.TryGetValue(cameraId, out CameraRegistrationState state))
-        {
-            states[cameraId] = new CameraRegistrationState(
-                state.Registrations, state.DockedAssociations + 1);
-        }
-    }
-
-    private readonly record struct CameraRegistrationState(
-        int Registrations,
-        int DockedAssociations)
-    {
-        internal bool HasAssociation =>
-            Registrations > 0 || DockedAssociations > 0;
-
-        internal bool IsAmbiguous =>
-            Registrations > 1 || DockedAssociations > 1 ||
-            DockedAssociations == 1 && Registrations != 1;
-
-        internal bool IsDocked => !IsAmbiguous && DockedAssociations == 1;
-
-        internal bool IsExactlyOneRegistration =>
-            !IsAmbiguous && Registrations == 1;
-    }
+    private bool IsController(NitroxId cameraId, Player player) =>
+        scannerRoomManager.TryGetController(cameraId, out SessionId controller) && controller == player.SessionId;
 
     internal static bool IsValidMovementCount(int count) => count is > 0 and <= MAX_MOVEMENTS_PER_PACKET;
 

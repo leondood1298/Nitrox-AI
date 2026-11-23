@@ -5,11 +5,12 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using NitroxClient.GameLogic;
 using Microsoft.Extensions.Logging.Abstractions;
+using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 
-namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities;
+namespace Nitrox.Server.Subnautica.Models.GameLogic;
 
 [TestClass]
-public sealed class MapRoomWorldResourceIndexTest
+public sealed class ScannerRoomManagerScanRulesTest
 {
     private static readonly NitroxTechType quartz = new("Quartz");
     private static readonly NitroxTechType titanium = new("Titanium");
@@ -32,7 +33,7 @@ public sealed class MapRoomWorldResourceIndexTest
             World(new NitroxId(), quartz, new NitroxVector3(301f, 0f, 0f))
         ];
 
-        List<MapRoomScanResultRecord> merged = MapRoomWorldResourceIndex.MergeResults(ownerResults, worldEntities, quartz,
+        List<MapRoomScanResultRecord> merged = ScannerRoomManager.MergeScanResults(ownerResults, worldEntities, quartz,
             NitroxVector3.Zero, 300f, 100);
 
         CollectionAssert.AreEqual(new[] { duplicateId.ToString(), secondId.ToString(), "override-result" },
@@ -50,7 +51,7 @@ public sealed class MapRoomWorldResourceIndexTest
             new("override-result", quartz, new NitroxVector3(20f, 0f, 0f))
         ];
 
-        List<MapRoomScanResultRecord> merged = MapRoomWorldResourceIndex.MergeResults(ownerResults,
+        List<MapRoomScanResultRecord> merged = ScannerRoomManager.MergeScanResults(ownerResults,
             [World(exactId, quartz, new NitroxVector3(301f, 0f, 0f))], quartz, NitroxVector3.Zero, 300f, 100);
 
         CollectionAssert.AreEqual(new[] { "override-result" }, merged.Select(result => result.ResourceId).ToArray());
@@ -68,7 +69,7 @@ public sealed class MapRoomWorldResourceIndexTest
             World(new NitroxId("00000000-0000-0000-0000-000000000003"), quartz, new NitroxVector3(20f, 0f, 0f))
         ];
 
-        List<MapRoomScanResultRecord> merged = MapRoomWorldResourceIndex.MergeResults([], worldEntities, quartz,
+        List<MapRoomScanResultRecord> merged = ScannerRoomManager.MergeScanResults([], worldEntities, quartz,
             NitroxVector3.Zero, 300f, 2);
 
         CollectionAssert.AreEqual(new[] { earlierId.ToString(), laterId.ToString() }, merged.Select(result => result.ResourceId).ToArray());
@@ -85,7 +86,7 @@ public sealed class MapRoomWorldResourceIndexTest
             World(new NitroxId("00000000-0000-0000-0000-000000000002"), quartz, new NitroxVector3(2f, 0f, 0f))
         ];
 
-        List<MapRoomScanResultRecord> merged = MapRoomWorldResourceIndex.MergeResults(ownerResults, worldEntities, quartz,
+        List<MapRoomScanResultRecord> merged = ScannerRoomManager.MergeScanResults(ownerResults, worldEntities, quartz,
             NitroxVector3.Zero, 300f, 2);
 
         CollectionAssert.AreEqual(new[] { closestId.ToString(), "override-result" }, merged.Select(result => result.ResourceId).ToArray());
@@ -103,7 +104,7 @@ public sealed class MapRoomWorldResourceIndexTest
             World(new NitroxId(), shale, new NitroxVector3(301f, 0f, 0f))
         ];
 
-        List<NitroxTechType> merged = MapRoomWorldResourceIndex.MergeScanTypes([leadOverride], [quartz, shale], worldEntities,
+        List<NitroxTechType> merged = ScannerRoomManager.MergeScanTypes([leadOverride], [quartz, shale], worldEntities,
             NitroxVector3.Zero, 300f);
 
         CollectionAssert.AreEqual(new[] { leadOverride, quartz }, merged);
@@ -113,37 +114,37 @@ public sealed class MapRoomWorldResourceIndexTest
     public void QueryValidationAllowsInitializationSentinelAndClampsTinyMinimumDrift()
     {
         NitroxVector3 anchor = new(100f, 20f, -50f);
-        Assert.IsTrue(MapRoomWorldResourceIndex.TryNormalizeQuery(NitroxVector3.Zero, 0f, anchor, out NitroxVector3 initializedOrigin, out float initialized));
+        Assert.IsTrue(ScannerRoomManager.TryNormalizeScanQuery(NitroxVector3.Zero, 0f, anchor, out NitroxVector3 initializedOrigin, out float initialized));
         Assert.AreEqual(anchor, initializedOrigin);
         Assert.AreEqual(300f, initialized);
-        Assert.IsTrue(MapRoomWorldResourceIndex.TryNormalizeQuery(NitroxVector3.Zero, 300f, anchor, out NitroxVector3 worldZeroOrigin, out _));
+        Assert.IsTrue(ScannerRoomManager.TryNormalizeScanQuery(NitroxVector3.Zero, 300f, anchor, out NitroxVector3 worldZeroOrigin, out _));
         Assert.AreEqual(NitroxVector3.Zero, worldZeroOrigin);
-        Assert.IsTrue(MapRoomWorldResourceIndex.TryNormalizeQuery(anchor, 299.995f, anchor, out _, out float clamped));
+        Assert.IsTrue(ScannerRoomManager.TryNormalizeScanQuery(anchor, 299.995f, anchor, out _, out float clamped));
         Assert.AreEqual(300f, clamped);
-        Assert.IsTrue(MapRoomWorldResourceIndex.TryNormalizeQuery(anchor, 500f, anchor, out _, out float maximum));
+        Assert.IsTrue(ScannerRoomManager.TryNormalizeScanQuery(anchor, 500f, anchor, out _, out float maximum));
         Assert.AreEqual(500f, maximum);
-        Assert.IsFalse(MapRoomWorldResourceIndex.TryNormalizeQuery(anchor, 299f, anchor, out _, out _));
-        Assert.IsFalse(MapRoomWorldResourceIndex.TryNormalizeQuery(anchor, 500.01f, anchor, out _, out _));
-        Assert.IsFalse(MapRoomWorldResourceIndex.TryNormalizeQuery(new NitroxVector3(float.NaN, 0f, 0f), 300f, anchor, out _, out _));
-        Assert.IsFalse(MapRoomWorldResourceIndex.TryNormalizeQuery(anchor, float.PositiveInfinity, anchor, out _, out _));
-        Assert.IsFalse(MapRoomWorldResourceIndex.TryNormalizeQuery(anchor + new NitroxVector3(513f, 0f, 0f), 300f, anchor, out _, out _));
+        Assert.IsFalse(ScannerRoomManager.TryNormalizeScanQuery(anchor, 299f, anchor, out _, out _));
+        Assert.IsFalse(ScannerRoomManager.TryNormalizeScanQuery(anchor, 500.01f, anchor, out _, out _));
+        Assert.IsFalse(ScannerRoomManager.TryNormalizeScanQuery(new NitroxVector3(float.NaN, 0f, 0f), 300f, anchor, out _, out _));
+        Assert.IsFalse(ScannerRoomManager.TryNormalizeScanQuery(anchor, float.PositiveInfinity, anchor, out _, out _));
+        Assert.IsFalse(ScannerRoomManager.TryNormalizeScanQuery(anchor + new NitroxVector3(513f, 0f, 0f), 300f, anchor, out _, out _));
     }
 
     [TestMethod]
     public void MaximumRangeComesFromServerRoomUpgradeItems()
     {
         MapRoomEntity room = new(new NitroxId(), new NitroxId(), new NitroxInt3());
-        Assert.AreEqual(300f, MapRoomWorldResourceIndex.GetMaximumScanRange(room));
+        Assert.AreEqual(300f, ScannerRoomManager.GetMaximumScanRange(room));
 
         room.ChildEntities.Add(RangeUpgrade());
-        Assert.AreEqual(350f, MapRoomWorldResourceIndex.GetMaximumScanRange(room));
-        Assert.IsTrue(MapRoomWorldResourceIndex.IsRangeAllowed(room, 350.005f));
-        Assert.IsFalse(MapRoomWorldResourceIndex.IsRangeAllowed(room, 350.02f));
+        Assert.AreEqual(350f, ScannerRoomManager.GetMaximumScanRange(room));
+        Assert.IsTrue(ScannerRoomManager.IsScanRangeAllowed(room, 350.005f));
+        Assert.IsFalse(ScannerRoomManager.IsScanRangeAllowed(room, 350.02f));
 
         room.ChildEntities.AddRange([RangeUpgrade(), RangeUpgrade(), RangeUpgrade()]);
-        Assert.AreEqual(500f, MapRoomWorldResourceIndex.GetMaximumScanRange(room));
+        Assert.AreEqual(500f, ScannerRoomManager.GetMaximumScanRange(room));
         room.ChildEntities.Add(RangeUpgrade());
-        Assert.AreEqual(500f, MapRoomWorldResourceIndex.GetMaximumScanRange(room));
+        Assert.AreEqual(500f, ScannerRoomManager.GetMaximumScanRange(room));
     }
 
     [TestMethod]
@@ -158,7 +159,7 @@ public sealed class MapRoomWorldResourceIndexTest
         cycle.ChildEntities.AddRange([cycle, countedUpgrade, null!]);
         room.ChildEntities.AddRange([cycle, duplicateUpgrade, null!]);
 
-        Assert.AreEqual(350f, MapRoomWorldResourceIndex.GetMaximumScanRange(room));
+        Assert.AreEqual(350f, ScannerRoomManager.GetMaximumScanRange(room));
     }
 
     [TestMethod]
@@ -176,7 +177,7 @@ public sealed class MapRoomWorldResourceIndexTest
         }
         current.ChildEntities.AddRange([RangeUpgrade(), RangeUpgrade(), RangeUpgrade(), RangeUpgrade(), RangeUpgrade()]);
 
-        Assert.AreEqual(500f, MapRoomWorldResourceIndex.GetMaximumScanRange(room));
+        Assert.AreEqual(500f, ScannerRoomManager.GetMaximumScanRange(room));
     }
 
     [TestMethod]
@@ -188,7 +189,7 @@ public sealed class MapRoomWorldResourceIndexTest
         registry.AddEntity(World(parentId, new NitroxTechType("Base"), parentPosition));
         MapRoomEntity room = new(new NitroxId(), parentId, new NitroxInt3());
 
-        Assert.IsTrue(MapRoomWorldResourceIndex.TryResolveScanAnchor(registry, room, out NitroxVector3 anchor));
+        Assert.IsTrue(ScannerRoomManager.TryResolveScanAnchor(registry, room, out NitroxVector3 anchor));
         Assert.AreEqual(parentPosition, anchor);
     }
 
@@ -197,9 +198,9 @@ public sealed class MapRoomWorldResourceIndexTest
     {
         // Both sides are constants on purpose: this fails the test run if client and server ranges drift apart.
 #pragma warning disable MSTEST0032
-        Assert.AreEqual(MapRoomUpgradeEffects.BASE_RANGE, MapRoomWorldResourceIndex.DEFAULT_SCAN_RANGE);
-        Assert.AreEqual(MapRoomUpgradeEffects.RANGE_PER_MODULE, MapRoomWorldResourceIndex.SCAN_RANGE_PER_MODULE);
-        Assert.AreEqual(MapRoomUpgradeEffects.MAX_RANGE, MapRoomWorldResourceIndex.MAX_SCAN_RANGE);
+        Assert.AreEqual(MapRoomUpgradeEffects.BASE_RANGE, ScannerRoomManager.DEFAULT_SCAN_RANGE);
+        Assert.AreEqual(MapRoomUpgradeEffects.RANGE_PER_MODULE, ScannerRoomManager.SCAN_RANGE_PER_MODULE);
+        Assert.AreEqual(MapRoomUpgradeEffects.MAX_RANGE, ScannerRoomManager.MAX_SCAN_RANGE);
 #pragma warning restore MSTEST0032
     }
 

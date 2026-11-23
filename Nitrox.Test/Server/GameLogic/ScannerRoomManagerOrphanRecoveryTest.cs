@@ -1,11 +1,11 @@
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
-using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
+using Nitrox.Server.Subnautica.Models.GameLogic;
 
-namespace Nitrox.Test.Server.GameLogic.Entities;
+namespace Nitrox.Test.Server.GameLogic;
 
 [TestClass]
-public sealed class MapRoomCameraPersistenceTest
+public sealed class ScannerRoomManagerOrphanRecoveryTest
 {
     [TestMethod]
     public void RestoresOnlyMissingRegistrationAndUsesItsNumberedSlot()
@@ -21,7 +21,7 @@ public sealed class MapRoomCameraPersistenceTest
             ]
         };
 
-        int restored = MapRoomCameraPersistence.RestoreOrphanedRegistrations(mapRoom, id => id == existingCamera);
+        int restored = ScannerRoomManager.RestoreOrphanedRegistrations(mapRoom, id => id == existingCamera);
 
         Assert.AreEqual(1, restored);
         Assert.IsNull(mapRoom.LeftDockCameraId);
@@ -38,7 +38,7 @@ public sealed class MapRoomCameraPersistenceTest
         };
         mapRoom.SetDockedCamera(0, camera);
 
-        Assert.AreEqual(0, MapRoomCameraPersistence.RestoreOrphanedRegistrations(mapRoom, _ => false));
+        Assert.AreEqual(0, ScannerRoomManager.RestoreOrphanedRegistrations(mapRoom, _ => false));
         Assert.AreEqual(camera, mapRoom.LeftDockCameraId);
         Assert.IsNull(mapRoom.RightDockCameraId);
     }

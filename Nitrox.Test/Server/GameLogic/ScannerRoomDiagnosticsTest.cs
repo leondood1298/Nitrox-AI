@@ -11,7 +11,6 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Server.Subnautica.Extensions;
 using Nitrox.Server.Subnautica.Models.GameLogic;
-using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Test.Server.Subnautica;
 
 namespace Nitrox.Test.Server.GameLogic;
@@ -359,8 +358,7 @@ public sealed class ScannerRoomDiagnosticsTest
 
         services.Count(descriptor => descriptor.ServiceType == typeof(ScannerRoomDiagnostics)).Should().Be(1);
         services.Single(descriptor => descriptor.ServiceType == typeof(ScannerRoomDiagnostics)).Lifetime.Should().Be(ServiceLifetime.Singleton);
-        services.Single(descriptor => descriptor.ServiceType == typeof(MapRoomCameraControlLifecycle)).Lifetime.Should().Be(ServiceLifetime.Singleton);
-        services.Single(descriptor => descriptor.ServiceType == typeof(MapRoomCameraControlReleaseFactory)).Lifetime.Should().Be(ServiceLifetime.Singleton);
+        services.Single(descriptor => descriptor.ServiceType == typeof(ScannerRoomManager)).Lifetime.Should().Be(ServiceLifetime.Singleton);
     }
 
     [TestMethod]

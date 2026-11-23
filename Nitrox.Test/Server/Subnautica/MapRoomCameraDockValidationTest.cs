@@ -5,7 +5,6 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.GameLogic;
-using Nitrox.Server.Subnautica.Models.Packets.Processors;
 
 namespace Nitrox.Test.Server.Subnautica;
 
@@ -19,7 +18,7 @@ public sealed class MapRoomCameraDockValidationTest
     [DataRow(false, false, false)]
     public void AcceptsWorldOrRestoredRegisteredCamera(bool validWorldCamera, bool registeredCamera, bool expected)
     {
-        Assert.AreEqual(expected, MapRoomCameraDockProcessor.IsKnownCamera(validWorldCamera, registeredCamera));
+        Assert.AreEqual(expected, ScannerRoomManager.IsKnownCamera(validWorldCamera, registeredCamera));
     }
 
     [TestMethod]
@@ -31,7 +30,7 @@ public sealed class MapRoomCameraDockValidationTest
     [DataRow(true, true, true, 2, false)]
     public void BootstrapRequiresOwnedEmptyRestoredSlot(bool isDocked, bool senderOwnsRoom, bool slotAvailable, int registeredCameraCount, bool expected)
     {
-        Assert.AreEqual(expected, MapRoomCameraDockProcessor.CanBootstrapRestoredCamera(isDocked, senderOwnsRoom, slotAvailable, registeredCameraCount));
+        Assert.AreEqual(expected, ScannerRoomManager.CanBootstrapRestoredCamera(isDocked, senderOwnsRoom, slotAvailable, registeredCameraCount));
     }
 
     [TestMethod]
@@ -41,7 +40,7 @@ public sealed class MapRoomCameraDockValidationTest
     [DataRow(SimulationLockType.TRANSIENT, false, false)]
     public void DockingPreservesOnlyTheControllersExclusiveLock(SimulationLockType lockType, bool holderIsActiveController, bool expected)
     {
-        Assert.AreEqual(expected, MapRoomCameraDockProcessor.ShouldPreserveControlLock(lockType, holderIsActiveController));
+        Assert.AreEqual(expected, ScannerRoomManager.ShouldPreserveControlLock(lockType, holderIsActiveController));
     }
 
     [TestMethod]
@@ -51,7 +50,7 @@ public sealed class MapRoomCameraDockValidationTest
     [DataRow(false, true, false, true)]
     public void OnlyAWorldCameraOrARecordOnlyCameraCanBeDocked(bool isDocked, bool entityExists, bool validWorldCamera, bool expected)
     {
-        Assert.AreEqual(expected, MapRoomCameraDockProcessor.CanBeDocked(isDocked, entityExists, validWorldCamera));
+        Assert.AreEqual(expected, ScannerRoomManager.CanBeDocked(isDocked, entityExists, validWorldCamera));
     }
 
     [TestMethod]
@@ -89,7 +88,7 @@ public sealed class MapRoomCameraDockValidationTest
         Assert.IsNull(scenario.Room.GetCameraRecord(vehicleId));
         Assert.IsTrue(scenario.Ownership.TryGetLock(vehicleId, out SimulationOwnershipData.PlayerLock pilotLock));
         Assert.AreSame(scenario.PlayerB, pilotLock.Player, "The pilot keeps the vehicle.");
-        Assert.IsFalse(scenario.ControlLifecycle.IsKnown(vehicleId),
+        Assert.IsFalse(scenario.Manager.IsScannerCamera(vehicleId),
             "An id that is marked as a camera is refused every later simulation request, so the vehicle could not be piloted again.");
         Assert.IsTrue((await scenario.RequestOwnershipAsync(scenario.PlayerB, vehicleId, SimulationLockType.TRANSIENT)).LockAcquired);
     }
@@ -114,6 +113,6 @@ public sealed class MapRoomCameraDockValidationTest
     [DataRow(false, false, false, false)]
     public void PersistsOnlyPreviouslyUntrackedUndockedCameras(bool isDocked, bool entityExists, bool hasTransform, bool expected)
     {
-        Assert.AreEqual(expected, MapRoomCameraDockProcessor.ShouldPersistLooseCamera(isDocked, entityExists, hasTransform));
+        Assert.AreEqual(expected, ScannerRoomManager.ShouldPersistLooseCamera(isDocked, entityExists, hasTransform));
     }
 }

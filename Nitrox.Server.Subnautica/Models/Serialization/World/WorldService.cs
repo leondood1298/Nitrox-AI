@@ -23,13 +23,10 @@ namespace Nitrox.Server.Subnautica.Models.Serialization.World;
 
 internal class WorldService : IHostedService
 {
-    private const int SCANNER_ROOM_LOCK_RETRY_DELAY_MS = 1;
-
     private readonly BatchEntitySpawner batchEntitySpawner;
     private readonly EntityRegistry entityRegistry;
     private readonly EscapePodManager escapePodManager;
     private readonly ILogger<WorldService> logger;
-    private readonly MapRoomCameraControlLifecycle mapRoomCameraControlLifecycle;
     private readonly IOptions<SubnauticaServerOptions> options;
     private readonly PdaManager pdaManager;
     private readonly PlayerManager playerManager;
@@ -37,6 +34,7 @@ internal class WorldService : IHostedService
     private readonly TaskCompletionSource<bool> hasFinishedLoadingTcs = new();
     private readonly SaveService saveService;
     private readonly ScannerRoomDiagnostics scannerRoomDiagnostics;
+    private readonly ScannerRoomManager scannerRoomManager;
     private readonly IProgressReporter progressReporter;
     private readonly IOptions<ServerStartOptions> startOptions;
     private readonly StoryManager storyManager;
@@ -53,7 +51,6 @@ internal class WorldService : IHostedService
         IEnumerable<SaveDataUpgrade> upgrades,
         BatchEntitySpawner batchEntitySpawner,
         EntityRegistry entityRegistry,
-        MapRoomCameraControlLifecycle mapRoomCameraControlLifecycle,
         PlayerManager playerManager,
         StoryScheduler storyScheduler,
         StoryManager storyManager,
@@ -63,6 +60,7 @@ internal class WorldService : IHostedService
         EscapePodManager escapePodManager,
         SaveService saveService,
         ScannerRoomDiagnostics scannerRoomDiagnostics,
+        ScannerRoomManager scannerRoomManager,
         IProgressReporter progressReporter,
         IOptions<ServerStartOptions> startOptions,
         ILogger<WorldService> logger)
@@ -71,7 +69,6 @@ internal class WorldService : IHostedService
         this.upgrades = upgrades.ToArray();
         this.batchEntitySpawner = batchEntitySpawner;
         this.entityRegistry = entityRegistry;
-        this.mapRoomCameraControlLifecycle = mapRoomCameraControlLifecycle;
         this.playerManager = playerManager;
         this.storyScheduler = storyScheduler;
         this.storyManager = storyManager;
@@ -81,6 +78,7 @@ internal class WorldService : IHostedService
         this.escapePodManager = escapePodManager;
         this.saveService = saveService;
         this.scannerRoomDiagnostics = scannerRoomDiagnostics;
+        this.scannerRoomManager = scannerRoomManager;
         this.progressReporter = progressReporter;
         this.startOptions = startOptions;
         this.logger = logger;
@@ -100,6 +98,11 @@ internal class WorldService : IHostedService
             return false;
         }
 
+        // The save is written on this thread while packet processors keep changing the Scanner Rooms on theirs. It is
+        // given a copy of every room, all taken at one moment, so the serializer needs to hold nothing still and
+        // packet handling never waits for a save.
+        List<GlobalRootEntity> globalRootEntities = scannerRoomManager.DetachRooms(worldEntityManager.GetPersistentGlobalRootEntities(),
+            out IReadOnlyList<ScannerRoomSnapshot> savedRooms);
         PersistedWorldData persistedWorld = new()
         {
             WorldData = new()
@@ -108,19 +111,19 @@ internal class WorldService : IHostedService
                 GameData = GameData.From(pdaManager, storyManager.StoryGoalData, storyScheduler, storyManager, timeService)
             },
             PlayerData = PlayerData.From(playerManager.GetAllPlayers()),
-            GlobalRootData = GlobalRootData.From(worldEntityManager.GetPersistentGlobalRootEntities()),
+            GlobalRootData = GlobalRootData.From(globalRootEntities),
             EntityData = EntityData.From(entityRegistry.GetAllEntities(true))
         };
-        // Once files are being written the save must finish. Honoring the stopping token here aborted a shutdown save
-        // after PlayerData/WorldData were written but before GlobalRootData/EntityData, leaving a mixed-generation save.
-        bool saved = Save(persistedWorld, saveDir, () => entityRegistry.GetEntities<MapRoomEntity>(), CancellationToken.None,
-            out IReadOnlyList<SerializedScannerRoomState> serializedScannerRooms);
+        // Once files are being written the save must finish, so the stopping token is not passed on. Honoring it here
+        // aborted a shutdown save after PlayerData/WorldData were written but before GlobalRootData/EntityData, leaving
+        // a mixed-generation save.
+        bool saved = Save(persistedWorld, saveDir);
         if (saved)
         {
-            foreach (SerializedScannerRoomState serializedRoom in serializedScannerRooms)
+            foreach (ScannerRoomSnapshot savedRoom in savedRooms)
             {
-                scannerRoomDiagnostics.RecordCapturedCheckpoint("save", serializedRoom.Room, serializedRoom.Snapshot,
-                    serializedRoom.InvariantFailure, "serialized_snapshot");
+                scannerRoomDiagnostics.RecordCapturedCheckpoint("save", savedRoom.Room, ScannerRoomStateFingerprint.Create(savedRoom.Room),
+                    ScannerRoomStateFingerprint.Validate(savedRoom.Room), "serialized_snapshot");
             }
         }
         return saved;
@@ -177,15 +180,6 @@ internal class WorldService : IHostedService
 
     internal bool Save(PersistedWorldData persistedData, string saveDir)
     {
-        IReadOnlyList<MapRoomEntity> scannerRooms = GetSerializedScannerRooms(persistedData.GlobalRootData);
-        return Save(persistedData, saveDir, () => scannerRooms, CancellationToken.None, out _);
-    }
-
-    private bool Save(PersistedWorldData persistedData, string saveDir,
-        Func<IReadOnlyList<MapRoomEntity>> scannerRoomsProvider, CancellationToken cancellationToken,
-        out IReadOnlyList<SerializedScannerRoomState> serializedScannerRooms)
-    {
-        serializedScannerRooms = [];
         try
         {
             Directory.CreateDirectory(saveDir);
@@ -193,186 +187,16 @@ internal class WorldService : IHostedService
             Serializer.Serialize(Path.Combine(saveDir, $"Version{FileEnding}"), new SaveFileVersion());
             Serializer.Serialize(Path.Combine(saveDir, $"PlayerData{FileEnding}"), persistedData.PlayerData);
             Serializer.Serialize(Path.Combine(saveDir, $"WorldData{FileEnding}"), persistedData.WorldData);
-            serializedScannerRooms = SerializeGlobalRootDataWithScannerRoomSnapshot(scannerRoomsProvider,
-                () => Serializer.Serialize(Path.Combine(saveDir, $"GlobalRootData{FileEnding}"), persistedData.GlobalRootData),
-                cancellationToken);
-            // The large EntityData payload does not contain Scanner Room global roots and must not extend their lock window.
+            Serializer.Serialize(Path.Combine(saveDir, $"GlobalRootData{FileEnding}"), persistedData.GlobalRootData);
             Serializer.Serialize(Path.Combine(saveDir, $"EntityData{FileEnding}"), persistedData.EntityData);
 
             logger.ZLogInformation($"World state saved");
             return true;
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            return false;
-        }
         catch (Exception ex)
         {
             logger.ZLogError(ex, $"Could not save world :");
             return false;
-        }
-    }
-
-    internal static IReadOnlyList<SerializedScannerRoomState> SerializeGlobalRootDataWithScannerRoomSnapshot(
-        Func<IReadOnlyList<MapRoomEntity>> scannerRoomsProvider, Action serialize,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(serialize);
-
-        return RunWithScannerRoomsLocked<IReadOnlyList<SerializedScannerRoomState>>(scannerRoomsProvider, rooms =>
-        {
-            serialize();
-            return rooms.Select(room => new SerializedScannerRoomState(
-                            room,
-                            ScannerRoomStateFingerprint.Create(room),
-                            ScannerRoomStateFingerprint.Validate(room)))
-                        .ToArray();
-        }, cancellationToken);
-    }
-
-    /// <summary>
-    ///     Runs <paramref name="action" /> while no Scanner Room can change. The live room entities are serialized by a
-    ///     save and by the initial sync of a joining player, both on another thread than the packet processors that
-    ///     change them. Without this the reader can see a room half-changed (a new dock with the old revision), or fail
-    ///     on a list that changes while it is being read.
-    /// </summary>
-    internal static TResult RunWithScannerRoomsLocked<TResult>(Func<IReadOnlyList<MapRoomEntity>> scannerRoomsProvider,
-        Func<IReadOnlyList<MapRoomEntity>, TResult> action, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(scannerRoomsProvider);
-        ArgumentNullException.ThrowIfNull(action);
-
-        while (true)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            List<MapRoomEntity> rooms = NormalizeScannerRooms(scannerRoomsProvider());
-            EnterScannerRoomLocks(rooms, cancellationToken);
-
-            List<MapRoomEntity> currentRooms;
-            try
-            {
-                currentRooms = NormalizeScannerRooms(scannerRoomsProvider());
-            }
-            catch
-            {
-                ReleaseScannerRoomLocks(rooms, rooms.Count);
-                throw;
-            }
-
-            if (!rooms.SequenceEqual<MapRoomEntity>(currentRooms, ReferenceEqualityComparer.Instance))
-            {
-                ReleaseScannerRoomLocks(rooms, rooms.Count);
-                PauseBeforeScannerRoomMembershipRetry(cancellationToken);
-                continue;
-            }
-
-            try
-            {
-                return action(rooms);
-            }
-            finally
-            {
-                ReleaseScannerRoomLocks(rooms, rooms.Count);
-            }
-        }
-    }
-
-    private static List<MapRoomEntity> NormalizeScannerRooms(IEnumerable<MapRoomEntity> rooms)
-    {
-        ArgumentNullException.ThrowIfNull(rooms);
-        return rooms.Where(room => room != null)
-                    .Distinct<MapRoomEntity>(ReferenceEqualityComparer.Instance)
-                    .OrderBy(room => room.Id.ToString(), StringComparer.Ordinal)
-                    .ToList();
-    }
-
-    private static List<MapRoomEntity> GetSerializedScannerRooms(GlobalRootData globalRootData)
-    {
-        HashSet<Entity> visited = new(ReferenceEqualityComparer.Instance);
-        Stack<Entity> pending = new(globalRootData.Entities.OfType<Entity>().Reverse());
-        List<MapRoomEntity> rooms = [];
-
-        while (pending.TryPop(out Entity? entity))
-        {
-            if (!visited.Add(entity))
-            {
-                continue;
-            }
-            if (entity is MapRoomEntity room)
-            {
-                rooms.Add(room);
-            }
-            foreach (Entity child in entity.ChildEntities)
-            {
-                if (child != null)
-                {
-                    pending.Push(child);
-                }
-            }
-        }
-
-        return NormalizeScannerRooms(rooms);
-    }
-
-    internal static void EnterScannerRoomLocks(IReadOnlyList<MapRoomEntity> rooms, CancellationToken cancellationToken)
-    {
-        // Docking can hold a target room while inspecting a source room. Never wait while holding a partial
-        // ID-ordered set, otherwise that target-to-source path can invert this order and deadlock a save.
-        while (true)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            int acquired = 0;
-            try
-            {
-                while (acquired < rooms.Count && Monitor.TryEnter(rooms[acquired]))
-                {
-                    acquired++;
-                }
-                if (acquired == rooms.Count)
-                {
-                    return;
-                }
-            }
-            catch
-            {
-                ReleaseScannerRoomLocks(rooms, acquired);
-                throw;
-            }
-
-            MapRoomEntity contendedRoom = rooms[acquired];
-            ReleaseScannerRoomLocks(rooms, acquired);
-            WaitForContendedScannerRoom(contendedRoom, cancellationToken);
-        }
-    }
-
-    private static void WaitForContendedScannerRoom(MapRoomEntity room, CancellationToken cancellationToken)
-    {
-        // Wait on the contended room alone. In particular, do not reacquire lower-ID rooms while a dock transfer
-        // holds this room and needs one of them to finish.
-        while (true)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (Monitor.TryEnter(room, SCANNER_ROOM_LOCK_RETRY_DELAY_MS))
-            {
-                Monitor.Exit(room);
-                Thread.Yield();
-                return;
-            }
-        }
-    }
-
-    private static void PauseBeforeScannerRoomMembershipRetry(CancellationToken cancellationToken)
-    {
-        // Avoid a hot loop while a room is being added to or removed from the registry.
-        Thread.Sleep(SCANNER_ROOM_LOCK_RETRY_DELAY_MS);
-        cancellationToken.ThrowIfCancellationRequested();
-    }
-
-    private static void ReleaseScannerRoomLocks(IReadOnlyList<MapRoomEntity> rooms, int acquired)
-    {
-        for (int index = acquired - 1; index >= 0; index--)
-        {
-            Monitor.Exit(rooms[index]);
         }
     }
 
@@ -564,8 +388,8 @@ internal class WorldService : IHostedService
             // Entities
             entityRegistry.AddEntities(pWorldData.EntityData.Entities);
             entityRegistry.AddEntitiesIgnoringDuplicate(pWorldData.GlobalRootData.Entities.OfType<Entity>().ToList());
-            SeedLoadedMapRoomCameraLifecycles(
-                entityRegistry.GetEntities<MapRoomEntity>(), mapRoomCameraControlLifecycle);
+            // Before loaded entities become available to automatic simulation.
+            scannerRoomManager.WorldLoaded();
             await escapePodManager.AddKnownPodsAsync(entityRegistry.GetEntities<EscapePodEntity>());
 
             // TODO: hacky code - see WorldEntityManager for more information.
@@ -599,39 +423,6 @@ internal class WorldService : IHostedService
         logger.ZLogInformation($"World finished loading");
     }
 
-    /// <summary>
-    ///     Seeds the O(1) Scanner Room camera identity index before loaded entities become available
-    ///     to automatic simulation. IDs remain remembered as lifecycle tombstones after removal.
-    /// </summary>
-    internal static int SeedLoadedMapRoomCameraLifecycles(
-        IEnumerable<MapRoomEntity> rooms, MapRoomCameraControlLifecycle controlLifecycle)
-    {
-        HashSet<NitroxId> cameraIds = [];
-        foreach (MapRoomEntity room in rooms)
-        {
-            lock (room)
-            {
-                foreach (MapRoomCameraRecord record in room.CameraRegistry)
-                {
-                    if (record?.CameraId != null)
-                    {
-                        cameraIds.Add(record.CameraId);
-                    }
-                }
-                if (room.LeftDockCameraId != null)
-                {
-                    cameraIds.Add(room.LeftDockCameraId);
-                }
-                if (room.RightDockCameraId != null)
-                {
-                    cameraIds.Add(room.RightDockCameraId);
-                }
-            }
-        }
-        controlLifecycle.RememberMany(cameraIds);
-        return cameraIds.Count;
-    }
-
     private async Task<bool> LoadWorldFromSavePathAsync(string saveDir)
     {
         if (!Directory.Exists(saveDir) || !File.Exists(Path.Combine(saveDir, $"Version{FileEnding}")))
@@ -648,11 +439,6 @@ internal class WorldService : IHostedService
             return false;
         }
         await LoadPersistedWorldIntoServicesAsync(persistedData);
-        worldEntityManager.RestoreOrphanedMapRoomCameras();
-        foreach (MapRoomEntity room in entityRegistry.GetEntities<MapRoomEntity>())
-        {
-            scannerRoomDiagnostics.RecordCheckpoint("load", room);
-        }
         return true;
     }
 
@@ -728,8 +514,3 @@ internal class WorldService : IHostedService
         logger.ZLogInformation($"Save file was upgraded to {NitroxEnvironment.Version:@Version}");
     }
 }
-
-internal readonly record struct SerializedScannerRoomState(
-    MapRoomEntity Room,
-    ScannerRoomStateSnapshot Snapshot,
-    string? InvariantFailure);

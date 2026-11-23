@@ -1,7 +1,5 @@
 using System.Threading.Tasks;
-using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
-using Nitrox.Model.Packets;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
@@ -26,14 +24,13 @@ public sealed class MapRoomLooseCameraStateTest
         ScannerRoomScenarioFixture scenario = new();
         Assert.IsNull(scenario.Room.GetCameraRecord(cameraId));
         Assert.IsTrue(scenario.Ownership.TryAcquire(cameraId, scenario.PlayerA, SimulationLockType.TRANSIENT));
-        MapRoomCameraComponentStateProcessor processor = new(scenario.Ownership, scenario.EntityRegistry, scenario.Diagnostics, scenario.LooseCameraState);
-        Sender sender = new();
+        MapRoomCameraComponentStateProcessor processor = new(scenario.Manager);
 
-        await processor.Process(new AuthProcessorContext(scenario.PlayerA, sender), new MapRoomCameraComponentState(cameraId, 42f, 310f));
-        await processor.Process(new AuthProcessorContext(scenario.PlayerA, sender), new MapRoomCameraComponentState(cameraId, 42f, 310f));
-        await processor.Process(new AuthProcessorContext(scenario.PlayerA, sender), new MapRoomCameraComponentState(cameraId, 41f, 310f));
+        await processor.Process(scenario.Context(scenario.PlayerA), new MapRoomCameraComponentState(cameraId, 42f, 310f));
+        await processor.Process(scenario.Context(scenario.PlayerA), new MapRoomCameraComponentState(cameraId, 42f, 310f));
+        await processor.Process(scenario.Context(scenario.PlayerA), new MapRoomCameraComponentState(cameraId, 41f, 310f));
 
-        MapRoomCameraComponentState[] broadcasts = sender.Broadcasts.Cast<MapRoomCameraComponentState>().ToArray();
+        MapRoomCameraComponentState[] broadcasts = scenario.SentToAll<MapRoomCameraComponentState>().ToArray();
         Assert.AreEqual(3, broadcasts.Length);
         Assert.IsTrue(broadcasts.All(packet => packet.IsServerResponse && packet.Granted));
         CollectionAssert.AreEqual(new long[] { 1, 1, 2 }, broadcasts.Select(packet => packet.Revision).ToArray(),
@@ -42,7 +39,7 @@ public sealed class MapRoomLooseCameraStateTest
         Assert.AreEqual(41f, stored.Energy);
         Assert.AreEqual(310f, stored.Health);
         Assert.AreEqual(2, stored.ComponentRevision);
-        Assert.AreEqual(0, sender.Replies.Count);
+        Assert.AreEqual(0, scenario.SentTo<MapRoomCameraComponentState>(scenario.PlayerA).Count);
     }
 
     [TestMethod]
@@ -50,13 +47,12 @@ public sealed class MapRoomLooseCameraStateTest
     {
         ScannerRoomScenarioFixture scenario = new();
         Assert.IsTrue(scenario.Ownership.TryAcquire(cameraId, scenario.PlayerA, SimulationLockType.TRANSIENT));
-        MapRoomCameraComponentStateProcessor processor = new(scenario.Ownership, scenario.EntityRegistry, scenario.Diagnostics, scenario.LooseCameraState);
-        Sender sender = new();
+        MapRoomCameraComponentStateProcessor processor = new(scenario.Manager);
 
-        await processor.Process(new AuthProcessorContext(scenario.PlayerB, sender), new MapRoomCameraComponentState(cameraId, 5f, 5f));
+        await processor.Process(scenario.Context(scenario.PlayerB), new MapRoomCameraComponentState(cameraId, 5f, 5f));
 
-        Assert.IsFalse(((MapRoomCameraComponentState)sender.Replies.Single()).Granted);
-        Assert.AreEqual(0, sender.Broadcasts.Count);
+        Assert.IsFalse(scenario.SentTo<MapRoomCameraComponentState>(scenario.PlayerB).Single().Granted);
+        Assert.AreEqual(0, scenario.SentToAll<MapRoomCameraComponentState>().Count);
         Assert.IsNull(Camera(scenario).Metadata);
     }
 
@@ -64,13 +60,11 @@ public sealed class MapRoomLooseCameraStateTest
     public async Task LightOfUnregisteredCameraNeedsControlAndIsStoredOnTheCamera()
     {
         ScannerRoomScenarioFixture scenario = new();
-        MapRoomCameraLightProcessor processor = new(scenario.Ownership, scenario.EntityRegistry, scenario.ControlLifecycle,
-            scenario.Diagnostics, scenario.LooseCameraState);
-        Sender sender = new();
-        AuthProcessorContext context = new(scenario.PlayerA, sender);
+        MapRoomCameraLightProcessor processor = new(scenario.Manager);
+        AuthProcessorContext context = scenario.Context(scenario.PlayerA);
 
         await processor.Process(context, new MapRoomCameraLight(cameraId, true));
-        Assert.IsFalse(((MapRoomCameraLight)sender.Replies.Single()).Granted, "Without control the light cannot be changed.");
+        Assert.IsFalse(scenario.SentTo<MapRoomCameraLight>(scenario.PlayerA).Single().Granted, "Without control the light cannot be changed.");
         Assert.IsNull(Camera(scenario).Metadata);
 
         Assert.IsTrue((await scenario.ControlLooseAsync(scenario.PlayerA, cameraId, true)).Granted);
@@ -78,7 +72,7 @@ public sealed class MapRoomLooseCameraStateTest
         await processor.Process(context, new MapRoomCameraLight(cameraId, true));
         await processor.Process(context, new MapRoomCameraLight(cameraId, false));
 
-        MapRoomCameraLight[] broadcasts = sender.Broadcasts.Cast<MapRoomCameraLight>().ToArray();
+        MapRoomCameraLight[] broadcasts = scenario.SentToAll<MapRoomCameraLight>().ToArray();
         CollectionAssert.AreEqual(new[] { true, true, false }, broadcasts.Select(packet => packet.On).ToArray());
         CollectionAssert.AreEqual(new long[] { 1, 1, 2 }, broadcasts.Select(packet => packet.Revision).ToArray());
         MapRoomCameraMetadata stored = (MapRoomCameraMetadata)Camera(scenario).Metadata;
@@ -133,29 +127,5 @@ public sealed class MapRoomLooseCameraStateTest
     {
         Assert.IsTrue(scenario.EntityRegistry.TryGetEntityById(cameraId, out WorldEntity camera));
         return camera;
-    }
-
-    private sealed class Sender : IPacketSender
-    {
-        internal List<Packet> Replies { get; } = [];
-        internal List<Packet> Broadcasts { get; } = [];
-
-        public ValueTask SendPacketAsync<T>(T packet, SessionId sessionId) where T : Packet
-        {
-            Replies.Add(packet);
-            return ValueTask.CompletedTask;
-        }
-
-        public ValueTask SendPacketToAllAsync<T>(T packet) where T : Packet
-        {
-            Broadcasts.Add(packet);
-            return ValueTask.CompletedTask;
-        }
-
-        public ValueTask SendPacketToOthersAsync<T>(T packet, SessionId excludedSessionId) where T : Packet
-        {
-            Broadcasts.Add(packet);
-            return ValueTask.CompletedTask;
-        }
     }
 }

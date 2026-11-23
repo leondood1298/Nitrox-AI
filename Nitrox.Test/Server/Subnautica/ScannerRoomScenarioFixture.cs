@@ -1,5 +1,6 @@
 using System.Net;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Nitrox.Model.Configuration;
@@ -19,14 +20,17 @@ using Nitrox.Server.Subnautica.Models.GameLogic.Bases;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
 using Nitrox.Server.Subnautica.Models.Packets.Processors;
+using NSubstitute;
 using Packet = Nitrox.Model.Packets.Packet;
 using ServerPlayer = Nitrox.Server.Subnautica.Models.Player;
 
 namespace Nitrox.Test.Server.Subnautica;
 
 /// <summary>
-/// Deterministic in-process Scanner Room server fixture. It deliberately drives the real packet
-/// processors and canonical state stores while replacing only network delivery with a recorder.
+///     Deterministic in-process Scanner Room server: the real <see cref="ScannerRoomManager" /> on a real entity
+///     registry and lock table, with only network delivery replaced by a substitute that records what was sent.
+///     Scanner Room requests go straight to the manager; the processors of other packets that reach into it (pickup,
+///     destruction, building, simulation requests, metadata) are the real ones.
 /// </summary>
 internal sealed class ScannerRoomScenarioFixture
 {
@@ -37,26 +41,23 @@ internal sealed class ScannerRoomScenarioFixture
     internal static readonly NitroxId CameraCId = new("00000000-0000-0000-0000-000000000203");
     private const string CAMERA_CLASS_ID = "733fd479-0760-4bc2-a03e-281cbf02bfa4";
 
-    private readonly MapRoomCameraDockProcessor dockProcessor;
-    private readonly MapRoomCameraControlProcessor controlProcessor;
-    private readonly MapRoomDeconstructionCleanup deconstructionCleanup;
     private readonly SimulationOwnershipRequestProcessor ownershipRequestProcessor;
     private readonly PlaceBaseProcessor placeBaseProcessor;
-    private readonly RecordingPacketSender worldPacketSender = new();
     private readonly PickupItemPacketProcessor pickupProcessor;
     private readonly EntitySpawnedByClientProcessor spawnProcessor;
     private readonly UpdateBaseProcessor updateBaseProcessor;
     private readonly EntityDestroyedPacketProcessor destroyProcessor;
     private readonly EntityMetadataUpdateProcessor metadataProcessor;
 
+    /// <summary>
+    ///     Records everything the server sends, to whomever, in the order it is sent.
+    /// </summary>
+    internal IPacketSender PacketSender { get; }
     internal EntityRegistry EntityRegistry { get; }
     internal SimulationOwnershipData Ownership { get; } = new();
     internal ScannerRoomDiagnostics Diagnostics { get; }
-    internal MapRoomCameraControlReleaseFactory ControlReleaseFactory { get; }
-    internal MapRoomLifecycle RoomLifecycle { get; } = new();
-    internal MapRoomCameraControlLifecycle ControlLifecycle { get; } = new();
-    internal MapRoomLooseCameraState LooseCameraState { get; }
-    internal MapRoomRevisionFloors RevisionFloors { get; } = new();
+    internal ScannerRoomManager Manager { get; }
+    internal PlayerManager PlayerManager { get; }
     internal EntitySimulation EntitySimulation { get; }
     internal WorldEntityManager WorldEntityManager { get; }
     internal MapRoomEntity Room { get; }
@@ -64,8 +65,13 @@ internal sealed class ScannerRoomScenarioFixture
     internal ServerPlayer PlayerB { get; } = CreatePlayer(2, "B");
     internal IReadOnlyList<NitroxId> CameraIds { get; } = [CameraAId, CameraBId, CameraCId];
 
-    internal ScannerRoomScenarioFixture()
+    /// <param name="packetSender">For tests that need the sender to do more than record.</param>
+    /// <param name="playerManager">For tests that need connected players; the default has none.</param>
+    /// <param name="diagnosticsLog">For tests that read the lines the diagnostics write; these diagnostics also know the lock table.</param>
+    internal ScannerRoomScenarioFixture(IPacketSender? packetSender = null, PlayerManager? playerManager = null, ILogger<ScannerRoomDiagnostics>? diagnosticsLog = null)
     {
+        PacketSender = packetSender ?? Substitute.For<IPacketSender>();
+        PlayerManager = playerManager ?? new PlayerManager(null!, null!, null!, NullLogger<PlayerManager>.Instance);
         EntityRegistry = new EntityRegistry(NullLogger<EntityRegistry>.Instance);
         Room = new MapRoomEntity(RoomId, RoomParentId, new NitroxInt3(4, -2, 9));
         EntityRegistry.AddEntity(Room);
@@ -74,197 +80,249 @@ internal sealed class ScannerRoomScenarioFixture
             EntityRegistry.AddEntity(CreateCamera(cameraId));
         }
 
-        // Dock processing only uses the world manager when it must persist a previously untracked
-        // loose camera. All fixture cameras are registered, so unrelated world services stay absent.
-        Diagnostics = new ScannerRoomDiagnostics(NullLogger<ScannerRoomDiagnostics>.Instance);
-        ControlReleaseFactory = new MapRoomCameraControlReleaseFactory(EntityRegistry, Diagnostics, ControlLifecycle);
-        WorldEntityManager worldEntityManager = new(worldPacketSender, EntityRegistry, null!, null!, null!, Diagnostics, null!, NullLogger<WorldEntityManager>.Instance);
-        WorldEntityManager = worldEntityManager;
-        LooseCameraState = new MapRoomLooseCameraState(EntityRegistry);
-        dockProcessor = new(EntityRegistry, worldEntityManager, Ownership, ControlReleaseFactory, RoomLifecycle,
-            ControlLifecycle, Diagnostics, LooseCameraState, RevisionFloors, NullLogger<MapRoomCameraDockProcessor>.Instance);
-        controlProcessor = new(Ownership, EntityRegistry, ControlLifecycle, ControlReleaseFactory, Diagnostics);
-        PlayerManager playerManager = new(null!, null!, null!, NullLogger<PlayerManager>.Instance);
-        deconstructionCleanup = new(EntityRegistry, Ownership, ControlReleaseFactory,
-            new MapRoomScanResultSubscriptions(), ControlLifecycle, playerManager, Diagnostics, worldEntityManager, LooseCameraState, RevisionFloors);
-        EntitySimulation = new(worldPacketSender, EntityRegistry, worldEntityManager, Ownership,
-            playerManager, ControlReleaseFactory, ControlLifecycle, NullLogger<EntitySimulation>.Instance);
-        ownershipRequestProcessor = new(Ownership, EntitySimulation, EntityRegistry, ControlReleaseFactory, ControlLifecycle, Diagnostics);
-        BuildingManager buildingManager = new(worldPacketSender, EntityRegistry, worldEntityManager,
-            Options.Create(new SubnauticaServerOptions()), RevisionFloors, NullLogger<BuildingManager>.Instance);
+        Diagnostics = diagnosticsLog != null ? new ScannerRoomDiagnostics(diagnosticsLog, Ownership) : new ScannerRoomDiagnostics(NullLogger<ScannerRoomDiagnostics>.Instance);
+        // Batch spawning and progress reporting are not part of these scenarios.
+        WorldEntityManager = new WorldEntityManager(PacketSender, EntityRegistry, null!, PlayerManager, null!, NullLogger<WorldEntityManager>.Instance);
+        Manager = CreateManager(EntityRegistry, Ownership, Diagnostics, PacketSender, PlayerManager, WorldEntityManager);
+        Manager.RoomBuilt(Room);
+        EntitySimulation = new EntitySimulation(PacketSender, EntityRegistry, WorldEntityManager, Ownership, PlayerManager, Manager, NullLogger<EntitySimulation>.Instance);
+        ownershipRequestProcessor = new(Ownership, EntitySimulation, EntityRegistry, Manager);
+        BuildingManager buildingManager = new(PacketSender, EntityRegistry, WorldEntityManager,
+            Options.Create(new SubnauticaServerOptions()), Manager, NullLogger<BuildingManager>.Instance);
         placeBaseProcessor = new(buildingManager, EntitySimulation);
         updateBaseProcessor = new(buildingManager, EntitySimulation);
-        destroyProcessor = new(playerManager, EntitySimulation, worldEntityManager, EntityRegistry, ControlReleaseFactory, ControlLifecycle, Diagnostics, RevisionFloors);
+        destroyProcessor = new(PlayerManager, EntitySimulation, WorldEntityManager, Manager);
         // Base power sources are not part of these scenarios.
-        metadataProcessor = new(playerManager, EntityRegistry, Ownership, Diagnostics, null!, NullLogger<EntityMetadataUpdateProcessor>.Instance);
-        pickupProcessor = new(EntityRegistry, worldEntityManager, Ownership, ControlReleaseFactory, ControlLifecycle, Diagnostics, LooseCameraState);
-        spawnProcessor = new(playerManager, EntityRegistry, worldEntityManager, EntitySimulation, LooseCameraState);
+        metadataProcessor = new(PlayerManager, EntityRegistry, Ownership, Manager, null!, NullLogger<EntityMetadataUpdateProcessor>.Instance);
+        pickupProcessor = new(EntityRegistry, WorldEntityManager, Ownership, Manager);
+        spawnProcessor = new(PlayerManager, EntityRegistry, WorldEntityManager, EntitySimulation, Manager);
+    }
+
+    /// <summary>
+    ///     A manager on the given registry and lock table, for tests that bring their own.
+    /// </summary>
+    internal static ScannerRoomManager CreateManager(EntityRegistry entityRegistry, SimulationOwnershipData ownership, ScannerRoomDiagnostics diagnostics,
+        IPacketSender? packetSender = null, PlayerManager? playerManager = null, WorldEntityManager? worldEntityManager = null)
+    {
+        packetSender ??= Substitute.For<IPacketSender>();
+        playerManager ??= new PlayerManager(null!, null!, null!, NullLogger<PlayerManager>.Instance);
+        worldEntityManager ??= new WorldEntityManager(packetSender, entityRegistry, null!, playerManager, null!, NullLogger<WorldEntityManager>.Instance);
+        return new ScannerRoomManager(packetSender, entityRegistry, worldEntityManager, ownership, playerManager, diagnostics, NullLogger<ScannerRoomManager>.Instance);
+    }
+
+    /// <summary>
+    ///     Registers another room the way a finished construction does.
+    /// </summary>
+    internal MapRoomEntity AddRoom(MapRoomEntity room)
+    {
+        Manager.RoomBuilt(room);
+        EntityRegistry.AddEntity(room);
+        return room;
+    }
+
+    /// <summary>
+    ///     Every packet sent so far, to whomever, in the order it was sent.
+    /// </summary>
+    internal IReadOnlyList<Packet> SentPackets() => PacketSender.ReceivedCalls().Select(call => call.GetArguments()[0]).OfType<Packet>().ToList();
+
+    /// <summary>
+    ///     The packets of one type sent so far, to whomever.
+    /// </summary>
+    internal List<T> Sent<T>() where T : Packet => SentPackets().OfType<T>().ToList();
+
+    /// <summary>
+    ///     The packets of one type sent so far to every player at once.
+    /// </summary>
+    internal List<T> SentToAll<T>() where T : Packet => SentBy<T>(nameof(IPacketSender.SendPacketToAllAsync));
+
+    /// <summary>
+    ///     The packets of one type sent so far to every player but one.
+    /// </summary>
+    internal List<T> SentToOthers<T>() where T : Packet => SentBy<T>(nameof(IPacketSender.SendPacketToOthersAsync));
+
+    /// <summary>
+    ///     The packets of one type sent so far to this player alone.
+    /// </summary>
+    internal List<T> SentTo<T>(ServerPlayer player) where T : Packet =>
+        PacketSender.ReceivedCalls()
+                    .Where(call => call.GetMethodInfo().Name == nameof(IPacketSender.SendPacketAsync) && Equals(call.GetArguments()[1], player.SessionId))
+                    .Select(call => call.GetArguments()[0])
+                    .OfType<T>()
+                    .ToList();
+
+    private List<T> SentBy<T>(string sendMethod) where T : Packet =>
+        PacketSender.ReceivedCalls().Where(call => call.GetMethodInfo().Name == sendMethod).Select(call => call.GetArguments()[0]).OfType<T>().ToList();
+
+    /// <summary>
+    ///     The packets sent while <paramref name="action" /> ran.
+    /// </summary>
+    internal async Task<IReadOnlyList<Packet>> SentDuringAsync(Func<Task> action)
+    {
+        int alreadySent = SentPackets().Count;
+        await action();
+        return SentPackets().Skip(alreadySent).ToList();
     }
 
     internal async Task<MapRoomCameraDock> DockAsync(ServerPlayer player, NitroxId cameraId, int slot, bool isDocked,
         bool establishAuthority = true)
     {
-        bool alreadyCanonical;
-        lock (Room)
-        {
-            alreadyCanonical = MapRoomCameraDockProcessor.IsRequestedStateCanonical(isDocked, cameraId,
-                Room.GetDockedCamera(slot), Room.IsCameraDocked(cameraId));
-        }
+        bool alreadyCanonical = ScannerRoomManager.IsRequestedStateCanonical(isDocked, cameraId, Room.GetDockedCamera(slot), Room.IsCameraDocked(cameraId));
         if (establishAuthority && !alreadyCanonical)
         {
-            // Packet processing assumes normal simulation assignment already made the actor the
-            // camera authority. Establish that production precondition without mocking the processor.
+            // Docking assumes normal simulation assignment already made the actor the camera authority. Establish
+            // that production precondition here.
             Ownership.RevokeOwnerOfId(cameraId);
             Assert.IsTrue(Ownership.TryAcquire(cameraId, player, SimulationLockType.TRANSIENT));
         }
-        RecordingPacketSender requestPacketSender = new();
-        await dockProcessor.Process(new AuthProcessorContext(player, requestPacketSender), new MapRoomCameraDock(cameraId, RoomId, slot, isDocked: isDocked));
-        return requestPacketSender.Single<MapRoomCameraDock>();
+        int alreadySent = PacketSender.ReceivedCalls().Count();
+        MapRoomCameraDock request = new(cameraId, RoomId, slot, isDocked: isDocked);
+        await (isDocked ? Manager.DockCameraAsync(player, request) : Manager.UndockCameraAsync(player, request));
+        return Answer<MapRoomCameraDock>(alreadySent, player, packet => packet.CameraId == cameraId && packet.DockingIndex == slot && packet.IsDocked == isDocked);
     }
 
     /// <summary>
     ///     Everything the server sends in answer to a dock packet, sent as is: no authority is set up for the sender.
     /// </summary>
-    internal async Task<IReadOnlyList<Packet>> DockPacketsAsync(ServerPlayer player, MapRoomCameraDock packet)
-    {
-        RecordingPacketSender requestPacketSender = new();
-        await dockProcessor.Process(new AuthProcessorContext(player, requestPacketSender), packet);
-        return requestPacketSender.Packets;
-    }
+    internal Task<IReadOnlyList<Packet>> DockPacketsAsync(ServerPlayer player, MapRoomCameraDock packet) =>
+        SentDuringAsync(() => packet.IsDocked ? Manager.DockCameraAsync(player, packet) : Manager.UndockCameraAsync(player, packet));
 
-    internal async Task<MapRoomCameraControl> ControlAsync(ServerPlayer player, NitroxId cameraId, int slot, bool isControlling)
-    {
-        RecordingPacketSender requestPacketSender = new();
-        await controlProcessor.Process(new AuthProcessorContext(player, requestPacketSender), new MapRoomCameraControl(cameraId, RoomId, slot, isControlling, false));
-        return ControlResponse(requestPacketSender, cameraId);
-    }
+    internal Task<MapRoomCameraControl> ControlAsync(ServerPlayer player, NitroxId cameraId, int slot, bool isControlling) =>
+        ControlAnswerAsync(player, new MapRoomCameraControl(cameraId, RoomId, slot, isControlling, false));
 
-    internal async Task<MapRoomCameraControl> ControlLooseAsync(ServerPlayer player, NitroxId cameraId, bool isControlling)
-    {
-        RecordingPacketSender requestPacketSender = new();
-        await controlProcessor.Process(new AuthProcessorContext(player, requestPacketSender),
-            new MapRoomCameraControl(cameraId, Optional.Empty, -1, isControlling, false));
-        return ControlResponse(requestPacketSender, cameraId);
-    }
+    internal Task<MapRoomCameraControl> ControlLooseAsync(ServerPlayer player, NitroxId cameraId, bool isControlling) =>
+        ControlAnswerAsync(player, new MapRoomCameraControl(cameraId, Optional.Empty, -1, isControlling, false));
 
     /// <summary>
     ///     Taking a camera can also end control of the camera the player had before, which is announced in the same go.
     /// </summary>
-    private static MapRoomCameraControl ControlResponse(RecordingPacketSender requestPacketSender, NitroxId cameraId) =>
-        requestPacketSender.Packets.OfType<MapRoomCameraControl>().Single(packet => packet.CameraId == cameraId);
+    private async Task<MapRoomCameraControl> ControlAnswerAsync(ServerPlayer player, MapRoomCameraControl request)
+    {
+        int alreadySent = PacketSender.ReceivedCalls().Count();
+        await Manager.SetControlAsync(player, request);
+        return Answer<MapRoomCameraControl>(alreadySent, player, packet => packet.CameraId == request.CameraId && packet.IsControlling == request.IsControlling);
+    }
+
+    /// <summary>
+    ///     The answer to a request of <paramref name="player" /> among what was sent since it was made. Other requests
+    ///     may have been answered in that time: a refusal goes to the player who asked alone, anything else to everyone
+    ///     and names the player it is about.
+    /// </summary>
+    private T Answer<T>(int alreadySent, ServerPlayer player, Func<T, bool> isAnswer) where T : Packet
+    {
+        List<NSubstitute.Core.ICall> calls = PacketSender.ReceivedCalls().Skip(alreadySent).ToList();
+        List<T> refusals = calls.Where(call => call.GetMethodInfo().Name == nameof(IPacketSender.SendPacketAsync) && Equals(call.GetArguments()[1], player.SessionId))
+                                .Select(call => call.GetArguments()[0]).OfType<T>().Where(isAnswer).ToList();
+        if (refusals.Count > 0)
+        {
+            return refusals.Single();
+        }
+        return calls.Where(call => call.GetMethodInfo().Name == nameof(IPacketSender.SendPacketToAllAsync))
+                    .Select(call => call.GetArguments()[0]).OfType<T>()
+                    .Single(packet => isAnswer(packet) && (packet is not MapRoomCameraControl control || control.ControllerSessionId == player.SessionId));
+    }
 
     /// <summary>
     ///     Everything the server sends in answer to a control packet, for tests that look beyond the control response.
     /// </summary>
-    internal async Task<IReadOnlyList<Packet>> ControlPacketsAsync(ServerPlayer player, MapRoomCameraControl packet)
-    {
-        RecordingPacketSender requestPacketSender = new();
-        await controlProcessor.Process(new AuthProcessorContext(player, requestPacketSender), packet);
-        return requestPacketSender.Packets;
-    }
+    internal Task<IReadOnlyList<Packet>> ControlPacketsAsync(ServerPlayer player, MapRoomCameraControl packet) =>
+        SentDuringAsync(() => Manager.SetControlAsync(player, packet));
 
-    internal async Task<IReadOnlyList<Packet>> CleanupAsync(MapRoomEntity room)
-    {
-        RecordingPacketSender requestPacketSender = new();
-        await deconstructionCleanup.CleanupAsync(room, new AuthProcessorContext(PlayerA, requestPacketSender));
-        return requestPacketSender.Packets;
-    }
+    /// <summary>
+    ///     What deconstructing a room sends, once the room has left the entity registry.
+    /// </summary>
+    internal Task<IReadOnlyList<Packet>> CleanupAsync(MapRoomEntity room) => SentDuringAsync(() => Manager.RoomDeconstructedAsync(PlayerA, room));
 
     /// <summary>
     ///     Picks a camera up into the inventory of <paramref name="player" />. A client never sends camera state with
     ///     the inventory item; <paramref name="clientMetadata" /> is for tests of a client that does.
     /// </summary>
-    internal async Task<IReadOnlyList<Packet>> PickupAsync(ServerPlayer player, NitroxId cameraId, EntityMetadata? clientMetadata = null)
+    internal Task<IReadOnlyList<Packet>> PickupAsync(ServerPlayer player, NitroxId cameraId, EntityMetadata? clientMetadata = null)
     {
-        RecordingPacketSender requestPacketSender = new();
         InventoryItemEntity item = new(cameraId, CAMERA_CLASS_ID, new NitroxTechType("MapRoomCamera"), clientMetadata, player.GameObjectId, []);
-        await pickupProcessor.Process(new AuthProcessorContext(player, requestPacketSender), new PickupItem(item));
-        return requestPacketSender.Packets;
+        return SentDuringAsync(() => pickupProcessor.Process(Context(player), new PickupItem(item)));
     }
 
     /// <summary>
     ///     Drops a camera from an inventory back into the world, the way the dropping client reports it.
     /// </summary>
-    internal async Task<IReadOnlyList<Packet>> DropAsync(ServerPlayer player, NitroxId cameraId, EntityMetadata? clientMetadata = null)
+    internal Task<IReadOnlyList<Packet>> DropAsync(ServerPlayer player, NitroxId cameraId, EntityMetadata? clientMetadata = null)
     {
-        RecordingPacketSender requestPacketSender = new();
         GlobalRootEntity camera = CreateCamera(cameraId);
         camera.Metadata = clientMetadata;
-        await spawnProcessor.Process(new AuthProcessorContext(player, requestPacketSender), new EntitySpawnedByClient(camera, true, true));
-        return requestPacketSender.Packets;
+        return SentDuringAsync(() => spawnProcessor.Process(Context(player), new EntitySpawnedByClient(camera, true, true)));
     }
 
     /// <summary>
     ///     Finishes a piece on an existing base, the way the builder's client reports it.
     /// </summary>
-    internal async Task<IReadOnlyList<Packet>> UpdateBaseAsync(ServerPlayer player, UpdateBase packet)
-    {
-        RecordingPacketSender requestPacketSender = new();
-        await updateBaseProcessor.Process(new AuthProcessorContext(player, requestPacketSender), packet);
-        return requestPacketSender.Packets;
-    }
+    internal Task<IReadOnlyList<Packet>> UpdateBaseAsync(ServerPlayer player, UpdateBase packet) =>
+        SentDuringAsync(() => updateBaseProcessor.Process(Context(player), packet));
 
     /// <summary>
     ///     Reports an entity as destroyed, the way the client that saw it die does.
     /// </summary>
-    internal async Task<IReadOnlyList<Packet>> DestroyAsync(ServerPlayer player, NitroxId entityId)
-    {
-        RecordingPacketSender requestPacketSender = new();
-        await destroyProcessor.Process(new AuthProcessorContext(player, requestPacketSender), new EntityDestroyed(entityId));
-        return requestPacketSender.Packets;
-    }
+    internal Task<IReadOnlyList<Packet>> DestroyAsync(ServerPlayer player, NitroxId entityId) =>
+        SentDuringAsync(() => destroyProcessor.Process(Context(player), new EntityDestroyed(entityId)));
 
     /// <summary>
-    ///     Sends a metadata update for an entity. The fixture has no connected players to relay an accepted update to,
-    ///     so what comes back is only what the server replied to <paramref name="player" />.
+    ///     Sends a metadata update for an entity. Unless the fixture was given connected players there is nobody to
+    ///     relay an accepted update to, so what comes back is only what the server replied to <paramref name="player" />.
     /// </summary>
-    internal async Task<IReadOnlyList<Packet>> UpdateMetadataAsync(ServerPlayer player, NitroxId entityId, EntityMetadata metadata)
-    {
-        RecordingPacketSender requestPacketSender = new();
-        await metadataProcessor.Process(new AuthProcessorContext(player, requestPacketSender), new EntityMetadataUpdate(entityId, metadata));
-        return requestPacketSender.Packets;
-    }
+    internal Task<IReadOnlyList<Packet>> UpdateMetadataAsync(ServerPlayer player, NitroxId entityId, EntityMetadata metadata) =>
+        SentDuringAsync(() => metadataProcessor.Process(Context(player), new EntityMetadataUpdate(entityId, metadata)));
 
     /// <summary>
     ///     What a player is told about camera control once their initial sync has finished.
     /// </summary>
-    internal async Task<IReadOnlyList<MapRoomCameraControl>> JoinedPlayerControlGrantsAsync(SessionId joinedSessionId)
-    {
-        int alreadySent = worldPacketSender.Packets.Count;
-        await EntitySimulation.SendCameraControlGrantsAsync(joinedSessionId);
-        return worldPacketSender.Packets.Skip(alreadySent).Cast<MapRoomCameraControl>().ToList();
-    }
+    internal async Task<IReadOnlyList<MapRoomCameraControl>> JoinedPlayerControlGrantsAsync(SessionId joinedSessionId) =>
+        (await SentDuringAsync(() => Manager.SendControlGrantsAsync(joinedSessionId))).Cast<MapRoomCameraControl>().ToList();
 
     /// <summary>
     ///     Runs the simulation cleanup of a player who left.
     /// </summary>
     /// <returns>The packets that cleanup sent.</returns>
-    internal async Task<IReadOnlyList<Packet>> DisconnectAsync(ServerPlayer player)
-    {
-        int alreadySent = worldPacketSender.Packets.Count;
-        await EntitySimulation.OnEventAsync(new ISessionCleaner.Args(
-            new SessionManager.Session(player.SessionId, new IPEndPoint(IPAddress.Loopback, 11000)), 1));
-        return worldPacketSender.Packets.Skip(alreadySent).ToList();
-    }
+    internal Task<IReadOnlyList<Packet>> DisconnectAsync(ServerPlayer player) =>
+        SentDuringAsync(() => EntitySimulation.OnEventAsync(new ISessionCleaner.Args(
+            new SessionManager.Session(player.SessionId, new IPEndPoint(IPAddress.Loopback, 11000)), 1)));
 
     /// <summary>
     ///     Finishes the first piece of a new base, the way the builder's client reports it.
     /// </summary>
-    internal async Task<IReadOnlyList<Packet>> PlaceBaseAsync(ServerPlayer player, PlaceBase packet)
-    {
-        RecordingPacketSender requestPacketSender = new();
-        await placeBaseProcessor.Process(new AuthProcessorContext(player, requestPacketSender), packet);
-        return requestPacketSender.Packets;
-    }
+    internal Task<IReadOnlyList<Packet>> PlaceBaseAsync(ServerPlayer player, PlaceBase packet) =>
+        SentDuringAsync(() => placeBaseProcessor.Process(Context(player), packet));
 
     internal async Task<SimulationOwnershipResponse> RequestOwnershipAsync(ServerPlayer player, NitroxId entityId,
-        SimulationLockType lockType)
-    {
-        RecordingPacketSender requestPacketSender = new();
-        await ownershipRequestProcessor.Process(new AuthProcessorContext(player, requestPacketSender),
-            new SimulationOwnershipRequest(player.SessionId, entityId, lockType));
-        return requestPacketSender.Single<SimulationOwnershipResponse>();
-    }
+        SimulationLockType lockType) =>
+        (await SentDuringAsync(() => ownershipRequestProcessor.Process(Context(player), new SimulationOwnershipRequest(player.SessionId, entityId, lockType))))
+        .OfType<SimulationOwnershipResponse>().Single();
+
+    /// <summary>
+    ///     Everything the server sends in answer to a camera light packet.
+    /// </summary>
+    internal Task<IReadOnlyList<Packet>> LightAsync(ServerPlayer player, MapRoomCameraLight packet) =>
+        SentDuringAsync(() => Manager.SetCameraLightAsync(player, packet));
+
+    /// <summary>
+    ///     Everything the server sends in answer to a camera battery and health packet.
+    /// </summary>
+    internal Task<IReadOnlyList<Packet>> ComponentsAsync(ServerPlayer player, MapRoomCameraComponentState packet) =>
+        SentDuringAsync(() => Manager.SetCameraComponentsAsync(player, packet));
+
+    /// <summary>
+    ///     Everything the server sends in answer to a camera preview packet.
+    /// </summary>
+    internal Task<IReadOnlyList<Packet>> PreviewAsync(ServerPlayer player, MapRoomCameraPreview packet) =>
+        SentDuringAsync(() => Manager.PublishPreviewAsync(player, packet));
+
+    /// <summary>
+    ///     Whether the server has this player on record as the one controlling the camera.
+    /// </summary>
+    internal bool IsController(NitroxId cameraId, SessionId sessionId) =>
+        Manager.TryGetController(cameraId, out SessionId controller) && controller == sessionId;
+
+    internal bool HasController(NitroxId cameraId) => Manager.TryGetController(cameraId, out _);
+
+    internal AuthProcessorContext Context(ServerPlayer player) => new(player, PacketSender);
 
     internal string Snapshot()
     {
@@ -320,31 +378,4 @@ internal sealed class ScannerRoomScenarioFixture
         new List<int>(),
         false,
         false);
-
-    internal sealed class RecordingPacketSender : IPacketSender
-    {
-        private readonly List<Packet> packets = [];
-
-        public ValueTask SendPacketAsync<T>(T packet, SessionId sessionId) where T : Packet
-        {
-            packets.Add(packet);
-            return ValueTask.CompletedTask;
-        }
-
-        public ValueTask SendPacketToAllAsync<T>(T packet) where T : Packet
-        {
-            packets.Add(packet);
-            return ValueTask.CompletedTask;
-        }
-
-        public ValueTask SendPacketToOthersAsync<T>(T packet, SessionId excludedSessionId) where T : Packet
-        {
-            packets.Add(packet);
-            return ValueTask.CompletedTask;
-        }
-
-        internal IReadOnlyList<Packet> Packets => packets;
-
-        internal T Single<T>() where T : Packet => packets.OfType<T>().Single();
-    }
 }
