@@ -72,7 +72,7 @@ internal sealed class ScannerRoomScenarioFixture
         LooseCameraState = new MapRoomLooseCameraState(EntityRegistry);
         dockProcessor = new(EntityRegistry, worldEntityManager, Ownership, ControlReleaseFactory, RoomLifecycle,
             ControlLifecycle, Diagnostics, LooseCameraState, NullLogger<MapRoomCameraDockProcessor>.Instance);
-        controlProcessor = new(Ownership, EntityRegistry, ControlLifecycle, Diagnostics);
+        controlProcessor = new(Ownership, EntityRegistry, ControlLifecycle, ControlReleaseFactory, Diagnostics);
         PlayerManager playerManager = new(null!, null!, null!, NullLogger<PlayerManager>.Instance);
         deconstructionCleanup = new(EntityRegistry, Ownership, ControlReleaseFactory,
             new MapRoomScanResultSubscriptions(), ControlLifecycle, playerManager, Diagnostics, worldEntityManager, LooseCameraState);
@@ -118,6 +118,16 @@ internal sealed class ScannerRoomScenarioFixture
         await controlProcessor.Process(new AuthProcessorContext(player, requestPacketSender),
             new MapRoomCameraControl(cameraId, Optional.Empty, -1, isControlling, false));
         return requestPacketSender.Single<MapRoomCameraControl>();
+    }
+
+    /// <summary>
+    ///     Everything the server sends in answer to a control packet, for tests that look beyond the control response.
+    /// </summary>
+    internal async Task<IReadOnlyList<Packet>> ControlPacketsAsync(ServerPlayer player, MapRoomCameraControl packet)
+    {
+        RecordingPacketSender requestPacketSender = new();
+        await controlProcessor.Process(new AuthProcessorContext(player, requestPacketSender), packet);
+        return requestPacketSender.Packets;
     }
 
     internal async Task<IReadOnlyList<Packet>> CleanupAsync(MapRoomEntity room)
@@ -201,7 +211,7 @@ internal sealed class ScannerRoomScenarioFixture
         false,
         false);
 
-    private sealed class RecordingPacketSender : IPacketSender
+    internal sealed class RecordingPacketSender : IPacketSender
     {
         private readonly List<Packet> packets = [];
 

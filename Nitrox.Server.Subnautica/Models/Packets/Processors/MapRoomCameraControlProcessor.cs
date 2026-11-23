@@ -6,6 +6,7 @@ using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
+using Nitrox.Model.Subnautica.Helper;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
@@ -13,11 +14,13 @@ using Nitrox.Server.Subnautica.Models.Packets.Core;
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
 internal sealed class MapRoomCameraControlProcessor(SimulationOwnershipData simulationOwnershipData, EntityRegistry entityRegistry,
-    MapRoomCameraControlLifecycle controlLifecycle, ScannerRoomDiagnostics diagnostics) : IAuthPacketProcessor<MapRoomCameraControl>
+    MapRoomCameraControlLifecycle controlLifecycle, MapRoomCameraControlReleaseFactory cameraControlReleaseFactory,
+    ScannerRoomDiagnostics diagnostics) : IAuthPacketProcessor<MapRoomCameraControl>
 {
     private readonly SimulationOwnershipData simulationOwnershipData = simulationOwnershipData;
     private readonly EntityRegistry entityRegistry = entityRegistry;
     private readonly MapRoomCameraControlLifecycle controlLifecycle = controlLifecycle;
+    private readonly MapRoomCameraControlReleaseFactory cameraControlReleaseFactory = cameraControlReleaseFactory;
     private readonly ScannerRoomDiagnostics diagnostics = diagnostics;
 
     public async Task Process(AuthProcessorContext context, MapRoomCameraControl packet)
@@ -61,13 +64,15 @@ internal sealed class MapRoomCameraControlProcessor(SimulationOwnershipData simu
         if (CanAcknowledgeRelease(currentOwner != null, currentOwner == context.Sender))
         {
             controlLifecycle.EndPreviewAcquisition(packet.CameraId, context.Sender.SessionId);
-            if (currentOwner != null)
-            {
-                simulationOwnershipData.RevokeIfOwner(packet.CameraId, context.Sender);
-            }
+            SimulationOwnershipChange? keptSimulation = currentOwner != null ? EndControlLock(packet.CameraId, context.Sender) : null;
             diagnostics.RecordAccepted("control_release", GetRoom(packet.MapRoomId), packet.CameraId, context.Sender.SessionId, packet.CameraIndex,
                 currentOwner == null ? "idempotent" : null);
             await context.SendToAllAsync(CreateResponse(packet, true, context.Sender.SessionId));
+            if (keptSimulation != null)
+            {
+                // Sent after the release, so no client learns of the new lock while it still counts the sender as controlling.
+                await context.SendToAllAsync(keptSimulation);
+            }
         }
         else
         {
@@ -77,6 +82,34 @@ internal sealed class MapRoomCameraControlProcessor(SimulationOwnershipData simu
     }
 
     internal static bool CanAcknowledgeRelease(bool hasOwner, bool senderOwnsLock) => !hasOwner || senderOwnsLock;
+
+    /// <summary>
+    ///     Ends the control lock of <paramref name="sender" />. A camera out in the world keeps them as its simulating
+    ///     player: battery and health reports are only accepted from that player, and a plain transient lock cannot be
+    ///     requested for a Scanner Room camera afterwards. A docked camera is a record of its room and is left without
+    ///     a lock.
+    /// </summary>
+    /// <returns>The lock to announce, if the control lock became an ordinary simulation lock.</returns>
+    private SimulationOwnershipChange? EndControlLock(NitroxId cameraId, Player sender)
+    {
+        if (!cameraControlReleaseFactory.TryGetLooseWorldCamera(cameraId, out WorldEntity? looseCamera))
+        {
+            simulationOwnershipData.RevokeIfOwner(cameraId, sender);
+            return null;
+        }
+        if (simulationOwnershipData.TryGetLock(cameraId, out SimulationOwnershipData.PlayerLock heldLock) &&
+            heldLock.Player == sender && heldLock.LockType == SimulationLockType.TRANSIENT)
+        {
+            // They only simulated the camera, so there is nothing to end.
+            return null;
+        }
+        if (!simulationOwnershipData.TryAcquire(cameraId, sender, SimulationLockType.TRANSIENT))
+        {
+            return null;
+        }
+        return new SimulationOwnershipChange(cameraId, sender.SessionId, SimulationLockType.TRANSIENT,
+            SimulationWhitelist.ShouldSimulateEntityMovement(looseCamera));
+    }
 
     private bool IsValidAssociation(MapRoomCameraControl packet)
     {

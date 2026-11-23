@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
@@ -102,6 +103,17 @@ internal sealed class MapRoomCameraControlReleaseFactory(EntityRegistry entityRe
             }
         }
         return false;
+    }
+
+    /// <summary>
+    ///     The entity of a camera that is out in the world: a registered world entity that is docked nowhere. Such a
+    ///     camera is simulated by a player like any other loose entity, while a docked camera is only a record of its
+    ///     room and is simulated by nobody.
+    /// </summary>
+    public bool TryGetLooseWorldCamera(NitroxId cameraId, [NotNullWhen(true)] out WorldEntity? camera)
+    {
+        camera = null;
+        return ResolveCameraTopology(cameraId).IsLooseWorldCamera && entityRegistry.TryGetEntityById(cameraId, out camera);
     }
 
     /// <summary>

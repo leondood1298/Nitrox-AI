@@ -2,7 +2,9 @@ using System.Collections.Generic;
 using System.Linq;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.Unity;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
+using Nitrox.Model.Subnautica.Helper;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
 
@@ -47,12 +49,25 @@ internal sealed class MapRoomDeconstructionCleanup(EntityRegistry entityRegistry
             {
                 continue;
             }
-            if (simulationOwnershipData.RevokeOwnerOfId(camera.CameraId, out SimulationOwnershipData.PlayerLock revokedLock) &&
-                cameraControlReleaseFactory.TryCreate(camera.CameraId, revokedLock, "deconstruct", out MapRoomCameraControl release))
+            bool hadLock = simulationOwnershipData.RevokeOwnerOfId(camera.CameraId, out SimulationOwnershipData.PlayerLock revokedLock);
+            if (hadLock && cameraControlReleaseFactory.TryCreate(camera.CameraId, revokedLock, "deconstruct", out MapRoomCameraControl release))
             {
                 await context.SendToAllAsync(release);
             }
-            await context.SendToAllAsync(new DropSimulationOwnership([camera.CameraId]));
+            // A camera out in the world outlives the room and still needs a simulating player. Control has ended above;
+            // whoever held the lock keeps simulating the camera, because a plain transient lock cannot be requested
+            // for a Scanner Room camera afterwards.
+            if (hadLock && !dockedCameraIds.Contains(camera.CameraId) &&
+                cameraControlReleaseFactory.TryGetLooseWorldCamera(camera.CameraId, out WorldEntity? looseCamera) &&
+                simulationOwnershipData.TryAcquire(camera.CameraId, revokedLock.Player, SimulationLockType.TRANSIENT))
+            {
+                await context.SendToAllAsync(new SimulationOwnershipChange(camera.CameraId, revokedLock.Player.SessionId,
+                    SimulationLockType.TRANSIENT, SimulationWhitelist.ShouldSimulateEntityMovement(looseCamera)));
+            }
+            else
+            {
+                await context.SendToAllAsync(new DropSimulationOwnership([camera.CameraId]));
+            }
             // The game destroys a docked camera together with its dock. Without removing the server's copy, a camera
             // that had ever been undocked would come back for later joiners as a loose camera at a stale position.
             if (dockedCameraIds.Contains(camera.CameraId) && worldEntityManager.TryDestroyEntity(camera.CameraId, out _))
