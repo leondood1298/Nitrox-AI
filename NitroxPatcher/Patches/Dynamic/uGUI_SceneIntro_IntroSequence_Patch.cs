@@ -213,8 +213,10 @@ public sealed partial class uGUI_SceneIntro_IntroSequence_Patch : NitroxPatch, I
 
         SessionId? opPartnerId = Resolve<PlayerCinematics>().IntroCinematicPartnerId;
 
+        // A partner who chose to play alone when the server paired it is not taken; the server lets this player wait again
         if (Resolve<LocalPlayer>().IntroCinematicMode == IntroCinematicMode.START &&
-            opPartnerId.HasValue && Resolve<PlayerManager>().TryFind(opPartnerId.Value, out RemotePlayer newPartner))
+            opPartnerId.HasValue && Resolve<PlayerManager>().TryFind(opPartnerId.Value, out RemotePlayer newPartner) &&
+            newPartner.PlayerContext.IntroCinematicMode != IntroCinematicMode.SINGLEPLAYER)
         {
             partner = newPartner;
             EnqueueStartCinematic(uGuiSceneIntro);
@@ -233,34 +235,14 @@ public sealed partial class uGUI_SceneIntro_IntroSequence_Patch : NitroxPatch, I
     {
         if (IsPartnerValid()) // Is null when RunCinematicSingleplayer() is called
         {
-            partner.PlayerModel.transform.localScale = new Vector3(-1, 1, 1);
-            partner.ArmsController.enabled = false;
-            partner.AnimationController.UpdatePlayerAnimations = false;
-            partner.AnimationController["cinematics_enabled"] = true;
-            partner.AnimationController["escapepod_intro"] = true;
-
-            IntroCinematicUpdater.Partner = partner;
-            partner.Body.AddComponent<IntroCinematicUpdater>();
+            Resolve<PlayerCinematics>().StartIntroWithPartner(partner);
         }
     }
 
     private static void EndRemoteCinematic()
     {
-        if (IsPartnerValid())
-        {
-            IntroCinematicUpdater introCinematicUpdater = partner.Body.GetComponent<IntroCinematicUpdater>();
-            if (introCinematicUpdater)
-            {
-                Object.DestroyImmediate(introCinematicUpdater);
-                IntroCinematicUpdater.Partner = null;
-            }
-
-            partner.PlayerModel.transform.localScale = new Vector3(1, 1, 1);
-            partner.AnimationController["cinematics_enabled"] = false;
-            partner.AnimationController["escapepod_intro"] = false;
-            partner.ArmsController.enabled = true;
-            partner.AnimationController.UpdatePlayerAnimations = true;
-        }
+        partner = null;
+        Resolve<PlayerCinematics>().EndIntroWithPartner();
 
         // Stop(false) damaged the radio. While the intro fire still burns, IntroLifepodDirector.ConcludeIntroSequence
         // will set the emergency lighting once it is put out; the stored state is applied after that instead

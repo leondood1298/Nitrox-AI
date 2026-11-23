@@ -47,6 +47,7 @@ internal sealed class SetIntroCinematicModeProcessor(PlayerManager playerManager
         if (playerManager.TryFind(packet.SessionId, out RemotePlayer remotePlayer))
         {
             remotePlayer.PlayerContext.IntroCinematicMode = packet.Mode;
+            playerCinematics.RemoteIntroModeChanged(packet.SessionId, packet.Mode);
             return Task.CompletedTask;
         }
 
