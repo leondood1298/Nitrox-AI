@@ -4,6 +4,7 @@ using System.Net;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures.GameLogic;
 using Nitrox.Server.Subnautica.Models.Administration;
+using Nitrox.Server.Subnautica.Models.Commands.ArgConverters;
 using Nitrox.Server.Subnautica.Models.Commands.Core;
 using Nitrox.Server.Subnautica.Models.Communication;
 using Nitrox.Server.Subnautica.Models.GameLogic;
@@ -13,8 +14,25 @@ namespace Nitrox.Server.Subnautica.Models.Commands;
 
 [RequiresPermission(Perms.MODERATOR)]
 internal sealed class BanCommand(PlayerManager playerManager, SessionManager sessionManager, BanService banService, IKickPlayer playerKicker)
-    : ICommandHandler<Player, string, TimeSpan>, ICommandHandler<IPAddress, string, TimeSpan>
+    : ICommandHandler<Player, string, TimeSpan>, ICommandHandler<ReservedSession, string, TimeSpan>, ICommandHandler<IPAddress, string, TimeSpan>
 {
+    [Description("Bans a player who waits in the join queue by their IP address, kicking them")]
+    public async Task Execute(ICommandContext context,
+                              [Description("Queued player to ban")] ReservedSession target,
+                              [Description("Ban reason")] string reason = "",
+                              [Description("Duration like 30m/12h/7d/2w, omit for permanent")]
+                              TimeSpan duration = default)
+    {
+        IPEndPoint? endPoint = sessionManager.GetEndPoint(target.SessionId);
+        if (endPoint is null)
+        {
+            await context.ReplyAsync($"Could not determine the IP address of '{target.Name}'");
+            return;
+        }
+
+        await BanAddressAsync(context, endPoint.Address, target.Name, reason, duration);
+    }
+
     [Description("Bans an online player by their current IP address, kicking them")]
     public async Task Execute(ICommandContext context,
                               [Description("Player to ban")] Player target,
@@ -77,9 +95,15 @@ internal sealed class BanCommand(PlayerManager playerManager, SessionManager ses
         label ??= connectedFromIp.Length == 1 ? connectedFromIp[0].Name : null;
         reason = reason?.Trim();
         await banService.BanAsync(ip, label, reason, context.OriginName, duration);
+        string kickReason = string.IsNullOrEmpty(reason) ? "Banned" : $"Banned: {reason}";
         foreach (Player player in connectedFromIp.Where(player => player.IsOnline))
         {
-            await playerKicker.KickPlayer(player.SessionId, string.IsNullOrEmpty(reason) ? "Banned" : $"Banned: {reason}");
+            await playerKicker.KickPlayer(player.SessionId, kickReason);
+        }
+        // Queued players passed the ban check before the ban; they would otherwise join once their turn comes
+        foreach (SessionId queued in playerManager.GetReservedSessions().Where(session => ip.Equals(sessionManager.GetEndPoint(session)?.Address)))
+        {
+            await playerKicker.KickPlayer(queued, kickReason);
         }
 
         string durationText = duration != TimeSpan.Zero ? $"for {duration}" : "permanently";

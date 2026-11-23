@@ -261,6 +261,11 @@ internal sealed partial class PlayerManager(SessionManager sessionManager, BanSe
     public bool IsReserved(SessionId sessionId) => reservations.ContainsKey(sessionId);
 
     /// <summary>
+    ///     The sessions that hold a reservation and are not players yet.
+    /// </summary>
+    public List<SessionId> GetReservedSessions() => [.. reservations.Keys];
+
+    /// <summary>
     ///     Forgets the key a name is tied to, so that the next player to join with that name ties it to theirs.
     /// </summary>
     /// <returns>False if no player with that name has joined this server.</returns>
