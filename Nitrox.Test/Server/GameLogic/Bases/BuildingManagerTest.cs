@@ -87,10 +87,41 @@ public sealed class BuildingManagerTest
         Assert.IsEmpty(scenario.EntityRegistry.GetEntityById<PlanterEntity>(planter.Id).Value.ChildEntities);
     }
 
+    /// <summary>
+    ///     A partly deconstructed reactor keeps what is in it, in the game as on the server: a joiner, a restart and the
+    ///     player who finishes it again all get the rods back.
+    /// </summary>
+    [TestMethod]
+    public void PartlyDeconstructedReactorKeepsItsContents()
+    {
+        BuildingScenarioFixture scenario = new();
+        InventoryItemEntity rod = BuildingScenarioFixture.Item("00000000-0000-0000-0000-000000000601", "ReactorRod");
+        scenario.AddInteriorPiece(reactorId, "BaseNuclearReactor", rod);
+
+        Assert.IsTrue(scenario.BuildingManager.ReplacePieceByGhost(scenario.PlayerA, Deconstructed(reactorId, 1), out _, out _));
+
+        Assert.IsTrue(scenario.EntityRegistry.TryGetEntityById(reactorId, out GhostEntity ghost));
+        Assert.AreSame(rod, ghost.ChildEntities.Single());
+        Assert.AreEqual(reactorId, scenario.EntityRegistry.GetEntityById(rod.Id).Value.ParentId);
+
+        // Finished again by a player who has nothing in its copy of the module
+        InteriorPieceEntity rebuilt = InteriorPieceEntity.MakeEmpty();
+        rebuilt.Id = reactorId;
+        rebuilt.ParentId = BuildingScenarioFixture.BaseId;
+        Assert.IsTrue(scenario.BuildingManager.UpdateBase(scenario.PlayerB, Update(reactorId, default, 2, rebuilt), out _));
+
+        Assert.IsTrue(scenario.EntityRegistry.TryGetEntityById(reactorId, out InteriorPieceEntity reactor));
+        Assert.AreSame(rod, reactor.ChildEntities.Single());
+        Assert.AreEqual(reactorId, scenario.EntityRegistry.GetEntityById(rod.Id).Value.ParentId);
+    }
+
+    private static PieceDeconstructed Deconstructed(NitroxId pieceId, int operationId) =>
+        new(BuildingScenarioFixture.BaseId, pieceId, default, BuildingScenarioFixture.Ghost(pieceId), new BaseData(), operationId);
+
     private const string WATER_PARK_CLASS_ID = "31662630-7cba-4583-8456-2fa1c4cc31aa";
 
-    private static UpdateBase Update(NitroxId ghostId, (NitroxId, NitroxId) transfer, int operationId) =>
-        new(BuildingScenarioFixture.BaseId, ghostId, new BaseData(), null, new Dictionary<NitroxId, NitroxBaseFace>(), new Dictionary<NitroxId, NitroxInt3>(),
+    private static UpdateBase Update(NitroxId ghostId, (NitroxId, NitroxId) transfer, int operationId, Entity? builtPiece = null) =>
+        new(BuildingScenarioFixture.BaseId, ghostId, new BaseData(), builtPiece, new Dictionary<NitroxId, NitroxBaseFace>(), new Dictionary<NitroxId, NitroxInt3>(),
             new Dictionary<NitroxId, NitroxInt3>(), transfer, operationId);
 
     [TestMethod]

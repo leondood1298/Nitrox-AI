@@ -193,7 +193,7 @@ internal sealed class BuildingManager
 
     public bool UpdateBase(Player player, UpdateBase updateBase, out int operationId)
     {
-        if (!entityRegistry.TryGetEntityById<GhostEntity>(updateBase.FormerGhostId, out _))
+        if (!entityRegistry.TryGetEntityById(updateBase.FormerGhostId, out GhostEntity formerGhost))
         {
             logger.ZLogError($"Trying to place a base from a non-registered ghost (GhostId: {updateBase.FormerGhostId})");
             NotifyPlayerDesync(player);
@@ -224,6 +224,7 @@ internal sealed class BuildingManager
             return false;
         }
 
+        GiveBackModuleContents(formerGhost, updateBase.BuiltPieceEntity);
         worldEntityManager.RemoveGlobalRootEntity(updateBase.FormerGhostId);
         buildEntity.BaseData = updateBase.BaseData;
 
@@ -350,12 +351,58 @@ internal sealed class BuildingManager
 
         removedEntity = worldEntityManager.RemoveGlobalRootEntity(pieceDeconstructed.PieceId).Value;
         GhostEntity ghostEntity = pieceDeconstructed.ReplacerGhost;
+        KeepModuleContents(removedEntity, ghostEntity);
 
         worldEntityManager.AddOrUpdateGlobalRootEntity(ghostEntity);
         buildEntity.BaseData = pieceDeconstructed.BaseData;
         buildEntity.OperationId++;
         operationId = buildEntity.OperationId;
         return true;
+    }
+
+    /// <summary>
+    ///     What a module holds (a reactor's rods or organic matter) stays in it while it is partly deconstructed, as in the
+    ///     game. The server keeps it as children of the ghost until the piece is finished again or fully removed.
+    /// </summary>
+    private static void KeepModuleContents(Entity? removedEntity, GhostEntity ghostEntity)
+    {
+        if (removedEntity is not InteriorPieceEntity { IsWaterPark: false } piece)
+        {
+            return;
+        }
+        List<Entity> contents = [.. piece.ChildEntities.Where(IsModuleContent)];
+        foreach (Entity content in contents)
+        {
+            piece.ChildEntities.Remove(content);
+            content.ParentId = ghostEntity.Id;
+            ghostEntity.ChildEntities.Add(content);
+        }
+    }
+
+    private static bool IsModuleContent(Entity entity) => entity is InventoryItemEntity or InstalledModuleEntity;
+
+    /// <summary>
+    ///     A module finished from a ghost gets back what the ghost kept for it. The server's copy is used: a player who
+    ///     joined while it was a ghost had it from the server as well.
+    /// </summary>
+    private static void GiveBackModuleContents(GhostEntity ghost, Entity? builtPiece)
+    {
+        if (builtPiece is not InteriorPieceEntity piece || piece.Id != ghost.Id)
+        {
+            return;
+        }
+        List<Entity> kept = [.. ghost.ChildEntities.Where(IsModuleContent)];
+        if (kept.Count == 0)
+        {
+            return;
+        }
+        piece.ChildEntities.RemoveAll(IsModuleContent);
+        foreach (Entity content in kept)
+        {
+            ghost.ChildEntities.Remove(content);
+            content.ParentId = piece.Id;
+            piece.ChildEntities.Add(content);
+        }
     }
 
     public bool CreateWaterParkPiece(WaterParkDeconstructed waterParkDeconstructed, Entity removedEntity)

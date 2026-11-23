@@ -75,7 +75,7 @@ namespace NitroxClient.GameLogic
             entitySpawnersByType[typeof(BuildEntity)] = new BuildEntitySpawner(this, (BaseLeakEntitySpawner)entitySpawnersByType[typeof(BaseLeakEntity)], entityMetadataManager);
             entitySpawnersByType[typeof(RadiationLeakEntity)] = new RadiationLeakEntitySpawner(timeManager);
             entitySpawnersByType[typeof(ModuleEntity)] = new ModuleEntitySpawner(this, entityMetadataManager);
-            entitySpawnersByType[typeof(GhostEntity)] = new GhostEntitySpawner();
+            entitySpawnersByType[typeof(GhostEntity)] = new GhostEntitySpawner(this);
             entitySpawnersByType[typeof(OxygenPipeEntity)] = new OxygenPipeEntitySpawner((WorldEntitySpawner)entitySpawnersByType[typeof(WorldEntity)]);
             entitySpawnersByType[typeof(PlacedWorldEntity)] = new PlacedWorldEntitySpawner((WorldEntitySpawner)entitySpawnersByType[typeof(WorldEntity)]);
             entitySpawnersByType[typeof(InteriorPieceEntity)] = new InteriorPieceEntitySpawner(this, entityMetadataManager);

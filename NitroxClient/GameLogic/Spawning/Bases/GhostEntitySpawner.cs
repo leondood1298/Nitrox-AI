@@ -1,6 +1,10 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
 using Nitrox.Model.DataStructures;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using NitroxClient.GameLogic.Bases;
 using NitroxClient.GameLogic.Spawning.Abstract;
 using NitroxClient.GameLogic.Spawning.WorldEntities;
@@ -10,8 +14,10 @@ using UnityEngine;
 
 namespace NitroxClient.GameLogic.Spawning.Bases;
 
-public class GhostEntitySpawner : EntitySpawner<GhostEntity>
+public class GhostEntitySpawner(Entities entities) : EntitySpawner<GhostEntity>
 {
+    private readonly Entities entities = entities;
+
     protected override IEnumerator SpawnAsync(GhostEntity entity, TaskResult<Optional<GameObject>> result)
     {
         if (NitroxEntity.TryGetObjectFrom(entity.Id, out GameObject gameObject))
@@ -25,9 +31,50 @@ public class GhostEntitySpawner : EntitySpawner<GhostEntity>
         }
         Transform parent = BuildingHandler.GetParentOrGlobalRoot(entity.ParentId);
         yield return RestoreGhost(parent, entity, result);
+        if (result.Get().HasValue)
+        {
+            yield return RestoreModuleContents(entity, result.Get().Value, entities);
+        }
     }
 
     protected override bool SpawnsOwnChildren(GhostEntity entity) => true;
+
+    /// <summary>
+    ///     A partly deconstructed reactor keeps its module, and the module keeps what was put in it (rods, organic
+    ///     matter). The server holds those as children of the ghost. The module has no id of its own while it is a ghost,
+    ///     so it borrows the ghost's for as long as its contents spawn into it.
+    /// </summary>
+    public static IEnumerator RestoreModuleContents(GhostEntity ghostEntity, GameObject ghostObject, Entities entities)
+    {
+        List<Entity> contents = ghostEntity.ChildEntities.Where(child => child is InventoryItemEntity or InstalledModuleEntity).ToList();
+        if (contents.Count == 0 || !ghostObject || !ghostObject.TryGetComponent(out ConstructableBase constructableBase) || !constructableBase.moduleFace.HasValue)
+        {
+            yield break;
+        }
+        Base @base = ghostObject.GetComponentInParent<Base>(true);
+        if (!@base)
+        {
+            yield break;
+        }
+        Base.Face face = constructableBase.moduleFace.Value;
+        face.cell += @base.GetAnchor();
+        if (@base.GetModule(face) is not Component module || !module)
+        {
+            Log.Error($"Couldn't find the module of ghost {ghostEntity.Id} to put its {contents.Count} items back into");
+            yield break;
+        }
+
+        NitroxEntity.SetNewId(module.gameObject, ghostEntity.Id);
+        yield return entities.SpawnBatchAsync(contents, true);
+        if (module)
+        {
+            NitroxEntity.RemoveFrom(module.gameObject);
+        }
+        if (ghostObject)
+        {
+            NitroxEntity.SetNewId(ghostObject, ghostEntity.Id);
+        }
+    }
 
     public static GhostEntity From(ConstructableBase constructableBase)
     {
