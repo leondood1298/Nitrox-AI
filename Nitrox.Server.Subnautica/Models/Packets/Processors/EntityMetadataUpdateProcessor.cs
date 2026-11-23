@@ -148,6 +148,7 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
         {
             PlayerMetadata playerMetadata => ProcessPlayerMetadata(sendingPlayer, entity, playerMetadata),
             MedicalCabinetMetadata => ProcessMedicalCabinetMetadata(sendingPlayer, entity),
+            PlayerTimeCapsuleMetadata => ProcessPlayerTimeCapsuleMetadata(sendingPlayer, entity),
 
             // Allow metadata updates from any player by default
             _ => true
@@ -166,6 +167,20 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
             return true;
         }
         logger.ZLogWarningOnce($"Player {sendingPlayer.Name} tried applying medical cabinet metadata to {entity.TechType?.Name ?? "None"} entity {entity.Id}");
+        return false;
+    }
+
+    /// <summary>
+    ///     Any player may write the text of a rocket's time capsule, but only on the capsule's entity: on the rocket it would
+    ///     take the place of the rocket's stages and preflight checks.
+    /// </summary>
+    private bool ProcessPlayerTimeCapsuleMetadata(Player sendingPlayer, Entity entity)
+    {
+        if (entity is PlayerTimeCapsuleEntity)
+        {
+            return true;
+        }
+        logger.ZLogWarningOnce($"Player {sendingPlayer.Name} tried applying time capsule metadata to {entity.GetType().Name} {entity.Id}");
         return false;
     }
 

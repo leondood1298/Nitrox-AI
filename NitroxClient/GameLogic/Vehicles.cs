@@ -169,6 +169,11 @@ public class Vehicles
     {
         VehicleEntity vehicleEntity = new(constructorId, DayNightCycle.main.timePassedAsFloat, constructedObject.transform.ToLocalDto(), string.Empty, false, constructedObjectId, techType.ToDto(), null);
         VehicleChildEntityHelper.PopulateChildren(constructedObjectId, constructedObject.GetFullHierarchyPath(), vehicleEntity.ChildEntities, constructedObject);
+        if (techType == TechType.RocketBase)
+        {
+            // The rocket's time capsule is a scene object outside the rocket, so PopulateChildren does not find it
+            vehicleEntity.ChildEntities.Add(TimeCapsules.CreateRocketCapsule(constructedObjectId));
+        }
         return vehicleEntity;
     }
 }

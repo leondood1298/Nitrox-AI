@@ -55,6 +55,7 @@ namespace Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 // Upstream's Cyclops damage sync has not registered this type yet; remove this line once it does.
 [ProtoInclude(203, typeof(CyclopsDamagePointMetadata))]
 [ProtoInclude(204, typeof(MedicalCabinetMetadata))]
+[ProtoInclude(207, typeof(PlayerTimeCapsuleMetadata))]
 public abstract class EntityMetadata
 {
 }
