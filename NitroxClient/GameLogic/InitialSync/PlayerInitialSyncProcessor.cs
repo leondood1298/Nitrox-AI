@@ -19,6 +19,11 @@ namespace NitroxClient.GameLogic.InitialSync;
 /// </remarks>
 public sealed class PlayerInitialSyncProcessor : InitialSyncProcessor
 {
+    /// <summary>
+    ///     The goal for which StoryGoalCustomEventHandler.NotifyGoalComplete calls InfectedMixin.RemoveInfection.
+    /// </summary>
+    private const string PLAYER_CURED_GOAL = "Infection_Progress5";
+
     private readonly Items item;
     private readonly ItemContainers itemContainers;
     private readonly LocalPlayer localPlayer;
@@ -38,6 +43,7 @@ public sealed class PlayerInitialSyncProcessor : InitialSyncProcessor
         AddStep(sync => SetPlayerGameObjectId(sync.PlayerGameObjectId));
         AddStep(sync => AddStartingItemsToPlayer(sync.FirstTimeConnecting));
         AddStep(sync => SetPlayerStats(sync.PlayerStatsData));
+        AddStep(sync => CureIfCuredWhileOffline(sync.StoryGoalData.CompletedGoals));
         AddStep(sync => SetUsedItems(sync.UsedItems));
         AddStep(sync => SetPlayerGameMode(sync.GameMode));
         AddStep(sync => ApplySettings(sync.KeepInventoryOnDeath, sync.SessionSettings.FastHatch, sync.SessionSettings.FastGrow, sync.MarkDeathPointsWithBeacon));
@@ -135,6 +141,24 @@ public sealed class PlayerInitialSyncProcessor : InitialSyncProcessor
         // We need to start it at least once for everything that's in the PDA to load
         Player.main.GetPDA().Open(PDATab.Inventory);
         Player.main.GetPDA().Close();
+    }
+
+    /// <summary>
+    ///     When the cure goal completes, StoryGoalCustomEventHandler.NotifyGoalComplete removes the infection of the players
+    ///     who are online. A player who was offline comes back with the stored infection, and EnzymeBall.Start then ignores
+    ///     them because the shared goal is complete, so they would stay infected for good.
+    /// </summary>
+    /// <remarks>
+    ///     Reads the goals from the packet so it does not depend on the order of <see cref="StoryGoalInitialSyncProcessor" />;
+    ///     it must run after <see cref="SetPlayerStats" />. PlayerStatsBroadcaster sends the new value to the server.
+    /// </remarks>
+    private static void CureIfCuredWhileOffline(List<string> completedGoals)
+    {
+        if (completedGoals.Contains(PLAYER_CURED_GOAL) && Player.main.infectedMixin.GetInfectedAmount() > 0f)
+        {
+            Log.Info("The player was cured while offline, removing the infection");
+            Player.main.infectedMixin.RemoveInfection();
+        }
     }
 
     private static void SetUsedItems(List<NitroxTechType> usedItems)
