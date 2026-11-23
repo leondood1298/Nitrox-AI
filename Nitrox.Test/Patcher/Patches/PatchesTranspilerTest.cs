@@ -23,6 +23,7 @@ public class PatchesTranspilerTest
         [typeof(BaseSpotLight_UpdatePower_Patch), 1],
         [typeof(BreakableResource_SpawnResourceFromPrefab_Patch), 2],
         [typeof(Builder_TryPlace_Patch), Builder_TryPlace_Patch.InstructionsToAdd1.Count + Builder_TryPlace_Patch.InstructionsToAdd2.Count],
+        [typeof(BurryInSand_Update_Patch), 2],
         [typeof(CellManager_TryLoadCacheBatchCells_Patch), 4],
         [typeof(Charger_Update_Patch), 2],
         [typeof(CoffeeVendingMachine_OnMachineUse_Patch), 6],
