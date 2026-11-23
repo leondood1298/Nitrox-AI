@@ -25,9 +25,27 @@ internal sealed class RecordingCommandContext : ICommandContext
         return Task.CompletedTask;
     }
 
-    public ValueTask SendAsync<T>(SessionId sessionId, T data) => ValueTask.CompletedTask;
+    /// <summary>
+    ///     What the command sent to one player, with that player's session.
+    /// </summary>
+    public List<(SessionId SessionId, object? Data)> Sent { get; } = [];
 
-    public ValueTask SendToAllAsync<T>(T data) => ValueTask.CompletedTask;
+    /// <summary>
+    ///     What the command sent to every player.
+    /// </summary>
+    public List<object?> SentToAll { get; } = [];
+
+    public ValueTask SendAsync<T>(SessionId sessionId, T data)
+    {
+        Sent.Add((sessionId, data));
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask SendToAllAsync<T>(T data)
+    {
+        SentToAll.Add(data);
+        return ValueTask.CompletedTask;
+    }
 
     public ValueTask SendToOthersAsync<T>(T data) => ValueTask.CompletedTask;
 

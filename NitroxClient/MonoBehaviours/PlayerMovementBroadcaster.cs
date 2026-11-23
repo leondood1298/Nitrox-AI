@@ -12,6 +12,7 @@ namespace NitroxClient.MonoBehaviours;
 public class PlayerMovementBroadcaster : MonoBehaviour
 {
     private LocalPlayer localPlayer;
+    private readonly PlayerMovementThrottle movementThrottle = new();
     private ScannerRoomClientDiagnostics scannerRoomDiagnostics;
     private bool scannerAnchorActive;
     private MapRoomCamera scannerAnchorCamera;
@@ -91,6 +92,10 @@ public class PlayerMovementBroadcaster : MonoBehaviour
             currentPosition = subRootTransform.TransformPoint(currentPosition);
         }
 
+        if (!movementThrottle.ShouldSend(currentPosition.ToDto(), bodyRotation.ToDto(), aimingRotation.ToDto(), playerVelocity.magnitude, Time.unscaledTime))
+        {
+            return;
+        }
         localPlayer.BroadcastLocation(currentPosition, playerVelocity, bodyRotation, aimingRotation);
     }
 

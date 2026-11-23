@@ -6,7 +6,7 @@ using Nitrox.Server.Subnautica.Services;
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
 internal class PlayerSyncFinishedProcessor(SessionManager sessionManager, JoiningManager joiningManager, HibernateService hibernateService, BedOccupancy bedOccupancy, PlayerAnimationStates animationStates,
-    ScannerRoomManager scannerRoomManager)
+    ScannerRoomManager scannerRoomManager, PlayerHandAndSeatStates handAndSeatStates)
     : IAuthPacketProcessor<PlayerSyncFinished>
 {
     private readonly SessionManager sessionManager = sessionManager;
@@ -20,8 +20,13 @@ internal class PlayerSyncFinishedProcessor(SessionManager sessionManager, Joinin
             await hibernateService.WakeAsync();
         }
 
+        if (context.Sender.HasFinishedInitialSync)
+        {
+            // A game reports this once per join; a repeat would announce the player again
+            return;
+        }
         context.Sender.HasFinishedInitialSync = true;
-        joiningManager.SyncFinishedCallback?.Invoke();
+        await joiningManager.SyncFinishedAsync(context.Sender);
 
         // The world and the other players exist on the joining client now, so it can show who is lying in bed.
         foreach (BedEnterAnimation lyingDown in bedOccupancy.GetAnnouncementsFor(context.Sender.SessionId))
@@ -32,6 +37,11 @@ internal class PlayerSyncFinishedProcessor(SessionManager sessionManager, Joinin
         foreach (AnimationChangeEvent switchedOn in animationStates.GetAnnouncementsFor(context.Sender.SessionId))
         {
             await context.ReplyAsync(switchedOn);
+        }
+        // And what everyone holds and where they sit.
+        foreach (Packet holdingOrSeated in handAndSeatStates.GetAnnouncementsFor(context.Sender.SessionId))
+        {
+            await context.ReplyAsync(holdingOrSeated);
         }
         // And who is controlling which Scanner Room camera.
         await scannerRoomManager.SendControlGrantsAsync(context.Sender.SessionId);

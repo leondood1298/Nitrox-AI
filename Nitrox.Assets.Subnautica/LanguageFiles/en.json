@@ -38,6 +38,7 @@
     "Nitrox_IntroWaitingPartner": "Waiting for a partner to join\n\nPress {0} to skip waiting",
     "Nitrox_InvalidUserName": "Please enter a valid player name.\n\nIt can not contain any space or dubious characters\nAllowed characters: A-Z a-z 0-9 _ . -\nLength: [3, 25]",
     "Nitrox_Join": "Join",
+    "Nitrox_JoinFailed": "Joining failed while setting up the world ({STEP}). Your game was disconnected; the log has the details.",
     "Nitrox_JoinServer": "Joining:",
     "Nitrox_JoinServerPassword": "Password:",
     "Nitrox_JoinServerPasswordHeader": "Server password required",

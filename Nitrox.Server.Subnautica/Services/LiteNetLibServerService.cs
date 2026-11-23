@@ -134,6 +134,10 @@ internal sealed class LiteNetLibServerService : IHostedService, IPacketSender, I
             }
             for (int j = 0; j < i; j++)
             {
+                if (!ReceivesBroadcast(packet, contexts[j].SessionId))
+                {
+                    continue;
+                }
                 SendPacket(packet, contexts[j].Peer);
             }
         }
@@ -143,6 +147,16 @@ internal sealed class LiteNetLibServerService : IHostedService, IPacketSender, I
         }
         return ValueTask.CompletedTask;
     }
+
+    /// <summary>
+    ///     A broadcast is about the world, which a session only has once it is a player: from right before its
+    ///     snapshot is gathered (<see cref="PlayerManager.CreatePlayerData" />). Before that, while on the main menu or
+    ///     in the join queue, its game would apply it to a world that is not the multiplayer one. That the server
+    ///     stops is still everyone's business.
+    /// </summary>
+    internal static bool ReceivesBroadcast(Packet packet, bool isPlayer) => isPlayer || packet is ServerStopped;
+
+    private bool ReceivesBroadcast(Packet packet, SessionId sessionId) => ReceivesBroadcast(packet, playerManager.TryGetPlayerBySessionId(sessionId, out _));
 
     public ValueTask SendPacketToOthersAsync<T>(T packet, SessionId excludedSessionId) where T : Packet
     {
@@ -161,7 +175,7 @@ internal sealed class LiteNetLibServerService : IHostedService, IPacketSender, I
             }
             for (int j = 0; j < i; j++)
             {
-                if (contexts[j].SessionId == excludedSessionId)
+                if (contexts[j].SessionId == excludedSessionId || !ReceivesBroadcast(packet, contexts[j].SessionId))
                 {
                     continue;
                 }

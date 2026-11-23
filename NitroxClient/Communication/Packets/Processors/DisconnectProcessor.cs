@@ -16,6 +16,7 @@ internal sealed class DisconnectProcessor(PlayerManager remotePlayerManager, Pla
         // TODO: don't remove right away... maybe grey out and start
         //      a coroutine to finally remove.
         vitalsManager.RemoveForPlayer(disconnect.SessionId);
+        remotePlayerManager.Departed(disconnect.SessionId);
 
         Optional<RemotePlayer> remotePlayer = remotePlayerManager.Find(disconnect.SessionId);
         if (remotePlayer.HasValue)

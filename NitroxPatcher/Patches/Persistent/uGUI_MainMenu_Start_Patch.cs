@@ -11,6 +11,7 @@ using Nitrox.Model.Subnautica.MultiplayerSession;
 using NitroxClient.Communication.Abstract;
 using NitroxClient.Communication.MultiplayerSession;
 using NitroxClient.GameLogic.InitialSync;
+using NitroxClient.GameLogic.PlayerLogic.PlayerPreferences;
 using NitroxClient.MonoBehaviours.Gui.MainMenu.ServerJoin;
 using NitroxPatcher.Patches.Dynamic;
 using UnityEngine;
@@ -103,7 +104,7 @@ public sealed partial class uGUI_MainMenu_Start_Patch : NitroxPatch, IPersistent
                     playerColor = NitroxColor.FromHsb(hue);
                 }
                 PlayerSettings playerSettings = new(playerColor);
-                AuthenticationContext authenticationContext = new(playerName, Optional.Empty);
+                AuthenticationContext authenticationContext = new(playerName, Optional.Empty, PlayerKeys.GetKeyFor(Resolve<IMultiplayerSession>().IpAddress));
                 Resolve<IMultiplayerSession>().RequestSessionReservation(playerSettings, authenticationContext);
                 break;
 

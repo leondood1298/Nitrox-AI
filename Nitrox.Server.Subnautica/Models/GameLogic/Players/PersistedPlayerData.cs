@@ -12,6 +12,12 @@ internal sealed class PersistedPlayerData
 {
     public string Name { get; set; }
 
+    /// <summary>
+    ///     The hash of the key the name is tied to; null for a player saved before keys existed, who keeps the first key
+    ///     they join with.
+    /// </summary>
+    public string? IdentityKeyHash { get; set; }
+
     public List<NitroxTechType> UsedItems { get; set; } = [];
 
     public Optional<NitroxId>[] QuickSlotsBindingIds { get; set; } = [];
@@ -49,6 +55,11 @@ internal sealed class PersistedPlayerData
 
     public List<PdaNotification> UnreadPdaNotifications { get; set; } = [];
 
+    /// <summary>
+    ///     The player's death beacons not yet reached.
+    /// </summary>
+    public List<NitroxVector3> DeathMarkers { get; set; } = [];
+
     public Player ToPlayer()
     {
         Player player = new(Id,
@@ -75,6 +86,11 @@ internal sealed class PersistedPlayerData
         {
             player.UnreadPdaNotifications.Add(notification);
         }
+        player.IdentityKeyHash = IdentityKeyHash;
+        foreach (NitroxVector3 marker in DeathMarkers ?? [])
+        {
+            player.DeathMarkers.Add(marker);
+        }
         return player;
     }
 
@@ -83,6 +99,7 @@ internal sealed class PersistedPlayerData
         return new PersistedPlayerData
         {
             Name = player.Name,
+            IdentityKeyHash = player.IdentityKeyHash,
             UsedItems = player.UsedItems?.ToList(),
             QuickSlotsBindingIds = player.QuickSlotsBindingIds,
             EquippedItems = new(player.EquippedItems),
@@ -99,7 +116,8 @@ internal sealed class PersistedPlayerData
             PlayerPreferences = new(player.PingInstancePreferences.ToDictionary(m => m.Key, m => m.Value), player.PinnedRecipePreferences.ToList()),
             InPrecursor = player.InPrecursor,
             DisplaySurfaceWater = player.DisplaySurfaceWater,
-            UnreadPdaNotifications = player.UnreadPdaNotifications.ToList()
+            UnreadPdaNotifications = player.UnreadPdaNotifications.ToList(),
+            DeathMarkers = player.DeathMarkers.ToList()
         };
     }
 }

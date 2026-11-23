@@ -15,6 +15,7 @@ internal sealed class PlayerJoinedMultiplayerSessionProcessor(PlayerManager play
 
     public Task Process(ClientProcessorContext context, PlayerJoinedMultiplayerSession packet)
     {
+        playerManager.Announced(packet.PlayerContext.SessionId);
         CoroutineHost.StartCoroutine(SpawnRemotePlayer(packet));
         return Task.CompletedTask;
     }
@@ -22,6 +23,13 @@ internal sealed class PlayerJoinedMultiplayerSessionProcessor(PlayerManager play
     private IEnumerator SpawnRemotePlayer(PlayerJoinedMultiplayerSession packet)
     {
         yield return new WaitUntil(() => Multiplayer.Main && Multiplayer.Main.InitialSyncCompleted);
+
+        // Replayed after the loading screen, the packet may announce a player the snapshot already brought. Spawning
+        // their entity again would duplicate what they carry.
+        if (playerManager.TryFind(packet.PlayerContext.SessionId, out _) || playerManager.HasDeparted(packet.PlayerContext.SessionId))
+        {
+            yield break;
+        }
 
         playerManager.Create(packet.PlayerContext);
         yield return entities.SpawnEntityAsync(packet.PlayerEntity, true, true);

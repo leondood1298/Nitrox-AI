@@ -10,8 +10,11 @@ internal sealed class OpenableStateChangedProcessor : IClientPacketProcessor<Ope
 {
     public Task Process(ClientProcessorContext context, OpenableStateChanged packet)
     {
-        GameObject gameObject = NitroxEntity.RequireObjectFrom(packet.Id);
-        Openable openable = gameObject.RequireComponent<Openable>();
+        // A door out of range, or of a piece no longer there when replayed after the loading screen
+        if (!NitroxEntity.TryGetComponentFrom(packet.Id, out Openable openable))
+        {
+            return Task.CompletedTask;
+        }
 
         using (PacketSuppressor<OpenableStateChanged>.Suppress())
         {

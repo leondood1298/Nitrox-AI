@@ -15,7 +15,8 @@ internal sealed class PermsChangedProcessor(LocalPlayer localPlayer) : IClientPa
     public Task Process(ClientProcessorContext context, PermsChanged packet)
     {
         localPlayer.Permissions = packet.NewPerms;
-        OnPermissionsChanged(packet.NewPerms);
+        // Only the player list's entries listen, and there are none while the player is alone
+        OnPermissionsChanged?.Invoke(packet.NewPerms);
         return Task.CompletedTask;
     }
 }

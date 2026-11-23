@@ -93,6 +93,24 @@ public class PlayerManager
         OnBodyCreated?.Invoke(remotePlayer);
     }
 
+    private readonly HashSet<SessionId> departedSessions = [];
+
+    /// <summary>
+    ///     A player announced as joining (in packet order) has not left since.
+    /// </summary>
+    public void Announced(SessionId sessionId) => departedSessions.Remove(sessionId);
+
+    /// <summary>
+    ///     A player left (in packet order), maybe before the announcement of their join was acted on.
+    /// </summary>
+    public void Departed(SessionId sessionId) => departedSessions.Add(sessionId);
+
+    /// <summary>
+    ///     True if the player left after their last announced join, so that a join still being acted on must not
+    ///     create them: they would stay as a frozen body.
+    /// </summary>
+    public bool HasDeparted(SessionId sessionId) => departedSessions.Contains(sessionId);
+
     public void RemovePlayer(SessionId sessionId)
     {
         if (sessionsById.TryGetValue(sessionId, out RemotePlayer player))

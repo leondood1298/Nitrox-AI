@@ -58,9 +58,16 @@ internal sealed class PlayerHeldItemChangedProcessor : IClientPacketProcessor<Pl
         }
 
         Pickupable pickupable = item.GetComponent<Pickupable>();
-        if (!pickupable || pickupable.inventoryItem == null)
+        if (!pickupable)
         {
             Reschedule();
+            return;
+        }
+        // An item just spawned may not be in the remote inventory yet; one held without an inventory never will be,
+        // so after the retries it is shown all the same
+        if (pickupable.inventoryItem == null && count < 10)
+        {
+            InvokeHelper.InvokeNextFrame(() => LateProcess(packet, count + 1));
             return;
         }
 
@@ -120,7 +127,7 @@ internal sealed class PlayerHeldItemChangedProcessor : IClientPacketProcessor<Pl
                 {
                     floater.collider.enabled = true;
                 }
-                pickupable.inventoryItem.item.Reparent(inventory.tr);
+                pickupable.Reparent(inventory.tr);
                 foreach (Animator componentsInChild in tool.GetComponentsInChildren<Animator>())
                 {
                     componentsInChild.cullingMode = AnimatorCullingMode.CullUpdateTransforms;
@@ -135,16 +142,18 @@ internal sealed class PlayerHeldItemChangedProcessor : IClientPacketProcessor<Pl
 
                 break;
 
+            // inventoryItem.item is the pickupable itself; an item held without being in an inventory (the Mobile
+            // Vehicle Bay) has no inventoryItem (upstream pull request 2891)
             case PlayerHeldItemChanged.ChangeType.DRAW_AS_ITEM:
-                pickupable.inventoryItem.item.Reparent(player.ItemAttachPoint);
-                pickupable.inventoryItem.item.SetVisible(true);
-                Utils.SetLayerRecursively(pickupable.inventoryItem.item.gameObject, viewModelLayer);
+                pickupable.Reparent(player.ItemAttachPoint);
+                pickupable.SetVisible(true);
+                Utils.SetLayerRecursively(item, viewModelLayer);
                 break;
 
             case PlayerHeldItemChanged.ChangeType.HOLSTER_AS_ITEM:
-                pickupable.inventoryItem.item.Reparent(inventory.tr);
-                pickupable.inventoryItem.item.SetVisible(false);
-                Utils.SetLayerRecursively(pickupable.inventoryItem.item.gameObject, defaultLayer);
+                pickupable.Reparent(inventory.tr);
+                pickupable.SetVisible(false);
+                Utils.SetLayerRecursively(item, defaultLayer);
                 break;
 
             default:

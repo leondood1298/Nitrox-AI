@@ -47,11 +47,23 @@ public class Terrain
 
         if (visibleCells.Remove(cell))
         {
-            removedCells.Add(cell);
+            // A cell that loaded and unloaded before the server heard of it (often during the loading screen, when
+            // nothing is sent) is left out entirely: the server would otherwise generate and send its entities for a
+            // cell this game no longer has
+            if (!addedCells.Remove(cell))
+            {
+                removedCells.Add(cell);
+            }
             cellsPendingSync = true;
             fullySpawnedCells.Remove((batchId, cellId, level));
         }
     }
+
+    /// <summary>The cells the next visibility packet will report as added.</summary>
+    internal IReadOnlyList<AbsoluteEntityCell> PendingAddedCells => addedCells;
+
+    /// <summary>The cells the next visibility packet will report as removed.</summary>
+    internal IReadOnlyList<AbsoluteEntityCell> PendingRemovedCells => removedCells;
 
     public void AddFullySpawnedCell(AbsoluteEntityCell cell)
     {

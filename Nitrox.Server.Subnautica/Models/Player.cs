@@ -46,6 +46,13 @@ namespace Nitrox.Server.Subnautica.Models
         }
 
         public string Name { get; }
+
+        /// <summary>
+        ///     The hash of the key this name first joined with, or null if no key is tied to the name yet. A player who
+        ///     joins with this name and another key is refused.
+        /// </summary>
+        public string? IdentityKeyHash { get; set; }
+
         public bool IsPermaDeath { get; set; }
         public NitroxVector3 Position { get; set; }
         public NitroxQuaternion Rotation { get; set; }
@@ -70,6 +77,12 @@ namespace Nitrox.Server.Subnautica.Models
         ///     until it is done, so players who are already in the world are preferred.
         /// </summary>
         public bool HasFinishedInitialSync { get; set; }
+
+        /// <summary>
+        ///     Where this player died and has not been back since, each shown to them alone as a beacon. Kept so that the
+        ///     beacons are still there after the player rejoins.
+        /// </summary>
+        public ThreadSafeList<NitroxVector3> DeathMarkers { get; } = new();
         public bool InPrecursor { get; set; }
         public bool DisplaySurfaceWater { get; set; }
 
@@ -175,13 +188,21 @@ namespace Nitrox.Server.Subnautica.Models
             return true;
         }
 
+        /// <summary>
+        ///     Where the player is now. Inside a base or Cyclops the body is held by the sub, so a Cyclops that moved since
+        ///     the player last walked has taken the player along; <see cref="Position" /> only changes when the player
+        ///     moves.
+        /// </summary>
+        public NitroxVector3 CurrentPosition => Entity?.Transform is { Parent: not null } transform ? transform.Position : Position;
+
         public void Teleport(NitroxVector3 destination, Optional<NitroxId> subRootID, IPacketSender packetSender)
         {
             PlayerTeleported playerTeleported = new(Name, Position, destination, subRootID);
 
-            Position = playerTeleported.DestinationTo;
+            // "back" returns to where the player was, so it needs the sub the player was in, not the one of the destination
             LastStoredPosition = playerTeleported.DestinationFrom;
-            LastStoredSubRootID = subRootID;
+            LastStoredSubRootID = SubRootId;
+            Position = playerTeleported.DestinationTo;
             packetSender.SendPacketAsync(playerTeleported, SessionId);
         }
 

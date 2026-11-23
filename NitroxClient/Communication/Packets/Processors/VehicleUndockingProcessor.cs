@@ -15,11 +15,13 @@ internal sealed class VehicleUndockingProcessor(Vehicles vehicles, PlayerManager
 
     public Task Process(ClientProcessorContext context, VehicleUndocking packet)
     {
-        GameObject vehicleGo = NitroxEntity.RequireObjectFrom(packet.VehicleId);
-        GameObject vehicleDockingBayGo = NitroxEntity.RequireObjectFrom(packet.DockId);
-
-        Vehicle vehicle = vehicleGo.RequireComponent<Vehicle>();
-        VehicleDockingBay vehicleDockingBay = vehicleDockingBayGo.RequireComponent<VehicleDockingBay>();
+        // The vehicle or its base may not be loaded here (out of range, or no longer there when replayed after loading)
+        if (!NitroxEntity.TryGetComponentFrom(packet.VehicleId, out Vehicle vehicle) || !NitroxEntity.TryGetComponentFrom(packet.DockId, out VehicleDockingBay vehicleDockingBay))
+        {
+            Log.Warn($"[{nameof(VehicleUndockingProcessor)}] Vehicle {packet.VehicleId} or dock {packet.DockId} is not loaded here");
+            return Task.CompletedTask;
+        }
+        GameObject vehicleGo = vehicle.gameObject;
 
         using (PacketSuppressor<VehicleUndocking>.Suppress())
         {

@@ -34,8 +34,8 @@ internal sealed class FastCommand(SessionSettings sessionSettings) : ICommandHan
                 break;
         }
 
-        await context.SendToAllAsync(new FastCheatChanged(cheat, currentCheatValue));
-        await context.SendToAllAsync($"Fast {cheat} changed to {currentCheatValue} by {context.OriginName}");
+        await context.SendToAllAsync(new FastCheatChanged(cheat, toggle));
+        await context.SendToAllAsync($"Fast {cheat} changed to {toggle} by {context.OriginName}");
     }
 
     public async Task Execute(ICommandContext context, FastCheatChanged.FastCheat cheat) => await Execute(context, cheat, !IsCheatEnabled(cheat));
