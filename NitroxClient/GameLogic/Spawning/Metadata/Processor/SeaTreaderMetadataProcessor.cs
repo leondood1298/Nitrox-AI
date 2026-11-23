@@ -11,6 +11,9 @@ public class SeaTreaderMetadataProcessor : EntityMetadataProcessor<SeaTreaderMet
     {
         if (gameObject.TryGetComponent(out SeaTreader seaTreader))
         {
+            // Before InitializeOnce, whose infection roll must see that the infection is decided
+            Resolve<CreatureInfections>().ApplyReceived(gameObject, metadata.InfectedAmount);
+
             if (!seaTreader.isInitialized)
             {
                 seaTreader.InitializeOnce();

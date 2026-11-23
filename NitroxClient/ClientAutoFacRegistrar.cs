@@ -96,15 +96,18 @@ namespace NitroxClient
             containerBuilder.RegisterType<BasePowerRelayAudioSuppressor>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<LiveMixinManager>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<CreatureHealthManager>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<CreatureInfections>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<CreatureAttacksOnPlayers>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<Entities>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<MedicalCabinets>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<PdaNotifications>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<EscapePodRepairState>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<Items>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<EquipmentSlots>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<ItemContainers>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<Cyclops>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<Rockets>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<TimeCapsules>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<PrecursorTeleporters>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<PrecursorProximityTriggers>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<MobileVehicleBay>().InstancePerLifetimeScope();

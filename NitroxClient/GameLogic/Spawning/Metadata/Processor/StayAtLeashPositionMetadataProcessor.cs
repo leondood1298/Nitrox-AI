@@ -14,6 +14,9 @@ public class StayAtLeashPositionMetadataProcessor : EntityMetadataProcessor<Stay
             return;
         }
 
+        // Before InitializeOnce, whose infection roll must see that the infection is decided
+        Resolve<CreatureInfections>().ApplyReceived(gameObject, metadata.InfectedAmount);
+
         if (!creature.isInitialized)
         {
             // TODO: When #2137 is merged, only a MetadataHolder to the creature and postfix patch creature.Start to consume it

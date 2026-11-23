@@ -32,7 +32,9 @@ public sealed partial class StoryGoalScheduler_Schedule_Patch : NitroxPatch, IDy
 
     public static void Postfix(StoryGoal goal, bool __state)
     {
-        if (__state || goal.delay == 0f || !Multiplayer.Main || !Multiplayer.Main.InitialSyncCompleted)
+        // The ending schedules the rocket's launch goal and then pauses the scheduler. Sent on, the server would run and
+        // save that goal, which single player never saves since nothing is saved after the launch.
+        if (__state || goal.delay == 0f || !Multiplayer.Main || !Multiplayer.Main.InitialSyncCompleted || LaunchRocket.launchStarted)
         {
             return;
         }

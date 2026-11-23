@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.Unity;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
@@ -69,6 +70,30 @@ public sealed class ServerJsonSerializerTest
         PowerSourceMetadata state = (PowerSourceMetadata)restoredCell.Metadata;
         Assert.AreEqual(14.5f, state.Power);
         Assert.AreEqual(BasePowerSourceType.ESCAPE_POD, state.SourceType);
+    }
+
+    [TestMethod]
+    public void JsonRoundTripPreservesTheRocketsTimeCapsuleWithItsTextAndItems()
+    {
+        // The rocket is saved as a global root entity, its capsule as a child, and what was put into it as the capsule's children.
+        VehicleEntity rocket = new(null, 0f, new NitroxTransform(), "", false, new NitroxId(), new NitroxTechType("RocketBase"), null);
+        PlayerTimeCapsuleEntity capsule = new(new NitroxId(), rocket.Id, new PlayerTimeCapsuleMetadata("Hello from 4546B", ""));
+        InventoryItemEntity item = new(new NitroxId(), "titanium-class-id", new NitroxTechType("Titanium"), null, capsule.Id, []);
+        capsule.ChildEntities.Add(item);
+        rocket.ChildEntities.Add(capsule);
+
+        using MemoryStream output = new();
+        serializer.Serialize(output, rocket);
+        using MemoryStream input = new(output.ToArray());
+        VehicleEntity restored = serializer.Deserialize<VehicleEntity>(input);
+
+        PlayerTimeCapsuleEntity restoredCapsule = restored.ChildEntities.OfType<PlayerTimeCapsuleEntity>().Single();
+        Assert.AreEqual(capsule.Id, restoredCapsule.Id);
+        Assert.AreEqual(rocket.Id, restoredCapsule.ParentId);
+        Assert.AreEqual("Hello from 4546B", ((PlayerTimeCapsuleMetadata)restoredCapsule.Metadata).Text);
+        InventoryItemEntity restoredItem = restoredCapsule.ChildEntities.OfType<InventoryItemEntity>().Single();
+        Assert.AreEqual(item.Id, restoredItem.Id);
+        Assert.AreEqual(capsule.Id, restoredItem.ParentId);
     }
 
     [TestMethod]

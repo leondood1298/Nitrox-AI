@@ -11,7 +11,8 @@ public sealed partial class PDAEncyclopedia_Add_Patch : NitroxPatch, IDynamicPat
 
     public static void Postfix(string key, bool verbose, PDAEncyclopedia.EntryData __result)
     {
-        if (!Multiplayer.Main || !Multiplayer.Main.InitialSyncCompleted)
+        // Single player saves nothing after the launch, so neither does the server for a game playing the ending
+        if (!Multiplayer.Main || !Multiplayer.Main.InitialSyncCompleted || LaunchRocket.launchStarted)
         {
             return;
         }

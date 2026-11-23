@@ -30,6 +30,7 @@ internal sealed class JoiningManager(
     EntityRegistry entityRegistry,
     SessionSettings sessionSettings,
     ActiveTeleporters activeTeleporters,
+    CollectedTimeCapsules collectedTimeCapsules,
     IOptions<SubnauticaServerOptions> options,
     ILogger<JoiningManager> logger)
     : ISessionCleaner
@@ -48,6 +49,7 @@ internal sealed class JoiningManager(
     private readonly EntityRegistry entityRegistry = entityRegistry;
     private readonly SessionSettings sessionSettings = sessionSettings;
     private readonly ActiveTeleporters activeTeleporters = activeTeleporters;
+    private readonly CollectedTimeCapsules collectedTimeCapsules = collectedTimeCapsules;
 
     private readonly ThreadSafeQueue<SessionId> joinQueue = new();
     private readonly Lock queueLocker = new(); // Necessary to avoid race conditions between JoinQueueLoop and AddToJoinQueue
@@ -214,7 +216,9 @@ internal sealed class JoiningManager(
             player.InPrecursor,
             player.DisplaySurfaceWater,
             options.Value.MarkDeathPointsWithBeacon,
-            activeTeleporters.GetAll()
+            activeTeleporters.GetAll(),
+            player.UnreadPdaNotifications.ToList(),
+            collectedTimeCapsules.GetAll()
         );
 
         await packetSender.SendPacketAsync(initialPlayerSync, player.SessionId);

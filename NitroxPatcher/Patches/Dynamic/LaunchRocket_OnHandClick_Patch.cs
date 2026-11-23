@@ -6,35 +6,36 @@ using NitroxClient.GameLogic;
 
 namespace NitroxPatcher.Patches.Dynamic;
 
+/// <summary>
+///     The launch button asks the server instead of launching: the ending starts only once the server has found every
+///     player aboard, and then for all of them at once. The game's own conditions (rocket ready, gun disabled) stay in
+///     front of the request.
+/// </summary>
 public sealed partial class LaunchRocket_OnHandClick_Patch : NitroxPatch, IDynamicPatch
 {
     internal static readonly MethodInfo TARGET_METHOD = Reflect.Method((LaunchRocket t) => t.OnHandClick(default));
 
     /*
-     * 
-     * LaunchRocket.SetLaunchStarted();
-     * LaunchRocket_OnHandClick_Patch.BroadcastRocketLaunch(this);   <--- [INSERTED LINE]
+     * LaunchRocket.SetLaunchStarted();                              <--- [REPLACED BY THE NEXT TWO LINES]
+     * LaunchRocket_OnHandClick_Patch.RequestRocketLaunch(this);     <--- [INSERTED LINE]
      * [Removed all lines after]
      */
     public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
-        return new CodeMatcher(instructions).MatchEndForward([
+        return new CodeMatcher(instructions).MatchStartForward([
                                                 new CodeMatch(OpCodes.Call, Reflect.Method(() => LaunchRocket.SetLaunchStarted()))
                                             ])
-                                            .Advance(1) // Skip the SetLaunchStarted because we don't want to manage all the jump labels that forward to it
-                                            // Also this instruction doesn't block Rockets.RocketLaunch(GameObject) since that function doesn't check for LaunchRocket.launchStarted
+                                            // Turned into "ldarg.0" in place, so the jumps of the gun check that land on it still do.
+                                            // Not launched yet: a refused launch must leave the button working.
+                                            .SetAndAdvance(OpCodes.Ldarg_0, null)
                                             .RemoveInstructions(10)
                                             .InsertAndAdvance([
-                                                new CodeInstruction(OpCodes.Ldarg_0),
-                                                new CodeInstruction(OpCodes.Call, Reflect.Method(() => BroadcastRocketLaunch(default)))
+                                                new CodeInstruction(OpCodes.Call, Reflect.Method(() => RequestRocketLaunch(default)))
                                             ]).InstructionEnumeration();
     }
 
-    private static void BroadcastRocketLaunch(LaunchRocket launchRocket)
+    private static void RequestRocketLaunch(LaunchRocket launchRocket)
     {
-        Rocket rocket = launchRocket.RequireComponentInParent<Rocket>();
-        Rockets rockets = Resolve<Rockets>();
-        rockets.RequestRocketLaunch(rocket);
-        rockets.RocketLaunch(rocket.gameObject);
+        Resolve<Rockets>().RequestRocketLaunch(launchRocket);
     }
 }

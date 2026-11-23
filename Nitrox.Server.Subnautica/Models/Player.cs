@@ -62,6 +62,10 @@ namespace Nitrox.Server.Subnautica.Models
         public ThreadSafeDictionary<string, NitroxId> EquippedItems { get; set; }
         public ThreadSafeSet<NitroxId> OutOfCellVisibleEntities { get; set; } = [];
         /// <summary>
+        ///     The PDA's unread markers of this player. A brand-new player has none, like a new game.
+        /// </summary>
+        public ThreadSafeSet<PdaNotification> UnreadPdaNotifications { get; set; } = [];
+        /// <summary>
         ///     False while the player is still loading the world. Entities handed to such a player are not simulated
         ///     until it is done, so players who are already in the world are preferred.
         /// </summary>

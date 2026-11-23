@@ -1,80 +1,103 @@
+using System.Collections.Generic;
 using NitroxClient.Communication.Abstract;
 using NitroxClient.MonoBehaviours;
 using Nitrox.Model.DataStructures;
-using Nitrox.Model.DataStructures.Unity;
+using Nitrox.Model.Subnautica.Helper;
 using Nitrox.Model.Subnautica.Packets;
 using UnityEngine;
 
-namespace NitroxClient.GameLogic
+namespace NitroxClient.GameLogic;
+
+public class Rockets
 {
-    public class Rockets
+    private const string COCKPIT_CENTER_NAME = "AtmosphereVolume";
+
+    private readonly IPacketSender packetSender;
+    private readonly PlayerManager playerManager;
+
+    /// <summary>
+    ///     A launch was asked for and the server has not answered yet. Further clicks would only ask again.
+    /// </summary>
+    private bool launchRequested;
+
+    public Rockets(IPacketSender packetSender, PlayerManager playerManager)
     {
-        private readonly IPacketSender packetSender;
-        private readonly Vehicles vehicles;
-        private readonly PlayerManager playerManager;
+        this.packetSender = packetSender;
+        this.playerManager = playerManager;
+    }
 
-        public Rockets(IPacketSender packetSender, Vehicles vehicles, PlayerManager playerManager)
+    /// <summary>
+    ///     Asks the server to launch instead of launching: the ending only starts once the server has found every
+    ///     player aboard (<see cref="RocketLaunch(NitroxId)" />).
+    /// </summary>
+    public void RequestRocketLaunch(LaunchRocket launchRocket)
+    {
+        if (launchRequested)
         {
-            this.packetSender = packetSender;
-            this.vehicles = vehicles;
-            this.playerManager = playerManager;
+            return;
         }
 
-        public void RequestRocketLaunch(Rocket rocket)
+        Rocket rocket = launchRocket.RequireComponentInParent<Rocket>();
+        if (!rocket.TryGetNitroxEntity(out NitroxEntity entity))
         {
-            if (rocket.TryGetNitroxEntity(out NitroxEntity entity))
-            {
-                packetSender.Send(new RocketLaunch(entity.Id));
-            }
-            else
-            {
-                Log.Error($"{nameof(Rockets.RequestRocketLaunch)}: Can't find a NitroxEntity attached to the Rocket: {rocket.name}");
-            }
+            Log.Error($"{nameof(RequestRocketLaunch)}: Can't find a NitroxEntity attached to the Rocket: {rocket.name}");
+            return;
         }
 
-        public void RocketLaunch(NitroxId rocketId)
-        {
-            // Avoid useless calculations
-            if (LaunchRocket.launchStarted)
-            {
-                return;
-            }
+        // The server cannot know where the cockpit is in the rocket, so the client tells it
+        GameObject cockpitCenter = rocket.gameObject.FindChild(COCKPIT_CENTER_NAME);
+        launchRequested = packetSender.Send(new RocketLaunchRequest(entity.Id, cockpitCenter.transform.position.ToDto()));
+    }
 
-            // A player who has not loaded the rocket cannot be inside it, and so does not take part in the launch
-            if (NitroxEntity.TryGetObjectFrom(rocketId, out GameObject rocketObject))
-            {
-                RocketLaunch(rocketObject);
-            }
+    public void RocketLaunchRefused(List<string> playersNotAboard)
+    {
+        launchRequested = false;
+        Log.InGame(Language.main.Get("Nitrox_RocketLaunchPlayersNotAboard").Replace("{PLAYERS}", string.Join(", ", playersNotAboard)));
+    }
+
+    public void RocketLaunch(NitroxId rocketId)
+    {
+        launchRequested = false;
+
+        // Avoid useless calculations
+        if (LaunchRocket.launchStarted)
+        {
+            return;
         }
 
-        public void RocketLaunch(GameObject rocketObject)
+        // A player who has not loaded the rocket cannot be inside it, and so does not take part in the launch
+        if (NitroxEntity.TryGetObjectFrom(rocketId, out GameObject rocketObject))
         {
-            GameObject sphereCenter = rocketObject.FindChild("AtmosphereVolume");
-            LaunchRocket launchRocket = rocketObject.RequireComponentInChildren<LaunchRocket>(true);
-
-            // Only launch if you're in the rocket so
-            // verify if the distance to a centered point in the middle of the stage 3 of the rocket is inferior to 5.55 (pre-calculated radius)
-            if (Player.main.IsUnderwater() ||
-                Player.main.currentSub ||
-                NitroxVector3.Distance(Player.main.transform.position.ToDto(), sphereCenter.transform.position.ToDto()) > 5.55f)
-            {
-                return;
-            }
-
-            // When the server sends this to the client, he should execute the rocket launch
-            // Code extracted from LaunchRocket::OnHandClick
-            LaunchRocket.SetLaunchStarted();
-            PlayerTimeCapsule.main.Submit(null);
-            launchRocket.StartCoroutine(launchRocket.StartEndCinematic());
-            HandReticle.main.RequestCrosshairHide();
-
-            // We also need to hide the other players
-            foreach (RemotePlayer player in playerManager.GetAll())
-            {
-                player.PlayerModel.SetActive(false);
-            }
-
-            Log.InGame(Language.main.Get("Nitrox_ThankForPlaying"));
+            RocketLaunch(rocketObject);
         }
+    }
+
+    private void RocketLaunch(GameObject rocketObject)
+    {
+        GameObject sphereCenter = rocketObject.FindChild(COCKPIT_CENTER_NAME);
+        LaunchRocket launchRocket = rocketObject.RequireComponentInChildren<LaunchRocket>(true);
+
+        // Only the players in the cockpit take part. The server counted this player aboard, but it may have stepped
+        // out since; then it simply stays behind.
+        if (Player.main.IsUnderwater() ||
+            Player.main.currentSub ||
+            !RocketCockpit.IsAboard(sphereCenter.transform.position.ToDto(), Player.main.transform.position.ToDto()))
+        {
+            return;
+        }
+
+        // Code extracted from LaunchRocket::OnHandClick
+        LaunchRocket.SetLaunchStarted();
+        PlayerTimeCapsule.main.Submit(null);
+        launchRocket.StartCoroutine(launchRocket.StartEndCinematic());
+        HandReticle.main.RequestCrosshairHide();
+
+        // We also need to hide the other players
+        foreach (RemotePlayer player in playerManager.GetAll())
+        {
+            player.PlayerModel.SetActive(false);
+        }
+
+        Log.InGame(Language.main.Get("Nitrox_ThankForPlaying"));
     }
 }

@@ -89,7 +89,7 @@ public sealed class StalkerCameraGrabsTest
     {
         grabs.MayPickUp(stalker, cameraId);
         simulationOwnership.ReceivedSimulationLockResponse(cameraId, true, SimulationLockType.EXCLUSIVE);
-        SimulationOwnershipChangeProcessor processor = new(simulationOwnership, cameras, grabs);
+        SimulationOwnershipChangeProcessor processor = new(simulationOwnership, cameras, grabs, null!);
 
         // The server gave the camera to a player who asked for it, and says so like for any entity.
         await processor.Process(null!, new SimulationOwnershipChange(cameraId, (SessionId)(ushort)2, SimulationLockType.EXCLUSIVE));
@@ -103,7 +103,7 @@ public sealed class StalkerCameraGrabsTest
     public async Task ChangeOfOwnershipOfSomethingNoStalkerCarriesIsNothingToAStalker()
     {
         simulationOwnership.SimulateEntity(cameraId, SimulationLockType.TRANSIENT);
-        SimulationOwnershipChangeProcessor processor = new(simulationOwnership, cameras, grabs);
+        SimulationOwnershipChangeProcessor processor = new(simulationOwnership, cameras, grabs, null!);
 
         await processor.Process(null!, new SimulationOwnershipChange(cameraId, (SessionId)(ushort)2, SimulationLockType.EXCLUSIVE));
 
