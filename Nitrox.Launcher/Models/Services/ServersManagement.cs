@@ -45,7 +45,7 @@ internal sealed class ServersManagement(ServerService serverService) : Streaming
 
                     // First output received, server is no longer starting
                     entry.IsServerStarting = false;
-                    entry.Output.Add(new OutputLine
+                    entry.AddOutput(new OutputLine
                     {
                         LogText = message,
                         LocalTime = localTime,
@@ -98,16 +98,22 @@ internal sealed class ServersManagement(ServerService serverService) : Streaming
             return;
         }
         await entry.RefreshFromProcessAsync(processId);
+        entry.OnManagementConnected();
         _ = HandleCommandLoopAsync().ContinueWithHandleError();
     }
 
     protected override async ValueTask OnDisconnected()
     {
         ServerEntry? entry = serverService.GetServerEntryByAnyOf(processId, saveName);
-        entry?.ResetCtsAsync(true);
+        int lostProcessId = processId;
         processId = 0;
         saveName = "";
+        // Stops this connection's command loop, so that commands go to the server's next connection, not a dead one
         await cts.CancelAsync();
+        if (entry != null && lostProcessId > 0)
+        {
+            _ = entry.OnManagementConnectionLostAsync(lostProcessId).ContinueWithHandleError();
+        }
     }
 
     private async Task<ServerEntry?> WaitForEntryAsync(CancellationToken cancellationToken)
@@ -138,9 +144,16 @@ internal sealed class ServersManagement(ServerService serverService) : Streaming
         {
             return;
         }
-        await foreach (string command in entry.CommandQueue.Reader.ReadAllAsync())
+        try
         {
-            Client.OnCommand(command);
+            await foreach (string command in entry.CommandQueue.Reader.ReadAllAsync(cts.Token))
+            {
+                Client.OnCommand(command);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // The connection closed
         }
     }
 }

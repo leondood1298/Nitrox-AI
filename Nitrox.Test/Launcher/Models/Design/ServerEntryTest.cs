@@ -43,6 +43,21 @@ public sealed class ServerEntryTest
     }
 
     [TestMethod]
+    public void ConsoleKeepsOnlyTheNewestLines()
+    {
+        ServerEntry entry = new() { Name = "My World" };
+
+        for (int i = 0; i < ServerEntry.MAX_OUTPUT_LINES + 10; i++)
+        {
+            entry.AddOutput(new OutputLine { LogText = $"line {i}", LocalTime = null, Type = OutputLineType.INFO_LOG });
+        }
+
+        entry.Output.Should().HaveCount(ServerEntry.MAX_OUTPUT_LINES);
+        entry.Output[0].LogText.Should().Be("line 10");
+        entry.Output[^1].LogText.Should().Be($"line {ServerEntry.MAX_OUTPUT_LINES + 9}");
+    }
+
+    [TestMethod]
     [DataRow("""{"Major":1,"Minor":9,"Build":0,"Revision":0}""", true, DisplayName = "World from before the save format")]
     [DataRow("""{"Major":1,"Minor":9,"Build":0,"Revision":0,"SaveFormat":99}""", true, DisplayName = "World from a newer build")]
     [DataRow("""{"Major":1,"Minor":9,"Build":0,"Revision":0,"SaveFormat":1}""", false, DisplayName = "World of this build")]

@@ -1,3 +1,5 @@
+using Nitrox.Model.Constants;
+
 namespace Nitrox.Server.Subnautica.Models;
 
 /// <summary>
@@ -6,9 +8,9 @@ namespace Nitrox.Server.Subnautica.Models;
 /// </summary>
 internal class StartupFailureException(string message, int exitCode) : Exception(message)
 {
-    public const int WORLD_LOAD_FAILED = 3;
-    public const int PORT_UNAVAILABLE = 4;
-    public const int WORLD_IN_USE = 5;
+    public const int WORLD_LOAD_FAILED = ServerExitCodes.WORLD_LOAD_FAILED;
+    public const int PORT_UNAVAILABLE = ServerExitCodes.PORT_UNAVAILABLE;
+    public const int WORLD_IN_USE = ServerExitCodes.WORLD_IN_USE;
 
     public int ExitCode { get; } = exitCode;
 }
