@@ -35,6 +35,8 @@ internal sealed class JoiningManager(
     ILogger<JoiningManager> logger)
     : ISessionCleaner
 {
+    private static readonly TimeSpan SYNC_POLL_PERIOD = TimeSpan.FromMilliseconds(100);
+
     private readonly IPacketSender packetSender = packetSender;
     private readonly PlayerManager playerManager = playerManager;
     private readonly SessionManager sessionManager = sessionManager;
@@ -54,7 +56,64 @@ internal sealed class JoiningManager(
     private readonly ThreadSafeQueue<SessionId> joinQueue = new();
     private readonly Lock queueLocker = new(); // Necessary to avoid race conditions between JoinQueueLoop and AddToJoinQueue
     private bool queueActive;
-    public Action? SyncFinishedCallback { get; private set; }
+    private readonly Lock syncLocker = new();
+    private SessionId? syncingSession;
+    private TaskCompletionSource? syncFinished;
+
+    internal enum SyncOutcome
+    {
+        FINISHED,
+        DISCONNECTED,
+        TIMED_OUT
+    }
+
+    /// <summary>
+    ///     Waits until the player reports that it applied the snapshot, leaves, or takes longer than the timeout.
+    /// </summary>
+    internal static async Task<SyncOutcome> WaitForSyncAsync(Task finished, Func<bool> isConnected, TimeSpan timeout, TimeSpan pollPeriod, TimeProvider? timeProvider = null)
+    {
+        timeProvider ??= TimeProvider.System;
+        long start = timeProvider.GetTimestamp();
+        while (true)
+        {
+            if (finished.IsCompleted)
+            {
+                return SyncOutcome.FINISHED;
+            }
+            if (!isConnected())
+            {
+                return SyncOutcome.DISCONNECTED;
+            }
+            if (timeProvider.GetElapsedTime(start) >= timeout)
+            {
+                return SyncOutcome.TIMED_OUT;
+            }
+            // Never with a cancelled token: that used to throw out of the loop, so a player who timed out was never kicked
+            await Task.WhenAny(finished, Task.Delay(pollPeriod, timeProvider));
+        }
+    }
+
+    /// <summary>
+    ///     A player reports that its game applied the snapshot.
+    /// </summary>
+    /// <returns>
+    ///     True if the player is the one the queue waits for. A player whose sync had already timed out is announced to
+    ///     the others here, as nothing else would announce it.
+    /// </returns>
+    public async Task<bool> SyncFinishedAsync(Player player)
+    {
+        lock (syncLocker)
+        {
+            if (syncingSession == player.SessionId && syncFinished != null)
+            {
+                syncFinished.TrySetResult();
+                return true;
+            }
+        }
+        logger.ZLogWarning($"{player.Name} finished loading after the join queue stopped waiting for them");
+        await BroadcastPlayerJoinedAsync(player);
+        return false;
+    }
 
     private async Task JoinQueueLoop()
     {
@@ -87,40 +146,45 @@ internal sealed class JoiningManager(
                 }
 
                 logger.ZLogInformation($"Starting sync for player {name}");
-                await SendInitialSyncAsync(sessionId);
-
-                using CancellationTokenSource source = new(options.Value.InitialSyncTimeout);
-                bool syncFinished = false;
-
-                SyncFinishedCallback = () => { syncFinished = true; };
-
-                while (!syncFinished && sessionManager.IsConnected(sessionId) && !source.IsCancellationRequested)
+                TaskCompletionSource finished = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                lock (syncLocker)
                 {
-                    await Task.Delay(10, source.Token);
+                    syncingSession = sessionId;
+                    syncFinished = finished;
                 }
-
-                if (!sessionManager.IsConnected(sessionId))
+                SyncOutcome outcome;
+                try
                 {
-                    logger.ZLogInformation($"Player {name} disconnected while syncing");
+                    await SendInitialSyncAsync(sessionId);
+                    outcome = await WaitForSyncAsync(finished.Task, () => sessionManager.IsConnected(sessionId), TimeSpan.FromMilliseconds(options.Value.InitialSyncTimeout), SYNC_POLL_PERIOD);
                 }
-                else if (source.IsCancellationRequested)
+                finally
                 {
-                    logger.ZLogInformation($"Initial sync timed out for player {name}");
-                    SyncFinishedCallback = null;
-
-                    if (sessionManager.IsConnected(sessionId))
+                    lock (syncLocker)
                     {
+                        syncingSession = null;
+                        syncFinished = null;
+                    }
+                }
+
+                switch (outcome)
+                {
+                    case SyncOutcome.DISCONNECTED:
+                        logger.ZLogInformation($"Player {name} disconnected while syncing");
+                        break;
+                    case SyncOutcome.TIMED_OUT:
+                        logger.ZLogInformation($"Initial sync timed out for player {name}");
+                        // The kicked game disconnects itself (UserKickedProcessor)
                         await packetSender.SendPacketAsync(new PlayerKicked("Initial sync took too long and timed out"), sessionId);
-                    }
-                }
-                else
-                {
-                    logger.ZLogInformation($"Player {name} joined successfully. Remaining requests: {joinQueue.Count}");
-                    if (!playerManager.TryGetPlayerBySessionId(sessionId, out Player? player))
-                    {
-                        throw new Exception($"Failed to get player object for session #{sessionId}");
-                    }
-                    BroadcastPlayerJoined(player);
+                        break;
+                    default:
+                        logger.ZLogInformation($"Player {name} joined successfully. Remaining requests: {joinQueue.Count}");
+                        if (!playerManager.TryGetPlayerBySessionId(sessionId, out Player? player))
+                        {
+                            throw new Exception($"Failed to get player object for session #{sessionId}");
+                        }
+                        await BroadcastPlayerJoinedAsync(player);
+                        break;
                 }
             }
             catch (Exception e)
@@ -249,10 +313,10 @@ internal sealed class JoiningManager(
         }
     }
 
-    private void BroadcastPlayerJoined(Player player)
+    private async Task BroadcastPlayerJoinedAsync(Player player)
     {
         PlayerJoinedMultiplayerSession playerJoinedPacket = new(player.PlayerContext, player.SubRootId, player.Entity);
-        packetSender.SendPacketToOthersAsync(playerJoinedPacket, player.SessionId);
+        await packetSender.SendPacketToOthersAsync(playerJoinedPacket, player.SessionId);
     }
 
     public Task OnEventAsync(ISessionCleaner.Args args)

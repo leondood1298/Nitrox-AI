@@ -20,8 +20,13 @@ internal class PlayerSyncFinishedProcessor(SessionManager sessionManager, Joinin
             await hibernateService.WakeAsync();
         }
 
+        if (context.Sender.HasFinishedInitialSync)
+        {
+            // A game reports this once per join; a repeat would announce the player again
+            return;
+        }
         context.Sender.HasFinishedInitialSync = true;
-        joiningManager.SyncFinishedCallback?.Invoke();
+        await joiningManager.SyncFinishedAsync(context.Sender);
 
         // The world and the other players exist on the joining client now, so it can show who is lying in bed.
         foreach (BedEnterAnimation lyingDown in bedOccupancy.GetAnnouncementsFor(context.Sender.SessionId))
