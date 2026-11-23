@@ -277,6 +277,17 @@ public sealed class CreatureMetadataAuthorityTest
     }
 
     [TestMethod]
+    public void WarpedInCreatureKeepsItsEndWhenItsLeashIsSent()
+    {
+        WarpedInCreatureMetadata stored = new(5030d, CreatureMetadata.UNDECIDED);
+
+        CreatureMetadata? accepted = CreatureMetadataAuthority.Merge(stored, (CreatureInfectionMetadata)new CreatureInfectionMetadata(CreatureMetadata.UNDECIDED).WithLeash(leashPosition));
+
+        accepted.Should().BeOfType<WarpedInCreatureMetadata>().Which.WarpOutTime.Should().Be(5030d);
+        accepted!.LeashPosition.Should().Be(leashPosition);
+    }
+
+    [TestMethod]
     public void SimulatingPlayerDecidesInfection()
     {
         Player sender = CreatePlayer(1, 1);
