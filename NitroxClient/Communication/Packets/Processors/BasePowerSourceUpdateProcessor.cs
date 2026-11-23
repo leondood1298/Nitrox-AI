@@ -1,3 +1,4 @@
+using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication.Packets.Processors.Core;
@@ -22,6 +23,7 @@ internal sealed class BasePowerSourceUpdateProcessor(BasePowerState state, BaseP
         }
         if (!packet.Granted)
         {
+            // Not a warning, and thinned out: a rejection follows every update this client keeps sending, up to once a second per source
             diagnostics.RecordSourceRejected(packet.SourceId, accepted, packet.RejectionReason);
         }
         bool objectFound = NitroxEntity.TryGetComponentFrom(packet.SourceId, out PowerSource powerSource);
@@ -34,7 +36,7 @@ internal sealed class BasePowerSourceUpdateProcessor(BasePowerState state, BaseP
         return Task.CompletedTask;
     }
 
-    private void RecordReconciliationApply(Nitrox.Model.DataStructures.NitroxId sourceId, PowerSourceMetadata metadata,
+    private void RecordReconciliationApply(NitroxId sourceId, PowerSourceMetadata metadata,
         bool objectFound, string reason)
     {
         bool initialSyncCompleted = Multiplayer.Main && Multiplayer.Main.InitialSyncCompleted;

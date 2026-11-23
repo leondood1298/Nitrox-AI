@@ -253,7 +253,7 @@ public sealed class ScannerRoomDiagnosticsTest
 
         ScannerRoomDiagnosticEntry entry = diagnostics.RecordCheckpoint("manual", room);
 
-        entry.Outcome.Should().Be(ScannerRoomDiagnosticOutcome.InvariantFailure);
+        entry.Outcome.Should().Be(ScannerRoomDiagnosticOutcome.INVARIANT_FAILURE);
         entry.Reason.Should().Be("duplicate_dock");
         entry.StateFingerprint.Should().NotBeNull();
         diagnostics.GetCounters().Should().Be(new ScannerRoomDiagnosticCounters(1, 0, 0, 1, 0));

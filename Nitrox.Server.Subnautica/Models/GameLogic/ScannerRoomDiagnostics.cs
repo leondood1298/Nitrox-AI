@@ -89,11 +89,11 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
     /// </param>
     public ScannerRoomDiagnosticEntry RecordAccepted(string eventName, MapRoomEntity? room = null, NitroxId? cameraId = null,
         SessionId? sessionId = null, int? slot = null, string? reason = null, long? stateRevision = null) =>
-        Record(ScannerRoomDiagnosticOutcome.Accepted, eventName, room, cameraId, sessionId, slot, reason, stateRevision: stateRevision);
+        Record(ScannerRoomDiagnosticOutcome.ACCEPTED, eventName, room, cameraId, sessionId, slot, reason, stateRevision: stateRevision);
 
     public ScannerRoomDiagnosticEntry RecordRejected(string eventName, MapRoomEntity? room = null, NitroxId? cameraId = null,
         SessionId? sessionId = null, int? slot = null, string? reason = null) =>
-        Record(ScannerRoomDiagnosticOutcome.Rejected, eventName, room, cameraId, sessionId, slot, reason);
+        Record(ScannerRoomDiagnosticOutcome.REJECTED, eventName, room, cameraId, sessionId, slot, reason);
 
     /// <summary>
     ///     Records a scan target or scan progress request that was dropped because it was based on an older state
@@ -110,18 +110,18 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
                 Interlocked.Increment(ref unchangedRepeats);
                 return;
             }
-            Record(ScannerRoomDiagnosticOutcome.Rejected, "scan_target", room, sessionId: sessionId,
+            Record(ScannerRoomDiagnosticOutcome.REJECTED, "scan_target", room, sessionId: sessionId,
                 reason: $"stale_request_gen_{requested.Generation}_rev_{requested.Revision}_room_gen_{current?.Generation ?? 0}_rev_{current?.Revision ?? 0}");
         }
         catch (Exception exception)
         {
-            ReportOwnFailure(exception, ScannerRoomDiagnosticOutcome.Rejected, "scan_target", sessionId);
+            ReportOwnFailure(exception, ScannerRoomDiagnosticOutcome.REJECTED, "scan_target", sessionId);
         }
     }
 
     public ScannerRoomDiagnosticEntry RecordInvariantFailure(string eventName, MapRoomEntity? room = null, NitroxId? cameraId = null,
         SessionId? sessionId = null, int? slot = null, string? reason = null) =>
-        Record(ScannerRoomDiagnosticOutcome.InvariantFailure, eventName, room, cameraId, sessionId, slot, reason);
+        Record(ScannerRoomDiagnosticOutcome.INVARIANT_FAILURE, eventName, room, cameraId, sessionId, slot, reason);
 
     public ScannerRoomDiagnosticEntry RecordCheckpoint(string eventName, MapRoomEntity room, string? reason = null)
     {
@@ -132,18 +132,18 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
         }
         catch (Exception exception)
         {
-            return ReportOwnFailure(exception, ScannerRoomDiagnosticOutcome.Checkpoint, eventName, null);
+            return ReportOwnFailure(exception, ScannerRoomDiagnosticOutcome.CHECKPOINT, eventName, null);
         }
         return invariantFailure == null
-            ? Record(ScannerRoomDiagnosticOutcome.Checkpoint, eventName, room, reason: reason)
-            : Record(ScannerRoomDiagnosticOutcome.InvariantFailure, $"{eventName}_invalid", room, reason: invariantFailure);
+            ? Record(ScannerRoomDiagnosticOutcome.CHECKPOINT, eventName, room, reason: reason)
+            : Record(ScannerRoomDiagnosticOutcome.INVARIANT_FAILURE, $"{eventName}_invalid", room, reason: invariantFailure);
     }
 
     public ScannerRoomDiagnosticEntry RecordCapturedCheckpoint(string eventName, MapRoomEntity room,
         ScannerRoomStateSnapshot snapshot, string? invariantFailure, string? reason = null) =>
         invariantFailure == null
-            ? Record(ScannerRoomDiagnosticOutcome.Checkpoint, eventName, room, reason: reason, capturedSnapshot: snapshot)
-            : Record(ScannerRoomDiagnosticOutcome.InvariantFailure, $"{eventName}_invalid", room,
+            ? Record(ScannerRoomDiagnosticOutcome.CHECKPOINT, eventName, room, reason: reason, capturedSnapshot: snapshot)
+            : Record(ScannerRoomDiagnosticOutcome.INVARIANT_FAILURE, $"{eventName}_invalid", room,
                 reason: invariantFailure, capturedSnapshot: snapshot);
 
     /// <summary>
@@ -285,7 +285,7 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
             {
                 dockingRevision = room.DockingRevision;
                 cameraCount = room.CameraRegistry?.Count ?? 0;
-                if (outcome is ScannerRoomDiagnosticOutcome.Checkpoint or ScannerRoomDiagnosticOutcome.InvariantFailure)
+                if (outcome is ScannerRoomDiagnosticOutcome.CHECKPOINT or ScannerRoomDiagnosticOutcome.INVARIANT_FAILURE)
                 {
                     snapshot = ScannerRoomStateFingerprint.Create(room);
                 }
@@ -313,14 +313,14 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
                 cameraLock,
                 Time: timeProvider.GetUtcNow());
             bool writeRejection = false;
-            if (outcome == ScannerRoomDiagnosticOutcome.Rejected)
+            if (outcome == ScannerRoomDiagnosticOutcome.REJECTED)
             {
                 writeRejection = ShouldWriteRejection(entry, out long occurrences);
                 entry = entry with { Repeat = occurrences };
             }
 
             IncrementCounter(outcome);
-            if (outcome == ScannerRoomDiagnosticOutcome.Rejected && !writeRejection)
+            if (outcome == ScannerRoomDiagnosticOutcome.REJECTED && !writeRejection)
             {
                 // Counted, but kept out of the history as well as out of the log: a request rejected on every
                 // packet would otherwise leave nothing else in the history within seconds.
@@ -334,7 +334,7 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
             }
             history.Enqueue(entry);
             // Invariants are rare correctness failures and are never thinned out, whatever came before them.
-            Write(outcome is ScannerRoomDiagnosticOutcome.Rejected or ScannerRoomDiagnosticOutcome.InvariantFailure ? LogLevel.Warning : LogLevel.Information,
+            Write(outcome is ScannerRoomDiagnosticOutcome.REJECTED or ScannerRoomDiagnosticOutcome.INVARIANT_FAILURE ? LogLevel.Warning : LogLevel.Information,
                 entry.Format());
         }
         return entry;
@@ -432,16 +432,16 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
     {
         switch (outcome)
         {
-            case ScannerRoomDiagnosticOutcome.Accepted:
+            case ScannerRoomDiagnosticOutcome.ACCEPTED:
                 accepted++;
                 break;
-            case ScannerRoomDiagnosticOutcome.Rejected:
+            case ScannerRoomDiagnosticOutcome.REJECTED:
                 rejected++;
                 break;
-            case ScannerRoomDiagnosticOutcome.InvariantFailure:
+            case ScannerRoomDiagnosticOutcome.INVARIANT_FAILURE:
                 invariantFailures++;
                 break;
-            case ScannerRoomDiagnosticOutcome.Checkpoint:
+            case ScannerRoomDiagnosticOutcome.CHECKPOINT:
                 checkpoints++;
                 break;
         }
@@ -450,10 +450,10 @@ internal sealed class ScannerRoomDiagnostics(ILogger<ScannerRoomDiagnostics> log
 
 internal enum ScannerRoomDiagnosticOutcome
 {
-    Accepted,
-    Rejected,
-    InvariantFailure,
-    Checkpoint
+    ACCEPTED,
+    REJECTED,
+    INVARIANT_FAILURE,
+    CHECKPOINT
 }
 
 internal readonly record struct ScannerRoomDiagnosticCounters(
@@ -493,10 +493,10 @@ internal readonly record struct ScannerRoomDiagnosticEntry(
 
     private string OutcomeToken() => Outcome switch
     {
-        ScannerRoomDiagnosticOutcome.Accepted => "ok",
-        ScannerRoomDiagnosticOutcome.Rejected => "reject",
-        ScannerRoomDiagnosticOutcome.InvariantFailure => "invariant",
-        ScannerRoomDiagnosticOutcome.Checkpoint => "checkpoint",
+        ScannerRoomDiagnosticOutcome.ACCEPTED => "ok",
+        ScannerRoomDiagnosticOutcome.REJECTED => "reject",
+        ScannerRoomDiagnosticOutcome.INVARIANT_FAILURE => "invariant",
+        ScannerRoomDiagnosticOutcome.CHECKPOINT => "checkpoint",
         _ => "unknown"
     };
 }

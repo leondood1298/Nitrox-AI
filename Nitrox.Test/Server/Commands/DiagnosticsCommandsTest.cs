@@ -164,17 +164,18 @@ public sealed class DiagnosticsCommandsTest
         string[] lines = (await RunAsync(command)).Split(Environment.NewLine);
 
         lines[0].Should().Be($"Base power ep={diagnostics.Epoch}: sources=4 (simulated=3, unowned=1), stored=175.00/475.00, updates accepted=2 rejected=1, consumption forwarded=1 (1.50) applied by server=0 (0.00) rejected=0, revision regressions=0, trace=off, diagnostics failures=0");
-        lines[1].Should().Be("Anomalies (5):");
-        string[] anomalies = lines.Skip(2).Take(5).ToArray();
+        lines[1].Should().Be("Anomalies (4):");
+        string[] anomalies = lines.Skip(2).Take(4).ToArray();
         anomalies.Should().OnlyContain(line => line.StartsWith(" ! "));
         anomalies.Should().ContainSingle(line => line.Contains("THERMAL") && line.Contains("simulated by A #1, who last reported it 95s ago"));
-        anomalies.Should().ContainSingle(line => line.Contains("simulated by B #2, who is in CREATIVE"));
+        anomalies.Should().NotContain(line => line.Contains("CREATIVE"), "a source simulated by a Creative player takes what others draw from it like any other");
         anomalies.Should().ContainSingle(line => line.Contains("simulated by B #2, who has not reported it yet"));
         anomalies.Should().ContainSingle(line => line.Contains("has no simulating player"));
         anomalies.Should().ContainSingle(line => line.Contains("had 1 update(s) rejected, last reason: sender_does_not_own_source_simulation"));
-        lines[7].Should().Be("Sources:");
-        lines.Should().ContainSingle(line => line.StartsWith("- SOLAR ") && line.Contains(": 60.00/75.00, rev=8, ") && line.Contains("owner=A #1 (SURVIVAL), last update 0.0s ago by #1, updates=1 rejected=0, consumed by others: #2 forwarded 1 (1.50) server-applied 0 (0.00) rejected 0, ") && line.Contains($"id={healthy.Id}"));
-        lines.Should().ContainSingle(line => line.Contains("owner=<none>, no update since server start, updates=0 rejected=1, consumed by others: nothing reported"));
+        lines[6].Should().Be("Sources:");
+        lines.Should().ContainSingle(line => line.StartsWith("- SOLAR ") && line.Contains(": 60.00/75.00, rev=8, ") && line.Contains("owner=A #1 (SURVIVAL), last update 0.0s ago by #1, updates=1 rejected=0 handed back=0, consumed by others: #2 forwarded 1 (1.50) server-applied 0 (0.00) rejected 0, ") && line.Contains($"id={healthy.Id}"));
+        lines.Should().ContainSingle(line => line.Contains("owner=<none>, no update since server start, updates=0 rejected=1 handed back=0, consumed by others: nothing reported"));
+        lines.Should().ContainSingle(line => line.Contains("owner=B #2 (CREATIVE), "));
         lines[^1].Should().Be("Total source storage: 175.00/475.00");
     }
 

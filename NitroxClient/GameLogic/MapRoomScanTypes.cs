@@ -2,10 +2,8 @@ using System.Collections.Generic;
 using System.Linq;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
-using Nitrox.Model.Subnautica.Extensions;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication.Abstract;
-using NitroxClient.Extensions;
 using NitroxClient.MonoBehaviours;
 using UnityEngine;
 

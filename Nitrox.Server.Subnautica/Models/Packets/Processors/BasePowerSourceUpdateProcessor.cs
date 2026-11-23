@@ -1,6 +1,5 @@
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
-using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
@@ -39,6 +38,7 @@ internal sealed class BasePowerSourceUpdateProcessor(EntityRegistry entityRegist
 
     private async Task Reject(AuthProcessorContext context, BasePowerSourceUpdate packet, PowerSourceMetadata canonical, string reason)
     {
+        // An owner sends an update per source every second, so the diagnostics thin out the repeats of a rejection.
         diagnostics.RecordRejected(packet.SourceId, context.Sender.SessionId, canonical, reason);
         await context.ReplyAsync(Response(packet, canonical, false, reason));
     }

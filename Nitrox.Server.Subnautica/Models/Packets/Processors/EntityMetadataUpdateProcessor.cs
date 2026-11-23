@@ -57,6 +57,18 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
             }
             await SendUpdateToVisiblePlayersAsync(context, acceptedUpdate, entity, acceptedMetadata is MapRoomMetadata);
         }
+        else if (packet.NewValue is MapRoomMetadata && entity is MapRoomEntity refusedMapRoom)
+        {
+            // The sender has already applied its request locally: its Scanner Room shows the target or progress it
+            // asked for. Nothing else would tell it that the room is in another state, and with the generation and
+            // revision it holds every later request would be refused as stale too. It is sent the room's real state.
+            MapRoomMetadata canonicalMetadata;
+            lock (refusedMapRoom)
+            {
+                canonicalMetadata = refusedMapRoom.Metadata as MapRoomMetadata ?? new MapRoomMetadata(NitroxTechType.None, 0);
+            }
+            await context.ReplyAsync(new EntityMetadataUpdate(packet.Id, canonicalMetadata));
+        }
     }
 
     private async Task SendUpdateToVisiblePlayersAsync(AuthProcessorContext context, EntityMetadataUpdate packet, Entity entity, bool includeSender)
@@ -138,6 +150,24 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
             return false;
         }
 
+        if (entity.Metadata is PowerSourceMetadata && !BasePowerSourceAuthority.MayReplacePowerState(metadata, simulationOwnershipData.GetPlayerForLock(entity.Id) == sendingPlayer))
+        {
+            logger.ZLogWarning($"[BasePower] Player {sendingPlayer.Name} tried replacing the power state of source {entity.Id} with {metadata.GetType().Name} without simulating it");
+            return false;
+        }
+
+        if (metadata is ThermalPlantMetadata temperatureReport)
+        {
+            // temperature is a ratchet (see ThermalPlant.QueryTemperature's Mathf.Max), so drop stale updates instead of
+            // relaying them: every client near a thermal plant reports the same rise, and only the first one is news
+            if (!basePowerSourceAuthority.TryAcceptTemperature(entity, temperatureReport, out ThermalPlantMetadata acceptedTemperature))
+            {
+                return false;
+            }
+            metadata = acceptedTemperature;
+            return true;
+        }
+
         if (metadata is CyclopsMetadata requestedCyclops)
         {
             Player? simulator = simulationOwnershipData.GetPlayerForLock(entity.Id);
@@ -148,11 +178,6 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
         return metadata switch
         {
             PlayerMetadata playerMetadata => ProcessPlayerMetadata(sendingPlayer, entity, playerMetadata),
-
-            // temperature is a ratchet (see ThermalPlant.QueryTemperature's Mathf.Max), so drop stale updates instead of
-            // relaying them: every client near a thermal plant reports the same rise, and only the first one is news
-            ThermalPlantMetadata thermalPlantMetadata when entity.Metadata is PowerSourceMetadata => basePowerSourceAuthority.TryApplyTemperature(entity, thermalPlantMetadata),
-            ThermalPlantMetadata thermalPlantMetadata => entity.Metadata is not ThermalPlantMetadata currentMetadata || thermalPlantMetadata.Temperature > currentMetadata.Temperature,
 
             // Allow metadata updates from any player by default
             _ => true

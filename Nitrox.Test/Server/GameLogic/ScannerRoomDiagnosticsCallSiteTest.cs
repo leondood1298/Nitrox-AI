@@ -62,6 +62,36 @@ public sealed class ScannerRoomDiagnosticsCallSiteTest
     }
 
     [TestMethod]
+    public async Task TakingOverACameraLockedWithoutAPilotIsRecorded()
+    {
+        ScannerRoomScenarioFixture scenario = new();
+        NitroxId cameraId = ScannerRoomScenarioFixture.CameraCId;
+        ScannerRoomDiagnostics diagnostics = scenario.Diagnostics;
+        // Player B's client took the generic exclusive lock for a Stalker carrying the camera and never gave it back.
+        Assert.IsTrue(scenario.Ownership.TryAcquire(cameraId, scenario.PlayerB, SimulationLockType.EXCLUSIVE));
+
+        Assert.IsTrue((await scenario.ControlLooseAsync(scenario.PlayerA, cameraId, true)).Granted);
+
+        diagnostics.GetHistory().Select(entry => $"{entry.EventName} sid={entry.SessionId} {entry.Reason}").Should().Equal(
+            ["control_preempt sid=2 exclusive_lock_taken_by_1", "control_acquire sid=1 -"],
+            "the player who lost the lock is told by a plain ownership change; only this line says why");
+    }
+
+    [TestMethod]
+    public async Task PilotsSentToAJoinedPlayerAreRecorded()
+    {
+        ScannerRoomScenarioFixture scenario = new();
+        NitroxId cameraId = ScannerRoomScenarioFixture.CameraCId;
+        Assert.IsTrue((await scenario.ControlLooseAsync(scenario.PlayerA, cameraId, true)).Granted);
+
+        IReadOnlyList<MapRoomCameraControl> grants = await scenario.JoinedPlayerControlGrantsAsync(scenario.PlayerB.SessionId);
+
+        grants.Should().ContainSingle();
+        ScannerRoomDiagnosticEntry entry = scenario.Diagnostics.GetHistory()[^1];
+        entry.Format().Should().Contain(" sid=1 ev=control_sync out=ok ").And.EndWith(" reason=current_pilot_sent_to_joined_player");
+    }
+
+    [TestMethod]
     public async Task ScanProgressFromAPlayerWhoDoesNotSimulateTheRoomIsThinnedOut()
     {
         ScannerRoomScenarioFixture scenario = new();

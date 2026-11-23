@@ -55,13 +55,9 @@ internal sealed class BasePowerCommand(EntityRegistry entityRegistry, Simulation
             {
                 owned++;
                 ownerText = $"{owner.Player.Name} #{owner.Player.SessionId} ({owner.Player.GameMode})";
-                if (owner.Player.GameMode == SubnauticaGameMode.CREATIVE)
-                {
-                    anomalies.Add($"{name} is simulated by {owner.Player.Name} #{owner.Player.SessionId}, who is in CREATIVE, where nothing consumes power: what other players draw from it is not applied");
-                }
                 if (record.LastOwner != owner.Player.SessionId)
                 {
-                    anomalies.Add($"{name} is simulated by {owner.Player.Name} #{owner.Player.SessionId}, who has not reported it yet: until then its level is frozen (owner still loading?)");
+                    anomalies.Add($"{name} is simulated by {owner.Player.Name} #{owner.Player.SessionId}, who has not reported it yet: until then its level is frozen (still loading, or the source is missing there and is handed back once someone draws from it)");
                 }
                 else if (record.SinceLastUpdate is { } silence && silence > OWNER_SILENCE_LIMIT)
                 {
@@ -76,7 +72,7 @@ internal sealed class BasePowerCommand(EntityRegistry entityRegistry, Simulation
             if (record.RevisionRegressions > 0)
             {
                 anomalies.Add(string.Create(CultureInfo.InvariantCulture,
-                    $"{name} had its revision go backwards {record.RevisionRegressions} time(s): clients that hold a higher revision ignore its updates"));
+                    $"{name} had its revision go backwards {record.RevisionRegressions} time(s) despite the revision floor: clients that hold a higher revision ignore its updates"));
             }
             if (record.RejectedUpdates > 0)
             {
@@ -91,7 +87,7 @@ internal sealed class BasePowerCommand(EntityRegistry entityRegistry, Simulation
                 ? string.Create(CultureInfo.InvariantCulture, $"last update {sinceLastUpdate.TotalSeconds:F1}s ago by #{DiagnosticLineFormat.Session(record.LastOwner)}")
                 : "no update since server start";
             lines.Add(string.Create(CultureInfo.InvariantCulture,
-                $"- {name}: {metadata.Power:F2}/{metadata.MaxPower:F2}{fuelText}, rev={metadata.Revision}, seq={authority.GetLastClientSequence(source.Id)}, owner={ownerText}, {updateText}, updates={record.AcceptedUpdates} rejected={record.RejectedUpdates}{FormatConsumers(record.Consumers)}, id={source.Id}, parent={source.ParentId?.ToString() ?? "<none>"}"));
+                $"- {name}: {metadata.Power:F2}/{metadata.MaxPower:F2}{fuelText}, rev={metadata.Revision}, seq={authority.GetLastClientSequence(source.Id)}, owner={ownerText}, {updateText}, updates={record.AcceptedUpdates} rejected={record.RejectedUpdates} handed back={record.HandBacks}{FormatConsumers(record.Consumers)}, id={source.Id}, parent={source.ParentId?.ToString() ?? "<none>"}"));
         }
 
         StringBuilder output = new();

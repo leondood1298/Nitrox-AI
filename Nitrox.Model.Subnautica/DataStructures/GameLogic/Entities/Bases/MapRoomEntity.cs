@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.Runtime.Serialization;
 using System.Linq;
+using System.Runtime.Serialization;
 using BinaryPack.Attributes;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.Unity;
@@ -12,6 +12,13 @@ namespace Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 [Serializable, DataContract]
 public class MapRoomEntity : GlobalRootEntity
 {
+    /// <summary>
+    ///     A Scanner Room has a left and a right camera dock, addressed by docking index 0 and 1.
+    /// </summary>
+    public const int DOCK_COUNT = 2;
+    private const int LEFT_DOCK_INDEX = 0;
+    private const int RIGHT_DOCK_INDEX = 1;
+
     [DataMember(Order = 1)]
     public NitroxInt3 Cell { get; set; }
 
@@ -83,11 +90,11 @@ public class MapRoomEntity : GlobalRootEntity
         NormalizeCameraState();
     }
 
-    public NitroxId? GetDockedCamera(int dockingIndex) => dockingIndex == 0 ? LeftDockCameraId : RightDockCameraId;
+    public NitroxId? GetDockedCamera(int dockingIndex) => dockingIndex == LEFT_DOCK_INDEX ? LeftDockCameraId : RightDockCameraId;
 
     public void SetDockedCamera(int dockingIndex, NitroxId cameraId)
     {
-        if (dockingIndex == 0)
+        if (dockingIndex == LEFT_DOCK_INDEX)
         {
             LeftDockCameraId = cameraId;
         }
@@ -104,7 +111,7 @@ public class MapRoomEntity : GlobalRootEntity
         {
             return false;
         }
-        if (dockingIndex == 0)
+        if (dockingIndex == LEFT_DOCK_INDEX)
         {
             LeftDockCameraId = null;
         }
@@ -120,7 +127,7 @@ public class MapRoomEntity : GlobalRootEntity
 
     public bool TryClearDockedCamera(NitroxId cameraId, out int dockingIndex)
     {
-        dockingIndex = LeftDockCameraId == cameraId ? 0 : RightDockCameraId == cameraId ? 1 : -1;
+        dockingIndex = LeftDockCameraId == cameraId ? LEFT_DOCK_INDEX : RightDockCameraId == cameraId ? RIGHT_DOCK_INDEX : -1;
         return dockingIndex >= 0 && TryClearDockedCamera(dockingIndex, cameraId);
     }
 
@@ -140,7 +147,7 @@ public class MapRoomEntity : GlobalRootEntity
 
     public MapRoomCameraRecord? GetCameraRecord(NitroxId cameraId) => CameraRegistry.Find(record => record.CameraId == cameraId);
 
-    public int NormalizeCameraState()
+    internal int NormalizeCameraState()
     {
         CameraRegistry ??= [];
         int changes = 0;
@@ -156,7 +163,6 @@ public class MapRoomEntity : GlobalRootEntity
                 changes++;
             }
         }
-        seenNumbers.Clear();
         int nextNumber = 1;
         foreach (MapRoomCameraRecord record in CameraRegistry)
         {
@@ -180,12 +186,12 @@ public class MapRoomEntity : GlobalRootEntity
         }
         if (LeftDockCameraId != null && GetCameraRecord(LeftDockCameraId) == null)
         {
-            GetOrAssignCameraNumber(LeftDockCameraId, 1);
+            GetOrAssignCameraNumber(LeftDockCameraId, LEFT_DOCK_INDEX + 1);
             changes++;
         }
         if (RightDockCameraId != null && GetCameraRecord(RightDockCameraId) == null)
         {
-            GetOrAssignCameraNumber(RightDockCameraId, 2);
+            GetOrAssignCameraNumber(RightDockCameraId, RIGHT_DOCK_INDEX + 1);
             changes++;
         }
         return changes;

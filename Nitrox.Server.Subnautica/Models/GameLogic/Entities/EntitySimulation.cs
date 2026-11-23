@@ -219,6 +219,40 @@ internal sealed class EntitySimulation : ISessionCleaner
         return false;
     }
 
+    /// <summary>
+    ///     Puts the players who finished loading first, keeping the order otherwise. A player who is still loading has
+    ///     not spawned the world yet: an entity given to it is simulated by nobody until it has, which for a base power
+    ///     source means no generation and other players' consumption being dropped.
+    /// </summary>
+    internal static List<Player> PreferPlayersInTheWorld(List<Player> players)
+    {
+        return [.. players.OrderByDescending(player => player.HasFinishedInitialSync)];
+    }
+
+    /// <summary>
+    ///     Takes background simulation of <paramref name="entity" /> away from a player who cannot simulate it and
+    ///     offers it to <paramref name="otherPlayers" />.
+    /// </summary>
+    /// <param name="takenOver">The new simulation, or null when no other player could take it.</param>
+    /// <returns>False when <paramref name="player" /> does not hold background simulation of the entity.</returns>
+    public bool TryReleaseBackgroundSimulation(Player player, Entity entity, List<Player> otherPlayers, out List<SimulatedEntity>? takenOver)
+    {
+        takenOver = null;
+        // An exclusive lock is a player piloting or controlling the entity; that only ends through its own lifecycle
+        if (!simulationOwnershipData.TryGetLock(entity.Id, out SimulationOwnershipData.PlayerLock heldLock) ||
+            heldLock.Player != player || heldLock.LockType != SimulationLockType.TRANSIENT ||
+            !simulationOwnershipData.RevokeIfOwner(entity.Id, player))
+        {
+            return false;
+        }
+
+        if (TryAssignEntityToPlayers(PreferPlayersInTheWorld(otherPlayers), entity, false, out List<SimulatedEntity>? simulatedEntities))
+        {
+            takenOver = simulatedEntities;
+        }
+        return true;
+    }
+
     public bool ShouldSimulateEntityMovement(NitroxId entityId)
     {
         return entityRegistry.TryGetEntityById(entityId, out WorldEntity worldEntity) && SimulationWhitelist.ShouldSimulateEntityMovement(worldEntity);
@@ -280,6 +314,34 @@ internal sealed class EntitySimulation : ISessionCleaner
     }
 
     /// <summary>
+    ///     Tells a player who has just joined which Scanner Room cameras are being controlled, and by whom. Control is
+    ///     announced when it is granted, which they missed: such a camera would stay frozen for them while its controller
+    ///     flies it, and their Scanner Room screen would offer it for control.
+    /// </summary>
+    public async Task SendCameraControlGrantsAsync(SessionId joinedSessionId)
+    {
+        IReadOnlyList<NitroxId> controlledCameraIds = cameraControlLifecycle.GetControlledCameras();
+        if (controlledCameraIds.Count == 0)
+        {
+            return;
+        }
+
+        // A release keeps the camera's gate until its packet is queued. Holding the gates here keeps one from slipping
+        // in between reading a grant and sending it, which would leave the joined player with a controller for good.
+        using IDisposable lifecycleGates = await cameraControlLifecycle.EnterTogetherAsync(controlledCameraIds);
+        foreach (NitroxId cameraId in controlledCameraIds)
+        {
+            if (simulationOwnershipData.TryGetLock(cameraId, out SimulationOwnershipData.PlayerLock controlLock) &&
+                controlLock.LockType == SimulationLockType.EXCLUSIVE &&
+                cameraControlLifecycle.IsActiveController(cameraId, controlLock.Player.SessionId) &&
+                cameraControlReleaseFactory.TryCreateCurrentGrant(cameraId, controlLock.Player.SessionId, out MapRoomCameraControl grant))
+            {
+                await packetSender.SendPacketAsync(grant, joinedSessionId);
+            }
+        }
+    }
+
+    /// <summary>
     ///     Whether <paramref name="player" /> is controlling this Scanner Room camera right now. Control is only ended by
     ///     the camera's own lifecycle (release, pickup, docking, destruction, disconnect), never as a side effect of the
     ///     player losing sight of the camera or handing off its movement.
@@ -300,7 +362,7 @@ internal sealed class EntitySimulation : ISessionCleaner
         }
 
         // TODO: (optional) Find out if ordering the otherPlayers by distance to the previous simulator improves performance (ascending)
-        List<Player> otherPlayers = playerManager.GetConnectedPlayersExcept(oldSessionId);
+        List<Player> otherPlayers = PreferPlayersInTheWorld(playerManager.GetConnectedPlayersExcept(oldSessionId));
         foreach (Entity entity in entities)
         {
             if (TryAssignEntityToPlayers(otherPlayers, entity, propagate, out List<SimulatedEntity> simulatedEntities))

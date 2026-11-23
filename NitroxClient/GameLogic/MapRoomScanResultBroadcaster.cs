@@ -1,23 +1,24 @@
 using System.Collections.Generic;
 using Nitrox.Model.DataStructures;
-using Nitrox.Model.Subnautica.Extensions;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication.Abstract;
-using NitroxClient.Extensions;
-using NitroxClient.Helpers;
 using NitroxClient.MonoBehaviours;
+using UnityEngine;
 
 namespace NitroxClient.GameLogic;
 
 public sealed class MapRoomScanResultBroadcaster(IPacketSender packetSender, ThrottledPacketSender throttledPacketSender, SimulationOwnership simulationOwnership)
 {
+    private const float RESULT_CHANGE_THROTTLE_SECONDS = 0.5f;
+
     public void BroadcastSnapshot(MapRoomFunctionality mapRoom)
     {
         if (!TryGetAuthority(mapRoom, out NitroxId roomId, out long generation))
         {
             return;
         }
-        List<Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases.MapRoomScanResultRecord> results = [];
+        List<MapRoomScanResultRecord> results = [];
         foreach (ResourceTrackerDatabase.ResourceInfo info in mapRoom.resourceNodes)
         {
             if (IsCurrentInRangeResult(mapRoom, info))
@@ -79,7 +80,7 @@ public sealed class MapRoomScanResultBroadcaster(IPacketSender packetSender, Thr
         {
             MapRoomScanResultChanged packet = CreateChangedPacket(roomId, generation, info, removed: false,
                 isRangeExit: false, mapRoom.wireFrameWorld.position, mapRoom.GetScanRange());
-            throttledPacketSender.SendThrottled(packet, changed => (changed.MapRoomId, changed.ResourceId), 0.5f);
+            throttledPacketSender.SendThrottled(packet, changed => (changed.MapRoomId, changed.ResourceId), RESULT_CHANGE_THROTTLE_SECONDS);
         }
     }
 
@@ -126,7 +127,7 @@ public sealed class MapRoomScanResultBroadcaster(IPacketSender packetSender, Thr
     {
         MapRoomScanResultChanged packet = CreateChangedPacket(roomId, generation, info, removed: true,
             isRangeExit: true, mapRoom.wireFrameWorld.position, mapRoom.GetScanRange());
-        throttledPacketSender.SendThrottled(packet, changed => (changed.MapRoomId, changed.ResourceId), 0.5f);
+        throttledPacketSender.SendThrottled(packet, changed => (changed.MapRoomId, changed.ResourceId), RESULT_CHANGE_THROTTLE_SECONDS);
     }
 
     private void Send(MapRoomFunctionality mapRoom, NitroxId roomId, long generation, ResourceTrackerDatabase.ResourceInfo info, bool removed)
@@ -136,12 +137,12 @@ public sealed class MapRoomScanResultBroadcaster(IPacketSender packetSender, Thr
     }
 
     internal static MapRoomScanResultChanged CreateChangedPacket(NitroxId roomId, long generation,
-        ResourceTrackerDatabase.ResourceInfo info, bool removed, bool isRangeExit, UnityEngine.Vector3 scanOrigin, float scanRange) =>
+        ResourceTrackerDatabase.ResourceInfo info, bool removed, bool isRangeExit, Vector3 scanOrigin, float scanRange) =>
         new(roomId, generation, info.uniqueId, info.techType.ToDto(), info.position.ToDto(), removed, isRangeExit,
             scanOrigin.ToDto(), scanRange);
 
     internal static MapRoomScanResultSnapshot CreateSnapshotPacket(NitroxId roomId, long generation,
-        List<Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases.MapRoomScanResultRecord> results,
-        UnityEngine.Vector3 scanOrigin, float scanRange) =>
+        List<MapRoomScanResultRecord> results,
+        Vector3 scanOrigin, float scanRange) =>
         new(roomId, generation, results, scanOrigin.ToDto(), scanRange);
 }

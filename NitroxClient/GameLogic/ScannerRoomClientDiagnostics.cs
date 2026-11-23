@@ -115,7 +115,8 @@ public sealed class ScannerRoomClientDiagnostics
     ///     Call before a light or component packet is checked. Records the packet when it is about to be ignored:
     ///     the server refused the request this client sent (<c>reject</c>), or the packet is older than what this
     ///     client already applied (<c>stale</c>). Both are dropped without any other trace, and the second one is
-    ///     what a camera looks like whose revisions started over on the server.
+    ///     what a camera looks like whose revisions started over on the server, which its revision floors are there
+    ///     to prevent.
     /// </summary>
     internal void RecordIfIgnored(string eventName, NitroxId cameraId, bool isServerResponse, bool granted, long revision,
         IReadOnlyDictionary<NitroxId, long> appliedRevisions)
@@ -167,9 +168,9 @@ public sealed class ScannerRoomClientDiagnostics
         }
     }
 
-    internal static int EnergyBand(float energy) => ComponentBand(energy, MapRoomCameraRecord.MAX_ENERGY);
+    internal static int EnergyBand(float energy) => MapRoomCameraRecord.GetComponentBand(energy, MapRoomCameraRecord.MAX_ENERGY);
 
-    internal static int HealthBand(float health) => ComponentBand(health, MapRoomCameraRecord.MAX_HEALTH);
+    internal static int HealthBand(float health) => MapRoomCameraRecord.GetComponentBand(health, MapRoomCameraRecord.MAX_HEALTH);
 
     /// <summary>
     ///     Writes one marker before the first event of a session. Its UTC stamp, next to the log's own local time,
@@ -232,14 +233,4 @@ public sealed class ScannerRoomClientDiagnostics
             Interlocked.Increment(ref ownFailures);
         }
     }
-
-    private static int ComponentBand(float value, float maximum) => value switch
-    {
-        <= 0f => 0,
-        _ when value <= maximum * 0.1f => 10,
-        _ when value <= maximum * 0.25f => 25,
-        _ when value <= maximum * 0.5f => 50,
-        _ when value <= maximum * 0.75f => 75,
-        _ => 100
-    };
 }

@@ -86,20 +86,22 @@ public sealed class BasePowerClientDiagnostics
 
     /// <summary>
     ///     Records a source state from the server that this client dropped because it already holds a newer revision.
-    ///     When the server's revisions for a source start over (the source was rebuilt), this is all that is left of
-    ///     every later update: the source stays at the level it had. Not limited to the join phase, thinned out by
-    ///     repeat instead, because it lasts for as long as the source does.
+    ///     The server keeps a revision floor per source id so that revisions never start over, not even for a source
+    ///     that was rebuilt. Should that fail, this is all that is left of every later update: the source stays at
+    ///     the level it had. Not limited to the join phase, thinned out by repeat instead, because it lasts for as
+    ///     long as the source does.
     /// </summary>
     internal string? RecordSourceStale(NitroxId sourceId, PowerSourceMetadata incoming, PowerSourceMetadata held) =>
-        RecordProblem("source_apply", "stale", sourceId, incoming, $"rev_{incoming.Revision}_held_{held.Revision}", "stale");
+        RecordProblem("source_apply", "stale", sourceId, incoming, $"rev_{incoming.Revision}_held_{held.Revision}", "stale", true);
 
     /// <summary>
     ///     Records that the server refused a level this client reported for a source it believes it simulates. A
-    ///     client reports once a second, so repeats are thinned out.
+    ///     client reports once a second until it learns who simulates the source, so repeats are thinned out and the
+    ///     line is information, not a warning.
     /// </summary>
     /// <param name="canonical">The state the server told this client to restore.</param>
     internal string? RecordSourceRejected(NitroxId sourceId, PowerSourceMetadata canonical, string? reason) =>
-        RecordProblem("source_update", "reject", sourceId, canonical, reason, WithoutDigits(reason));
+        RecordProblem("source_update", "reject", sourceId, canonical, reason, WithoutDigits(reason), false);
 
     /// <summary>
     ///     The newest stale and rejected lines. Kept apart from the join trace, which stops at its capacity.
@@ -196,7 +198,8 @@ public sealed class BasePowerClientDiagnostics
         return line;
     }
 
-    private string? RecordProblem(string eventName, string outcome, NitroxId sourceId, PowerSourceMetadata shown, string? reason, string repeatKey)
+    private string? RecordProblem(string eventName, string outcome, NitroxId sourceId, PowerSourceMetadata shown, string? reason, string repeatKey,
+        bool warning)
     {
         try
         {
@@ -226,7 +229,7 @@ public sealed class BasePowerClientDiagnostics
             {
                 Write(marker);
             }
-            Write(line, true);
+            Write(line, warning);
             return line;
         }
         catch (Exception)

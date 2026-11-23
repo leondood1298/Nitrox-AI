@@ -39,5 +39,5 @@ public sealed partial class MapRoomFunctionality_UpdateScanning_Patch : NitroxPa
         }
     }
 
-    public static bool ShouldSuppressPowerDrain(bool hasEntityId, bool hasOwnership) => hasEntityId && !hasOwnership;
+    internal static bool ShouldSuppressPowerDrain(bool hasEntityId, bool hasOwnership) => hasEntityId && !hasOwnership;
 }

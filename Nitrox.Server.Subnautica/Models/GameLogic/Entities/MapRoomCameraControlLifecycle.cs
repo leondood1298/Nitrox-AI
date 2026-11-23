@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 
@@ -60,6 +59,19 @@ internal sealed class MapRoomCameraControlLifecycle
 
     internal bool HasActiveController(NitroxId cameraId) => previewAcquisitions.ContainsKey(cameraId);
 
+    /// <summary>
+    ///     Every camera that somebody is controlling right now.
+    /// </summary>
+    internal IReadOnlyList<NitroxId> GetControlledCameras() => previewAcquisitions.Keys.ToArray();
+
+    /// <summary>
+    ///     The cameras this player is controlling right now. The game lets a player control one camera at a time.
+    /// </summary>
+    internal IReadOnlyList<NitroxId> GetCamerasControlledBy(SessionId controllerSessionId) =>
+        previewAcquisitions.Where(acquisition => acquisition.Value.ControllerSessionId == controllerSessionId)
+                           .Select(acquisition => acquisition.Key)
+                           .ToArray();
+
     internal void EndPreviewAcquisition(NitroxId cameraId, SessionId controllerSessionId)
     {
         if (previewAcquisitions.TryGetValue(cameraId, out PreviewAcquisition current) &&
@@ -107,6 +119,13 @@ internal sealed class MapRoomCameraControlLifecycle
         }
     }
 
+    /// <summary>
+    ///     Enters the gates of several cameras as one, in the same id order as <see cref="EnterManyAsync" />, so two
+    ///     transitions that each span the same cameras cannot wait on each other forever.
+    /// </summary>
+    public async ValueTask<IDisposable> EnterTogetherAsync(IEnumerable<NitroxId> cameraIds) =>
+        new GateSet(await EnterManyAsync(cameraIds));
+
     public static void ReleaseReverse(IReadOnlyList<IDisposable> acquired)
     {
         for (int index = acquired.Count - 1; index >= 0; index--)
@@ -120,6 +139,19 @@ internal sealed class MapRoomCameraControlLifecycle
         private SemaphoreSlim? gate = gate;
 
         public void Dispose() => Interlocked.Exchange(ref gate, null)?.Release();
+    }
+
+    private sealed class GateSet(IReadOnlyList<IDisposable> gates) : IDisposable
+    {
+        private IReadOnlyList<IDisposable>? gates = gates;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref gates, null) is { } entered)
+            {
+                ReleaseReverse(entered);
+            }
+        }
     }
 
     private sealed class PreviewAcquisition(SessionId controllerSessionId)

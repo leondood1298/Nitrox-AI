@@ -3,6 +3,7 @@ using System.Linq;
 using Microsoft.Extensions.Logging.Abstractions;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Helper;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
@@ -112,6 +113,7 @@ internal sealed class BasePowerDiagnostics(ILogger<BasePowerDiagnostics>? logger
                 if (hadUpdate && accepted.Revision <= previousRevision)
                 {
                     // Clients drop anything older than the revision they hold, so from here on they ignore this source.
+                    // The authority keeps a revision floor per id to rule this out; this line means the floor failed.
                     state.RevisionRegressions++;
                     if (repeatSampler.Observe($"regress|{sourceId}", out long occurrences))
                     {
@@ -128,8 +130,9 @@ internal sealed class BasePowerDiagnostics(ILogger<BasePowerDiagnostics>? logger
     }
 
     /// <summary>
-    ///     Records an update that was refused. A client that wrongly believes it simulates a source sends one every
-    ///     second, so repeats are thinned out.
+    ///     Records an update that was refused. A client that believes it simulates a source sends one every second
+    ///     until it is told otherwise, so repeats are thinned out, and since this is how the server answers such a
+    ///     client by design, the line is information, not a warning.
     /// </summary>
     /// <param name="canonical">What the server holds for the source, which is also what the sender is told to restore.</param>
     public void RecordRejected(NitroxId sourceId, SessionId senderSessionId, PowerSourceMetadata canonical, string reason)
@@ -152,7 +155,7 @@ internal sealed class BasePowerDiagnostics(ILogger<BasePowerDiagnostics>? logger
                 }
                 if (repeatSampler.Observe($"update|{senderSessionId}|{sourceId}|{WithoutDigits(reason)}", out long occurrences))
                 {
-                    Write(LogLevel.Warning, FormatLine(sequence, senderSessionId, "source_update", "reject", state, sourceId, null, occurrences, reason,
+                    Write(LogLevel.Information, FormatLine(sequence, senderSessionId, "source_update", "reject", state, sourceId, null, occurrences, reason,
                         canonical));
                 }
             }
@@ -208,8 +211,51 @@ internal sealed class BasePowerDiagnostics(ILogger<BasePowerDiagnostics>? logger
                 string reasonKey = route == ConsumptionRoute.REJECTED ? WithoutDigits(reason) : "";
                 if (repeatSampler.Observe($"consume|{consumerSessionId}|{sourceId}|{outcome}|{ownerSessionId}|{reasonKey}", out long occurrences))
                 {
-                    Write(route == ConsumptionRoute.REJECTED ? LogLevel.Warning : LogLevel.Information,
-                        FormatLine(sequence, consumerSessionId, "consume", outcome, state, sourceId, (amount, total), occurrences, reason, stored));
+                    Write(LogLevel.Information, FormatLine(sequence, consumerSessionId, "consume", outcome, state, sourceId, (amount, total), occurrences, reason, stored));
+                }
+            }
+        }
+        catch (Exception)
+        {
+            Interlocked.Increment(ref ownFailures);
+        }
+    }
+
+    /// <summary>
+    ///     Records that a player gave the simulation of a power source back because it cannot simulate it (the source
+    ///     does not exist on that client), and whether another player took it over. Entities that are not power
+    ///     sources are ignored: the hand-back request is the same for every kind of entity.
+    /// </summary>
+    /// <param name="released">False when the request was refused: the sender did not hold a plain simulation lock.</param>
+    /// <param name="takenOver">True when another player simulates the source now. The line's <c>owner</c> names them.</param>
+    public void RecordHandBack(Entity entity, SessionId senderSessionId, bool released, bool takenOver)
+    {
+        try
+        {
+            if (entity.Metadata is not PowerSourceMetadata stored)
+            {
+                return;
+            }
+            lock (sync)
+            {
+                long sequence = ++nextSequence;
+                SourceState? state = GetSource(entity.Id, true);
+                if (state != null)
+                {
+                    if (!state.HasAcceptedUpdate)
+                    {
+                        state.Apply(stored);
+                    }
+                    if (released)
+                    {
+                        state.HandBacks++;
+                    }
+                }
+                string outcome = released ? "ok" : "reject";
+                string reason = !released ? "sender_holds_no_plain_simulation_lock" : takenOver ? "taken_over_by_owner" : "nobody_else_can_simulate";
+                if (repeatSampler.Observe($"handback|{senderSessionId}|{entity.Id}|{reason}", out long occurrences))
+                {
+                    Write(LogLevel.Information, FormatLine(sequence, senderSessionId, "source_handback", outcome, state, entity.Id, null, occurrences, reason, stored));
                 }
             }
         }
@@ -382,6 +428,7 @@ internal sealed class BasePowerDiagnostics(ILogger<BasePowerDiagnostics>? logger
         public long RejectedUpdates { get; set; }
         public string? LastRejection { get; set; }
         public long RevisionRegressions { get; set; }
+        public long HandBacks { get; set; }
         public Dictionary<SessionId, ConsumerState> Consumers { get; } = [];
 
         public void Apply(PowerSourceMetadata metadata)
@@ -417,7 +464,8 @@ internal sealed class BasePowerDiagnostics(ILogger<BasePowerDiagnostics>? logger
             Consumers.OrderBy(pair => pair.Key)
                      .Select(pair => new BasePowerConsumerDiagnostics(pair.Key, pair.Value.Forwarded, pair.Value.ForwardedAmount,
                          pair.Value.ServerApplied, pair.Value.ServerAppliedAmount, pair.Value.Rejected))
-                     .ToArray());
+                     .ToArray(),
+            HandBacks);
     }
 
     private sealed class ConsumerState
@@ -463,7 +511,8 @@ internal readonly record struct BasePowerSourceDiagnostics(
     long RejectedUpdates,
     string? LastRejection,
     long RevisionRegressions,
-    IReadOnlyList<BasePowerConsumerDiagnostics> Consumers);
+    IReadOnlyList<BasePowerConsumerDiagnostics> Consumers,
+    long HandBacks = 0);
 
 internal readonly record struct BasePowerConsumerDiagnostics(
     SessionId Consumer,

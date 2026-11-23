@@ -196,7 +196,7 @@ internal sealed class ScannerRoomCommand(EntityRegistry entityRegistry, ScannerR
 
         if (hasLock && playerLock.LockType == SimulationLockType.EXCLUSIVE && !holderControls)
         {
-            anomalies.Add($"camera {ShortCamera(camera.Id)} is locked exclusively by {playerLock.Player.Name} #{playerLock.Player.SessionId} who is not piloting it: a Stalker carrying it, or a lock that was never released (nobody else can take the camera)");
+            anomalies.Add($"camera {ShortCamera(camera.Id)} is locked exclusively by {playerLock.Player.Name} #{playerLock.Player.SessionId} who is not piloting it: a Stalker carrying it, or a lock that was never released (a player who takes control of the camera takes this lock over)");
         }
         if (!holderControls && controlLifecycle.HasActiveController(camera.Id))
         {

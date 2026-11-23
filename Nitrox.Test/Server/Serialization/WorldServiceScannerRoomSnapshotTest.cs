@@ -1,6 +1,3 @@
-using System.Collections;
-using System.Collections.Generic;
-using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using Nitrox.Model.DataStructures;
@@ -19,14 +16,14 @@ namespace Nitrox.Test.Server.Serialization;
 [TestClass]
 public sealed class WorldServiceScannerRoomSnapshotTest
 {
-    private static readonly NitroxId BaseId = new("00000000-0000-0000-0000-000000000100");
-    private static readonly NitroxId LowRoomId = new("00000000-0000-0000-0000-000000000201");
-    private static readonly NitroxId HighRoomId = new("00000000-0000-0000-0000-000000000202");
+    private static readonly NitroxId baseId = new("00000000-0000-0000-0000-000000000100");
+    private static readonly NitroxId lowRoomId = new("00000000-0000-0000-0000-000000000201");
+    private static readonly NitroxId highRoomId = new("00000000-0000-0000-0000-000000000202");
 
     [TestMethod]
     public void LoadedCameraLifecycleSeedIncludesRegistrationsAndDockOnlyIds()
     {
-        MapRoomEntity room = CreateRoom(LowRoomId);
+        MapRoomEntity room = CreateRoom(lowRoomId);
         NitroxId registeredCameraId = room.CameraRegistry.Single().CameraId;
         NitroxId dockOnlyCameraId = new("00000000-0000-0000-0000-000000000299");
         room.RightDockCameraId = dockOnlyCameraId;
@@ -45,7 +42,7 @@ public sealed class WorldServiceScannerRoomSnapshotTest
     [TestMethod, Timeout(10_000)]
     public void GlobalRootSerializationBlocksMutationAndCapturesExactSavedState()
     {
-        MapRoomEntity room = CreateRoom(LowRoomId);
+        MapRoomEntity room = CreateRoom(lowRoomId);
         GlobalRootData globalRootData = CreateGlobalRootData(room);
         ServerJsonSerializer serializer = new(NullLogger<ServerJsonSerializer>.Instance);
         using MemoryStream payload = new();
@@ -119,7 +116,7 @@ public sealed class WorldServiceScannerRoomSnapshotTest
         ScannerRoomDiagnostics diagnostics = new(NullLogger<ScannerRoomDiagnostics>.Instance);
         ScannerRoomDiagnosticEntry checkpoint = diagnostics.RecordCapturedCheckpoint(
             "save", room, savedState.Snapshot, savedState.InvariantFailure, "serialized_snapshot");
-        Assert.AreEqual(ScannerRoomDiagnosticOutcome.Checkpoint, checkpoint.Outcome);
+        Assert.AreEqual(ScannerRoomDiagnosticOutcome.CHECKPOINT, checkpoint.Outcome);
         Assert.AreEqual(savedState.Snapshot.Fingerprint, checkpoint.StateFingerprint,
             "The save checkpoint must report the serialized fingerprint, not recompute current live state.");
     }
@@ -127,8 +124,8 @@ public sealed class WorldServiceScannerRoomSnapshotTest
     [TestMethod, Timeout(10_000)]
     public void LockRetryMakesProgressAgainstInvertedDockTransferOrder()
     {
-        MapRoomEntity lowRoom = CreateRoom(LowRoomId);
-        MapRoomEntity highRoom = CreateRoom(HighRoomId);
+        MapRoomEntity lowRoom = CreateRoom(lowRoomId);
+        MapRoomEntity highRoom = CreateRoom(highRoomId);
         using ManualResetEventSlim highRoomHeld = new();
         using ManualResetEventSlim highRoomLockAttempted = new();
         using ManualResetEventSlim invertedHolderAcquiredLowRoom = new();
@@ -190,8 +187,8 @@ public sealed class WorldServiceScannerRoomSnapshotTest
     [TestMethod, Timeout(10_000)]
     public void RoomMembershipChangeIsReconciledBeforeSerialization()
     {
-        MapRoomEntity firstRoom = CreateRoom(LowRoomId);
-        MapRoomEntity addedRoom = CreateRoom(HighRoomId);
+        MapRoomEntity firstRoom = CreateRoom(lowRoomId);
+        MapRoomEntity addedRoom = CreateRoom(highRoomId);
         int providerCalls = 0;
         bool bothRoomsLockedDuringSerialization = false;
 
@@ -224,10 +221,60 @@ public sealed class WorldServiceScannerRoomSnapshotTest
             "Membership must be read before and after lock acquisition, then retried after a change.");
     }
 
+    [TestMethod, Timeout(10_000)]
+    public void RoomCannotChangeWhileAJoiningPlayersSyncIsBuiltAndWritten()
+    {
+        // The initial sync of a joining player is written on the join queue's thread, from the live room entities.
+        MapRoomEntity room = CreateRoom(lowRoomId);
+        NitroxId dockedMeanwhile = new("00000000-0000-0000-0000-000000000298");
+        using ManualResetEventSlim syncStarted = new();
+        using ManualResetEventSlim dockAttempted = new();
+        int dockEnteredImmediately = -1;
+
+        Task dock = Task.Run(() =>
+        {
+            syncStarted.Wait();
+            bool lockTaken = Monitor.TryEnter(room);
+            Volatile.Write(ref dockEnteredImmediately, lockTaken ? 1 : 0);
+            dockAttempted.Set();
+            try
+            {
+                if (!lockTaken)
+                {
+                    Monitor.Enter(room, ref lockTaken);
+                }
+                room.SetDockedCamera(1, dockedMeanwhile);
+            }
+            finally
+            {
+                if (lockTaken)
+                {
+                    Monitor.Exit(room);
+                }
+            }
+        });
+
+        (NitroxId? RightDock, long Revision) written = WorldService.RunWithScannerRoomsLocked(() => [room], rooms =>
+        {
+            MapRoomEntity lockedRoom = rooms.Single();
+            NitroxId? rightDockAtStart = lockedRoom.RightDockCameraId;
+            syncStarted.Set();
+            Assert.IsTrue(dockAttempted.Wait(TimeSpan.FromSeconds(5)), "The dock task did not reach its lock attempt.");
+            return (rightDockAtStart, lockedRoom.DockingRevision);
+        });
+
+        Assert.IsTrue(dock.Wait(TimeSpan.FromSeconds(5)), "The dock did not resume after the sync was written.");
+        Assert.AreEqual(0, Volatile.Read(ref dockEnteredImmediately), "A dock must not enter while the sync reads the room.");
+        Assert.IsNull(written.RightDock);
+        Assert.AreEqual(4, written.Revision, "The dock and its revision are read as one state, here the one before the dock.");
+        Assert.AreEqual(dockedMeanwhile, room.RightDockCameraId);
+        Assert.AreEqual(5, room.DockingRevision);
+    }
+
     [TestMethod]
     public void CapturedCheckpointRetainsCapturedInvariantAfterLiveRepair()
     {
-        MapRoomEntity room = CreateRoom(LowRoomId);
+        MapRoomEntity room = CreateRoom(lowRoomId);
         room.RightDockCameraId = room.LeftDockCameraId;
         ScannerRoomStateSnapshot snapshot = ScannerRoomStateFingerprint.Create(room);
         string? invariantFailure = ScannerRoomStateFingerprint.Validate(room);
@@ -237,7 +284,7 @@ public sealed class WorldServiceScannerRoomSnapshotTest
         ScannerRoomDiagnosticEntry checkpoint = diagnostics.RecordCapturedCheckpoint(
             "save", room, snapshot, invariantFailure, "serialized_snapshot");
 
-        Assert.AreEqual(ScannerRoomDiagnosticOutcome.InvariantFailure, checkpoint.Outcome);
+        Assert.AreEqual(ScannerRoomDiagnosticOutcome.INVARIANT_FAILURE, checkpoint.Outcome);
         Assert.AreEqual("save_invalid", checkpoint.EventName);
         Assert.AreEqual("duplicate_dock", checkpoint.Reason);
         Assert.AreEqual(snapshot.Fingerprint, checkpoint.StateFingerprint);
@@ -250,7 +297,7 @@ public sealed class WorldServiceScannerRoomSnapshotTest
             GlobalRootEntity.GLOBAL_ROOT_LEVEL,
             "scanner-room-test-root",
             true,
-            BaseId,
+            baseId,
             new NitroxTechType("Base"),
             null,
             null,
@@ -280,7 +327,7 @@ public sealed class WorldServiceScannerRoomSnapshotTest
             roomId,
             new NitroxTechType("MapRoom"),
             new MapRoomMetadata(new NitroxTechType("Gold"), 1, 5, 6),
-            BaseId,
+            baseId,
             []);
     }
 

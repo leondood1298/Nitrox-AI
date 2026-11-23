@@ -93,6 +93,7 @@ namespace NitroxClient
             containerBuilder.RegisterType<BasePowerState>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<BasePowerConsumptionForwarder>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<BasePowerClientDiagnostics>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<BasePowerRelayAudioSuppressor>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<LiveMixinManager>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<CreatureHealthManager>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<CreatureAttacksOnPlayers>().InstancePerLifetimeScope();

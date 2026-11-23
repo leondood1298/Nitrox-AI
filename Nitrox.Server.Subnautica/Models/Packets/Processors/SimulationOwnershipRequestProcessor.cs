@@ -27,7 +27,7 @@ internal sealed class SimulationOwnershipRequestProcessor(SimulationOwnershipDat
 
         if (!entityRegistry.TryGetEntityById(ownershipRequest.Id, out WorldEntity worldEntity))
         {
-            await context.ReplyAsync(new SimulationOwnershipResponse(ownershipRequest.Id, false, ownershipRequest.LockType));
+            await ProcessNonWorldEntityRequest(context, ownershipRequest);
             return;
         }
 
@@ -41,6 +41,21 @@ internal sealed class SimulationOwnershipRequestProcessor(SimulationOwnershipDat
 
         await context.ReplyAsync(new SimulationOwnershipResponse(ownershipRequest.Id, true, ownershipRequest.LockType));
         await context.SendToAllAsync(new SimulationOwnershipChange(simulatedEntities));
+    }
+
+    /// <summary>
+    ///     Players also take turns on things that are not world entities: the fabricator inside a Cyclops or a lifepod is
+    ///     a child entity, for example. Those have no cell and nothing to propagate the lock to, so the lock is simply
+    ///     granted or refused, as it was before world entities got their own path.
+    /// </summary>
+    private async Task ProcessNonWorldEntityRequest(AuthProcessorContext context, SimulationOwnershipRequest ownershipRequest)
+    {
+        bool acquiredLock = simulationOwnershipData.TryAcquire(ownershipRequest.Id, context.Sender, ownershipRequest.LockType);
+        if (acquiredLock)
+        {
+            await context.SendToOthersAsync(new SimulationOwnershipChange(ownershipRequest.Id, context.Sender.SessionId, ownershipRequest.LockType));
+        }
+        await context.ReplyAsync(new SimulationOwnershipResponse(ownershipRequest.Id, acquiredLock, ownershipRequest.LockType));
     }
 
     /// <summary>

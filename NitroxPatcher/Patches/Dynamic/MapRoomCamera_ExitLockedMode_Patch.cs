@@ -1,9 +1,7 @@
-using System;
 using System.Reflection;
-using Nitrox.Model.Helper;
-using NitroxClient.GameLogic;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication;
+using NitroxClient.GameLogic;
 
 namespace NitroxPatcher.Patches.Dynamic;
 

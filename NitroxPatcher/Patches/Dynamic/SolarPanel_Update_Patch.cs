@@ -1,8 +1,5 @@
-using System;
 using System.Reflection;
 using Nitrox.Model.DataStructures;
-using Nitrox.Model.Helper;
-using NitroxClient.Extensions;
 using NitroxClient.Communication.Abstract;
 using NitroxClient.GameLogic;
 

@@ -166,6 +166,7 @@ internal sealed partial class PlayerManager(SessionManager sessionManager, BanSe
             player.SessionId = sessionId;
         }
 
+        player.HasFinishedInitialSync = false;
         connectedPlayersBySessionId.Add(playerContext.SessionId, player);
 
         // TODO: make a ConnectedPlayer wrapper so this is not stateful

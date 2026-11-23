@@ -1,4 +1,3 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NitroxPatcher.Patches.Dynamic;
 
 namespace Nitrox.Test.Patcher.Patches.Dynamic;

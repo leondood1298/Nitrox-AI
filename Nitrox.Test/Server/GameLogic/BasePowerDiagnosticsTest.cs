@@ -1,6 +1,7 @@
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
@@ -41,9 +42,9 @@ public sealed class BasePowerDiagnosticsTest
                 new BasePowerSourceConsume(source.Id, 0.25f + report * 0.001f));
         }
 
-        (LogLevel Level, string Message)[] warnings = processorLog.Entries.Concat(diagnosticsLog.Entries).Where(entry => entry.Level == LogLevel.Warning).ToArray();
-        warnings.Should().HaveCountLessThan(10, "ten seconds of a rejected consumer must not cost forty lines");
-        warnings[0].Message.Should().Contain(" sid=2 ev=consume out=reject ").And.Contain(" owner=none ")
+        (LogLevel Level, string Message)[] rejections = processorLog.Entries.Concat(diagnosticsLog.Entries).Where(entry => entry.Message.Contains("reject")).ToArray();
+        rejections.Should().HaveCountLessThan(10, "ten seconds of a rejected consumer must not cost forty lines");
+        rejections[0].Message.Should().Contain(" sid=2 ev=consume out=reject ").And.Contain(" owner=none ")
                 .And.EndWith(" reason=source_has_no_stored_power_state_and_no_simulation_owner");
         diagnostics.RejectedUpdates.Should().Be(40, "thinning out the log must not thin out the count");
     }
@@ -67,13 +68,54 @@ public sealed class BasePowerDiagnosticsTest
                 new BasePowerSourceUpdate(source.Id, BasePowerSourceType.SOLAR, 10f + report, report + 1));
         }
 
-        (LogLevel Level, string Message)[] warnings = processorLog.Entries.Concat(diagnosticsLog.Entries).Where(entry => entry.Level == LogLevel.Warning).ToArray();
-        warnings.Should().HaveCountLessThan(10);
-        warnings[0].Message.Should().Contain(" sid=2 ev=source_update out=reject ").And.Contain(" type=solar power=30.00/75.00 rev=5 owner=1 ")
+        (LogLevel Level, string Message)[] rejections = processorLog.Entries.Concat(diagnosticsLog.Entries).Where(entry => entry.Message.Contains("reject")).ToArray();
+        rejections.Should().HaveCountLessThan(10);
+        rejections[0].Message.Should().Contain(" sid=2 ev=source_update out=reject ").And.Contain(" type=solar power=30.00/75.00 rev=5 owner=1 ")
                 .And.EndWith(" reason=sender_does_not_own_source_simulation");
-        warnings[^1].Message.Should().Contain(" rep=32 ");
+        rejections[^1].Message.Should().Contain(" rep=32 ");
+        rejections.Should().OnlyContain(entry => entry.Level == LogLevel.Information,
+            "this is how the server answers a client that reports a source it does not simulate, not a fault of the server");
         diagnostics.RejectedUpdates.Should().Be(40);
         diagnostics.GetSources()[source.Id].RejectedUpdates.Should().Be(40);
+    }
+
+    [TestMethod]
+    public async Task HandingASourceBackIsRecordedWithWhoHasItNow()
+    {
+        ScannerRoomScenarioFixture scenario = new();
+        ModuleEntity source = AddSolarPanel(scenario);
+        source.Metadata = new PowerSourceMetadata(60f, 75f, BasePowerSourceType.SOLAR, 5);
+        Assert.IsTrue(scenario.Ownership.TryAcquire(source.Id, scenario.PlayerA, SimulationLockType.TRANSIENT));
+        CapturingLogger<BasePowerDiagnostics> log = new();
+        BasePowerDiagnostics diagnostics = new(log, scenario.Ownership);
+        SimulationOwnershipReleaseProcessor processor = new(new PlayerManager(null!, null!, null!, NullLogger<PlayerManager>.Instance),
+            scenario.EntitySimulation, scenario.EntityRegistry, diagnostics);
+
+        // Player A does not have the source's object and gives its simulation back; nobody else is connected.
+        await processor.Process(new AuthProcessorContext(scenario.PlayerA, new DiscardingPacketSender()), new SimulationOwnershipRelease(source.Id));
+        // Player B never held it.
+        await processor.Process(new AuthProcessorContext(scenario.PlayerB, new DiscardingPacketSender()), new SimulationOwnershipRelease(source.Id));
+
+        string[] lines = log.Entries.Select(entry => entry.Message).Where(line => line.Contains(" ev=source_handback ")).ToArray();
+        lines.Should().HaveCount(2);
+        lines[0].Should().Contain(" sid=1 ev=source_handback out=ok ").And.Contain(" type=solar power=60.00/75.00 rev=5 owner=none ")
+                .And.EndWith(" reason=nobody_else_can_simulate");
+        lines[1].Should().Contain(" sid=2 ev=source_handback out=reject ").And.EndWith(" reason=sender_holds_no_plain_simulation_lock");
+        diagnostics.GetSources()[source.Id].HandBacks.Should().Be(1);
+    }
+
+    [TestMethod]
+    public void HandBackOfSomethingThatIsNoPowerSourceIsNotBasePower()
+    {
+        ScannerRoomScenarioFixture scenario = new();
+        CapturingLogger<BasePowerDiagnostics> log = new();
+        BasePowerDiagnostics diagnostics = new(log, scenario.Ownership);
+
+        diagnostics.RecordHandBack(scenario.Room, scenario.PlayerA.SessionId, true, true);
+        diagnostics.RecordHandBack(AddSolarPanel(scenario), scenario.PlayerA.SessionId, true, true);
+
+        log.Entries.Should().BeEmpty("the hand-back request is the same for every entity; only power sources belong in this log");
+        diagnostics.GetSources().Should().BeEmpty();
     }
 
     [TestMethod]
