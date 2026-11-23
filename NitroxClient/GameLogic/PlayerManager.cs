@@ -22,6 +22,11 @@ public class PlayerManager
     public OnCreateDelegate OnCreate;
     public OnRemoveDelegate OnRemove;
 
+    /// <summary>
+    ///     A remote player's body exists and carries their id, some time after <see cref="OnCreate" />.
+    /// </summary>
+    public OnBodyCreatedDelegate OnBodyCreated;
+
     public PlayerManager(PlayerModelManager playerModelManager, PlayerVitalsManager playerVitalsManager, FMODWhitelist fmodWhitelist)
     {
         this.playerModelManager = playerModelManager;
@@ -83,6 +88,11 @@ public class PlayerManager
         return remotePlayer;
     }
 
+    public void BodyCreated(RemotePlayer remotePlayer)
+    {
+        OnBodyCreated?.Invoke(remotePlayer);
+    }
+
     public void RemovePlayer(SessionId sessionId)
     {
         if (sessionsById.TryGetValue(sessionId, out RemotePlayer player))
@@ -125,4 +135,5 @@ public class PlayerManager
 
     public delegate void OnCreateDelegate(SessionId sessionId, RemotePlayer remotePlayer);
     public delegate void OnRemoveDelegate(SessionId sessionId, RemotePlayer remotePlayer);
+    public delegate void OnBodyCreatedDelegate(RemotePlayer remotePlayer);
 }
