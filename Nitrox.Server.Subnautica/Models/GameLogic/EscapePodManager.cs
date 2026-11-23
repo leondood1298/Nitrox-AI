@@ -33,15 +33,18 @@ internal class EscapePodManager(RandomFactory randomFactory, EntityRegistry enti
             return (podEntity.Id, null);
         }
 
+        // Only a pod made here is new to the players already in the game; one that was there gets sent to them again
+        // as a whole otherwise, for every player who joins for the first time.
+        EscapePodEntity? newlyCreatedPod = null;
         if (!HasEmptySlot(podForNextPlayer))
         {
-            podForNextPlayer = await CreateNewEscapePodAsync();
+            podForNextPlayer = newlyCreatedPod = await CreateNewEscapePodAsync();
         }
 
         podForNextPlayer.Players.Add(playerId);
         escapePodsByPlayerId[playerId] = podForNextPlayer;
 
-        return (podForNextPlayer.Id, podForNextPlayer);
+        return (podForNextPlayer.Id, newlyCreatedPod);
     }
 
     private async Task<EscapePodEntity> CreateNewEscapePodAsync()
