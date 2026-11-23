@@ -103,7 +103,7 @@ public sealed class EntitySimulationLockProtectionTest
     {
         ScannerRoomScenarioFixture scenario = new();
         Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
-        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, true)).Granted);
 
         Assert.IsTrue(scenario.Manager.IsControlledBy(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA));
         Assert.IsFalse(scenario.Manager.IsControlledBy(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerB));

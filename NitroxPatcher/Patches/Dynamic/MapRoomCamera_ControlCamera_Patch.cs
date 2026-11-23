@@ -1,26 +1,27 @@
 using System.Reflection;
-using Nitrox.Model.Subnautica.Packets;
-using NitroxClient.Communication;
 using NitroxClient.GameLogic;
 
 namespace NitroxPatcher.Patches.Dynamic;
 
+/// <summary>
+///     The game shows the player a camera's view. That takes the camera's exclusive lock, which the patches on the
+///     screen have asked for; with it, everybody else is told who controls the camera.
+/// </summary>
 public sealed partial class MapRoomCamera_ControlCamera_Patch : NitroxPatch, IDynamicPatch
 {
     private static readonly MethodInfo TARGET_METHOD = Reflect.Method((MapRoomCamera t) => t.ControlCamera(null));
 
-    public static bool Prefix(MapRoomCamera __instance, out bool __state)
+    public static bool Prefix(MapRoomCamera __instance, MapRoomScreen screen, out bool __state)
     {
-        __state = PacketSuppressor<MapRoomCameraControl>.IsSuppressed ||
-            Resolve<MapRoomCameras>().CanBeginControl(__instance);
+        __state = Resolve<MapRoomCameras>().MayEnterView(__instance, screen);
         return __state;
     }
 
     public static void Postfix(MapRoomCamera __instance, bool __state)
     {
-        if (__state && !PacketSuppressor<MapRoomCameraControl>.IsSuppressed)
+        if (__state)
         {
-            Resolve<MapRoomCameras>().BroadcastControl(__instance, isControlling: true);
+            Resolve<MapRoomCameras>().ControlStarted(__instance);
         }
     }
 }

@@ -102,18 +102,19 @@ public sealed class ScannerRoomClientDiagnosticsTest
         IMultiplayerSession multiplayerSession = Substitute.For<IMultiplayerSession>();
         multiplayerSession.Reservation.Returns(new MultiplayerSessionReservation((SessionId)(ushort)1));
         ScannerRoomClientDiagnostics diagnostics = new();
-        MapRoomCameras cameras = new(multiplayerSession, multiplayerSession, new SimulationOwnership(multiplayerSession, multiplayerSession), null!,
-            diagnostics, new StalkerCameraLockPurposeTracker());
+        MapRoomCameras cameras = new(multiplayerSession, multiplayerSession, new SimulationOwnership(multiplayerSession, multiplayerSession), null!, diagnostics);
         NitroxId cameraId = new("11111111-1111-1111-1111-111111111111");
 
-        // This client asked for a camera that session 2 is piloting, then session 2 lets go of it.
-        cameras.ProcessControl(new MapRoomCameraControl(cameraId, Optional.Empty, -1, true, false, true, false, (SessionId)(ushort)2));
-        cameras.ProcessControl(new MapRoomCameraControl(cameraId, Optional.Empty, -1, false, false, true, true, (SessionId)(ushort)2));
+        // Session 2 takes a camera, session 3 says too late that it gave it up, then session 2 lets go of it.
+        cameras.ProcessControlChanged(new MapRoomCameraControlChanged(cameraId, (SessionId)(ushort)2, true));
+        cameras.ProcessControlChanged(new MapRoomCameraControlChanged(cameraId, (SessionId)(ushort)3, false));
+        cameras.ProcessControlChanged(new MapRoomCameraControlChanged(cameraId, (SessionId)(ushort)2, false));
 
         IReadOnlyList<string> history = diagnostics.GetHistory();
-        Assert.AreEqual(2, history.Count);
-        Assert.IsTrue(history[0].Contains(" ev=control_apply out=reject ") && history[0].EndsWith(" reason=locked_by_2"));
-        Assert.IsTrue(history[1].Contains(" ev=control_release_apply out=ok ") && history[1].EndsWith(" reason=remote_pilot_2"));
+        Assert.AreEqual(3, history.Count);
+        Assert.IsTrue(history[0].Contains(" ev=control_apply out=ok ") && history[0].EndsWith(" reason=remote_pilot_2"));
+        Assert.IsTrue(history[1].Contains(" ev=control_release_apply out=stale ") && history[1].EndsWith(" reason=remote_pilot_3"));
+        Assert.IsTrue(history[2].Contains(" ev=control_release_apply out=ok ") && history[2].EndsWith(" reason=remote_pilot_2"));
     }
 
     [TestMethod]

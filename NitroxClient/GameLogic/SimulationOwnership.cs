@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication.Abstract;
@@ -79,6 +80,8 @@ public class SimulationOwnership
     {
         simulatedIdsByLockType.Remove(id);
     }
+
+    public bool IsLocalPlayer(SessionId sessionId) => multiplayerSession.Reservation.SessionId == sessionId;
 
     public void TreatSimulatedEntity(SimulatedEntity simulatedEntity)
     {

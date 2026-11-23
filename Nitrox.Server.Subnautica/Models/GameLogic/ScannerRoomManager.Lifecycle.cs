@@ -119,8 +119,8 @@ internal sealed partial class ScannerRoomManager
             // Remembered beyond its removal: a request for it that is still on its way is then refused as one for a
             // camera that is gone, instead of being granted as a lock on an unknown id.
             knownCameraIds.TryAdd(id, 0);
-            if (simulationOwnershipData.RevokeOwnerOfId(id, out SimulationOwnershipData.PlayerLock revokedLock) &&
-                TryCreateControlRelease(id, revokedLock, "destroy", out MapRoomCameraControl? release))
+            simulationOwnershipData.RevokeOwnerOfId(id);
+            if (EndAnyControl(id, "destroy") is { } release)
             {
                 await SendToAllAsync(release);
             }
@@ -151,12 +151,13 @@ internal sealed partial class ScannerRoomManager
         }
 
         knownCameraIds.TryAdd(id, 0);
-        if (simulationOwnershipData.RevokeOwnerOfId(id, out SimulationOwnershipData.PlayerLock revokedLock))
+        bool hadLock = simulationOwnershipData.RevokeOwnerOfId(id);
+        if (EndAnyControl(id, "pickup") is { } release)
         {
-            if (TryCreateControlRelease(id, revokedLock, "pickup", out MapRoomCameraControl? release))
-            {
-                await SendToAllAsync(release);
-            }
+            await SendToAllAsync(release);
+        }
+        if (hadLock)
+        {
             await SendToAllAsync(new SimulationOwnershipChange(id, SessionId.SERVER_ID, SimulationLockType.TRANSIENT));
         }
 
@@ -266,8 +267,8 @@ internal sealed partial class ScannerRoomManager
             {
                 worldEntityManager.RemoveGlobalRootEntity(camera.Id, false);
             }
-            if (simulationOwnershipData.RevokeOwnerOfId(camera.Id, out SimulationOwnershipData.PlayerLock revokedLock) &&
-                TryCreateControlRelease(camera.Id, revokedLock, "deconstruct", new CameraView(camera, ReadState(camera), mapRoom), out MapRoomCameraControl? release))
+            simulationOwnershipData.RevokeOwnerOfId(camera.Id);
+            if (EndAnyControl(camera.Id, "deconstruct", new CameraView(camera, ReadState(camera), mapRoom)) is { } release)
             {
                 await SendToAllAsync(release);
             }

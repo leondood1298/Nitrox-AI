@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
 using FMOD.Studio;
+using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.Helper;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication;
 using NitroxClient.Communication.Abstract;
+using NitroxClient.GameLogic.Simulation;
 using NitroxClient.MonoBehaviours;
 using UnityEngine;
 
@@ -21,110 +23,173 @@ public class MapRoomCameras
     private readonly SimulationOwnership simulationOwnership;
     private readonly MapRoomCameraStates cameraStates;
     private readonly ScannerRoomClientDiagnostics diagnostics;
-    private readonly StalkerCameraLockPurposeTracker stalkerCameraLockPurposeTracker;
-
-    private readonly HashSet<NitroxId> locallyControlled = new();
-    private readonly HashSet<NitroxId> pendingControl = new();
-    private readonly HashSet<NitroxId> remotelyControlled = new();
 
     /// <summary>
-    ///     Who the server said controls cameras that had not spawned on this client yet. Applied when the camera spawns.
+    ///     The cameras this player controls. The game lets a player control one camera at a time; while it changes
+    ///     from one to the next, the first has not been given up yet.
     /// </summary>
-    private readonly Dictionary<NitroxId, MapRoomCameraControl> pendingControls = new();
-    private long latestPreviewRevision;
+    private readonly HashSet<NitroxId> locallyControlled = [];
+
+    /// <summary>
+    ///     The cameras this client has asked the server for and has no answer yet.
+    /// </summary>
+    private readonly HashSet<NitroxId> pendingControl = [];
+
+    /// <summary>
+    ///     The player who controls each camera that another player controls. The game offers such a camera to nobody.
+    /// </summary>
+    private readonly Dictionary<NitroxId, SessionId> remoteControllers = [];
+
     private MapRoomCameraPreview pendingPreview;
     private bool pendingPreviewPixelsApplied;
-    private long lastPreviewApplyDiagnosticRevision;
-    private string lastPreviewApplyDiagnosticOutcome;
 
     public MapRoomCameras(IPacketSender packetSender, IMultiplayerSession multiplayerSession, SimulationOwnership simulationOwnership,
-        MapRoomCameraStates cameraStates, ScannerRoomClientDiagnostics diagnostics, StalkerCameraLockPurposeTracker stalkerCameraLockPurposeTracker)
+        MapRoomCameraStates cameraStates, ScannerRoomClientDiagnostics diagnostics)
     {
         this.packetSender = packetSender;
         this.multiplayerSession = multiplayerSession;
         this.simulationOwnership = simulationOwnership;
         this.cameraStates = cameraStates;
         this.diagnostics = diagnostics;
-        this.stalkerCameraLockPurposeTracker = stalkerCameraLockPurposeTracker;
     }
 
-    public bool CanBeginControl(MapRoomCamera camera) => camera && HasReadyDockAssociation(camera);
+    /// <summary>
+    ///     The camera a screen would give the player: on a click (direction 0), or when the player cycles to the next
+    ///     or previous one. The game itself is asked, and its screen is left as it was.
+    /// </summary>
+    public static MapRoomCamera PeekCamera(MapRoomScreen screen, int direction)
+    {
+        int index = screen.currentIndex;
+        screen.currentIndex = screen.NormalizeIndex(index + direction);
+        MapRoomCamera camera = screen.FindCamera(direction == 0 ? 1 : direction);
+        screen.currentIndex = index;
+        return camera;
+    }
 
     /// <summary>
-    ///     A camera in a dock is asked for by naming the dock, which takes the id of the dock's room.
+    ///     Called before the game puts the player into the view of a camera, by a click on a screen or by cycling. A
+    ///     player controls a camera with the exclusive simulation lock on it, which is asked for like the lock on a
+    ///     vehicle the player wants to pilot. Until the server grants it the player stays where they are: in front of
+    ///     the screen, or in the view of the camera they control.
     /// </summary>
-    private static bool HasReadyDockAssociation(MapRoomCamera camera)
+    /// <param name="runVanilla">Runs the game's method once the lock is granted.</param>
+    /// <returns>True if the game may go on right away: there is no camera to take, or this player holds its lock.</returns>
+    public bool TryStartControl(MapRoomScreen screen, int direction, Action runVanilla)
     {
-        if (!camera || !camera.dockingPoint)
+        MapRoomCamera camera = PeekCamera(screen, direction);
+        if (!camera || camera == screen.currentCamera || !camera.TryGetNitroxId(out NitroxId cameraId) || simulationOwnership.HasExclusiveLock(cameraId))
         {
             return true;
         }
-        return MapRoomCameraDocks.TryGetPlace(camera.dockingPoint, out MapRoomFunctionality mapRoom, out _) && mapRoom.TryGetNitroxId(out NitroxId _);
-    }
-
-    public void BroadcastControl(MapRoomCamera camera, bool isControlling)
-    {
-        if (!camera)
+        if (pendingControl.Add(cameraId))
         {
-            return;
+            diagnostics.Record("control_publish", "ok", cameraId, reason: "lock_requested");
+            simulationOwnership.RequestSimulationLock(new LockRequest<CameraControlStart>(cameraId, SimulationLockType.EXCLUSIVE, LockAnswered, new CameraControlStart(screen, runVanilla)));
         }
-        if (isControlling)
-        {
-            if (!CanBeginControl(camera))
-            {
-                AbortLocalControl(camera);
-                return;
-            }
-            Optional<NitroxId> mapRoomId = Optional.Empty;
-            int cameraIndex = -1;
-            if (camera.dockingPoint)
-            {
-                if (!MapRoomCameraDocks.TryGetPlace(camera.dockingPoint, out MapRoomFunctionality mapRoom, out cameraIndex) || !mapRoom.TryGetNitroxId(out NitroxId roomId))
-                {
-                    camera.TryGetNitroxId(out NitroxId unresolvedCameraId);
-                    diagnostics.Record("control_publish", "pending", unresolvedCameraId, reason: "fresh_room_identity_wait");
-                    AbortLocalControl(camera);
-                    return;
-                }
-                mapRoomId = Optional.Of(roomId);
-            }
-            NitroxId cameraId = NitroxEntity.GetIdOrGenerateNew(camera.gameObject);
-            bool lightOn = camera.lightsParent && camera.lightsParent.activeSelf;
-            pendingControl.Add(cameraId);
-            packetSender.Send(new MapRoomCameraControl(cameraId, mapRoomId, cameraIndex, isControlling: true, lightOn));
-            diagnostics.Record("control_publish", "ok", cameraId, mapRoomId.HasValue ? mapRoomId.Value : null, slot: cameraIndex, reason: "acquire_requested");
-        }
-        else if (camera.TryGetNitroxId(out NitroxId cameraId))
-        {
-            pendingControl.Remove(cameraId);
-            locallyControlled.Remove(cameraId);
-            // Release the camera-specific lock before generic movement ownership is relinquished.
-            // Otherwise the server can see an already-unlocked camera and fail to notify remote clients.
-            packetSender.Send(new MapRoomCameraControl(cameraId, Optional.Empty, -1, isControlling: false, lightOn: false));
-            diagnostics.Record("control_publish", "ok", cameraId, reason: "release_requested");
-            MovementBroadcaster.UnregisterWatched(cameraId);
-        }
-    }
-
-    private static void AbortLocalControl(MapRoomCamera camera)
-    {
-        if (!camera)
-        {
-            return;
-        }
-        camera.enabled = true;
-        ExitCameraModeLocally(camera);
+        return false;
     }
 
     /// <summary>
-    ///     Leaves camera mode without telling the server. The game always pairs FreeCamera (stops the drone's sounds and
-    ///     screen effect) with ExitLockedMode (returns the player and resets the view); doing only the second leaves the
-    ///     connecting/idle loops playing and the screen effect on.
+    ///     Called before the game shows the player a camera's view. Only a camera this player holds exclusively is
+    ///     shown: the game can choose another camera than the one the lock was asked for, if something changed while
+    ///     the answer was on its way.
     /// </summary>
-    private static void ExitCameraModeLocally(MapRoomCamera camera)
+    public bool MayEnterView(MapRoomCamera camera, MapRoomScreen screen)
     {
-        using (PacketSuppressor<MapRoomCameraControl>.Suppress())
+        if (camera.TryGetNitroxId(out NitroxId cameraId) && simulationOwnership.HasExclusiveLock(cameraId))
         {
+            return true;
+        }
+        // The game has made the camera the screen's current one already, and a screen with a camera keeps the
+        // player's input. It must not keep a camera the player does not control.
+        if (screen && screen.currentCamera == camera)
+        {
+            screen.currentCamera = null;
+        }
+        return false;
+    }
+
+    /// <summary>
+    ///     Called after the game put the player into a camera's view. Everybody else is told who controls the camera.
+    /// </summary>
+    public void ControlStarted(MapRoomCamera camera)
+    {
+        if (!camera.TryGetNitroxId(out NitroxId cameraId) || !locallyControlled.Add(cameraId))
+        {
+            return;
+        }
+        remoteControllers.Remove(cameraId);
+        packetSender.Send(new MapRoomCameraControlChanged(cameraId, multiplayerSession.Reservation.SessionId, true));
+        MovementBroadcaster.RegisterWatched(camera.gameObject, cameraId);
+        diagnostics.Record("control_publish", "ok", cameraId, reason: "control_taken");
+    }
+
+    /// <summary>
+    ///     Called after the game took the player out of a camera's view: the player left it, cycled on, or the screen
+    ///     is gone (the game does this itself when a screen is disabled, MapRoomScreen.OnDisable). Control is given up
+    ///     first and the lock second, so that nobody sees an exclusive lock that stands for nothing.
+    /// </summary>
+    public void ControlEnded(MapRoomCamera camera)
+    {
+        if (!camera || !camera.TryGetNitroxId(out NitroxId cameraId) || !locallyControlled.Remove(cameraId))
+        {
+            return;
+        }
+        MovementBroadcaster.UnregisterWatched(cameraId);
+        packetSender.Send(new MapRoomCameraControlChanged(cameraId, multiplayerSession.Reservation.SessionId, false));
+        if (simulationOwnership.HasExclusiveLock(cameraId))
+        {
+            simulationOwnership.RequestSimulationLock(cameraId, SimulationLockType.TRANSIENT);
+        }
+        diagnostics.Record("control_publish", "ok", cameraId, reason: "control_given_up");
+    }
+
+    /// <summary>
+    ///     Called when the simulation lock on an entity went to another player. If it was a camera this player
+    ///     controlled, the player is taken out of its view.
+    /// </summary>
+    public void LockLost(NitroxId cameraId) => EndLocalControl(cameraId, "lock_lost");
+
+    private void LockAnswered(NitroxId cameraId, bool acquired, CameraControlStart start)
+    {
+        pendingControl.Remove(cameraId);
+        if (!acquired)
+        {
+            // Another player controls the camera, and this client had not heard of it when the player chose it.
+            diagnostics.Record("control_apply", "reject", cameraId, reason: "lock_denied");
+            if (Language.main != null)
+            {
+                ErrorMessage.AddMessage(Language.main.Get("Nitrox_DenyOwnershipHand"));
+            }
+            return;
+        }
+        if (start.Screen)
+        {
+            start.RunVanilla();
+        }
+        if (!locallyControlled.Contains(cameraId))
+        {
+            // The game did not take the camera after all: the screen is gone, or it chose another camera.
+            diagnostics.Record("control_apply", "reject", cameraId, reason: "not_taken");
+            simulationOwnership.RequestSimulationLock(cameraId, SimulationLockType.TRANSIENT);
+        }
+    }
+
+    /// <summary>
+    ///     Takes the player out of a camera's view that is no longer theirs, without telling the server, which knows.
+    /// </summary>
+    private void EndLocalControl(NitroxId cameraId, string reason)
+    {
+        if (!locallyControlled.Remove(cameraId))
+        {
+            return;
+        }
+        MovementBroadcaster.UnregisterWatched(cameraId);
+        diagnostics.Record("control_apply", "reject", cameraId, reason: reason);
+        if (NitroxEntity.TryGetComponentFrom(cameraId, out MapRoomCamera camera))
+        {
+            // The game always pairs FreeCamera (stops the drone's sounds and screen effect) with ExitLockedMode
+            // (returns the player and resets the view).
             camera.FreeCamera(resetPlayerPosition: true);
             camera.ExitLockedMode(resetPlayerPosition: true);
         }
@@ -142,7 +207,7 @@ public class MapRoomCameras
             byte[] jpegBytes = CapturePreviewJpeg(camera.mapRoomRenderTexture);
             if (MapRoomCameraPreviewImage.TryValidate(jpegBytes, out int width, out int height))
             {
-                packetSender.Send(new MapRoomCameraPreview(cameraId, camera.GetCameraNumber(), jpegBytes));
+                packetSender.Send(new MapRoomCameraPreview(cameraId, jpegBytes));
                 diagnostics.Record("preview_publish", "ok", cameraId, slot: camera.GetCameraNumber(),
                     reason: $"bytes_{jpegBytes.Length}_{width}x{height}");
             }
@@ -162,237 +227,139 @@ public class MapRoomCameras
         }
     }
 
-    public void ProcessControl(MapRoomCameraControl packet)
+    /// <summary>
+    ///     Handles the word that a player controls a camera now, or no longer.
+    /// </summary>
+    public void ProcessControlChanged(MapRoomCameraControlChanged packet)
     {
-        if (!packet.IsServerResponse)
-        {
-            return;
-        }
-        if (!packet.Granted || !packet.IsControlling)
-        {
-            pendingControls.Remove(packet.CameraId);
-        }
-        bool isLocalController = packet.ControllerSessionId == multiplayerSession.Reservation.SessionId;
-        if (!packet.Granted)
-        {
-            if (packet.IsControlling &&
-                stalkerCameraLockPurposeTracker.CompleteCameraControlRequest(packet.CameraId, false,
-                    simulationOwnership.HasExclusiveLock(packet.CameraId)))
-            {
-                simulationOwnership.RequestSimulationLock(packet.CameraId, SimulationLockType.TRANSIENT);
-            }
-            diagnostics.Record("control_apply", "reject", packet.CameraId, packet.MapRoomId.HasValue ? packet.MapRoomId.Value : null,
-                slot: packet.CameraIndex, reason: isLocalController ? "denied" : $"locked_by_{packet.ControllerSessionId}");
-            if (!isLocalController)
-            {
-                remotelyControlled.Add(packet.CameraId);
-            }
-            if (pendingControl.Remove(packet.CameraId) && NitroxEntity.TryGetObjectFrom(packet.CameraId, out GameObject deniedObject) && deniedObject.TryGetComponent(out MapRoomCamera deniedCamera))
-            {
-                deniedCamera.enabled = true;
-                ExitCameraModeLocally(deniedCamera);
-            }
-            return;
-        }
+        bool isLocalPlayer = packet.SessionId == multiplayerSession.Reservation.SessionId;
         if (packet.IsControlling)
         {
-            if (isLocalController)
+            if (isLocalPlayer)
             {
-                stalkerCameraLockPurposeTracker.CompleteCameraControlRequest(packet.CameraId, true,
-                    simulationOwnership.HasExclusiveLock(packet.CameraId));
-            }
-            else
-            {
-                stalkerCameraLockPurposeTracker.Forget(packet.CameraId);
-            }
-            if (!NitroxEntity.TryGetObjectFrom(packet.CameraId, out GameObject cameraObject) || !cameraObject.GetComponent<MapRoomCamera>())
-            {
-                // The camera has not spawned on this client yet, as for a player who just joined. Applied when it has.
-                pendingControls[packet.CameraId] = packet;
-                diagnostics.Record("control_apply", "pending", packet.CameraId, packet.MapRoomId.HasValue ? packet.MapRoomId.Value : null,
-                    slot: packet.CameraIndex, reason: "waiting_object");
                 return;
             }
-            pendingControls.Remove(packet.CameraId);
-            MapRoomCameraStates.SetLight(cameraObject.GetComponent<MapRoomCamera>(), packet.LightOn);
-            if (isLocalController)
-            {
-                remotelyControlled.Remove(packet.CameraId);
-                pendingControl.Remove(packet.CameraId);
-                locallyControlled.Add(packet.CameraId);
-                if (cameraObject.TryGetComponent(out MapRoomCamera localCamera))
-                {
-                    localCamera.enabled = true;
-                    if (uGUI_CameraDrone.main && uGUI_CameraDrone.main.GetCamera() == localCamera)
-                    {
-                        uGUI_CameraDrone.main.noSignal.SetActive(false);
-                    }
-                }
-                MovementBroadcaster.RegisterWatched(cameraObject, packet.CameraId);
-                diagnostics.Record("control_apply", "ok", packet.CameraId, packet.MapRoomId.HasValue ? packet.MapRoomId.Value : null,
-                    slot: packet.CameraIndex, reason: "local");
-                return;
-            }
-            if (!cameraObject.GetComponent<MapRoomCameraMovementReplicator>())
-            {
-                cameraObject.AddComponent<MapRoomCameraMovementReplicator>();
-            }
-            remotelyControlled.Add(packet.CameraId);
-            diagnostics.Record("control_apply", "ok", packet.CameraId, packet.MapRoomId.HasValue ? packet.MapRoomId.Value : null,
-                slot: packet.CameraIndex, reason: $"remote_pilot_{packet.ControllerSessionId}");
+            remoteControllers[packet.CameraId] = packet.SessionId;
+            // Two players cannot control one camera. If this player thought they did, they lost the lock on the way.
+            EndLocalControl(packet.CameraId, $"taken_by_{packet.SessionId}");
+            EnsureMovedByItsController(packet.CameraId);
+            diagnostics.Record("control_apply", "ok", packet.CameraId, reason: $"remote_pilot_{packet.SessionId}");
+            return;
         }
-        else if (NitroxEntity.TryGetObjectFrom(packet.CameraId, out GameObject cameraObject) && cameraObject.TryGetComponent(out MapRoomCameraMovementReplicator replicator))
+        if (isLocalPlayer)
+        {
+            // The server ended this player's control: it refused it, or the camera is gone. This also reaches a
+            // player who is in the camera's view already, however late it comes.
+            EndLocalControl(packet.CameraId, "ended_by_server");
+            return;
+        }
+        // A release ends the control of the player it names and of nobody else. The next player's control can have
+        // been announced before the release of the previous one arrives.
+        if (!remoteControllers.TryGetValue(packet.CameraId, out SessionId controller) || controller != packet.SessionId)
+        {
+            diagnostics.Record("control_release_apply", "stale", packet.CameraId, reason: $"remote_pilot_{packet.SessionId}");
+            return;
+        }
+        remoteControllers.Remove(packet.CameraId);
+        StopBeingMovedByAController(packet.CameraId);
+        diagnostics.Record("control_release_apply", "ok", packet.CameraId, reason: $"remote_pilot_{packet.SessionId}");
+    }
+
+    /// <summary>
+    ///     A camera another player flies is moved by their reports, like a vehicle another player pilots.
+    /// </summary>
+    private static void EnsureMovedByItsController(NitroxId cameraId)
+    {
+        if (NitroxEntity.TryGetObjectFrom(cameraId, out GameObject cameraObject) && cameraObject.GetComponent<MapRoomCamera>() &&
+            !cameraObject.GetComponent<MapRoomCameraMovementReplicator>())
+        {
+            cameraObject.AddComponent<MapRoomCameraMovementReplicator>();
+        }
+    }
+
+    private static void StopBeingMovedByAController(NitroxId cameraId)
+    {
+        if (NitroxEntity.TryGetObjectFrom(cameraId, out GameObject cameraObject) && cameraObject.TryGetComponent(out MapRoomCameraMovementReplicator replicator))
         {
             UnityEngine.Object.Destroy(replicator);
             MapRoomCameraDocks.SettleInDock(cameraObject);
         }
-        if (!packet.IsControlling)
-        {
-            remotelyControlled.Remove(packet.CameraId);
-            if (isLocalController)
-            {
-                pendingControl.Remove(packet.CameraId);
-                // A release this client did not ask for (it still counts the camera as granted) means the server revoked
-                // control. A release that merely echoes a local exit finds the camera already removed here, which also
-                // keeps a quick re-take of the same camera from being kicked out by the old echo.
-                bool revokedByServer = locallyControlled.Remove(packet.CameraId);
-                if (revokedByServer && NitroxEntity.TryGetObjectFrom(packet.CameraId, out GameObject revokedObject) &&
-                    revokedObject.TryGetComponent(out MapRoomCamera revokedCamera) && revokedCamera.IsControlled())
-                {
-                    ExitCameraModeLocally(revokedCamera);
-                }
-                stalkerCameraLockPurposeTracker.Forget(packet.CameraId);
-                MovementBroadcaster.UnregisterWatched(packet.CameraId);
-            }
-            diagnostics.Record("control_release_apply", "ok", packet.CameraId, packet.MapRoomId.HasValue ? packet.MapRoomId.Value : null,
-                slot: packet.CameraIndex, reason: isLocalController ? "local" : $"remote_pilot_{packet.ControllerSessionId}");
-        }
     }
 
+    /// <summary>
+    ///     Handles the picture another player took of what a camera sees. Every screen shows the latest one.
+    /// </summary>
     public void ProcessPreview(MapRoomCameraPreview packet)
     {
-        if (!packet.IsServerResponse || !packet.Granted)
-        {
-            diagnostics.Record("preview_receive", "reject", packet.CameraId, revision: packet.Revision,
-                slot: packet.CameraNumber, reason: packet.IsServerResponse ? "denied" : "not_server");
-            return;
-        }
         if (!MapRoomCameraPreviewImage.TryValidate(packet.JpegBytes, out int width, out int height))
         {
-            diagnostics.Record("preview_receive", "reject", packet.CameraId, revision: packet.Revision,
-                slot: packet.CameraNumber, reason: $"invalid_jpeg_bytes_{packet.JpegBytes?.Length ?? 0}");
+            diagnostics.Record("preview_receive", "reject", packet.CameraId, reason: $"invalid_jpeg_bytes_{packet.JpegBytes?.Length ?? 0}");
             return;
         }
-        if (!TryAdvancePreviewRevision(ref latestPreviewRevision, packet.Revision))
-        {
-            diagnostics.Record("preview_receive", "stale", packet.CameraId, revision: packet.Revision,
-                slot: packet.CameraNumber, reason: $"latest_{latestPreviewRevision}");
-            return;
-        }
-
-        diagnostics.Record("preview_receive", "ok", packet.CameraId, revision: packet.Revision,
-            slot: packet.CameraNumber, reason: $"bytes_{packet.JpegBytes.Length}_{width}x{height}");
+        diagnostics.Record("preview_receive", "ok", packet.CameraId, reason: $"bytes_{packet.JpegBytes.Length}_{width}x{height}");
         pendingPreview = packet;
         pendingPreviewPixelsApplied = false;
         TryApplyPendingPreview();
     }
 
+    /// <summary>
+    ///     Shows the latest picture. Its camera may not have spawned on this client yet, as for a player who has just
+    ///     joined; the picture is kept until it has.
+    /// </summary>
     private void TryApplyPendingPreview()
     {
         if (pendingPreview == null)
         {
             return;
         }
-
         MapRoomCamera camera = FindCamera(pendingPreview.CameraId);
         RenderTexture renderTexture = FindSharedPreviewTexture(camera);
-        bool attemptedDecode = !pendingPreviewPixelsApplied && renderTexture;
         if (!pendingPreviewPixelsApplied && renderTexture)
         {
             pendingPreviewPixelsApplied = TryApplyPreviewPixels(renderTexture, pendingPreview.JpegBytes);
+            if (!pendingPreviewPixelsApplied)
+            {
+                diagnostics.Record("preview_apply", "reject", pendingPreview.CameraId, reason: "decode_failed");
+                pendingPreview = null;
+                return;
+            }
         }
-        if (attemptedDecode && !pendingPreviewPixelsApplied)
+        if (!pendingPreviewPixelsApplied || !camera)
         {
-            RecordPreviewApply(pendingPreview, "reject", "decode_failed");
-            pendingPreview = null;
+            diagnostics.Record("preview_apply", "pending", pendingPreview.CameraId, reason: renderTexture ? "camera_missing" : "missing_texture");
             return;
         }
-        ApplyGlobalPreviewSelection(camera, pendingPreview.CameraNumber);
-        string outcome = !renderTexture || !pendingPreviewPixelsApplied || !camera ? "pending" : "ok";
-        string reason = !renderTexture ? "missing_texture" : camera ? "global" : "camera_missing";
-        RecordPreviewApply(pendingPreview, outcome, reason);
-        if (pendingPreviewPixelsApplied && camera)
-        {
-            pendingPreview = null;
-            pendingPreviewPixelsApplied = false;
-        }
+        ShowOnScreens(camera);
+        diagnostics.Record("preview_apply", "ok", pendingPreview.CameraId, slot: camera.GetCameraNumber());
+        pendingPreview = null;
+        pendingPreviewPixelsApplied = false;
     }
 
-    private void RecordPreviewApply(MapRoomCameraPreview packet, string outcome, string reason)
-    {
-        if (lastPreviewApplyDiagnosticRevision == packet.Revision && lastPreviewApplyDiagnosticOutcome == $"{outcome}{reason}")
-        {
-            return;
-        }
-        lastPreviewApplyDiagnosticRevision = packet.Revision;
-        lastPreviewApplyDiagnosticOutcome = $"{outcome}{reason}";
-        MapRoomCameraPreviewImage.TryValidate(packet.JpegBytes, out int width, out int height);
-        diagnostics.Record("preview_apply", outcome, packet.CameraId, revision: packet.Revision,
-            slot: packet.CameraNumber, reason: $"{reason}_bytes_{packet.JpegBytes.Length}_{width}x{height}");
-    }
+    /// <summary>
+    ///     Whether the game may offer a camera to the player. A camera another player controls is offered to nobody.
+    /// </summary>
+    public bool CanSelectForControl(MapRoomCamera camera) => !camera || !camera.TryGetNitroxId(out NitroxId cameraId) || CanSelectForControl(cameraId);
 
-    internal static bool TryAdvancePreviewRevision(ref long currentRevision, long incomingRevision)
-    {
-        if (incomingRevision <= 0 || incomingRevision <= currentRevision)
-        {
-            return false;
-        }
-        currentRevision = incomingRevision;
-        return true;
-    }
+    internal bool CanSelectForControl(NitroxId cameraId) => !remoteControllers.ContainsKey(cameraId);
 
-    public bool CanSelectForControl(MapRoomCamera camera)
-    {
-        if (!camera)
-        {
-            return true;
-        }
-        if (!HasReadyDockAssociation(camera))
-        {
-            return false;
-        }
-        if (!camera.TryGetNitroxId(out NitroxId cameraId))
-        {
-            return true;
-        }
-        return CanSelectForControl(cameraId, camera.IsControlled());
-    }
-
-    internal bool CanSelectForControl(NitroxId cameraId, bool activelyControlled) =>
-        CanSelectForControl(pendingControl.Contains(cameraId), locallyControlled.Contains(cameraId), remotelyControlled.Contains(cameraId), activelyControlled);
-
-    internal static bool CanSelectForControl(bool pending, bool locallyControlled, bool remotelyControlled, bool activelyControlled) =>
-        locallyControlled || (!remotelyControlled && (!pending || activelyControlled));
-
+    /// <summary>
+    ///     Whether this player controls the camera or has asked for it.
+    /// </summary>
     public bool HasPendingControl(NitroxId cameraId) => pendingControl.Contains(cameraId);
 
     public bool HasLocalControl(NitroxId cameraId) => locallyControlled.Contains(cameraId);
 
+    /// <summary>
+    ///     Called when the server says that nobody simulates an entity any more, which for a camera means that it is
+    ///     gone with its room. Nobody controls it then.
+    /// </summary>
     internal void ClearControlState(NitroxId cameraId)
     {
-        pendingControls.Remove(cameraId);
-        bool hadControlState = pendingControl.Remove(cameraId);
-        hadControlState |= locallyControlled.Remove(cameraId);
-        hadControlState |= remotelyControlled.Remove(cameraId);
-        stalkerCameraLockPurposeTracker.Forget(cameraId);
-        MovementBroadcaster.UnregisterWatched(cameraId);
-        if (NitroxEntity.TryGetObjectFrom(cameraId, out GameObject cameraObject) &&
-            cameraObject.TryGetComponent<MapRoomCameraMovementReplicator>(out MapRoomCameraMovementReplicator replicator))
-        {
-            UnityEngine.Object.Destroy(replicator);
-            MapRoomCameraDocks.SettleInDock(cameraObject);
-        }
-        if (hadControlState)
+        pendingControl.Remove(cameraId);
+        bool wasControlled = remoteControllers.Remove(cameraId) | locallyControlled.Contains(cameraId);
+        EndLocalControl(cameraId, "ownership_dropped");
+        StopBeingMovedByAController(cameraId);
+        if (wasControlled)
         {
             diagnostics.Record("ownership_clear", "ok", cameraId, reason: "canonical_drop");
         }
@@ -420,13 +387,13 @@ public class MapRoomCameras
 
     /// <summary>
     ///     Called when a camera has spawned and the state it was sent with is applied. If the server said before that
-    ///     somebody controls it, that is applied now.
+    ///     somebody controls it, as it does for a player who has just joined, the camera follows that player now.
     /// </summary>
     public void CameraSpawned(NitroxId cameraId)
     {
-        if (pendingControls.TryGetValue(cameraId, out MapRoomCameraControl control))
+        if (remoteControllers.ContainsKey(cameraId))
         {
-            ProcessControl(control);
+            EnsureMovedByItsController(cameraId);
         }
         TryApplyPendingPreview();
     }
@@ -580,28 +547,18 @@ public class MapRoomCameras
         }
     }
 
-    private static void ApplyGlobalPreviewSelection(MapRoomCamera camera, int cameraNumber)
+    /// <summary>
+    ///     Makes every screen show the camera a picture is of, as the game does when the local player flies a camera.
+    ///     A screen the local player flies a camera with is left alone: the game would take the camera of the picture
+    ///     for the one the player is at, and cycle on from there.
+    /// </summary>
+    private static void ShowOnScreens(MapRoomCamera camera)
     {
         foreach (MapRoomScreen screen in Resources.FindObjectsOfTypeAll<MapRoomScreen>())
         {
-            if (!screen || !screen.gameObject.scene.IsValid())
-            {
-                continue;
-            }
-            if (camera)
+            if (screen && screen.gameObject.scene.IsValid() && !screen.currentCamera)
             {
                 screen.OnMapRoomCameraChanged(camera);
-            }
-            else
-            {
-                if (screen.cameraText && Language.main != null)
-                {
-                    screen.cameraText.text = Language.main.GetFormat("MapRoomCameraInfoScreen", cameraNumber);
-                }
-                if (screen.cameraPreview)
-                {
-                    screen.cameraPreview.SetActive(true);
-                }
             }
         }
     }

@@ -16,11 +16,8 @@ internal sealed class SimulationOwnershipRequestProcessor(SimulationOwnershipDat
 
     public async Task Process(AuthProcessorContext context, SimulationOwnershipRequest ownershipRequest)
     {
-        // A Scanner Room camera is locked through its control lifecycle, which the Scanner Room manager runs.
-        if (await scannerRoomManager.TryHandleLockRequestAsync(context.Sender, ownershipRequest))
-        {
-            return;
-        }
+        // An exclusive lock on a Scanner Room camera that is held for a Stalker gives way to a player who asks.
+        await scannerRoomManager.MakeWayForExclusiveRequestAsync(context.Sender, ownershipRequest);
 
         if (!entityRegistry.TryGetEntityById(ownershipRequest.Id, out WorldEntity worldEntity))
         {

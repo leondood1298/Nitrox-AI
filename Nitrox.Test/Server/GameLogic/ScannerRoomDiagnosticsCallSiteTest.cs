@@ -69,7 +69,7 @@ public sealed class ScannerRoomDiagnosticsCallSiteTest
         ScannerRoomScenarioFixture scenario = CreateScenarioWithOwnedRoom();
         NitroxId cameraId = ScannerRoomScenarioFixture.CameraAId;
         Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, cameraId, 1, true)).Granted);
-        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, cameraId, 1, true)).Granted);
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, cameraId, true)).Granted);
 
         await scenario.ReportCameraAsync(scenario.PlayerA, cameraId, lightOn: true);
         await scenario.ReportCameraAsync(scenario.PlayerB, cameraId, lightOn: false);
@@ -93,7 +93,7 @@ public sealed class ScannerRoomDiagnosticsCallSiteTest
         // Player B's client took the generic exclusive lock for a Stalker carrying the camera and never gave it back.
         Assert.IsTrue(scenario.Ownership.TryAcquire(cameraId, scenario.PlayerB, SimulationLockType.EXCLUSIVE));
 
-        Assert.IsTrue((await scenario.ControlLooseAsync(scenario.PlayerA, cameraId, true)).Granted);
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, cameraId, true)).Granted);
 
         diagnostics.GetHistory().Select(entry => $"{entry.EventName} sid={entry.SessionId} {entry.Reason}").Should().Equal(
             ["control_preempt sid=2 exclusive_lock_taken_by_1", "control_acquire sid=1 -"],
@@ -105,9 +105,9 @@ public sealed class ScannerRoomDiagnosticsCallSiteTest
     {
         ScannerRoomScenarioFixture scenario = new();
         NitroxId cameraId = ScannerRoomScenarioFixture.CameraCId;
-        Assert.IsTrue((await scenario.ControlLooseAsync(scenario.PlayerA, cameraId, true)).Granted);
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, cameraId, true)).Granted);
 
-        IReadOnlyList<MapRoomCameraControl> grants = await scenario.JoinedPlayerControlGrantsAsync(scenario.PlayerB.SessionId);
+        IReadOnlyList<Nitrox.Model.Packets.Packet> grants = await scenario.JoinedPlayerControlGrantsAsync(scenario.PlayerB.SessionId);
 
         grants.Should().ContainSingle();
         ScannerRoomDiagnosticEntry entry = scenario.Diagnostics.GetHistory()[^1];

@@ -49,17 +49,9 @@ internal sealed partial class ScannerRoomManager
         // The player who flew the camera in keeps control while it is docked, as in the game. Any other exclusive
         // lock was taken for something that ended with the dock (a Stalker carrying the camera); its holder goes
         // on simulating the camera like any other entity.
-        if (simulationOwnershipData.TryGetLock(worldCamera.Id, out SimulationOwnershipData.PlayerLock playerLock) && playerLock.LockType == SimulationLockType.EXCLUSIVE &&
-            !IsController(worldCamera.Id, playerLock.Player.SessionId))
+        if (simulationOwnershipData.TryGetLock(worldCamera.Id, out SimulationOwnershipData.PlayerLock playerLock) && !IsController(worldCamera.Id, playerLock.Player.SessionId))
         {
-            if (TryCreateControlRelease(worldCamera.Id, playerLock, "dock", out MapRoomCameraControl? release))
-            {
-                await SendToAllAsync(release);
-            }
-            if (EndControlLock(worldCamera.Id, playerLock.Player) is { } keptSimulation)
-            {
-                await SendToAllAsync(keptSimulation);
-            }
+            await GiveUpExclusiveLockAsync(worldCamera.Id, playerLock.Player);
         }
         await SendToOthersAsync(sender, packet);
         return true;
