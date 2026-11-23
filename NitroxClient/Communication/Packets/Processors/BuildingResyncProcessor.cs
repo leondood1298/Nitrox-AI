@@ -203,6 +203,10 @@ internal sealed class BuildingResyncProcessor(Entities entities, EntityMetadataM
             yield break;
         }
         yield return MoonpoolManager.RestoreMoonpools(buildEntity.ChildEntities.OfType<MoonpoolEntity>(), @base);
+        if (@base)
+        {
+            BulkheadDoorManager.RestoreDoors(buildEntity.ChildEntities.OfType<BulkheadDoorEntity>(), @base);
+        }
         if (!@base)
         {
             Log.Warn($"[Base RESYNC] Base {buildEntity.Id} was destroyed before player restoration");

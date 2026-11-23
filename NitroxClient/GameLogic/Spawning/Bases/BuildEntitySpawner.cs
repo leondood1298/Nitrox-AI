@@ -79,6 +79,7 @@ public class BuildEntitySpawner : EntitySpawner<BuildEntity>
             yield break;
         }
         yield return MoonpoolManager.RestoreMoonpools(entity.ChildEntities.OfType<MoonpoolEntity>(), @base);
+        BulkheadDoorManager.RestoreDoors(entity.ChildEntities.OfType<BulkheadDoorEntity>(), @base);
 
         TaskResult<Optional<GameObject>> childResult = new();
         bool atLeastOneLeak = false;
