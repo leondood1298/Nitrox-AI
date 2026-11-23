@@ -46,15 +46,18 @@ internal sealed class ChatMessageProcessor(PlayerManager remotePlayerManager, Lo
         else
         {
             Optional<RemotePlayer> remotePlayer = remotePlayerManager.Find(message.SessionId);
-            if (!remotePlayer.HasValue)
+            if (remotePlayer.HasValue)
             {
-                string playerTableFormatted = string.Join("\n", remotePlayerManager.GetAll().Select(ply => $"Name: '{ply.PlayerName}', Id: {ply.SessionId}"));
-                Log.Error($"Tried to add chat message for remote player that could not be found with id '${message.SessionId}' and message: '{message.Text}'.\nAll remote players right now:\n{playerTableFormatted}");
-                throw new Exception($"Tried to add chat message for remote player that could not be found with id '${message.SessionId}' and message: '{message.Text}'.\nAll remote players right now:\n{playerTableFormatted}");
+                playerName = remotePlayer.Value.PlayerName;
+                color = remotePlayer.Value.PlayerSettings.PlayerColor;
             }
-
-            playerName = remotePlayer.Value.PlayerName;
-            color = remotePlayer.Value.PlayerSettings.PlayerColor;
+            else
+            {
+                // A player this game does not know (yet): the message is still shown rather than lost
+                Log.Warn($"Chat message from unknown session #{message.SessionId}");
+                playerName = $"#{message.SessionId}";
+                color = new NitroxColor(1f, 1f, 1f);
+            }
         }
 
         playerChatManager.AddMessage(playerName, message.Text, color.ToUnity());
