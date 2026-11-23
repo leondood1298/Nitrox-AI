@@ -6,11 +6,11 @@ namespace Nitrox.Test.Patcher.Patches.Dynamic;
 public sealed class uGUI_MapRoomScanner_Subscription_PatchTest
 {
     [TestMethod]
-    [DataRow("TARGET_METHOD_START")]
-    [DataRow("TARGET_METHOD_ON_DISABLE")]
-    public void PatchTargetsExistInCurrentGameAssembly(string fieldName)
+    [DataRow(typeof(uGUI_MapRoomScanner_Start_Patch))]
+    [DataRow(typeof(uGUI_MapRoomScanner_OnDisable_Patch))]
+    public void PatchTargetsExistInCurrentGameAssembly(Type patchType)
     {
-        FieldInfo targetField = typeof(uGUI_MapRoomScanner_Subscription_Patch).GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Static);
+        FieldInfo targetField = patchType.GetField("TARGET_METHOD", BindingFlags.NonPublic | BindingFlags.Static);
 
         Assert.IsNotNull(targetField);
         Assert.IsNotNull(targetField.GetValue(null));

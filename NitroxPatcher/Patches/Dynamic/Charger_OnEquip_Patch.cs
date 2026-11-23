@@ -4,7 +4,7 @@ namespace NitroxPatcher.Patches.Dynamic;
 
 public sealed partial class Charger_OnEquip_Patch : NitroxPatch, IDynamicPatch
 {
-    private static readonly MethodInfo TARGET_METHOD = Reflect.Method((Charger t) => t.OnEquip((string)null, (InventoryItem)null));
+    private static readonly MethodInfo TARGET_METHOD = Reflect.Method((Charger t) => t.OnEquip(default, default));
 
     public static void Postfix(Charger __instance)
     {
