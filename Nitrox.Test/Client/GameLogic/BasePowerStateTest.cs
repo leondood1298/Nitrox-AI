@@ -45,6 +45,35 @@ public sealed class BasePowerStateTest
     }
 
     [TestMethod]
+    public void SpawnSnapshotOlderThanAnEarlierBroadcastReconcilesToTheBroadcast()
+    {
+        // While joining, a live broadcast can be processed before the source object exists. The spawn snapshot that
+        // follows is older, and the source must end up with the broadcast's state rather than nothing at all.
+        BasePowerState state = new();
+        NitroxId id = new();
+        PowerSourceMetadata broadcast = new(420f, 500f, BasePowerSourceType.BIOREACTOR, 9, 120f);
+        PowerSourceMetadata snapshot = new(400f, 500f, BasePowerSourceType.BIOREACTOR, 8, 100f);
+        state.TryApply(id, broadcast, out _);
+
+        PowerSourceMetadata shown = state.Reconcile(id, snapshot);
+
+        Assert.AreSame(broadcast, shown);
+    }
+
+    [TestMethod]
+    public void SnapshotForUnknownOrOlderStateReconcilesToTheSnapshot()
+    {
+        BasePowerState state = new();
+        NitroxId id = new();
+        PowerSourceMetadata snapshot = new(400f, 500f, BasePowerSourceType.BIOREACTOR, 8, 100f);
+
+        Assert.AreSame(snapshot, state.Reconcile(id, snapshot));
+
+        PowerSourceMetadata later = new(410f, 500f, BasePowerSourceType.BIOREACTOR, 9, 110f);
+        Assert.AreSame(later, state.Reconcile(id, later));
+    }
+
+    [TestMethod]
     public void EqualRevisionResponseCanRestoreCanonicalPowerAfterRejectedLocalChange()
     {
         BasePowerState state = new();

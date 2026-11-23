@@ -29,5 +29,15 @@ public sealed class BasePowerState
         return true;
     }
 
+    /// <summary>
+    ///     Returns the state a source should show after receiving <paramref name="incoming" />: the incoming state, or the
+    ///     newer one already known when a live update overtook it (e.g. a spawn snapshot arriving after a broadcast).
+    /// </summary>
+    public PowerSourceMetadata Reconcile(NitroxId sourceId, PowerSourceMetadata incoming)
+    {
+        TryApply(sourceId, incoming, out PowerSourceMetadata newest);
+        return newest;
+    }
+
     public bool TryGet(NitroxId sourceId, out PowerSourceMetadata metadata) => canonicalBySource.TryGetValue(sourceId, out metadata);
 }

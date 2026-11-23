@@ -83,10 +83,8 @@ internal sealed class BasePowerSourceAuthority
         {
             return $"source type changed from {current.SourceType} to {requested.SourceType}";
         }
-        if (lastOwnerSequenceBySource.TryGetValue(entity.Id, out OwnerSequence last) && last.SessionId == senderSessionId && requested.ClientSequence <= last.Sequence)
-        {
-            return $"stale client sequence {requested.ClientSequence}; last accepted {last.Sequence}";
-        }
+        // The sequence is recorded for diagnostics only. Updates arrive reliable-ordered from the lock owner, and a
+        // client restarts its counter on every join while session ids are reused, so ordering must not be enforced here.
         return "";
     }
 

@@ -15,13 +15,13 @@ public class PowerSourceMetadataProcessor : EntityMetadataProcessor<PowerSourceM
 		BasePowerState state = Resolve<BasePowerState>();
 		if (gameObject.TryGetComponent<PowerSource>(out var component))
 		{
-			PowerSourceMetadata accepted = metadata;
-			if (!gameObject.TryGetNitroxId(out var sourceId) || state.TryApply(sourceId, metadata, out accepted))
-			{
-				component.SetPower(accepted.Power);
-				BasePowerSources.SetFuelConsumed(component, accepted.SourceType, accepted.FuelConsumed);
-				RecordReconciliationApply(gameObject.TryGetNitroxId(out sourceId) ? sourceId : null, accepted, true);
-			}
+			// A broadcast can arrive before this object spawns. The snapshot is then older than what is already known,
+			// and the newer state must still be applied or the source keeps its prefab default.
+			bool hasId = gameObject.TryGetNitroxId(out var sourceId);
+			PowerSourceMetadata accepted = hasId ? state.Reconcile(sourceId, metadata) : metadata;
+			component.SetPower(accepted.Power);
+			BasePowerSources.SetFuelConsumed(component, accepted.SourceType, accepted.FuelConsumed);
+			RecordReconciliationApply(hasId ? sourceId : null, accepted, true);
 		}
 		else
 		{
