@@ -130,6 +130,38 @@ public sealed class CreatureMetadataAuthorityTest
     }
 
     [TestMethod]
+    public void OutsideBabysDropsOnlyAddUp()
+    {
+        SeaEmperorBabyMetadata stored = new(2.02f, 3, 5, CreatureMetadata.UNDECIDED);
+
+        CreatureMetadata? accepted = CreatureMetadataAuthority.Merge(stored, new SeaEmperorBabyMetadata(2.02f, 1, 5, CreatureMetadata.UNDECIDED));
+
+        accepted.Should().BeOfType<SeaEmperorBabyMetadata>().Which.DropCount.Should().Be(3);
+    }
+
+    [TestMethod]
+    public void OutsideBabysNextDropIsStored()
+    {
+        SeaEmperorBabyMetadata requested = new(2.02f, 4, 5, CreatureMetadata.UNDECIDED);
+
+        CreatureMetadataAuthority.Merge(new SeaEmperorBabyMetadata(2.02f, 3, 5, CreatureMetadata.UNDECIDED), requested).Should().BeSameAs(requested);
+    }
+
+    [TestMethod]
+    public void OutsideBabyKeepsItsCureWhenItDrops()
+    {
+        SeaEmperorBabyMetadata stored = new(2.02f, 3, 5, 0f, 1060f);
+
+        CreatureMetadata? accepted = CreatureMetadataAuthority.Merge(stored, new SeaEmperorBabyMetadata(2.02f, 2, 5, CreatureMetadata.UNDECIDED));
+
+        SeaEmperorBabyMetadata baby = accepted.Should().BeOfType<SeaEmperorBabyMetadata>().Subject;
+        baby.DropCount.Should().Be(3);
+        baby.Scale.Should().Be(2.02f);
+        baby.InfectedAmount.Should().Be(0f);
+        baby.EnzymeEndTime.Should().Be(1060f);
+    }
+
+    [TestMethod]
     public void SimulatingPlayerDecidesInfection()
     {
         Player sender = CreatePlayer(1, 1);

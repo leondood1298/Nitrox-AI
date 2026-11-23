@@ -41,6 +41,12 @@ internal static class CreatureMetadataAuthority
             }
         }
 
+        // A baby's drops only add up: a copy that missed some must not give it its dropped balls back
+        if (requested is SeaEmperorBabyMetadata baby && stored is SeaEmperorBabyMetadata storedBaby && storedBaby.DropCount > baby.DropCount)
+        {
+            requested = new SeaEmperorBabyMetadata(baby.Scale, storedBaby.DropCount, baby.DropLimit, baby.InfectedAmount, baby.EnzymeEndTime);
+        }
+
         // Infection only changes through CreatureInfectionMetadata, which keeps the stored value up to date. The value in
         // other creature metadata comes from the sender's copy and only counts when nothing has been decided yet.
         if (stored is CreatureMetadata storedMetadata)

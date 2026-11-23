@@ -96,7 +96,7 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
 
     /// <summary>
     ///     A creature's infection is merged into the creature metadata it already has (see <see cref="CreatureMetadataAuthority" />).
-    ///     The other players get the update as it was sent.
+    ///     The other players get an infection update as it was sent, other creature metadata as it was merged.
     /// </summary>
     /// <returns>Null when the update is no creature metadata.</returns>
     private MetadataUpdateResult? GateCreatureMetadata(Player sender, Entity entity, EntityMetadata metadata)
@@ -114,7 +114,8 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
             return MetadataUpdateResult.Reject;
         }
         entity.Metadata = accepted;
-        return MetadataUpdateResult.Accept(requested);
+        // Other creature metadata is sent as merged (a Sea Emperor baby's drops only add up)
+        return MetadataUpdateResult.Accept(requested is CreatureInfectionMetadata ? requested : accepted);
     }
 
     /// <summary>
