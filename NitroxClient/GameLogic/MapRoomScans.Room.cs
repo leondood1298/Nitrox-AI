@@ -1,7 +1,5 @@
 using System.Collections.Generic;
 using Nitrox.Model.DataStructures;
-using Nitrox.Model.Subnautica.Packets;
-using NitroxClient.Communication;
 using UnityEngine;
 
 namespace NitroxClient.GameLogic;
@@ -165,13 +163,7 @@ public sealed partial class MapRoomScans
             }
         }
 
-        public void StartScanning(TechType target)
-        {
-            using (PacketSuppressor<EntityMetadataUpdate>.Suppress())
-            {
-                mapRoom.StartScanning(target);
-            }
-        }
+        public void StartScanning(TechType target) => mapRoom.StartScanning(target);
 
         public void ObtainNodes() => mapRoom.ObtainResourceNodes(mapRoom.typeToScan);
 

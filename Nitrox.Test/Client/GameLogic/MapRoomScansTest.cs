@@ -95,6 +95,53 @@ public sealed class MapRoomScansTest
     }
 
     [TestMethod]
+    public void StoppingAScanIsSentLikeAnyOtherTargetAPlayerChooses()
+    {
+        scans.ApplyMetadata(room, new MapRoomMetadata(quartz, 5, 6));
+        room.StartScanning(TechType.None);
+
+        scans.TargetChosen(room);
+
+        MapRoomMetadata sent = (MapRoomMetadata)Sent<EntityMetadataUpdate>().Single().NewValue;
+        Assert.AreEqual(NitroxTechType.None, sent.TypeToScan);
+        Assert.AreEqual(6, sent.Generation);
+    }
+
+    [TestMethod]
+    public void TargetThatLostAgainstANewerOneIsReplacedByTheServersAndShown()
+    {
+        scans.ApplyMetadata(room, new MapRoomMetadata(NitroxTechType.None, 0, 3));
+        room.StartScanning(TechType.Quartz);
+        scans.TargetChosen(room);
+        int shownBefore = room.TargetsShown;
+
+        // Another player's target reached the server first. This client is sent that target like everyone, and then
+        // the same state again as the answer to its own request, which the server refused.
+        scans.ApplyMetadata(room, new MapRoomMetadata(titanium, 0, 4));
+        scans.ApplyMetadata(room, new MapRoomMetadata(titanium, 0, 4));
+
+        Assert.AreEqual(TechType.Titanium, room.Target);
+        Assert.AreEqual(shownBefore + 1, room.TargetsShown, "The screen showed this player's own choice until now.");
+
+        room.StartScanning(TechType.Quartz);
+        scans.TargetChosen(room);
+        Assert.AreEqual(4, ((MapRoomMetadata)Sent<EntityMetadataUpdate>().Last().NewValue).Generation, "With the generation it was given, its next choice can be accepted.");
+    }
+
+    [TestMethod]
+    public void RefusedTargetIsReplacedByTheServersEvenWhenTheGenerationIsTheOneThisClientKnows()
+    {
+        scans.ApplyMetadata(room, new MapRoomMetadata(titanium, 2, 3));
+        room.StartScanning(TechType.Quartz);
+        scans.TargetChosen(room);
+
+        scans.ApplyMetadata(room, new MapRoomMetadata(titanium, 2, 3));
+
+        Assert.AreEqual(TechType.Titanium, room.Target);
+        Assert.AreEqual(2, room.NodesScanned);
+    }
+
+    [TestMethod]
     public void SimulatingPlayerKeepsAndReportsWhatItRevealedWhileItsTargetWasOnItsWay()
     {
         simulationOwnership.SimulateEntity(room.Id, SimulationLockType.TRANSIENT);

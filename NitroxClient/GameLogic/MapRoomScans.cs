@@ -68,7 +68,8 @@ public sealed partial class MapRoomScans
     }
 
     /// <summary>
-    ///     Called after the game started or stopped a scan in this room.
+    ///     Called after a player started or stopped a scan on the room's screen. The game starts and stops scans for
+    ///     other reasons as well; those are not for the server.
     /// </summary>
     public void TargetChosen(MapRoomFunctionality mapRoom)
     {
