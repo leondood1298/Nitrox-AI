@@ -39,7 +39,8 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
         if ((GateEscapePodMetadata(context.Sender, entity, packet.NewValue) ??
              GatePowerMetadata(context.Sender, entity, packet.NewValue) ??
              GateScannerRoomMetadata(context.Sender, entity, packet.NewValue) ??
-             GateCreatureMetadata(context.Sender, entity, packet.NewValue)) is { } result)
+             GateCreatureMetadata(context.Sender, entity, packet.NewValue) ??
+             GateTimeCapsuleMetadata(context.Sender, entity, packet.NewValue)) is { } result)
         {
             await SendResultAsync(context, entity, result);
             return;
@@ -115,6 +116,30 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
         }
         entity.Metadata = accepted;
         return MetadataUpdateResult.Accept(requested);
+    }
+
+    /// <summary>
+    ///     Every game asks the game's online service with its own account whether a time capsule lies at a spot and what it
+    ///     holds. The first answer is kept for everybody; a later one gets the kept answer back.
+    /// </summary>
+    /// <returns>Null when the update is no answer about a time capsule.</returns>
+    private MetadataUpdateResult? GateTimeCapsuleMetadata(Player sender, Entity entity, EntityMetadata metadata)
+    {
+        if (metadata is not TimeCapsuleMetadata answer)
+        {
+            return null;
+        }
+        switch (entity.Metadata)
+        {
+            case null:
+                entity.Metadata = answer;
+                return MetadataUpdateResult.Accept(answer);
+            case TimeCapsuleMetadata kept:
+                return MetadataUpdateResult.RejectAndCorrect(kept);
+            default:
+                logger.ZLogWarningOnce($"Player {sender.Name} tried replacing the {entity.Metadata.GetType().Name} of {entity.Id} with a time capsule");
+                return MetadataUpdateResult.Reject;
+        }
     }
 
     /// <summary>

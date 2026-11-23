@@ -97,6 +97,32 @@ public sealed class ServerJsonSerializerTest
     }
 
     [TestMethod]
+    public void JsonRoundTripPreservesTheKeptContentOfATimeCapsuleInTheWorld()
+    {
+        WorldEntity capsule = new(NitroxVector3.Zero, NitroxQuaternion.Identity, NitroxVector3.One, NitroxTechType.None, 0, "time-capsule", true, new NitroxId(), null)
+        {
+            Metadata = new TimeCapsuleMetadata(true, "instance-1", "content-1", "Hi", "From the surface", "a.jpg",
+                                               [new TimeCapsuleMetadata.Item(new NitroxTechType("Flashlight"), true, new NitroxTechType("Battery"), 75f)])
+        };
+
+        using MemoryStream output = new();
+        serializer.Serialize(output, capsule);
+        using MemoryStream input = new(output.ToArray());
+        WorldEntity restored = serializer.Deserialize<WorldEntity>(input);
+
+        TimeCapsuleMetadata content = (TimeCapsuleMetadata)restored.Metadata;
+        Assert.IsTrue(content.HasCapsule);
+        Assert.AreEqual("instance-1", content.InstanceId);
+        Assert.AreEqual("content-1", content.ContentId);
+        Assert.AreEqual("From the surface", content.Text);
+        TimeCapsuleMetadata.Item item = content.Items.Single();
+        Assert.AreEqual(new NitroxTechType("Flashlight"), item.TechType);
+        Assert.IsTrue(item.HasBattery);
+        Assert.AreEqual(new NitroxTechType("Battery"), item.BatteryType);
+        Assert.AreEqual(75f, item.BatteryCharge);
+    }
+
+    [TestMethod]
     public void JsonRoundTripPreservesAPlainTemperatureReport()
     {
         // What a thermal plant holds until the first level update of the player simulating it.

@@ -1,7 +1,10 @@
 using System.Collections.Generic;
+using System.Linq;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
+using Nitrox.Model.Subnautica.Extensions;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication;
 using NitroxClient.Communication.Abstract;
@@ -17,6 +20,10 @@ namespace NitroxClient.GameLogic;
 ///     The game has a single PlayerTimeCapsule, a scene object outside the rocket. It is given the id of the rocket's
 ///     <see cref="PlayerTimeCapsuleEntity" />, which makes its container a container like a locker's and its text the
 ///     entity's metadata. Its picture stays with the player who chose it: it is a screenshot on that player's computer.
+///     </para>
+///     <para>
+///     Whether a capsule lies at a spot in the world and what it holds is what the online service answers the first game
+///     that asks (<see cref="TimeCapsuleMetadata" />); the other games show that answer instead of asking.
 ///     </para>
 /// </summary>
 public class TimeCapsules
@@ -89,6 +96,100 @@ public class TimeCapsules
         capsule.text = text;
         // Every key press changes the text
         entities.EntityMetadataChangedThrottled(capsule, capsuleId);
+    }
+
+    /// <summary>
+    ///     To be called instead of <see cref="TimeCapsule.Spawn" /> when the online service, asked by this game, placed a
+    ///     capsule at a spot. The answer is offered to the server, which keeps the first one for everybody.
+    /// </summary>
+    public void OnServiceSpawned(TimeCapsule capsule, string instanceId, string contentId)
+    {
+        // Another game's answer arrived first and is shown already
+        if (capsule.spawned)
+        {
+            return;
+        }
+
+        capsule.Spawn(instanceId, contentId);
+        if (capsule.TryGetNitroxId(out NitroxId? capsuleId))
+        {
+            entities.BroadcastMetadataUpdate(capsuleId, CreateMetadata(instanceId, contentId));
+        }
+    }
+
+    /// <summary>
+    ///     To be called instead of <see cref="TimeCapsule.DoNotSpawn" /> when this game's online service placed no capsule at
+    ///     a spot.
+    /// </summary>
+    /// <param name="serviceAnswered">
+    ///     False when the service could not be reached: that tells nothing about the spot, so nothing is offered.
+    /// </param>
+    public void OnServiceDidNotSpawn(TimeCapsule capsule, bool serviceAnswered)
+    {
+        // Another game's answer arrived first and is shown already
+        if (capsule.spawned)
+        {
+            return;
+        }
+
+        if (serviceAnswered && capsule.TryGetNitroxId(out NitroxId? capsuleId))
+        {
+            entities.BroadcastMetadataUpdate(capsuleId, TimeCapsuleMetadata.Empty());
+        }
+        capsule.DoNotSpawn();
+    }
+
+    /// <summary>
+    ///     Shows the answer that is kept for a capsule in the world, instead of what this game's online service answers.
+    /// </summary>
+    public static void ApplyKeptAnswer(TimeCapsule capsule, TimeCapsuleMetadata metadata)
+    {
+        // The game asks the service from TimeCapsule.Start(); a capsule with a kept answer needs no asking
+        PlayerTimeCapsule playerTimeCapsule = PlayerTimeCapsule.main;
+        if (playerTimeCapsule)
+        {
+            playerTimeCapsule.UnregisterSpawn(capsule);
+        }
+
+        if (!metadata.HasCapsule)
+        {
+            capsule.DoNotSpawn();
+            return;
+        }
+
+        // With the items: they are given to the player who opens the capsule (TimeCapsule.Collect)
+        TimeCapsuleContentProvider.Set(metadata.ContentId, new TimeCapsuleContent
+        {
+            title = metadata.Title,
+            text = metadata.Text,
+            imageUrl = metadata.ImageUrl,
+            items = metadata.Items.Select(ToGameItem).ToList(),
+            isActive = true
+        });
+        capsule.Spawn(metadata.InstanceId, metadata.ContentId);
+    }
+
+    private static TimeCapsuleMetadata CreateMetadata(string instanceId, string contentId)
+    {
+        TimeCapsuleContentProvider.GetData(contentId, out string title, out string text, out string imageUrl);
+        List<TimeCapsuleItem> items = TimeCapsuleContentProvider.GetItems(contentId) ?? [];
+        return new TimeCapsuleMetadata(true, instanceId, contentId, title ?? "", text ?? "", imageUrl ?? "", items.Select(ToMetadataItem).ToList());
+    }
+
+    private static TimeCapsuleMetadata.Item ToMetadataItem(TimeCapsuleItem item)
+    {
+        return new TimeCapsuleMetadata.Item(item.techType.ToDto(), item.hasBattery, item.batteryType.ToDto(), item.batteryCharge);
+    }
+
+    private static TimeCapsuleItem ToGameItem(TimeCapsuleMetadata.Item item)
+    {
+        return new TimeCapsuleItem
+        {
+            techType = item.TechType.ToUnity(),
+            hasBattery = item.HasBattery,
+            batteryType = item.BatteryType.ToUnity(),
+            batteryCharge = item.BatteryCharge
+        };
     }
 
     /// <summary>
