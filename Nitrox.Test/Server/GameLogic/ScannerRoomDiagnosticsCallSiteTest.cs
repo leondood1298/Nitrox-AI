@@ -118,6 +118,25 @@ public sealed class ScannerRoomDiagnosticsCallSiteTest
         scenario.Diagnostics.GetCounters().Rejected.Should().Be(0);
     }
 
+    [TestMethod]
+    public async Task RejectedScanSnapshotSaysWhichGenerationsDisagreed()
+    {
+        ScannerRoomScenarioFixture scenario = CreateScenarioWithOwnedRoom();
+        scenario.Room.Metadata = new MapRoomMetadata(quartz, 0, 7, 9);
+        scenario.Room.ScanResultGeneration = 7;
+        MapRoomScanResultSnapshotProcessor processor = new(scenario.EntityRegistry, scenario.Ownership,
+            new PlayerManager(null!, null!, null!, NullLogger<PlayerManager>.Instance), new MapRoomScanResultSubscriptions(), scenario.Diagnostics);
+
+        // The simulating player still scans for generation 4, as after the room it knew was replaced.
+        await processor.Process(new AuthProcessorContext(scenario.PlayerA, new DiscardingPacketSender()),
+            new MapRoomScanResultSnapshot(ScannerRoomScenarioFixture.RoomId, 4, [], NitroxVector3.Zero, 300f));
+
+        ScannerRoomDiagnosticEntry entry = scenario.Diagnostics.GetHistory().Single();
+        entry.Outcome.Should().Be(ScannerRoomDiagnosticOutcome.Rejected);
+        entry.Reason.Should().Be("stale_or_invalid_gen_4_room_gen_7",
+            "'stale or invalid' alone does not tell an outdated client from a malformed request");
+    }
+
     private static EntityMetadataUpdateProcessor CreateMetadataProcessor(ScannerRoomScenarioFixture scenario, ScannerRoomDiagnostics diagnostics,
         ILogger<EntityMetadataUpdateProcessor> logger) =>
         new(new PlayerManager(null!, null!, null!, NullLogger<PlayerManager>.Instance), scenario.EntityRegistry, scenario.Ownership, diagnostics,
