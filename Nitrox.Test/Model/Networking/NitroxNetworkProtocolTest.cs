@@ -14,12 +14,19 @@ public sealed class NitroxNetworkProtocolTest
     [DataRow("nitrox-ai/0")]
     [DataRow("nitrox-ai/1")]
     [DataRow("nitrox-ai/2")]
-    [DataRow("nitrox-ai/4")]
+    [DataRow("nitrox-ai/3")]
     [DataRow("")]
     [DataRow(null)]
     public void OtherConnectionKeysAreIncompatible(string? connectionKey)
     {
         Assert.IsFalse(NitroxNetworkProtocol.IsCompatible(connectionKey));
+    }
+
+    [TestMethod]
+    public void NeighbouringEpochsAreIncompatible()
+    {
+        Assert.IsFalse(NitroxNetworkProtocol.IsCompatible($"nitrox-ai/{NitroxNetworkProtocol.Epoch - 1}"));
+        Assert.IsFalse(NitroxNetworkProtocol.IsCompatible($"nitrox-ai/{NitroxNetworkProtocol.Epoch + 1}"));
     }
 
     [TestMethod]

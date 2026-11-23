@@ -24,7 +24,6 @@ public sealed partial class GhostCrafter_OnCraftingBegin_Patch : NitroxPatch, ID
             float startTime = DayNightCycle.main.timePassedAsFloat;
             Resolve<SimulationOwnership>().RequestSimulationLock(crafterLogicId, SimulationLockType.EXCLUSIVE);
             Resolve<Entities>().BroadcastMetadataUpdate(crafterLogicId, new CrafterMetadata(techType.ToDto(), startTime, duration, __instance._logic.numCrafted, __instance._logic.linkedIndex));
-            CrafterMetadataProcessor.MarkLocalCraftAccounted(crafterLogicId, startTime);
         }
     }
 }

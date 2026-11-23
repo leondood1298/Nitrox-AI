@@ -56,6 +56,72 @@ public sealed class BasePowerSourceUpdateProcessorTest
         Assert.AreEqual(30f, ((PowerSourceMetadata)source.Metadata).Power);
     }
 
+    [TestMethod]
+    public async Task ConsumptionIsForwardedOnlyToTheSourceOwner()
+    {
+        // Player B docks a vehicle in a base whose reactors player A simulates.
+        ScannerRoomScenarioFixture scenario = new();
+        ModuleEntity source = AddSolarPanel(scenario);
+        source.Metadata = new PowerSourceMetadata(60f, 75f, BasePowerSourceType.SOLAR, 5);
+        Assert.IsTrue(scenario.Ownership.TryToAcquire(source.Id, scenario.PlayerA, SimulationLockType.TRANSIENT));
+        ConsumeSender sender = new();
+
+        await CreateConsumeProcessor(scenario).Process(new AuthProcessorContext(scenario.PlayerB, sender),
+            new BasePowerSourceConsume(source.Id, 2.5f));
+
+        (BasePowerSourceConsume forwarded, SessionId recipient) = sender.Direct.Single();
+        Assert.AreEqual(scenario.PlayerA.SessionId, recipient);
+        Assert.AreEqual(source.Id, forwarded.SourceId);
+        Assert.AreEqual(2.5f, forwarded.Amount);
+        Assert.AreEqual(0, sender.Broadcasts.Count);
+    }
+
+    [TestMethod]
+    public async Task ConsumptionFromUnsimulatedSourceIsAppliedAndBroadcast()
+    {
+        ScannerRoomScenarioFixture scenario = new();
+        ModuleEntity source = AddSolarPanel(scenario);
+        source.Metadata = new PowerSourceMetadata(60f, 75f, BasePowerSourceType.SOLAR, 5);
+        ConsumeSender sender = new();
+
+        await CreateConsumeProcessor(scenario).Process(new AuthProcessorContext(scenario.PlayerB, sender),
+            new BasePowerSourceConsume(source.Id, 2.5f));
+
+        BasePowerSourceUpdate update = (BasePowerSourceUpdate)sender.Broadcasts.Single();
+        Assert.IsTrue(update.IsServerResponse);
+        Assert.IsTrue(update.Granted);
+        Assert.AreEqual(57.5f, update.Power);
+        Assert.AreEqual(6, update.Revision);
+        Assert.AreEqual(0, sender.Direct.Count);
+    }
+
+    private static BasePowerSourceConsumeProcessor CreateConsumeProcessor(ScannerRoomScenarioFixture scenario) => new(scenario.EntityRegistry,
+        scenario.Ownership, new BasePowerSourceAuthority(), new BasePowerDiagnostics(), NullLogger<BasePowerSourceConsumeProcessor>.Instance);
+
+    private sealed class ConsumeSender : IPacketSender
+    {
+        internal List<(BasePowerSourceConsume Packet, SessionId Recipient)> Direct { get; } = [];
+        internal List<Packet> Broadcasts { get; } = [];
+
+        public ValueTask SendPacketAsync<T>(T packet, SessionId sessionId) where T : Packet
+        {
+            Direct.Add(((BasePowerSourceConsume)(Packet)packet, sessionId));
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask SendPacketToAllAsync<T>(T packet) where T : Packet
+        {
+            Broadcasts.Add(packet);
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask SendPacketToOthersAsync<T>(T packet, SessionId excludedSessionId) where T : Packet
+        {
+            Broadcasts.Add(packet);
+            return ValueTask.CompletedTask;
+        }
+    }
+
     private static BasePowerSourceUpdateProcessor CreateProcessor(ScannerRoomScenarioFixture scenario) => new(scenario.EntityRegistry,
         scenario.Ownership, new BasePowerSourceAuthority(), new BasePowerDiagnostics(), NullLogger<BasePowerSourceUpdateProcessor>.Instance);
 

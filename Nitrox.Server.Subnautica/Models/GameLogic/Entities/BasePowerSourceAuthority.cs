@@ -11,6 +11,12 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 internal sealed class BasePowerSourceAuthority
 {
     private const float POWER_TOLERANCE = 0.01f;
+
+    /// <summary>
+    ///     Upper bound for one consumption request. Clients batch a fraction of a second of use, so anything near the
+    ///     largest source capacity (a nuclear reactor) is not a real request.
+    /// </summary>
+    internal const float MAX_CONSUMPTION_PER_REQUEST = 2500f;
     private readonly Dictionary<NitroxId, OwnerSequence> lastOwnerSequenceBySource = [];
 
     public bool TryApply(Entity entity, SessionId senderSessionId, BasePowerSourceUpdate requested, out PowerSourceMetadata accepted, out string rejectionReason)
@@ -53,6 +59,51 @@ internal sealed class BasePowerSourceAuthority
             }
             entity.Metadata = current.WithTemperature(report.Temperature);
             return true;
+        }
+    }
+
+    /// <summary>
+    ///     Decides what to do with energy that <paramref name="consumerSessionId" /> took from a source it does not
+    ///     simulate. Only the simulation owner's state is authoritative, so the request normally goes to that owner to
+    ///     apply. When nobody simulates the source, the server applies it to the stored state itself.
+    /// </summary>
+    public ConsumptionRoute RouteConsumption(Entity entity, SessionId? ownerSessionId, SessionId consumerSessionId, float amount,
+        out PowerSourceMetadata accepted, out string rejectionReason)
+    {
+        lock (lastOwnerSequenceBySource)
+        {
+            accepted = entity.Metadata as PowerSourceMetadata ?? new PowerSourceMetadata(0f);
+            rejectionReason = "";
+            if (entity is not (ModuleEntity or InteriorPieceEntity))
+            {
+                rejectionReason = $"{entity.GetType().Name} is not a base power source";
+                return ConsumptionRoute.REJECTED;
+            }
+            if (!float.IsFinite(amount) || amount <= 0f || amount > MAX_CONSUMPTION_PER_REQUEST)
+            {
+                rejectionReason = $"amount {amount} is outside 0-{MAX_CONSUMPTION_PER_REQUEST}";
+                return ConsumptionRoute.REJECTED;
+            }
+            if (ownerSessionId.HasValue)
+            {
+                if (ownerSessionId.Value == consumerSessionId)
+                {
+                    // The owner's own consumption is already part of what it simulates and broadcasts.
+                    rejectionReason = "sender simulates this source itself";
+                    return ConsumptionRoute.REJECTED;
+                }
+                return ConsumptionRoute.FORWARD_TO_OWNER;
+            }
+            if (entity.Metadata is not PowerSourceMetadata current)
+            {
+                rejectionReason = "source has no stored power state and no simulation owner";
+                return ConsumptionRoute.REJECTED;
+            }
+
+            accepted = new PowerSourceMetadata(Math.Max(0f, current.Power - amount), current.MaxPower, current.SourceType,
+                current.Revision + 1, current.FuelConsumed, current.Temperature);
+            entity.Metadata = accepted;
+            return ConsumptionRoute.APPLIED_BY_SERVER;
         }
     }
 
@@ -151,4 +202,11 @@ internal sealed class BasePowerSourceAuthority
     }
 
     private readonly record struct OwnerSequence(SessionId SessionId, long Sequence);
+}
+
+internal enum ConsumptionRoute
+{
+    REJECTED,
+    FORWARD_TO_OWNER,
+    APPLIED_BY_SERVER
 }

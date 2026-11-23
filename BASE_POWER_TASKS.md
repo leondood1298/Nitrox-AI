@@ -24,6 +24,9 @@
 - [x] Exclude redundant Map Room camera battery prefab-child records while retaining the authoritative camera energy record
 - [x] Record the latest e59 run as a passive false-audio non-observation only; no deliberate base-power test or `[BPD1]` audio-decision evidence was produced
 
+- [x] Report power drawn from a source another player simulates to that source's owner (docked vehicle recharge, chargers, Scanner Room drain and camera recharge, crafting); remove the per-client craft charge it replaces
+- [x] Keep thermal plant temperature inside the power state so upstream's temperature sync cannot replace it
+
 ## Test next (when base-power work resumes)
 
 - [ ] No base-power test in the next short Scanner Room camera retest; base-power work is deferred at the owner's request

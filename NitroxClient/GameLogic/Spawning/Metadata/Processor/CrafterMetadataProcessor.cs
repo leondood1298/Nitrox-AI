@@ -12,7 +12,6 @@ public class CrafterMetadataProcessor : EntityMetadataProcessor<CrafterMetadata>
 {
     // small increase to prevent this player from swiping item from remote player
     public const float ANTI_GRIEF_DURATION_BUFFER = 0.2f;
-    private const float CRAFT_ENERGY_COST = 5f;
 
     public override void ProcessMetadata(GameObject gameObject, CrafterMetadata metadata)
     {
@@ -48,7 +47,6 @@ public class CrafterMetadataProcessor : EntityMetadataProcessor<CrafterMetadata>
         {
             crafterLogic.Craft(metadata.TechType.ToUnity(), duration);
             SetCrafterState(gameObject, true);
-            ConsumeCraftPower(gameObject, crafterLogic, metadata);
         }
         else
         {
@@ -61,34 +59,6 @@ public class CrafterMetadataProcessor : EntityMetadataProcessor<CrafterMetadata>
         }
         // Override this value in case some of the crafted items were already picked up
         crafterLogic.numCrafted = metadata.Amount;
-    }
-
-    private static void ConsumeCraftPower(GameObject gameObject, CrafterLogic crafterLogic, CrafterMetadata metadata)
-    {
-        gameObject.TryGetNitroxId(out NitroxId crafterId);
-        bool initialSyncCompleted = Multiplayer.Main && Multiplayer.Main.InitialSyncCompleted;
-        if (!CrafterPowerAccounting.ShouldConsume(crafterId, metadata.StartTime, metadata.Duration, initialSyncCompleted))
-        {
-            return;
-        }
-
-        PowerRelay powerRelay = crafterLogic.GetComponentInParent<PowerRelay>();
-        if (powerRelay)
-        {
-            SubRoot subRoot = powerRelay.GetComponentInParent<SubRoot>();
-            if (!subRoot || subRoot.isBase)
-            {
-                CrafterLogic.ConsumeEnergy(powerRelay, CRAFT_ENERGY_COST);
-            }
-        }
-    }
-
-    public static void MarkLocalCraftAccounted(NitroxId crafterId, float startTime)
-    {
-        if (crafterId != null)
-        {
-            CrafterPowerAccounting.MarkAccounted(crafterId, startTime);
-        }
     }
 
     private static void SetCrafterState(GameObject gameObject, bool crafting)

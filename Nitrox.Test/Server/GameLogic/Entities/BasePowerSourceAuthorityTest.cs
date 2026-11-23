@@ -206,6 +206,75 @@ public sealed class BasePowerSourceAuthorityTest
         Assert.AreEqual(1, accepted.Revision);
     }
 
+    [TestMethod]
+    public void ConsumptionByAnotherPlayerGoesToTheSourceOwnerAndLeavesStoredStateAlone()
+    {
+        // The owner simulates the level. Changing the stored copy here would be overwritten by its next broadcast.
+        BasePowerSourceAuthority authority = new();
+        InteriorPieceEntity reactor = CreateInterior();
+        reactor.Metadata = new PowerSourceMetadata(900f, 2500f, BasePowerSourceType.NUCLEAR, 40);
+
+        ConsumptionRoute route = authority.RouteConsumption(reactor, firstOwner, secondOwner, 12.5f, out _, out string reason);
+
+        Assert.AreEqual(ConsumptionRoute.FORWARD_TO_OWNER, route, reason);
+        Assert.AreEqual(900f, ((PowerSourceMetadata)reactor.Metadata).Power);
+        Assert.AreEqual(40, ((PowerSourceMetadata)reactor.Metadata).Revision);
+    }
+
+    [TestMethod]
+    public void ConsumptionReportedByTheOwnerItselfIsRejected()
+    {
+        BasePowerSourceAuthority authority = new();
+        InteriorPieceEntity reactor = CreateInterior();
+        reactor.Metadata = new PowerSourceMetadata(900f, 2500f, BasePowerSourceType.NUCLEAR, 40);
+
+        Assert.AreEqual(ConsumptionRoute.REJECTED, authority.RouteConsumption(reactor, firstOwner, firstOwner, 5f, out _, out string reason));
+        StringAssert.Contains(reason, "simulates");
+    }
+
+    [TestMethod]
+    public void ConsumptionWithNoSimulationOwnerIsAppliedToStoredState()
+    {
+        BasePowerSourceAuthority authority = new();
+        ModuleEntity plant = CreateModule();
+        plant.Metadata = new PowerSourceMetadata(30f, 250f, BasePowerSourceType.THERMAL, 7, temperature: 61f);
+
+        Assert.AreEqual(ConsumptionRoute.APPLIED_BY_SERVER, authority.RouteConsumption(plant, null, secondOwner, 10f, out PowerSourceMetadata accepted, out _));
+        Assert.AreEqual(20f, accepted.Power);
+        Assert.AreEqual(8, accepted.Revision);
+        Assert.AreEqual(61f, accepted.Temperature);
+        Assert.AreSame(accepted, plant.Metadata);
+
+        Assert.AreEqual(ConsumptionRoute.APPLIED_BY_SERVER, authority.RouteConsumption(plant, null, secondOwner, 500f, out accepted, out _));
+        Assert.AreEqual(0f, accepted.Power, "A source cannot go below empty.");
+    }
+
+    [TestMethod]
+    [DataRow(0f)]
+    [DataRow(-3f)]
+    [DataRow(float.NaN)]
+    [DataRow(float.PositiveInfinity)]
+    [DataRow(2500.5f)]
+    public void InvalidConsumptionAmountsAreRejected(float amount)
+    {
+        BasePowerSourceAuthority authority = new();
+        InteriorPieceEntity reactor = CreateInterior();
+        reactor.Metadata = new PowerSourceMetadata(900f, 2500f, BasePowerSourceType.NUCLEAR, 40);
+
+        Assert.AreEqual(ConsumptionRoute.REJECTED, authority.RouteConsumption(reactor, firstOwner, secondOwner, amount, out _, out string reason));
+        StringAssert.Contains(reason, "amount");
+        Assert.AreEqual(900f, ((PowerSourceMetadata)reactor.Metadata).Power);
+    }
+
+    [TestMethod]
+    public void ConsumptionFromSourceWithoutOwnerOrStoredStateIsRejected()
+    {
+        BasePowerSourceAuthority authority = new();
+
+        Assert.AreEqual(ConsumptionRoute.REJECTED, authority.RouteConsumption(CreateModule(), null, secondOwner, 5f, out _, out string reason));
+        StringAssert.Contains(reason, "no stored power state");
+    }
+
     private static BasePowerSourceUpdate Request(NitroxId id, BasePowerSourceType sourceType, float power, long sequence, float fuelConsumed = 0f) => new(id, sourceType, power, sequence, fuelConsumed: fuelConsumed);
 
     private static Entity CreateCompatibleEntity(BasePowerSourceType sourceType) => sourceType is BasePowerSourceType.SOLAR or BasePowerSourceType.THERMAL ? CreateModule() : CreateInterior();

@@ -15,6 +15,30 @@ public sealed partial class Charger_Update_Patch : NitroxPatch, IDynamicPatch
 {
     public static readonly MethodInfo TARGET_METHOD = Reflect.Method((Charger t) => t.Update());
 
+    /// <summary>
+    ///     Charging only happens on the player simulating the base (see <see cref="CheckSimulation" />), so the base
+    ///     power it draws is reported to whoever simulates the power sources.
+    /// </summary>
+    public static void Prefix(Charger __instance, out bool __state)
+    {
+        // Same condition as CheckSimulation. A charger whose parent has no id charges on every client, which must
+        // not be reported once per player.
+        __state = __instance.transform.parent && __instance.transform.parent.TryGetNitroxId(out NitroxId parentId) &&
+                  Resolve<SimulationOwnership>().HasAnyLockType(parentId);
+        if (__state)
+        {
+            Resolve<BasePowerConsumptionForwarder>().EnterConsumer();
+        }
+    }
+
+    public static void Finalizer(bool __state)
+    {
+        if (__state)
+        {
+            Resolve<BasePowerConsumptionForwarder>().ExitConsumer();
+        }
+    }
+
     /*
      * bool flag = false;
      * Charger_Update_Patch.CheckSimulation(this); <--- [INSERTED LINE]
