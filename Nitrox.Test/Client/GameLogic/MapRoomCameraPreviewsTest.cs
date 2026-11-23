@@ -1,16 +1,19 @@
-using NitroxPatcher.Patches.Dynamic;
+using NitroxClient.GameLogic;
 using UnityEngine;
 
-namespace Nitrox.Test.Patcher.Patches.Dynamic;
+namespace Nitrox.Test.Client.GameLogic;
 
+/// <summary>
+///     When the picture the game takes of a camera's view is sent, with a routine that needs no game.
+/// </summary>
 [TestClass]
-public sealed class MapRoomCamera_CaptureScreenAndExitLockedMode_PatchTest
+public sealed class MapRoomCameraPreviewsTest
 {
     [TestMethod]
     public void PublishesAfterEndOfFrameYieldAndBeforeVanillaExitContinuation()
     {
         List<string> events = [];
-        IEnumerator wrapped = MapRoomCamera_CaptureScreenAndExitLockedMode_Patch.PublishAfterCapturedFrame(
+        IEnumerator wrapped = MapRoomCameraPreviews.PublishAfterCapturedFrame(
             VanillaCapture(events), () => events.Add("publish"));
 
         Assert.IsTrue(wrapped.MoveNext());
@@ -25,7 +28,7 @@ public sealed class MapRoomCamera_CaptureScreenAndExitLockedMode_PatchTest
     public void PublishesAtMostOnceAndAlwaysFinishesWrappedRoutine()
     {
         int publications = 0;
-        IEnumerator wrapped = MapRoomCamera_CaptureScreenAndExitLockedMode_Patch.PublishAfterCapturedFrame(
+        IEnumerator wrapped = MapRoomCameraPreviews.PublishAfterCapturedFrame(
             TwoFrames(), () => publications++);
 
         while (wrapped.MoveNext())

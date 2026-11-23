@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using FMOD.Studio;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
-using Nitrox.Model.Subnautica.Helper;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication.Abstract;
 using NitroxClient.GameLogic.Simulation;
@@ -15,7 +14,6 @@ namespace NitroxClient.GameLogic;
 public class MapRoomCameras
 {
     private const float DOCK_CHARGE_FRACTION_PER_UPDATE = 0.1f;
-    private const int PREVIEW_JPEG_QUALITY = 55;
 
     private readonly IPacketSender packetSender;
     private readonly IMultiplayerSession multiplayerSession;
@@ -38,9 +36,6 @@ public class MapRoomCameras
     ///     The player who controls each camera that another player controls. The game offers such a camera to nobody.
     /// </summary>
     private readonly Dictionary<NitroxId, SessionId> remoteControllers = [];
-
-    private MapRoomCameraPreview pendingPreview;
-    private bool pendingPreviewPixelsApplied;
 
     public MapRoomCameras(IPacketSender packetSender, IMultiplayerSession multiplayerSession, SimulationOwnership simulationOwnership,
         MapRoomCameraStates cameraStates, ScannerRoomClientDiagnostics diagnostics)
@@ -209,38 +204,6 @@ public class MapRoomCameras
         }
     }
 
-    public void BroadcastPreview(MapRoomCamera camera)
-    {
-        if (!camera || !camera.TryGetNitroxId(out NitroxId cameraId) || !camera.mapRoomRenderTexture)
-        {
-            return;
-        }
-
-        try
-        {
-            byte[] jpegBytes = CapturePreviewJpeg(camera.mapRoomRenderTexture);
-            if (MapRoomCameraPreviewImage.TryValidate(jpegBytes, out int width, out int height))
-            {
-                packetSender.Send(new MapRoomCameraPreview(cameraId, jpegBytes));
-                diagnostics.Record("preview_publish", "ok", cameraId, slot: camera.GetCameraNumber(),
-                    reason: $"bytes_{jpegBytes.Length}_{width}x{height}");
-            }
-            else
-            {
-                diagnostics.Record("preview_publish", "reject", cameraId, slot: camera.GetCameraNumber(),
-                    reason: $"invalid_jpeg_bytes_{jpegBytes?.Length ?? 0}");
-                Log.Warn($"[MapRoomCameras] Dropped invalid or oversized local camera preview for {cameraId}");
-            }
-        }
-        catch (Exception ex)
-        {
-            // Preview publication is cosmetic and must never strand the player in camera control mode.
-            diagnostics.Record("preview_publish", "reject", cameraId, slot: camera.GetCameraNumber(),
-                reason: "capture_exception");
-            Log.Error(ex, $"[MapRoomCameras] Failed to capture camera preview for {cameraId}");
-        }
-    }
-
     /// <summary>
     ///     Handles the word that a player controls a camera now, or no longer.
     /// </summary>
@@ -301,55 +264,6 @@ public class MapRoomCameras
     }
 
     /// <summary>
-    ///     Handles the picture another player took of what a camera sees. Every screen shows the latest one.
-    /// </summary>
-    public void ProcessPreview(MapRoomCameraPreview packet)
-    {
-        if (!MapRoomCameraPreviewImage.TryValidate(packet.JpegBytes, out int width, out int height))
-        {
-            diagnostics.Record("preview_receive", "reject", packet.CameraId, reason: $"invalid_jpeg_bytes_{packet.JpegBytes?.Length ?? 0}");
-            return;
-        }
-        diagnostics.Record("preview_receive", "ok", packet.CameraId, reason: $"bytes_{packet.JpegBytes.Length}_{width}x{height}");
-        pendingPreview = packet;
-        pendingPreviewPixelsApplied = false;
-        TryApplyPendingPreview();
-    }
-
-    /// <summary>
-    ///     Shows the latest picture. Its camera may not have spawned on this client yet, as for a player who has just
-    ///     joined; the picture is kept until it has.
-    /// </summary>
-    private void TryApplyPendingPreview()
-    {
-        if (pendingPreview == null)
-        {
-            return;
-        }
-        MapRoomCamera camera = FindCamera(pendingPreview.CameraId);
-        RenderTexture renderTexture = FindSharedPreviewTexture(camera);
-        if (!pendingPreviewPixelsApplied && renderTexture)
-        {
-            pendingPreviewPixelsApplied = TryApplyPreviewPixels(renderTexture, pendingPreview.JpegBytes);
-            if (!pendingPreviewPixelsApplied)
-            {
-                diagnostics.Record("preview_apply", "reject", pendingPreview.CameraId, reason: "decode_failed");
-                pendingPreview = null;
-                return;
-            }
-        }
-        if (!pendingPreviewPixelsApplied || !camera)
-        {
-            diagnostics.Record("preview_apply", "pending", pendingPreview.CameraId, reason: renderTexture ? "camera_missing" : "missing_texture");
-            return;
-        }
-        ShowOnScreens(camera);
-        diagnostics.Record("preview_apply", "ok", pendingPreview.CameraId, slot: camera.GetCameraNumber());
-        pendingPreview = null;
-        pendingPreviewPixelsApplied = false;
-    }
-
-    /// <summary>
     ///     Whether the game may offer a camera to the player. A camera another player controls is offered to nobody.
     /// </summary>
     public bool CanSelectForControl(MapRoomCamera camera) => !camera || !camera.TryGetNitroxId(out NitroxId cameraId) || CanSelectForControl(cameraId);
@@ -389,14 +303,16 @@ public class MapRoomCameras
     ///     Gives a camera the number the server assigned to it. Without one, the game numbers a camera by its place in
     ///     this client's own list of cameras.
     /// </summary>
-    public void SetCameraNumber(MapRoomCamera camera, int cameraNumber)
+    /// <returns>True if the camera had another number before.</returns>
+    public bool SetCameraNumber(MapRoomCamera camera, int cameraNumber)
     {
-        if (camera.cameraNumber != cameraNumber)
+        if (camera.cameraNumber == cameraNumber)
         {
-            camera.cameraNumber = cameraNumber;
-            camera.UpdatePingLabel();
-            TryApplyPendingPreview();
+            return false;
         }
+        camera.cameraNumber = cameraNumber;
+        camera.UpdatePingLabel();
+        return true;
     }
 
     /// <summary>
@@ -409,7 +325,6 @@ public class MapRoomCameras
         {
             EnsureMovedByItsController(cameraId);
         }
-        TryApplyPendingPreview();
     }
 
     public void UpdateEnergyRecharge(MapRoomCamera camera)
@@ -463,117 +378,5 @@ public class MapRoomCameras
             return 0f;
         }
         return Math.Min(capacity - Math.Max(0f, current), capacity * DOCK_CHARGE_FRACTION_PER_UPDATE);
-    }
-
-    private static byte[] CapturePreviewJpeg(RenderTexture source)
-    {
-        const int SIZE = MapRoomCameraPreviewImage.MAX_DIMENSION;
-        RenderTexture temporary = RenderTexture.GetTemporary(SIZE, SIZE, 0, RenderTextureFormat.ARGB32,
-            RenderTextureReadWrite.Default);
-        RenderTexture previous = RenderTexture.active;
-        Texture2D readback = null;
-        try
-        {
-            Graphics.Blit(source, temporary);
-            RenderTexture.active = temporary;
-            readback = new Texture2D(SIZE, SIZE, TextureFormat.RGB24, mipChain: false);
-            readback.ReadPixels(new Rect(0f, 0f, SIZE, SIZE), 0, 0, recalculateMipMaps: false);
-            readback.Apply(updateMipmaps: false, makeNoLongerReadable: false);
-            return ImageConversion.EncodeToJPG(readback, PREVIEW_JPEG_QUALITY);
-        }
-        finally
-        {
-            RenderTexture.active = previous;
-            if (readback)
-            {
-                UnityEngine.Object.Destroy(readback);
-            }
-            RenderTexture.ReleaseTemporary(temporary);
-        }
-    }
-
-    private static MapRoomCamera FindCamera(NitroxId cameraId)
-    {
-        if (NitroxEntity.TryGetObjectFrom(cameraId, out GameObject cameraObject) && cameraObject &&
-            cameraObject.TryGetComponent(out MapRoomCamera camera))
-        {
-            return camera;
-        }
-        foreach (MapRoomCamera candidate in MapRoomCamera.cameras)
-        {
-            if (candidate && candidate.TryGetNitroxId(out NitroxId candidateId) && candidateId == cameraId)
-            {
-                return candidate;
-            }
-        }
-        return null;
-    }
-
-    private static RenderTexture FindSharedPreviewTexture(MapRoomCamera camera)
-    {
-        if (camera && camera.mapRoomRenderTexture)
-        {
-            return camera.mapRoomRenderTexture;
-        }
-        foreach (MapRoomCamera candidate in MapRoomCamera.cameras)
-        {
-            if (candidate && candidate.mapRoomRenderTexture)
-            {
-                return candidate.mapRoomRenderTexture;
-            }
-        }
-        foreach (MapRoomFunctionality mapRoom in Resources.FindObjectsOfTypeAll<MapRoomFunctionality>())
-        {
-            if (mapRoom && mapRoom.gameObject.scene.IsValid() && mapRoom.mapRoomRenderTexture)
-            {
-                return mapRoom.mapRoomRenderTexture;
-            }
-        }
-        return null;
-    }
-
-    private static bool TryApplyPreviewPixels(RenderTexture target, byte[] jpegBytes)
-    {
-        Texture2D decoded = null;
-        try
-        {
-            decoded = new Texture2D(2, 2, TextureFormat.RGB24, mipChain: false);
-            if (!ImageConversion.LoadImage(decoded, jpegBytes, markNonReadable: true) ||
-                decoded.width > MapRoomCameraPreviewImage.MAX_DIMENSION ||
-                decoded.height > MapRoomCameraPreviewImage.MAX_DIMENSION)
-            {
-                return false;
-            }
-            Graphics.Blit(decoded, target);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "[MapRoomCameras] Failed to apply remote camera preview");
-            return false;
-        }
-        finally
-        {
-            if (decoded)
-            {
-                UnityEngine.Object.Destroy(decoded);
-            }
-        }
-    }
-
-    /// <summary>
-    ///     Makes every screen show the camera a picture is of, as the game does when the local player flies a camera.
-    ///     A screen the local player flies a camera with is left alone: the game would take the camera of the picture
-    ///     for the one the player is at, and cycle on from there.
-    /// </summary>
-    private static void ShowOnScreens(MapRoomCamera camera)
-    {
-        foreach (MapRoomScreen screen in Resources.FindObjectsOfTypeAll<MapRoomScreen>())
-        {
-            if (screen && screen.gameObject.scene.IsValid() && !screen.currentCamera)
-            {
-                screen.OnMapRoomCameraChanged(camera);
-            }
-        }
     }
 }

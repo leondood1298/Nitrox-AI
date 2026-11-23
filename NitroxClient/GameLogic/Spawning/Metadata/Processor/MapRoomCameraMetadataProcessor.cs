@@ -10,8 +10,8 @@ namespace NitroxClient.GameLogic.Spawning.Metadata.Processor;
 ///     inventory), when another player changed its light, battery or health, when the server gives it its number, and
 ///     when the server answers something it refused from this client.
 /// </summary>
-public class MapRoomCameraMetadataProcessor(MapRoomCameras mapRoomCameras, MapRoomCameraDocks mapRoomCameraDocks, MapRoomCameraStates mapRoomCameraStates)
-    : EntityMetadataProcessor<MapRoomCameraMetadata>
+public class MapRoomCameraMetadataProcessor(MapRoomCameras mapRoomCameras, MapRoomCameraDocks mapRoomCameraDocks, MapRoomCameraStates mapRoomCameraStates,
+    MapRoomCameraPreviews mapRoomCameraPreviews) : EntityMetadataProcessor<MapRoomCameraMetadata>
 {
     public override void ProcessMetadata(GameObject gameObject, MapRoomCameraMetadata metadata)
     {
@@ -22,12 +22,15 @@ public class MapRoomCameraMetadataProcessor(MapRoomCameras mapRoomCameras, MapRo
         }
 
         // Before MapRoomCamera.Start, which gives a camera without a number its place in this client's own list.
-        if (metadata.CameraNumber > 0)
+        if (metadata.CameraNumber > 0 && mapRoomCameras.SetCameraNumber(camera, metadata.CameraNumber))
         {
-            mapRoomCameras.SetCameraNumber(camera, metadata.CameraNumber);
+            // The screens show a camera's number with its picture.
+            mapRoomCameraPreviews.ShowPending();
         }
         mapRoomCameraDocks.ApplyDockingIndex(camera, metadata.DockingIndex);
         mapRoomCameraStates.Apply(camera, cameraId, metadata);
         mapRoomCameras.CameraSpawned(cameraId);
+        // A picture that arrived before its camera had spawned can be shown now.
+        mapRoomCameraPreviews.ShowPending();
     }
 }
