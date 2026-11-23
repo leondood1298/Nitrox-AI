@@ -97,14 +97,6 @@ public sealed partial class LiveMixin_TakeDamage_Patch : NitroxPatch, IDynamicPa
         // Let others know if we have a lock on this entity
         if (liveMixin.TryGetIdOrWarn(out NitroxId id) && Resolve<SimulationOwnership>().HasAnyLockType(id))
         {
-            // The Cyclops' metadata is not extracted from a component, so the lookup below finds nothing for it and
-            // its hull health would only be sent when a new leak appears.
-            if (liveMixin.TryGetComponent(out SubRoot subRoot) && subRoot.isCyclops)
-            {
-                Resolve<Cyclops>().BroadcastMetadataChange(id);
-                return;
-            }
-
             Optional<EntityMetadata> metadata = Resolve<EntityMetadataManager>().Extract(liveMixin.gameObject);
 
             if (metadata.HasValue)

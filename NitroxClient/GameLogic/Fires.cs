@@ -1,189 +1,214 @@
-﻿using System.Collections;
+﻿using System;
 using System.Collections.Generic;
+using System.Linq;
+using Nitrox.Model.Core;
+using Nitrox.Model.DataStructures;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
+using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication;
 using NitroxClient.Communication.Abstract;
-using NitroxClient.Communication.Packets.Processors;
 using NitroxClient.MonoBehaviours;
-using Nitrox.Model.DataStructures;
-using Nitrox.Model.Subnautica.DataStructures.GameLogic;
-using Nitrox.Model.Subnautica.Packets;
 using UnityEngine;
 
 namespace NitroxClient.GameLogic
 {
     /// <summary>
-    /// Handles all of the <see cref="Fire"/>s in the game. Currently, the only known Fire spawning is in <see cref="SubFire.CreateFire(SubFire.RoomFire)"/>. The
-    /// fires in the Aurora come loaded with the map and do not grow in size. If we want to create a Fire spawning mechanic outside of Cyclops fires, it should be
-    /// added to <see cref="Fires.Create(CyclopsFireData)"/>. Fire dousing goes by Id and does not need to be
-    /// modified
+    ///     Handles all of the <see cref="Fire" />s in the game. Currently, the only known Fire spawning is in
+    ///     <see cref="SubFire.CreateFire(SubFire.RoomFire)" />. The
+    ///     fires in the Aurora come loaded with the map and do not grow in size. If we want to create a Fire spawning mechanic
+    ///     outside of Cyclops fires, it should be
+    ///     added to <see cref="Fires.Create(CyclopsFireData)" />. Fire dousing goes by Id and does not need to be
+    ///     modified
     /// </summary>
     public class Fires
     {
+        // Which fires we are currently broadcasting as dousing
+        private readonly HashSet<NitroxId> currentlyDousing = [];
+
+        // Whether Douse() was called on a fire this frame
+        private readonly HashSet<NitroxId> dousedThisFrame = [];
+
+        // The last douse rate per second of a fire
+        private readonly Dictionary<NitroxId, float> localDouseRates = [];
+
+        private readonly LocalPlayer localPlayer;
+
         private readonly IPacketSender packetSender;
 
-        /// <summary>
-        /// A douse amount larger than any fire's health. Sent when a fire went out locally, so it goes out for everyone
-        /// no matter how far their copy had been doused.
-        /// </summary>
-        public const float EXTINGUISH_DOUSE_AMOUNT = 10000f;
+        // How much other players are dousing fires
+        private readonly Dictionary<NitroxId, Dictionary<SessionId, float>> remoteDouseRates = [];
 
-        /// <summary>
-        /// How long to wait for the game to finish spawning a fire it was asked to create.
-        /// </summary>
-        private const float NEW_FIRE_WAIT_SECONDS = 5f;
-
-        /// <summary>
-        /// Used to reduce the <see cref="FireDoused"/> packet spam as fires are being doused.
-        /// </summary>
-        private readonly FireDouseLedger douseLedger = new();
-
-        public Fires(IPacketSender packetSender)
+        public Fires(IPacketSender packetSender, LocalPlayer localPlayer)
         {
             this.packetSender = packetSender;
+            this.localPlayer = localPlayer;
         }
 
         /// <summary>
-        /// Triggered when <see cref="SubFire.CreateFire(SubFire.RoomFire)"/> has run for the player simulating the Cyclops.
-        /// The game spawns the fire object through a spawn request that completes later, so the new fire is looked for
-        /// over the next frames instead of right away.
-        /// </summary>
-        /// <param name="onAnnounced">Called once the fire has been announced to the other players.</param>
-        public void AnnounceNewFire(SubFire subFire, SubFire.RoomFire room, System.Action onAnnounced = null)
-        {
-            UWE.CoroutineHost.StartCoroutine(AnnounceWhenSpawned(subFire, room, onAnnounced));
-        }
-
-        private IEnumerator AnnounceWhenSpawned(SubFire subFire, SubFire.RoomFire room, System.Action onAnnounced)
-        {
-            float deadline = Time.realtimeSinceStartup + NEW_FIRE_WAIT_SECONDS;
-            while (Time.realtimeSinceStartup < deadline)
-            {
-                if (!subFire)
-                {
-                    yield break;
-                }
-                for (int nodeIndex = 0; nodeIndex < room.spawnNodes.Length; nodeIndex++)
-                {
-                    Transform node = room.spawnNodes[nodeIndex];
-                    if (!node || node.childCount == 0)
-                    {
-                        continue;
-                    }
-                    Fire fire = node.GetComponentInChildren<Fire>();
-                    // A fire with an id has been announced already, by this player or by the one who created it.
-                    if (!fire || fire.TryGetNitroxId(out _))
-                    {
-                        continue;
-                    }
-                    OnCreate(fire, room, nodeIndex);
-                    onAnnounced?.Invoke();
-                    yield break;
-                }
-                yield return null;
-            }
-            Log.Warn("[Fires] A Cyclops fire was requested but did not appear, so it was not announced to other players");
-        }
-
-        /// <summary>
-        /// Gives a locally created fire its id and tells the other players. To create a fire announced by someone else,
-        /// call <see cref="Create(CyclopsFireData)"/>
+        ///     Triggered when <see cref="SubFire.CreateFire(SubFire.RoomFire)" /> is executed. To create a new fire manually,
+        ///     call <see cref="Create(CyclopsFireData)" />
         /// </summary>
         public void OnCreate(Fire fire, SubFire.RoomFire room, int nodeIndex)
         {
-            if (!fire.fireSubRoot || !fire.fireSubRoot.TryGetIdOrWarn(out NitroxId subRootId))
+            if (!fire.fireSubRoot.TryGetIdOrWarn(out NitroxId subRootId))
             {
                 return;
             }
-            // Nothing else assigns an id to a fire the game spawned here. Without one it can be neither created nor doused
-            // for the other players.
-            NitroxId fireId = NitroxEntity.GetIdOrGenerateNew(fire.gameObject);
 
-            CyclopsFireCreated packet = new CyclopsFireCreated(fireId, subRootId, room.roomLinks.room, nodeIndex);
+            GameObject gameObject = fire.transform.parent.gameObject;
+
+            NitroxId fireId = NitroxEntity.GenerateNewId(gameObject);
+            CyclopsFireEntity entity = new(room.roomLinks.room, nodeIndex, fireId, subRootId);
+
+            EntitySpawnedByClient packet = new(entity);
             packetSender.Send(packet);
         }
 
-        /// <summary>
-        /// Triggered when <see cref="Fire.Douse(float)"/> is executed. To Douse a fire manually, retrieve the <see cref="Fire"/> call the Douse method
-        /// </summary>
-        public void OnDouse(Fire fire, float douseAmount)
+        public void OnDouse(Fire fire, float amount)
         {
-            if (!fire.TryGetIdOrWarn(out NitroxId fireId))
-            {
-                return;
-            }
-
-            // Dousing applied from another player's packet also lands here. Counting it would send it back out later
-            // as if this player had done it.
             if (PacketSuppressor<FireDoused>.IsSuppressed)
             {
                 return;
             }
 
-            float amountToSend = douseLedger.Record(fireId, douseAmount, douseAmount >= EXTINGUISH_DOUSE_AMOUNT);
-            if (amountToSend > 0f)
+            if (!fire.transform.parent.TryGetIdOrWarn(out NitroxId fireId))
             {
-                packetSender.Send(new FireDoused(fireId, amountToSend));
+                return;
+            }
+
+            if (fire.livemixin.health <= 0f || fire.IsExtinguished())
+            {
+                FireDoused packet = new(fireId, fire.livemixin.health, null, 0f, true);
+                packetSender.Send(packet);
+                Unregister(fireId);
+                return;
+            }
+
+            if (amount >= 20f)
+            {
+                // Large values are one-time and not done every frame
+                FireDoused packet = new(fireId, fire.livemixin.health, null, 0f, true);
+                packetSender.Send(packet);
+                return;
+            }
+
+            localDouseRates[fireId] = amount / Time.deltaTime;
+            dousedThisFrame.Add(fireId);
+        }
+
+        public void OnUpdate(Fire fire)
+        {
+            if (!fire.transform.parent.TryGetIdOrWarn(out NitroxId fireId))
+            {
+                return;
+            }
+
+            // Fires don't track whether are not they are currently being doused.
+            // Instead, the FireExtinguisher just calls Douse() on the fire every
+            // frame, or not at all if the extinguisher is not in use.
+            // We detect this method call by continuously updating dousedThisFrame,
+            // then convert that into a more stable flag in currentlyDoused.
+
+            bool isDousing = dousedThisFrame.Contains(fireId);
+            bool wasDousing = currentlyDousing.Contains(fireId);
+
+            if (isDousing && !wasDousing)
+            {
+                currentlyDousing.Add(fireId);
+                float douseRate = localDouseRates.GetOrDefault(fireId, 20f);
+                FireDoused packet = new(fireId, fire.livemixin.health, localPlayer.SessionId, douseRate, false);
+                packetSender.Send(packet);
+            }
+            else if (!isDousing && wasDousing)
+            {
+                currentlyDousing.Remove(fireId);
+                FireDoused packet = new(fireId, fire.livemixin.health, localPlayer.SessionId, 0f, false);
+                packetSender.Send(packet);
+            }
+
+            if (remoteDouseRates.TryGetValue(fireId, out Dictionary<SessionId, float> rates))
+            {
+                // Smoothly apply damage effect from other players
+                float douseAmount = rates.Values.Sum() * Time.deltaTime;
+                if (douseAmount > 0f)
+                {
+                    if (fire.livemixin.health - douseAmount > 0.1f)
+                    {
+                        using (PacketSuppressor<FireDoused>.Suppress())
+                        {
+                            fire.Douse(douseAmount);
+                        }
+                    }
+                    else
+                    {
+                        // We should be about to receive an extinguish packet. If not,
+                        // something has gone wrong (e.g. player left while dousing),
+                        // so reset everything in case the rates are now invalid
+                        rates.Clear();
+                    }
+                }
+            }
+
+            dousedThisFrame.Remove(fireId);
+        }
+
+        public void Douse(NitroxId fireId, float health, SessionId? sessionId, float douseRate, bool oneShot)
+        {
+            Optional<GameObject> fireGameObject = NitroxEntity.GetObjectFrom(fireId);
+            if (!fireGameObject.HasValue)
+            {
+                Log.Warn($"Can't find fire entity with id {fireId}");
+                return;
+            }
+
+            Fire fire = fireGameObject.Value.GetComponentInChildren<Fire>();
+            if (!fire)
+            {
+                Log.Error($"Fire object with id {fireId} missing component");
+                return;
+            }
+
+            // Prevents a desync where the fire could extinguish for one player but not another:
+            // this way we can never bring the fire to below 0.1 health without an explicit extinguish
+            float newHealth = Math.Max(health, 0.1f);
+            float douseAmount = fire.livemixin.health - newHealth;
+
+            if (douseAmount > 0f)
+            {
+                using (PacketSuppressor<FireDoused>.Suppress())
+                {
+                    fire.Douse(douseAmount);
+                }
+            }
+            else if (!fire.IsExtinguished())
+            {
+                // Fire health went up
+                fire.livemixin.health = health;
+                using (PacketSuppressor<FireDoused>.Suppress())
+                {
+                    fire.Douse(0f);
+                }
+            }
+
+            if (health <= 0f)
+            {
+                fire.Extinguished();
+                Unregister(fireId);
+                return;
+            }
+
+            if (!oneShot && sessionId.HasValue)
+            {
+                remoteDouseRates.TryAdd(fireId, []);
+                remoteDouseRates[fireId][sessionId.Value] = douseRate;
             }
         }
 
-        /// <summary>
-        /// Create a new <see cref="Fire"/>. Majority of code copied from <see cref="SubFire.CreateFire(SubFire.RoomFire)"/>. Currently does not support Fires created outside of a Cyclops
-        /// </summary>
-        public void Create(CyclopsFireData fireData)
+        private void Unregister(NitroxId id)
         {
-            SubFire subFire = NitroxEntity.RequireObjectFrom(fireData.CyclopsId).GetComponent<SubRoot>().damageManager.subFire;
-            Dictionary<CyclopsRooms, SubFire.RoomFire> roomFiresDict = subFire.roomFires;
-            // Copied from SubFire_CreateFire_Patch, which copies from SubFire.CreateFire()
-            Transform transform2 = roomFiresDict[fireData.Room].spawnNodes[fireData.NodeIndex];
-
-            // If a fire already exists at the node, replace the old Id with the new one
-            if (transform2.childCount > 0)
-            {
-                Fire existingFire = transform2.GetComponentInChildren<Fire>();
-
-                // Giving the fire the Cyclops' id here, as this once did, takes that id away from the Cyclops itself.
-                if (existingFire && (!existingFire.TryGetNitroxId(out NitroxId existingFireId) || existingFireId != fireData.FireId))
-                {
-                    Log.Warn($"[Fires.Create] A fire already exists at node index {fireData.NodeIndex}; giving it id {fireData.FireId}");
-
-                    NitroxEntity.SetNewId(existingFire.gameObject, fireData.FireId);
-                }
-
-                return;
-            }
-
-            List<Transform> availableNodes = subFire.availableNodes;
-            availableNodes.Clear();
-            foreach (Transform transform in roomFiresDict[fireData.Room].spawnNodes)
-            {
-                if (transform.childCount == 0)
-                {
-                    availableNodes.Add(transform);
-                }
-            }
-
-            roomFiresDict[fireData.Room].fireValue++;
-            // SubFire.CreateFire looks the spawner up by its base type.
-            PrefabSpawnBase component = transform2.GetComponent<PrefabSpawnBase>();
-            if (!component)
-            {
-                Log.Error(
-                    $"[{nameof(CyclopsFireCreatedProcessor)} Cannot create new Cyclops fire! PrefabSpawn component could not be found in fire node! Fire Id: {fireData.FireId} SubRoot Id: {fireData.CyclopsId} Room: {fireData.Room} NodeIndex: {fireData.NodeIndex}]");
-                return;
-            }
-
-            component.SpawnManual(delegate(GameObject fireGO)
-            {
-                Fire componentInChildren = fireGO.GetComponentInChildren<Fire>();
-                if (componentInChildren)
-                {
-                    componentInChildren.fireSubRoot = subFire.subRoot;
-                    NitroxEntity.SetNewId(componentInChildren.gameObject, fireData.FireId);
-                }
-            });
-
-            subFire.roomFires = roomFiresDict;
-            subFire.availableNodes = availableNodes;
+            remoteDouseRates.Remove(id);
+            localDouseRates.Remove(id);
+            currentlyDousing.Remove(id);
         }
     }
 }

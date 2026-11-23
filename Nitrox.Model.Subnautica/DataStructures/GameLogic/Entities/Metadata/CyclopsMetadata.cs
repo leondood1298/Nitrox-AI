@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System;
 using System.Runtime.Serialization;
 using BinaryPack.Attributes;
@@ -30,30 +29,14 @@ public class CyclopsMetadata : EntityMetadata
     [DataMember(Order = 7)]
     public bool IsDestroyed { get; set; }
 
-    /// <summary>
-    ///     Indexes of the active hull leaks, as decided by the player simulating the Cyclops. Null when unknown (saves
-    ///     from before this was stored).
-    /// </summary>
-    [DataMember(Order = 8)]
-    public List<int> DamagePointIndexes { get; set; }
-
-    /// <summary>
-    ///     The fires burning inside, as decided by the player simulating the Cyclops. Null when unknown.
-    /// </summary>
-    [DataMember(Order = 9)]
-    public List<CyclopsFireData> Fires { get; set; }
-
     [IgnoreConstructor]
     protected CyclopsMetadata()
     {
         // Constructor for serialization. Has to be "protected" for json serialization.
     }
 
-    public CyclopsMetadata(bool silentRunningOn, bool shieldOn, bool sonarOn, bool engineOn, int engineMode, float health, bool isDestroyed,
-        List<int> damagePointIndexes = null, List<CyclopsFireData> fires = null)
+    public CyclopsMetadata(bool silentRunningOn, bool shieldOn, bool sonarOn, bool engineOn, int engineMode, float health, bool isDestroyed)
     {
-        DamagePointIndexes = damagePointIndexes;
-        Fires = fires;
         SilentRunningOn = silentRunningOn;
         ShieldOn = shieldOn;
         SonarOn = sonarOn;
@@ -65,6 +48,6 @@ public class CyclopsMetadata : EntityMetadata
 
     public override string ToString()
     {
-        return $"[CyclopsMetadata SilentRunningOn: {SilentRunningOn}, ShieldOn: {ShieldOn}, SonarOn: {SonarOn}, EngineOn: {EngineOn}, EngineMode: {EngineMode}, Health: {Health}, IsDestroyed: {IsDestroyed}, Leaks: {DamagePointIndexes?.Count.ToString() ?? "unknown"}, Fires: {Fires?.Count.ToString() ?? "unknown"}]";
+        return $"[CyclopsMetadata SilentRunningOn: {SilentRunningOn}, ShieldOn: {ShieldOn}, SonarOn: {SonarOn}, EngineOn: {EngineOn}, EngineMode: {EngineMode}, Health: {Health}, IsDestroyed: {IsDestroyed}]";
     }
 }

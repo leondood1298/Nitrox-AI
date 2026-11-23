@@ -48,9 +48,12 @@ namespace Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 [ProtoInclude(89, typeof(OxygenMetadata))]
 [ProtoInclude(90, typeof(BulkheadDoorMetadata))]
 [ProtoInclude(91, typeof(ThermalPlantMetadata))]
-[ProtoInclude(92, typeof(PowerSourceMetadata))]
-[ProtoInclude(93, typeof(MapRoomMetadata))]
-[ProtoInclude(94, typeof(MapRoomCameraMetadata))]
+// Numbers from 200 are this fork's, so that they cannot collide with the ones upstream hands out next.
+[ProtoInclude(200, typeof(PowerSourceMetadata))]
+[ProtoInclude(201, typeof(MapRoomMetadata))]
+[ProtoInclude(202, typeof(MapRoomCameraMetadata))]
+// Upstream's Cyclops damage sync has not registered this type yet; remove this line once it does.
+[ProtoInclude(203, typeof(CyclopsDamagePointMetadata))]
 public abstract class EntityMetadata
 {
 }

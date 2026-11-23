@@ -1,23 +1,21 @@
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
+using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication;
 using NitroxClient.Communication.Abstract;
 using NitroxClient.GameLogic.Spawning.Metadata.Processor.Abstract;
-using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
-using Nitrox.Model.Subnautica.Packets;
 using UnityEngine;
 
 namespace NitroxClient.GameLogic.Spawning.Metadata.Processor;
 
 public class CyclopsMetadataProcessor : EntityMetadataProcessor<CyclopsMetadata>
 {
-    private readonly IPacketSender packetSender;
     private readonly LiveMixinManager liveMixinManager;
-    private readonly CyclopsDamageSync damageSync;
+    private readonly IPacketSender packetSender;
 
-    public CyclopsMetadataProcessor(IPacketSender packetSender, LiveMixinManager liveMixinManager, CyclopsDamageSync damageSync)
+    public CyclopsMetadataProcessor(IPacketSender packetSender, LiveMixinManager liveMixinManager)
     {
         this.packetSender = packetSender;
         this.liveMixinManager = liveMixinManager;
-        this.damageSync = damageSync;
     }
 
     public override void ProcessMetadata(GameObject cyclops, CyclopsMetadata metadata)
@@ -31,11 +29,6 @@ public class CyclopsMetadataProcessor : EntityMetadataProcessor<CyclopsMetadata>
             SetEngineState(cyclops, metadata.EngineOn);
             SetHealth(cyclops, metadata.Health);
             SetDestroyed(cyclops, metadata.IsDestroyed);
-        }
-
-        if (!metadata.IsDestroyed)
-        {
-            damageSync.ApplyWhenReady(cyclops, metadata.DamagePointIndexes?.ToArray(), metadata.Fires?.ToArray());
         }
     }
 
@@ -159,8 +152,23 @@ public class CyclopsMetadataProcessor : EntityMetadataProcessor<CyclopsMetadata>
 
     private void SetHealth(GameObject gameObject, float health)
     {
-        LiveMixin liveMixin = gameObject.RequireComponentInChildren<LiveMixin>(true);
+        SubRoot subRoot = gameObject.RequireComponent<SubRoot>();
+        LiveMixin liveMixin = gameObject.RequireComponent<LiveMixin>();
+        float oldHealthPercent = liveMixin.GetHealthFraction();
+        float healthPercent = health / liveMixin.maxHealth;
+
         liveMixinManager.SyncRemoteHealth(liveMixin, health);
+
+        if (healthPercent < 0.5f && oldHealthPercent >= 0.5f)
+        {
+            subRoot.voiceNotificationManager.PlayVoiceNotification(subRoot.hullLowNotification);
+        }
+        else if (healthPercent < 0.25f && oldHealthPercent >= 0.25f)
+        {
+            subRoot.voiceNotificationManager.PlayVoiceNotification(subRoot.hullCriticalNotification);
+        }
+
+        subRoot.oldHPPercent = liveMixin.GetHealthFraction();
     }
 
     private void SetDestroyed(GameObject gameObject, bool isDestroyed)

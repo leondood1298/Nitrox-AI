@@ -76,14 +76,6 @@ public class LocalPlayer : ILocalNitroxPlayer
         }
     }
 
-    public void BroadcastFireExtinguisherUse(bool spraying)
-    {
-        if (SessionId.HasValue)
-        {
-            packetSender.Send(new FireExtinguisherUse(SessionId.Value, spraying));
-        }
-    }
-
     public void BroadcastWelderUse(bool welding)
     {
         if (SessionId.HasValue)

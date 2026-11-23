@@ -1,5 +1,3 @@
-using Nitrox.Model.DataStructures;
-using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 
@@ -50,30 +48,5 @@ public sealed class CyclopsMetadataAuthorityTest
         CyclopsMetadata first = new(false, false, false, true, 1, 1500f, false);
 
         Assert.AreSame(first, CyclopsMetadataAuthority.Merge(null, first, false));
-    }
-
-    [TestMethod]
-    public void ButtonPressByAnotherPlayerKeepsStoredLeaksAndFires()
-    {
-        // Only the player simulating the Cyclops knows which leaks and fires are real.
-        NitroxId cyclopsId = new();
-        CyclopsFireData storedFire = new(new NitroxId(), cyclopsId, CyclopsRooms.EngineRoom, 2);
-        CyclopsMetadata stored = new(false, false, false, true, 1, 310f, false, [1, 4], [storedFire]);
-        CyclopsMetadata fromPassenger = new(false, false, true, true, 1, 310f, false, [], []);
-
-        CyclopsMetadata accepted = CyclopsMetadataAuthority.Merge(stored, fromPassenger, false);
-
-        Assert.IsTrue(accepted.SonarOn);
-        CollectionAssert.AreEqual(new List<int> { 1, 4 }, accepted.DamagePointIndexes);
-        Assert.AreSame(storedFire, accepted.Fires.Single());
-    }
-
-    [TestMethod]
-    public void SimulatingPlayerReplacesLeaksAndFires()
-    {
-        CyclopsMetadata stored = new(false, false, false, true, 1, 310f, false, [1, 4], []);
-        CyclopsMetadata fromSimulator = new(false, false, false, true, 1, 520f, false, [4], []);
-
-        CollectionAssert.AreEqual(new List<int> { 4 }, CyclopsMetadataAuthority.Merge(stored, fromSimulator, true).DamagePointIndexes);
     }
 }
