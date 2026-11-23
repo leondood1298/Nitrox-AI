@@ -1,3 +1,4 @@
+using System;
 using NitroxClient.MonoBehaviours;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
@@ -25,6 +26,34 @@ public static class StoryManager
                 GameObject.Destroy(scanObject);
             }
         }
+    }
+
+    /// <summary>
+    ///     The game sets <see cref="StoryGoalCustomEventHandler.gunDisabled" /> only in DisableGun (the player at the
+    ///     terminal) and in Awake. Players who see the goal complete through the network need it too, else they cannot
+    ///     launch the rocket and the Sunbeam logic takes the branch of a gun that still works.
+    /// </summary>
+    public static void OnCustomEventGoalCompleted(StoryGoalCustomEventHandler handler, string key)
+    {
+        if (string.Equals(key, handler.gunDeactivate.key, StringComparison.OrdinalIgnoreCase))
+        {
+            handler.gunDisabled = true;
+        }
+    }
+
+    /// <summary>
+    ///     Each game picks the Sunbeam shoot-down voice line from its own player's position (in or out of range), so the
+    ///     line another player's game picked must not be played here.
+    /// </summary>
+    public static bool IsSunbeamDestroyEventPickedByPosition(string key)
+    {
+        StoryGoalCustomEventHandler handler = StoryGoalCustomEventHandler.main;
+        if (!handler)
+        {
+            return false;
+        }
+        return string.Equals(key, handler.sunbeamDestroyEventInRange.key, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(key, handler.sunbeamDestroyEventOutOfRange.key, StringComparison.OrdinalIgnoreCase);
     }
 
     public static void UpdateAuroraData(AuroraEventData auroraEventData)

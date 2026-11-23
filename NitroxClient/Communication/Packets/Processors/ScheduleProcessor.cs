@@ -1,6 +1,7 @@
 using System.Linq;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication.Packets.Processors.Core;
+using NitroxClient.GameLogic;
 using Story;
 
 namespace NitroxClient.Communication.Packets.Processors;
@@ -25,7 +26,8 @@ internal sealed class ScheduleProcessor : IClientPacketProcessor<Schedule>
 
     private bool ShouldSchedule(ScheduledGoal goal)
     {
-        return goal.timeExecute >= DayNightCycle.main.timePassedAsDouble && !IsAlreadyKnown(goal.goalKey);
+        // The sender's game picked this Sunbeam line from its player's position, this game schedules its own pick
+        return goal.timeExecute >= DayNightCycle.main.timePassedAsDouble && !IsAlreadyKnown(goal.goalKey) && !StoryManager.IsSunbeamDestroyEventPickedByPosition(goal.goalKey);
     }
 
     private bool IsAlreadyKnown(string goalKey)
