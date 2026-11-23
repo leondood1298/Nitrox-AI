@@ -18,11 +18,12 @@ namespace NitroxClient.GameLogic;
 ///     - a Mesmer's hypnosis: the game only hypnotizes its own player, so a Mesmer hypnotized nobody but its simulating
 ///     player. It may now pick another player, whose game is told and plays the hypnosis on its copy
 /// </summary>
-/// <remarks>Unity-bound.</remarks>
-public sealed class CreatureEffects(IPacketSender packetSender, SimulationOwnership simulationOwnership)
+/// <remarks>Also carries a Bleeder latching onto another player (see <see cref="Bleeders" />). Unity-bound.</remarks>
+public sealed class CreatureEffects(IPacketSender packetSender, SimulationOwnership simulationOwnership, Bleeders bleeders)
 {
     private readonly IPacketSender packetSender = packetSender;
     private readonly SimulationOwnership simulationOwnership = simulationOwnership;
+    private readonly Bleeders bleeders = bleeders;
 
     private bool applyingReceived;
 
@@ -135,6 +136,12 @@ public sealed class CreatureEffects(IPacketSender packetSender, SimulationOwners
                 case CreatureEffect.HYPNOSIS_ENDED:
                     Hypnotize(creatureObject, packet);
                     break;
+                case CreatureEffect.BLEEDER_ATTACHED:
+                    if (IsLocalPlayer(packet.TargetId))
+                    {
+                        bleeders.LatchedOntoLocalPlayer(creatureObject, packet.CreatureId);
+                    }
+                    break;
             }
         }
         finally
@@ -187,6 +194,11 @@ public sealed class CreatureEffects(IPacketSender packetSender, SimulationOwners
         {
             pullCreatures.StopPerform(creature, Time.time);
         }
+    }
+
+    private static bool IsLocalPlayer(Optional<NitroxId> playerId)
+    {
+        return playerId.HasValue && Player.main && Player.main.TryGetNitroxId(out NitroxId localPlayerId) && localPlayerId == playerId.Value;
     }
 
     private bool IsDecidedHere(GameObject creatureObject, out NitroxId creatureId)
