@@ -25,6 +25,7 @@ public class RadiationLeakEntity : GlobalRootEntity
         Id = id;
         ObjectIndex = objectIndex;
         Metadata = metadata;
+        SpawnedByServer = true;
         Transform = new();
     }
 

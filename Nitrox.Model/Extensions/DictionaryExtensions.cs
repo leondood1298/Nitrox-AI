@@ -54,7 +54,12 @@ public static class DictionaryExtensions
         }
     }
 
-    public static void RemoveWhere<TParam, TKey, TValue>(this IDictionary<TKey, TValue> dictionary, TParam parameter, Func<TParam, KeyValuePair<TKey, TValue>, bool> predicate)
+    /// <summary>
+    ///     Calls <paramref name="visitor" /> once for every entry and removes the entries for which it returns true.
+    ///     Unlike a RemoveWhere predicate, the visitor is expected to act on the entry, for example by moving it to
+    ///     another collection. It must not change the collection being visited: entries are removed after the last visit.
+    /// </summary>
+    public static void VisitAndRemoveWhere<TParam, TKey, TValue>(this IDictionary<TKey, TValue> dictionary, TParam parameter, Func<TParam, KeyValuePair<TKey, TValue>, bool> visitor)
     {
         int toRemoveIndex = 0;
         TKey[] toRemove = ArrayPool<TKey>.Shared.Rent(dictionary.Count);
@@ -62,7 +67,7 @@ public static class DictionaryExtensions
         {
             foreach (KeyValuePair<TKey, TValue> item in dictionary)
             {
-                if (predicate(parameter, item))
+                if (visitor(parameter, item))
                 {
                     toRemove[toRemoveIndex++] = item.Key;
                 }

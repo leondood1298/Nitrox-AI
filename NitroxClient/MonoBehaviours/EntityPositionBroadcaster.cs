@@ -152,7 +152,7 @@ public sealed class EntityPositionBroadcaster : MonoBehaviour
     private void ReassignEntitiesToLookups()
     {
         // when fishes die, they're only a corpse and their swim behaviour stops functioning
-        splineEntities.RemoveWhere(this, static (self, pair) =>
+        splineEntities.VisitAndRemoveWhere(this, static (self, pair) =>
         {
             SwimBehaviour swimBehaviour = pair.Value;
             if (!swimBehaviour)
@@ -168,7 +168,7 @@ public sealed class EntityPositionBroadcaster : MonoBehaviour
             return false;
         });
 
-        regularEntities.RemoveWhere(this, static (self, pair) =>
+        regularEntities.VisitAndRemoveWhere(this, static (self, pair) =>
         {
             if (!pair.Value)
             {
@@ -179,8 +179,8 @@ public sealed class EntityPositionBroadcaster : MonoBehaviour
         });
 
         // in case a fish was removed from splineEntities (from the above loop), it can be added back in here as a regular entity if required
-        // NB: keep this section below the other RemoveWhere sections so it can eventually collect fresh references from the NitroxIds
-        notSpawnedEntityIds.RemoveWhere(this, static (self, id) =>
+        // NB: keep this section below the other VisitAndRemoveWhere sections so it can eventually collect fresh references from the NitroxIds
+        notSpawnedEntityIds.VisitAndRemoveWhere(this, static (self, id) =>
         {
             if (NitroxEntity.TryGetObjectFrom(id, out GameObject entityObject))
             {
