@@ -50,6 +50,7 @@ namespace Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 [ProtoInclude(91, typeof(ThermalPlantMetadata))]
 [ProtoInclude(92, typeof(PowerSourceMetadata))]
 [ProtoInclude(93, typeof(MapRoomMetadata))]
+[ProtoInclude(94, typeof(MapRoomCameraMetadata))]
 public abstract class EntityMetadata
 {
 }

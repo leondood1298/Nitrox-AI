@@ -29,6 +29,24 @@ public sealed class ScannerRoomPersistenceQualificationTest
     }
 
     [TestMethod]
+    public void SaveKeepsTheStateOfACameraThatBelongsToNoRoom()
+    {
+        // A camera that was never docked has no room record. Its light, battery and health are saved with the camera.
+        ServerJsonSerializer serializer = new(NullLogger<ServerJsonSerializer>.Instance);
+        GlobalRootEntity camera = CreateLooseCamera(CameraCId, new NitroxVector3(3f, -40f, 9f));
+        camera.Metadata = new MapRoomCameraMetadata(true, 3, 41.5f, 275f, 8);
+
+        GlobalRootData restored = RoundTrip(serializer, GlobalRootData.From([camera]), nameof(ServerJsonSerializer));
+
+        MapRoomCameraMetadata state = (MapRoomCameraMetadata)restored.Entities.Single().Metadata;
+        Assert.IsTrue(state.LightOn);
+        Assert.AreEqual(3, state.LightRevision);
+        Assert.AreEqual(41.5f, state.Energy);
+        Assert.AreEqual(275f, state.Health);
+        Assert.AreEqual(8, state.ComponentRevision);
+    }
+
+    [TestMethod]
     public void FingerprintValidationEnforcesCameraHealthContract()
     {
         MapRoomEntity room = CreateRoom();

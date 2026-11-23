@@ -701,14 +701,25 @@ public class MapRoomCameras
 		if (CanSimulateDockedCamera(camera) && camera.energyMixin.battery != null)
 		{
 			float current = camera.energyMixin.charge;
-			float amount = CalculateDockCharge(current, camera.energyMixin.capacity, Time.deltaTime);
+			float amount = CalculateDockCharge(current, camera.energyMixin.capacity);
 			if (amount > 0f)
 			{
 				PowerRelay relay = camera.dockingPoint.GetComponentInParent<PowerRelay>();
 				float consumed = 0f;
-				if (!GameModeUtils.RequiresPower() || ((bool)relay && PowerSystem.ConsumeEnergy(relay, amount, out consumed) && consumed > 0f))
+				if ((bool)relay)
 				{
-					camera.energyMixin.AddEnergy(GameModeUtils.RequiresPower() ? consumed : amount);
+					PowerSystem.ConsumeEnergy(relay, amount, out consumed);
+				}
+				// As in the game, whatever the base supplied is added, even when it could not supply all that was asked.
+				// ConsumeEnergy returns false for a partial draw but has still taken that energy from the base.
+				if (!GameModeUtils.RequiresPower())
+				{
+					camera.energyMixin.AddEnergy(amount);
+					charging = true;
+				}
+				else if (consumed > 0f)
+				{
+					camera.energyMixin.AddEnergy(consumed);
 					charging = true;
 				}
 			}
@@ -724,13 +735,17 @@ public class MapRoomCameras
 		BroadcastComponentStateIfChanged(camera);
 	}
 
-	public static float CalculateDockCharge(float current, float capacity, float deltaTime)
+	/// <summary>
+	///     Energy a docked camera takes in one update. This is the game's own rule (MapRoomCamera.UpdateEnergyRecharge):
+	///     a tenth of the battery's capacity per update until full, so a docked camera is recharged almost at once.
+	/// </summary>
+	public static float CalculateDockCharge(float current, float capacity)
 	{
-		if (capacity <= 0f || deltaTime <= 0f || current >= capacity)
+		if (capacity <= 0f || current >= capacity)
 		{
 			return 0f;
 		}
-		return Math.Min(capacity - Math.Max(0f, current), capacity * 0.01f * deltaTime);
+		return Math.Min(capacity - Math.Max(0f, current), capacity * 0.1f);
 	}
 
 	private IEnumerator InitializeCameraBattery(MapRoomCamera camera, NitroxId cameraId, long generation)

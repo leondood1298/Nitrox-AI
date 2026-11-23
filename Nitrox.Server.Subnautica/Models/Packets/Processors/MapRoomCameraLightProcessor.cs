@@ -1,6 +1,8 @@
 using System.Threading.Tasks;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Packets.Core;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
@@ -11,7 +13,7 @@ namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
 internal sealed class MapRoomCameraLightProcessor(SimulationOwnershipData simulationOwnershipData,
 	EntityRegistry entityRegistry, MapRoomCameraControlLifecycle controlLifecycle,
-	ScannerRoomDiagnostics diagnostics) : IAuthPacketProcessor<MapRoomCameraLight>, IAuthPacketProcessor, IPacketProcessor, IPacketProcessor<AuthProcessorContext, MapRoomCameraLight>
+	ScannerRoomDiagnostics diagnostics, MapRoomLooseCameraState looseCameraState) : IAuthPacketProcessor<MapRoomCameraLight>, IAuthPacketProcessor, IPacketProcessor, IPacketProcessor<AuthProcessorContext, MapRoomCameraLight>
 {
 	private readonly SimulationOwnershipData simulationOwnershipData = simulationOwnershipData;
 	private readonly EntityRegistry entityRegistry = entityRegistry;
@@ -20,7 +22,12 @@ internal sealed class MapRoomCameraLightProcessor(SimulationOwnershipData simula
 
 	public async Task Process(AuthProcessorContext context, MapRoomCameraLight packet)
 	{
-		MapRoomEntity? mapRoom = FindUniqueRoom(packet.CameraId);
+		MapRoomEntity? mapRoom = FindUniqueRoom(packet.CameraId, out int registrations);
+		if (!packet.IsServerResponse && registrations == 0 && looseCameraState.TryGetCamera(packet.CameraId, out WorldEntity looseCamera))
+		{
+			await ProcessLooseCameraAsync(context, packet, looseCamera);
+			return;
+		}
 		if (packet.IsServerResponse || mapRoom == null)
 		{
 			diagnostics.RecordRejected("light", mapRoom, packet.CameraId, context.Sender.SessionId, reason:
@@ -85,9 +92,51 @@ internal sealed class MapRoomCameraLightProcessor(SimulationOwnershipData simula
 		await sendTask;
 	}
 
-	private MapRoomEntity? FindUniqueRoom(Nitrox.Model.DataStructures.NitroxId cameraId)
+	/// <summary>
+	///     A camera no Scanner Room has a record for (never docked, dropped after a pickup, or its room is gone) keeps
+	///     its light state on its own entity. The same control rule applies as for a registered camera.
+	/// </summary>
+	private async Task ProcessLooseCameraAsync(AuthProcessorContext context, MapRoomCameraLight packet, WorldEntity looseCamera)
+	{
+		bool accepted = false;
+		bool changed = false;
+		string rejectionReason = "non_owner";
+		Task sendTask = simulationOwnershipData.ExecuteForOwner(context.Sender, [packet.CameraId], ownedIds =>
+		{
+			bool hasCanonicalControl =
+				simulationOwnershipData.TryGetLock(packet.CameraId, out SimulationOwnershipData.PlayerLock cameraLock) &&
+				cameraLock.Player == context.Sender &&
+				cameraLock.LockType == SimulationLockType.EXCLUSIVE &&
+				controlLifecycle.IsActiveController(packet.CameraId, context.Sender.SessionId);
+			if (!ownedIds.Contains(packet.CameraId) || !hasCanonicalControl)
+			{
+				rejectionReason = !ownedIds.Contains(packet.CameraId) ? "non_owner" : "control_required";
+				return Task.CompletedTask;
+			}
+
+			MapRoomCameraMetadata state = looseCameraState.SetLight(looseCamera, packet.On, out changed);
+			accepted = true;
+			// Queued while ownership is locked, like the registered path, so a release cannot overtake it.
+			return context.SendToAllAsync(new MapRoomCameraLight(packet.CameraId, state.LightOn, state.LightRevision, true, true));
+		});
+		if (!accepted)
+		{
+			diagnostics.RecordRejected("light", null, packet.CameraId, context.Sender.SessionId, reason: rejectionReason);
+			await context.ReplyAsync(new MapRoomCameraLight(packet.CameraId, packet.On, 0, true, false));
+			return;
+		}
+		if (changed)
+		{
+			diagnostics.RecordAccepted("light", null, packet.CameraId, context.Sender.SessionId,
+				reason: packet.On ? "on_loose" : "off_loose");
+		}
+		await sendTask;
+	}
+
+	private MapRoomEntity? FindUniqueRoom(Nitrox.Model.DataStructures.NitroxId cameraId, out int registrations)
 	{
 		MapRoomEntity? found = null;
+		registrations = 0;
 		foreach (MapRoomEntity room in entityRegistry.GetEntities<MapRoomEntity>())
 		{
 			lock (room)
@@ -96,14 +145,11 @@ internal sealed class MapRoomCameraLightProcessor(SimulationOwnershipData simula
 				{
 					continue;
 				}
-				if (found != null)
-				{
-					return null;
-				}
+				registrations++;
 				found = room;
 			}
 		}
-		return found;
+		return registrations == 1 ? found : null;
 	}
 }
 

@@ -11,7 +11,7 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 internal sealed class MapRoomDeconstructionCleanup(EntityRegistry entityRegistry, SimulationOwnershipData simulationOwnershipData,
     MapRoomCameraControlReleaseFactory cameraControlReleaseFactory, MapRoomScanResultSubscriptions subscriptions,
     MapRoomCameraControlLifecycle controlLifecycle, PlayerManager playerManager, ScannerRoomDiagnostics diagnostics,
-    WorldEntityManager worldEntityManager)
+    WorldEntityManager worldEntityManager, MapRoomLooseCameraState looseCameraState)
 {
     public async Task CleanupAsync(MapRoomEntity mapRoom, AuthProcessorContext context)
     {
@@ -55,6 +55,12 @@ internal sealed class MapRoomDeconstructionCleanup(EntityRegistry entityRegistry
             if (dockedCameraIds.Contains(camera.CameraId) && worldEntityManager.TryDestroyEntity(camera.CameraId, out _))
             {
                 await context.SendToAllAsync(new EntityDestroyed(camera.CameraId));
+            }
+            else if (!dockedCameraIds.Contains(camera.CameraId))
+            {
+                // A camera out in the world outlives the room. Its light, battery and health were only in the
+                // room's record, which is about to be gone, so they move onto the camera itself.
+                looseCameraState.MoveOutOfRecord(camera);
             }
         }
         diagnostics.RecordAccepted("deconstruct", mapRoom, sessionId: context.Sender.SessionId, reason: "locks_reconciled");
