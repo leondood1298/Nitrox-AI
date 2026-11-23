@@ -251,6 +251,32 @@ public sealed class CreatureMetadataAuthorityTest
     }
 
     [TestMethod]
+    public void CuddlefishKeepsFollowingItsLeaderWhenItsInfectionChanges()
+    {
+        NitroxId leaderId = new();
+        CuteFishMetadata stored = new(true, Optional.Of(leaderId), CreatureMetadata.UNDECIDED);
+
+        CreatureMetadata? accepted = CreatureMetadataAuthority.Merge(stored, new CreatureInfectionMetadata(0f));
+
+        CuteFishMetadata cuteFish = accepted.Should().BeOfType<CuteFishMetadata>().Subject;
+        cuteFish.FollowingPlayer.Should().BeTrue();
+        cuteFish.LeaderId.Value.Should().Be(leaderId);
+    }
+
+    [TestMethod]
+    public void CommandToACuddlefishKeepsItsLeashAndInfection()
+    {
+        CreatureMetadata stored = new StayAtLeashPositionMetadata(leashPosition, 0.3f);
+        CuteFishMetadata command = new(false, Optional.Of(new NitroxId()), CreatureMetadata.UNDECIDED);
+
+        CreatureMetadata? accepted = CreatureMetadataAuthority.Merge(stored, command);
+
+        accepted.Should().BeSameAs(command);
+        accepted!.InfectedAmount.Should().Be(0.3f);
+        accepted.LeashPosition.Should().Be(leashPosition);
+    }
+
+    [TestMethod]
     public void SimulatingPlayerDecidesInfection()
     {
         Player sender = CreatePlayer(1, 1);
