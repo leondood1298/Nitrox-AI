@@ -38,6 +38,24 @@ public class OperationTracker
         FailedOperations = 0;
     }
 
+    /// <summary>
+    ///     Whether an ordered build operation received for this base is part of what this player already has of it: a
+    ///     snapshot (join or resync) taken after it was done.
+    /// </summary>
+    public bool IsAlreadyApplied(int operationId) => LastOperationId != -1 && operationId <= LastOperationId;
+
+    /// <summary>
+    ///     Takes the operation a snapshot of the base (join or resync) was made at. Our copy is replaced by the snapshot,
+    ///     so it is in sync again, unless operations newer than the snapshot were already applied.
+    /// </summary>
+    public void ApplySnapshot(int operationId)
+    {
+        if (LastOperationId <= operationId)
+        {
+            ResetToId(operationId);
+        }
+    }
+
     public bool IsDesynced()
     {
         return MissedOperations + FailedOperations > 0;

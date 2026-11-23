@@ -27,6 +27,12 @@ public partial class BuildingHandler : MonoBehaviour
     public Dictionary<NitroxId, DateTimeOffset> BasesCooldown;
 
     /// <summary>
+    ///     Ghosts another player is building or unbuilding right now, and their bases. They hold back deconstruction only:
+    ///     both players may build the same ghost, but one must not unbuild what the other is working on.
+    /// </summary>
+    public Dictionary<NitroxId, DateTimeOffset> DeconstructionCooldown;
+
+    /// <summary>
     /// When processing deconstruction-related packets, it's required to pass part of their data to the patches
     /// so that they can work accordingly (mainly to differentiate local actions from remotely issued ones).
     /// </summary>
@@ -49,6 +55,7 @@ public partial class BuildingHandler : MonoBehaviour
         BuildQueue = new();
         LatestResyncRequestTimeOffset = DateTimeOffset.UtcNow;
         BasesCooldown = new();
+        DeconstructionCooldown = new();
         Temp = new();
         Operations = new();
     }
@@ -66,8 +73,35 @@ public partial class BuildingHandler : MonoBehaviour
     private IEnumerator SafelyTreatNextBuildCommand()
     {
         Packet packet = BuildQueue.Dequeue();
+        if (TryGetOrderedBase(packet, out NitroxId baseId, out int operationId) && Operations.TryGetValue(baseId, out OperationTracker tracker) &&
+            tracker.IsAlreadyApplied(operationId))
+        {
+            // Held while this player joined or resynced: the snapshot of that base already has it
+            Log.Info($"Skipping build operation {operationId} on base {baseId}, which is already at operation {tracker.LastOperationId}");
+            working = false;
+            yield break;
+        }
         yield return TreatBuildCommand(packet).OnYieldError(exception => Log.Error(exception, $"An error happened when processing build command {packet}"));
         working = false;
+    }
+
+    private static bool TryGetOrderedBase(Packet packet, out NitroxId baseId, out int operationId)
+    {
+        switch (packet)
+        {
+            case UpdateBase updateBase:
+                baseId = updateBase.BaseId;
+                operationId = updateBase.OperationId;
+                return true;
+            case PieceDeconstructed pieceDeconstructed:
+                baseId = pieceDeconstructed.BaseId;
+                operationId = pieceDeconstructed.OperationId;
+                return true;
+            default:
+                baseId = null;
+                operationId = -1;
+                return false;
+        }
     }
 
     private IEnumerator TreatBuildCommand(Packet buildCommand)
@@ -117,6 +151,11 @@ public partial class BuildingHandler : MonoBehaviour
     public IEnumerator BuildGhost(PlaceGhost placeGhost)
     {
         GhostEntity ghostEntity = placeGhost.GhostEntity;
+        // Held while this player joined or resynced, and already in the snapshot
+        if (NitroxEntity.TryGetObjectFrom(ghostEntity.Id, out _))
+        {
+            yield break;
+        }
         Transform parent = GetParentOrGlobalRoot(ghostEntity.ParentId);
         yield return GhostEntitySpawner.RestoreGhost(parent, ghostEntity);
         BasesCooldown[ghostEntity.ParentId ?? ghostEntity.Id] = DateTimeOffset.UtcNow;
@@ -125,6 +164,10 @@ public partial class BuildingHandler : MonoBehaviour
     public IEnumerator BuildModule(PlaceModule placeModule)
     {
         ModuleEntity moduleEntity = placeModule.ModuleEntity;
+        if (NitroxEntity.TryGetObjectFrom(moduleEntity.Id, out _))
+        {
+            yield break;
+        }
         Transform parent = GetParentOrGlobalRoot(moduleEntity.ParentId);
         TaskResult<Optional<GameObject>> result = new();
         yield return ModuleEntitySpawner.RestoreModule(parent, moduleEntity, result);
@@ -140,6 +183,11 @@ public partial class BuildingHandler : MonoBehaviour
         if (NitroxEntity.TryGetComponentFrom(modifyConstructedAmount.GhostId, out Constructable constructable))
         {
             BasesCooldown[modifyConstructedAmount.GhostId] = DateTimeOffset.UtcNow;
+            DeconstructionCooldown[modifyConstructedAmount.GhostId] = DateTimeOffset.UtcNow;
+            if (constructable.transform.parent && constructable.transform.parent.TryGetNitroxId(out NitroxId parentId))
+            {
+                DeconstructionCooldown[parentId] = DateTimeOffset.UtcNow;
+            }
             if (modifyConstructedAmount.ConstructedAmount == 0f)
             {
                 constructable.constructedAmount = 0f;
@@ -317,6 +365,7 @@ public partial class BuildingHandler : MonoBehaviour
     private void CleanCooldowns()
     {
         BasesCooldown.RemoveWhere(DateTimeOffset.UtcNow, (time, curr) => (curr - time) >= MultiplayerBuildCooldown);
+        DeconstructionCooldown.RemoveWhere(DateTimeOffset.UtcNow, (time, curr) => (curr - time) >= MultiplayerBuildCooldown);
     }
 
     public class TemporaryBuildData : IDisposable
@@ -389,13 +438,43 @@ public partial class BuildingHandler
         return -1;
     }
 
-    public void StartResync<T>(Dictionary<T, int> entities) where T : Entity
+    /// <summary>
+    ///     Bases whose resync was asked for and has not arrived yet.
+    /// </summary>
+    private readonly HashSet<NitroxId> baseResyncsInFlight = [];
+
+    /// <param name="partial">
+    ///     True when only the given entities are rebuilt. The queued build packets of other bases then stay; those of the
+    ///     rebuilt ones that the rebuild already contains are dropped by their operation id (see <see cref="OperationTracker.IsAlreadyApplied" />).
+    /// </param>
+    public void StartResync<T>(Dictionary<T, int> entities, bool partial = false) where T : Entity
     {
         Resyncing = true;
         FailedOperations = 0;
-        BuildQueue.Clear();
+        if (!partial)
+        {
+            BuildQueue.Clear();
+        }
         working = true;
         InitializeOperations(entities.ToDictionary(pair => pair.Key.Id, pair => pair.Value));
+    }
+
+    /// <summary>
+    ///     Asks the server for one base as it holds it, after an operation of this player's on it was refused. The
+    ///     player's copy of that base is then rebuilt and building on it can go on.
+    /// </summary>
+    public void AskForBaseResync(NitroxId baseId)
+    {
+        if (!Multiplayer.Main || !Multiplayer.Main.InitialSyncCompleted || !baseResyncsInFlight.Add(baseId))
+        {
+            return;
+        }
+        this.Resolve<IPacketSender>().Send(new BuildingResyncRequest(baseId, false));
+    }
+
+    public void BaseResynced(NitroxId baseId)
+    {
+        baseResyncsInFlight.Remove(baseId);
     }
 
     public void StopResync()
@@ -408,15 +487,7 @@ public partial class BuildingHandler
     {
         foreach (KeyValuePair<NitroxId, int> pair in operations)
         {
-            OperationTracker tracker = EnsureTracker(pair.Key);
-            // Only reset if the server's snapshot is newer than what we already have.
-            // RegisterOperation() may have already advanced the tracker beyond this
-            // snapshot (e.g. UpdateBase packets received during the initial-sync wait),
-            // so overwriting with a stale value would immediately desync the client.
-            if (tracker.LastOperationId < pair.Value)
-            {
-                tracker.ResetToId(pair.Value);
-            }
+            EnsureTracker(pair.Key).ApplySnapshot(pair.Value);
         }
     }
 

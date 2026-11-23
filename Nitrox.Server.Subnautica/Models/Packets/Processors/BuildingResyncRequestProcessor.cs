@@ -43,6 +43,6 @@ sealed class BuildingResyncRequestProcessor(EntityRegistry entityRegistry, World
             AddEntityToResync(entity is GlobalRootEntity globalRootEntity ? scannerRoomManager.DetachRooms([globalRootEntity])[0] : entity);
         }
 
-        await context.ReplyAsync(new BuildingResync(buildEntities, moduleEntities));
+        await context.ReplyAsync(new BuildingResync(buildEntities, moduleEntities, !packet.ResyncEverything));
     }
 }

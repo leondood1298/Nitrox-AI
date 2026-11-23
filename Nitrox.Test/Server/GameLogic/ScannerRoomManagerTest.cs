@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
@@ -270,6 +271,32 @@ public sealed class ScannerRoomManagerTest
         Assert.AreEqual(0, ScannerRoomStateFingerprint.ReadState(syncedCamera).DockingIndex);
         Assert.IsTrue(ScannerRoomStateFingerprint.ReadState(syncedCamera).CameraNumber > 0);
         Assert.AreEqual(2, ScannerRoomStateFingerprint.GetCameras(scenario.Room).Length);
+    }
+
+    /// <summary>
+    ///     A base without a Scanner Room is copied too: a joiner's snapshot is written while building packets change the
+    ///     live base, and its data, pieces and operation must be of one moment.
+    /// </summary>
+    [TestMethod]
+    public void JoiningPlayerIsSentEveryBaseAsACopy()
+    {
+        ScannerRoomScenarioFixture scenario = new();
+        BuildEntity live = BuildEntity.MakeEmpty();
+        live.Id = new NitroxId("00000000-0000-0000-0000-000000000801");
+        live.BaseData = new BaseData();
+        live.OperationId = 3;
+        live.ChildEntities.Add(new MoonpoolEntity(new NitroxId("00000000-0000-0000-0000-000000000802"), live.Id, new NitroxInt3(0, 0, 0)));
+
+        BuildEntity sent = (BuildEntity)scenario.Manager.DetachRooms([live]).Single();
+        BaseData before = live.BaseData;
+        live.BaseData = new BaseData();
+        live.OperationId = 4;
+        live.ChildEntities.Clear();
+
+        Assert.AreNotSame(live, sent);
+        Assert.AreSame(before, sent.BaseData);
+        Assert.AreEqual(3, sent.OperationId);
+        Assert.HasCount(1, sent.ChildEntities);
     }
 
     [TestMethod]

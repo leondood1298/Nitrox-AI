@@ -115,7 +115,7 @@ internal sealed class BuildingManager
         if (IsBuiltBasePart(entity))
         {
             logger.ZLogWarning($"Ignoring a constructed amount from [{player.Name}] for {entity.GetType().Name} {entity.Id}, which is no ghost on the server");
-            NotifyPlayerDesync(player);
+            NotifyPlayerDesync(player, entity is BuildEntity ? entity.Id : entity.ParentId);
             return false;
         }
 
@@ -196,14 +196,14 @@ internal sealed class BuildingManager
         if (!entityRegistry.TryGetEntityById(updateBase.FormerGhostId, out GhostEntity formerGhost))
         {
             logger.ZLogError($"Trying to place a base from a non-registered ghost (GhostId: {updateBase.FormerGhostId})");
-            NotifyPlayerDesync(player);
+            NotifyPlayerDesync(player, updateBase.BaseId);
             operationId = -1;
             return false;
         }
         if (!entityRegistry.TryGetEntityById(updateBase.BaseId, out BuildEntity buildEntity))
         {
             logger.ZLogError($"Trying to update a non-registered build (BaseId: {updateBase.BaseId})");
-            NotifyPlayerDesync(player);
+            NotifyPlayerDesync(player, updateBase.BaseId);
             operationId = -1;
             return false;
         }
@@ -211,7 +211,7 @@ internal sealed class BuildingManager
         if (deltaOperations != 0 && options.Value.SafeBuilding)
         {
             logger.ZLogWarning($"Ignoring an {nameof(UpdateBase)} packet from [{player.Name}] which is {Math.Abs(deltaOperations) + (deltaOperations > 0 ? " operations ahead" : " operations late")}");
-            NotifyPlayerDesync(player);
+            NotifyPlayerDesync(player, updateBase.BaseId);
             operationId = -1;
             return false;
         }
@@ -219,7 +219,7 @@ internal sealed class BuildingManager
         if (!ScannerRoomManager.IsValidRoomTopology(entityRegistry, updateBase))
         {
             logger.ZLogWarning($"Rejected invalid Scanner Room topology update for base {updateBase.BaseId} from [{player.Name}]");
-            NotifyPlayerDesync(player);
+            NotifyPlayerDesync(player, updateBase.BaseId);
             operationId = -1;
             return false;
         }
@@ -334,6 +334,7 @@ internal sealed class BuildingManager
         if (entityRegistry.TryGetEntityById(pieceDeconstructed.PieceId, out GhostEntity _))
         {
             logger.ZLogError($"Trying to add a ghost to a building but another ghost child with the same id already exists (GhostId: {pieceDeconstructed.PieceId})");
+            NotifyPlayerDesync(player, pieceDeconstructed.BaseId);
             removedEntity = null;
             operationId = -1;
             return false;
@@ -343,7 +344,7 @@ internal sealed class BuildingManager
         if (deltaOperations != 0 && options.Value.SafeBuilding)
         {
             logger.ZLogWarning($"Ignoring a {nameof(PieceDeconstructed)} packet from [{player.Name}] which is {Math.Abs(deltaOperations) + (deltaOperations > 0 ? " operations ahead" : " operations late")}");
-            NotifyPlayerDesync(player);
+            NotifyPlayerDesync(player, pieceDeconstructed.BaseId);
             removedEntity = null;
             operationId = -1;
             return false;
@@ -479,10 +480,11 @@ internal sealed class BuildingManager
         return true;
     }
 
-    private void NotifyPlayerDesync(Player player)
+    /// <param name="baseId">The base the refused operation was on: the player's game resyncs it at once.</param>
+    private void NotifyPlayerDesync(Player player, NitroxId? baseId)
     {
         Dictionary<NitroxId, int> operations = GetEntitiesOperations(worldEntityManager.GetGlobalRootEntities(true));
-        packetSender.SendPacketAsync(new BuildingDesyncWarning(operations), player.SessionId);
+        packetSender.SendPacketAsync(new BuildingDesyncWarning(operations, baseId), player.SessionId);
     }
 
     public static Dictionary<NitroxId, int> GetEntitiesOperations(List<GlobalRootEntity> entities)

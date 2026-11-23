@@ -115,6 +115,27 @@ public sealed class BuildingManagerTest
         Assert.AreEqual(reactorId, scenario.EntityRegistry.GetEntityById(rod.Id).Value.ParentId);
     }
 
+    /// <summary>
+    ///     Two players finish pieces of one base at the same moment: the later one is refused and told which base, so that
+    ///     its game resyncs that base by itself.
+    /// </summary>
+    [TestMethod]
+    public void LateOperationNamesItsBase()
+    {
+        BuildingScenarioFixture scenario = new();
+        NitroxId ghostA = new("00000000-0000-0000-0000-000000000551");
+        NitroxId ghostB = new("00000000-0000-0000-0000-000000000552");
+        scenario.AddGhost(ghostA);
+        scenario.AddGhost(ghostB);
+
+        Assert.IsTrue(scenario.BuildingManager.UpdateBase(scenario.PlayerA, Update(ghostA, default, 1), out _));
+        Assert.IsFalse(scenario.BuildingManager.UpdateBase(scenario.PlayerB, Update(ghostB, default, 1), out _));
+
+        BuildingDesyncWarning warning = scenario.SentTo<BuildingDesyncWarning>(scenario.PlayerB).Single();
+        Assert.AreEqual(BuildingScenarioFixture.BaseId, warning.BaseId);
+        Assert.AreEqual(1, warning.Operations[BuildingScenarioFixture.BaseId]);
+    }
+
     private static PieceDeconstructed Deconstructed(NitroxId pieceId, int operationId) =>
         new(BuildingScenarioFixture.BaseId, pieceId, default, BuildingScenarioFixture.Ghost(pieceId), new BaseData(), operationId);
 

@@ -339,9 +339,10 @@ public static class BuildUtils
         return (baseModule as Component).AliveOrNull();
     }
 
-    public static void DeconstructionAllowed(NitroxId baseId, ref bool result, ref string reason)
+    /// <param name="deconstructing">False when building: another player's work on a ghost does not hold building back.</param>
+    public static void DeconstructionAllowed(NitroxId baseId, ref bool result, ref string reason, bool deconstructing = true)
     {
-        if (BuildingHandler.Main.BasesCooldown.ContainsKey(baseId))
+        if (BuildingHandler.Main.BasesCooldown.ContainsKey(baseId) || (deconstructing && BuildingHandler.Main.DeconstructionCooldown.ContainsKey(baseId)))
         {
             result = false;
             reason = Language.main.Get("Nitrox_ErrorRecentBuildUpdate");
