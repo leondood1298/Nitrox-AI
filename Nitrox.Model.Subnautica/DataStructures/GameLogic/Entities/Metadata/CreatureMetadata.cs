@@ -13,6 +13,8 @@ namespace Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 [ProtoInclude(51, typeof(SeaTreaderMetadata))]
 [ProtoInclude(52, typeof(StayAtLeashPositionMetadata))]
 [ProtoInclude(53, typeof(CreatureInfectionMetadata))]
+[ProtoInclude(55, typeof(SandSharkMetadata))]
+[ProtoInclude(56, typeof(StalkerMetadata))]
 public abstract class CreatureMetadata : EntityMetadata
 {
     /// <summary>

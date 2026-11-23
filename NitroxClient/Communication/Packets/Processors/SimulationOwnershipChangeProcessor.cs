@@ -9,7 +9,8 @@ internal sealed class SimulationOwnershipChangeProcessor(
     SimulationOwnership simulationOwnershipManager,
     MapRoomCameras mapRoomCameras,
     StalkerCameraGrabs stalkerCameraGrabs,
-    CreatureInfections creatureInfections)
+    CreatureInfections creatureInfections,
+    StalkerShinyGrabs? stalkerShinyGrabs = null)
     : IClientPacketProcessor<SimulationOwnershipChange>
 {
     private readonly SimulationOwnership simulationOwnershipManager = simulationOwnershipManager;
@@ -34,6 +35,8 @@ internal sealed class SimulationOwnershipChangeProcessor(
                 // player cannot stay in its view, and the Stalker lets go of it.
                 mapRoomCameras.LockLost(simulatedEntity.Id);
                 stalkerCameraGrabs.LockLost(simulatedEntity.Id);
+                // So does a Stalker with anything else it carries
+                stalkerShinyGrabs?.LockLost(simulatedEntity.Id);
             }
         }
         return Task.CompletedTask;

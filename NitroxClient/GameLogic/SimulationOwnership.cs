@@ -19,6 +19,12 @@ public class SimulationOwnership
     private readonly Dictionary<NitroxId, SimulatedEntity> newerSimulationById = [];
 
     /// <summary>
+    ///     Entities another player holds with an exclusive lock: in a propulsion cannon, in the mouth of a Stalker they
+    ///     simulate, or that they pilot or control.
+    /// </summary>
+    private readonly HashSet<NitroxId> exclusivelyHeldElsewhereIds = [];
+
+    /// <summary>
     ///     The entities whose simulation the server changed while this client was still loading, kept until the list
     ///     from the initial sync has been applied. That list was made before those changes.
     /// </summary>
@@ -50,6 +56,21 @@ public class SimulationOwnership
         return PlayerHasMinLockType(id, SimulationLockType.EXCLUSIVE);
     }
 
+    public bool IsHeldExclusivelyByAnotherPlayer(NitroxId id)
+    {
+        return id != null && exclusivelyHeldElsewhereIds.Contains(id);
+    }
+
+    /// <summary>
+    ///     Called after Pickupable.AllowedToPickUp, which decides whether the player may take an item by hand. An item another
+    ///     player holds exclusively cannot be taken from them, as their lock already keeps a propulsion cannon from grabbing it.
+    /// </summary>
+    public bool MayBeTakenByHand(GameObject item)
+    {
+        // A Scanner Room camera's exclusive lock is how a player controls it, and its own rules say who may take it (MapRoomCameras)
+        return item.GetComponent<MapRoomCamera>() || !item.TryGetNitroxId(out NitroxId id) || !IsHeldExclusivelyByAnotherPlayer(id);
+    }
+
     public void RequestSimulationLock(NitroxId id, SimulationLockType lockType)
     {
         SimulationOwnershipRequest ownershipRequest = new SimulationOwnershipRequest(multiplayerSession.Reservation.SessionId, id, lockType);
@@ -68,6 +89,7 @@ public class SimulationOwnership
 
         if (lockAquired)
         {
+            exclusivelyHeldElsewhereIds.Remove(id);
             SimulateEntity(id, lockType);
             TreatVehicleEntity(id, true, lockType);
         }
@@ -134,6 +156,14 @@ public class SimulationOwnership
     private void Apply(SimulatedEntity simulatedEntity)
     {
         bool isLocalPlayerNewOwner = multiplayerSession.Reservation.SessionId == simulatedEntity.SessionId;
+        if (!isLocalPlayerNewOwner && simulatedEntity.LockType == SimulationLockType.EXCLUSIVE)
+        {
+            exclusivelyHeldElsewhereIds.Add(simulatedEntity.Id);
+        }
+        else
+        {
+            exclusivelyHeldElsewhereIds.Remove(simulatedEntity.Id);
+        }
 
         if (TreatVehicleEntity(simulatedEntity.Id, isLocalPlayerNewOwner, simulatedEntity.LockType) ||
             newerSimulationById.ContainsKey(simulatedEntity.Id))
