@@ -104,7 +104,7 @@ public sealed partial class uGUI_MainMenu_Start_Patch : NitroxPatch, IPersistent
                     playerColor = NitroxColor.FromHsb(hue);
                 }
                 PlayerSettings playerSettings = new(playerColor);
-                AuthenticationContext authenticationContext = new(playerName, Optional.Empty, PlayerKeys.GetKeyFor(Resolve<IMultiplayerSession>().IpAddress));
+                AuthenticationContext authenticationContext = new(playerName, Optional.Empty, PlayerKeys.GetKeyFor(Resolve<IMultiplayerSession>().SessionPolicy.WorldIdentity));
                 Resolve<IMultiplayerSession>().RequestSessionReservation(playerSettings, authenticationContext);
                 break;
 

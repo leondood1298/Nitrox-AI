@@ -171,6 +171,7 @@ internal static partial class ServiceCollectionExtensions
                     .AddSingleton<PlayerAnimationStates>()
                     .AddSingleton<PlayerHandAndSeatStates>()
                     .AddSingleton<PlayerDeaths>()
+                    .AddSingleton<WorldIdentity>()
                     .AddSingleton<StoryManager>()
                     .AddSingleton<StoryScheduler>()
                     .AddSingleton<SimulationOwnershipData>()

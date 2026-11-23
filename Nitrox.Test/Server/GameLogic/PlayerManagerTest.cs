@@ -1,4 +1,9 @@
+using System.IO;
+using Microsoft.Extensions.Logging.Abstractions;
 using Nitrox.Model.Core;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic;
+using Nitrox.Server.Subnautica.Models.GameLogic;
+using Nitrox.Server.Subnautica.Models.GameLogic.Players;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.MultiplayerSession;
 using Nitrox.Model.Subnautica.Packets;
@@ -101,6 +106,60 @@ public sealed class PlayerManagerTest
         ServerPlayer rejoined = players.Connect("Bob", "first");
 
         rejoined.IdentityKeyHash.Should().NotBeNull();
+    }
+
+    [TestMethod]
+    public void AWorldThatGetsItsIdentityNowUntiesNamesOnce()
+    {
+        // A world from before identities existed (or from a build that derived keys from the address) has names tied to
+        // keys no game will send again; with a new identity each name keeps the next key it joins with
+        string saveDirectory = Path.Combine(Path.GetTempPath(), $"nitrox-untie-{Guid.NewGuid():N}");
+        try
+        {
+            ConnectedPlayers players = new(new WorldIdentity(() => saveDirectory, NullLogger<WorldIdentity>.Instance));
+            Nitrox.Server.Subnautica.Models.Player saved = new PersistedPlayerData
+            {
+                Name = "Bob",
+                IdentityKeyHash = PlayerIdentityKey.Hash("address-derived"),
+                NitroxId = new NitroxId(),
+                PlayerPreferences = new SubnauticaPlayerPreferences(new Dictionary<string, PingInstancePreference>(), [])
+            }.ToPlayer();
+            players.PlayerManager.AddSavedPlayer(saved);
+
+            players.Reserve("Bob", "world-derived", out MultiplayerSessionReservation first);
+            first.ReservationState.Should().Be(MultiplayerSessionReservationState.RESERVED);
+        }
+        finally
+        {
+            if (Directory.Exists(saveDirectory))
+            {
+                Directory.Delete(saveDirectory, true);
+            }
+        }
+    }
+
+    [TestMethod]
+    public void AWorldWithAKeptIdentityKeepsNamesTied()
+    {
+        string saveDirectory = Path.Combine(Path.GetTempPath(), $"nitrox-untie-{Guid.NewGuid():N}");
+        try
+        {
+            _ = new WorldIdentity(() => saveDirectory, NullLogger<WorldIdentity>.Instance).Value;
+            ConnectedPlayers players = new(new WorldIdentity(() => saveDirectory, NullLogger<WorldIdentity>.Instance));
+            ServerPlayer bob = players.Connect("Bob", "bobs-key");
+            players.Disconnect(bob.SessionId);
+
+            players.Reserve("Bob", "someone-else", out MultiplayerSessionReservation impostor);
+
+            impostor.ReservationState.HasStateFlag(MultiplayerSessionReservationState.PLAYER_KEY_MISMATCH).Should().BeTrue();
+        }
+        finally
+        {
+            if (Directory.Exists(saveDirectory))
+            {
+                Directory.Delete(saveDirectory, true);
+            }
+        }
     }
 
     [TestMethod]

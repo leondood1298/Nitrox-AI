@@ -19,8 +19,12 @@ using Nitrox.Server.Subnautica.Services;
 namespace Nitrox.Server.Subnautica.Models.GameLogic;
 
 // TODO: This manager should only handle player data. Move connection related state to other managers.
-internal sealed partial class PlayerManager(SessionManager sessionManager, BanService banService, IOptions<SubnauticaServerOptions> options, ILogger<PlayerManager> logger) : ISessionCleaner
+internal sealed partial class PlayerManager(SessionManager sessionManager, BanService banService, IOptions<SubnauticaServerOptions> options, ILogger<PlayerManager> logger, WorldIdentity? worldIdentity = null)
+    : ISessionCleaner
 {
+    private readonly WorldIdentity? worldIdentity = worldIdentity;
+    private int namesUntiedForNewIdentity;
+
     [GeneratedRegex(NitroxConstants.PLAYER_NAME_VALID_REGEX, RegexOptions.NonBacktracking)]
     private static partial Regex PlayerNameRegex();
 
@@ -123,6 +127,7 @@ internal sealed partial class PlayerManager(SessionManager sessionManager, BanSe
             return new MultiplayerSessionReservation(sessionId, rejectedState);
         }
 
+        UntieNamesIfTheWorldIdentityIsNew();
         string keyHash = PlayerIdentityKey.Hash(authenticationContext.PlayerKey);
         if (player != null && !PlayerIdentityKey.Matches(player.IdentityKeyHash, keyHash))
         {
@@ -292,6 +297,32 @@ internal sealed partial class PlayerManager(SessionManager sessionManager, BanSe
         player.IsOnline = false;
         logger.ZLogInformation($"{player.Name} left the game");
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    ///     The keys names are tied to are derived from the world identity. When this run had to make the identity (a world
+    ///     from before identities existed, or a lost identity file), no stored key can match any more, so every name keeps
+    ///     the first key it joins with again, once.
+    /// </summary>
+    private void UntieNamesIfTheWorldIdentityIsNew()
+    {
+        if (worldIdentity == null || !worldIdentity.CreatedThisRun || Interlocked.Exchange(ref namesUntiedForNewIdentity, 1) == 1)
+        {
+            return;
+        }
+        int untied = 0;
+        foreach (Player player in allPlayersByName.Values)
+        {
+            if (player.IdentityKeyHash != null)
+            {
+                player.IdentityKeyHash = null;
+                untied++;
+            }
+        }
+        if (untied > 0)
+        {
+            logger.ZLogWarning($"The world identity is new: {untied} player name(s) will be tied again to the key they next join with");
+        }
     }
 
     private void ReleaseNameOf(SessionId sessionId)
