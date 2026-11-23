@@ -277,15 +277,26 @@ internal sealed class BuildingManager
 
         foreach (NitroxId removedChildId in removedChildIds)
         {
-            if (entityRegistry.GetEntityById(removedChildId).HasValue)
+            if (!entityRegistry.TryGetEntityById(removedChildId, out InteriorPieceEntity removedWaterPark))
             {
-                worldEntityManager.RemoveGlobalRootEntity(removedChildId);
+                continue;
             }
+            // The merged one gave its fish to the other above. Another missing from the builder's list may only be
+            // missing from the builder's game (one that failed to spawn it): it is not removed with what lives in it.
+            if (removedChildId != transferFromId && !IsEmptyWaterPark(removedWaterPark))
+            {
+                logger.ZLogWarning($"[{player.Name}] did not list water park {removedChildId} of base {updateBase.BaseId}, which still holds {removedWaterPark.ChildEntities.Count} entities; keeping it");
+                continue;
+            }
+            worldEntityManager.RemoveGlobalRootEntity(removedChildId);
         }
         buildEntity.OperationId++;
         operationId = buildEntity.OperationId;
         return true;
     }
+
+    private static bool IsEmptyWaterPark(InteriorPieceEntity waterPark) =>
+        waterPark.ChildEntities.All(child => child is PlanterEntity && child.ChildEntities.Count == 0);
 
     private bool IsChildOf(NitroxId entityId, NitroxId parentId) => entityRegistry.TryGetEntityById(entityId, out Entity entity) && entity.ParentId == parentId;
 

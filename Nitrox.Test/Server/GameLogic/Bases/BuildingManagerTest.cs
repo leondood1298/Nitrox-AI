@@ -177,6 +177,44 @@ public sealed class BuildingManagerTest
     private static PieceDeconstructed Deconstructed(NitroxId pieceId, int operationId) =>
         new(BuildingScenarioFixture.BaseId, pieceId, default, BuildingScenarioFixture.Ghost(pieceId), new BaseData(), operationId);
 
+    /// <summary>
+    ///     A builder whose game failed to spawn a containment does not list it; the fish in it must not be removed for that.
+    /// </summary>
+    [TestMethod]
+    public void UnlistedWaterParkWithFishIsKept()
+    {
+        BuildingScenarioFixture scenario = new();
+        NitroxId waterParkId = new("00000000-0000-0000-0000-000000000520");
+        InteriorPieceEntity waterPark = scenario.AddInteriorPiece(waterParkId, "BaseWaterPark", BuildingScenarioFixture.Item("00000000-0000-0000-0000-000000000531", "Peeper"));
+        waterPark.ClassId = WATER_PARK_CLASS_ID;
+        NitroxId ghostId = new("00000000-0000-0000-0000-000000000540");
+        scenario.AddGhost(ghostId);
+
+        Assert.IsTrue(scenario.BuildingManager.UpdateBase(scenario.PlayerA, Update(ghostId, default, 1), out _));
+
+        Assert.IsTrue(scenario.EntityRegistry.TryGetEntityById(waterParkId, out InteriorPieceEntity _));
+    }
+
+    [TestMethod]
+    public void MergedWaterParkIsRemovedAndItsFishMove()
+    {
+        BuildingScenarioFixture scenario = new();
+        NitroxId upperId = new("00000000-0000-0000-0000-000000000521");
+        NitroxId lowerId = new("00000000-0000-0000-0000-000000000522");
+        InventoryItemEntity fish = BuildingScenarioFixture.Item("00000000-0000-0000-0000-000000000531", "Peeper");
+        scenario.AddInteriorPiece(upperId, "BaseWaterPark", fish).ClassId = WATER_PARK_CLASS_ID;
+        scenario.AddInteriorPiece(lowerId, "BaseWaterPark").ClassId = WATER_PARK_CLASS_ID;
+        NitroxId ghostId = new("00000000-0000-0000-0000-000000000540");
+        scenario.AddGhost(ghostId);
+        UpdateBase update = Update(ghostId, (upperId, lowerId), 1);
+        update.UpdatedChildren[lowerId] = default;
+
+        Assert.IsTrue(scenario.BuildingManager.UpdateBase(scenario.PlayerA, update, out _));
+
+        Assert.IsFalse(scenario.EntityRegistry.GetEntityById(upperId).HasValue);
+        Assert.AreEqual(lowerId, scenario.EntityRegistry.GetEntityById(fish.Id).Value.ParentId);
+    }
+
     private const string WATER_PARK_CLASS_ID = "31662630-7cba-4583-8456-2fa1c4cc31aa";
 
     private static UpdateBase Update(NitroxId ghostId, (NitroxId, NitroxId) transfer, int operationId, Entity? builtPiece = null) =>
