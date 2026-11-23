@@ -4,8 +4,10 @@ namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
 internal sealed class GoalCompletedProcessor : IAuthPacketProcessor<GoalCompleted>
 {
-    public async Task Process(AuthProcessorContext context, GoalCompleted packet)
+    public Task Process(AuthProcessorContext context, GoalCompleted packet)
     {
-        context.Sender.PersonalCompletedGoalsWithTimestamp.Add(packet.CompletedGoal, packet.CompletionTime);
+        // A client can report a goal again (e.g. after the restore at initial sync), the first completion time is kept
+        context.Sender.PersonalCompletedGoalsWithTimestamp.TryAdd(packet.CompletedGoal, packet.CompletionTime);
+        return Task.CompletedTask;
     }
 }

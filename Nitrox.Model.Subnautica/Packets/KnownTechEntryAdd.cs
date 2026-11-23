@@ -26,14 +26,18 @@ namespace Nitrox.Model.Subnautica.Packets
         public NitroxTechType TechType { get; }
         public bool Verbose { get; }
         public EntryCategory Category { get; }
-        public List<NitroxTechType> PartialTechTypesToRemove { get; }
+        /// <summary>
+        ///     Scanner entries whose blueprint is <see cref="TechType" />. The game marks them as completely scanned when the
+        ///     blueprint is learned (PDAScanner.CompleteAllEntriesWhichUnlocks), the server stores that.
+        /// </summary>
+        public List<NitroxTechType> CompletedScannerEntries { get; }
 
-        public KnownTechEntryAdd(EntryCategory category, NitroxTechType techType, bool verbose, List<NitroxTechType>? partialTechTypesToRemove = null)
+        public KnownTechEntryAdd(EntryCategory category, NitroxTechType techType, bool verbose, List<NitroxTechType>? completedScannerEntries = null)
         {
             Category = category;
             TechType = techType;
             Verbose = verbose;
-            PartialTechTypesToRemove = partialTechTypesToRemove ?? [];
+            CompletedScannerEntries = completedScannerEntries ?? [];
         }
     }
 }

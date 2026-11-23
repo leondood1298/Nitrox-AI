@@ -17,6 +17,10 @@ internal sealed class StoryGoalExecutedProcessor(IPacketSender packetSender, Sto
         logger.ZLogDebug($"Processing packet: {packet}");
         // The switch is structure is similar to StoryGoal.Execute()
         bool added = storyManager.AddCompletedStory(packet.Key);
+        if (added)
+        {
+            storyManager.OnGoalCompleted(packet.Key);
+        }
         switch (packet.Type)
         {
             case StoryGoalExecuted.EventType.RADIO:

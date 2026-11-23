@@ -135,6 +135,13 @@ public partial class TimeManager
             AttemptNtpSync();
         }
 
+        // The server sends time updates to every connected session, so one can arrive before the game scene is loaded.
+        // The values are kept above, DayNightCycle takes them up when it updates.
+        if (!DayNightCycle.main)
+        {
+            return;
+        }
+
         // We don't want to have a big DeltaTime when processing a time skip so we calculate it beforehands
         float deltaTimeBefore = DeltaTime;
         DayNightCycle.main.timePassedAsDouble = CalculateCurrentTime();
@@ -150,6 +157,11 @@ public partial class TimeManager
     public double CalculateCurrentTime()
     {
         double currentTime = CurrentTime;
+        if (!DayNightCycle.main)
+        {
+            DeltaTime = 0.0001f;
+            return currentTime;
+        }
         DeltaTime = (float)(currentTime - DayNightCycle.main.timePassedAsDouble);
         // DeltaTime = 0 might end up causing a divide by 0 => NaN in some scripts
         if (Mathf.Approximately(DeltaTime, 0f))

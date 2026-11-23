@@ -70,12 +70,21 @@ public sealed class PdaInitialSyncProcessor : InitialSyncProcessor
     private static IEnumerator RestorePDAScanner(InitialPlayerSync packet)
     {
         InitialPDAData pdaData = packet.PDAData;
+        HashSet<TechType> complete = new(pdaData.ScannerComplete.Select(techType => techType.ToUnity()));
 
+        // Scans of other players are processed during the loading screen, before this snapshot is applied.
+        // PDAScanner.Deserialize adds the fragment ids with Dictionary.Add, which throws on an id that is already there.
+        // Its partial entries go through PDAScanner.Add, which keeps one entry per tech, but a partial entry of a tech the
+        // snapshot has as complete would be left next to it.
+        PDAScanner.partial.RemoveAll(entry => complete.Contains(entry.techType));
         PDAScanner.Data data = new()
         {
-            fragments = pdaData.ScannerFragments.ToDictionary(m => m.ToString(), m => 1f),
+            fragments = pdaData.ScannerFragments.Select(id => id.ToString())
+                               .Where(fragmentKey => !PDAScanner.fragments.ContainsKey(fragmentKey))
+                               .Distinct()
+                               .ToDictionary(fragmentKey => fragmentKey, _ => 1f),
             partial = pdaData.ScannerPartial.Select(entry => entry.ToUnity()).ToList(),
-            complete = new HashSet<TechType>(pdaData.ScannerComplete.Select(techType => techType.ToUnity()))
+            complete = complete
         };
         PDAScanner.Deserialize(data);
         yield break;

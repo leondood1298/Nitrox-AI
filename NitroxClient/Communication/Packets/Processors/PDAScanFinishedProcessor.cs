@@ -21,12 +21,22 @@ internal sealed class PDAScanFinishedProcessor : IClientPacketProcessor<PDAScanF
         TechType packetTechType = packet.TechType.ToUnity();
         if (packet.FullyResearched)
         {
+            bool wasComplete = PDAScanner.complete.Contains(packetTechType);
             PDAScanner.partial.RemoveAllFast(packetTechType, static (item, techType) => item.techType == techType);
             PDAScanner.complete.Add(packetTechType);
+            // When two players scan the last fragments at the same time, no game counts up to the total itself, so no game
+            // unlocked the blueprint. The scanning game unlocked it already when it did count up to the total.
+            if (!wasComplete)
+            {
+                PDAScanner.EntryData entryData = PDAScanner.GetEntryData(packetTechType);
+                if (entryData != null)
+                {
+                    PDAScanner.Unlock(entryData, true, true, true);
+                }
+            }
             return Task.CompletedTask;
         }
-        // PDAScanner.Add always appends, so an existing partial entry must be updated in place. A second entry for the
-        // same type would shadow this one and local scans would keep counting from the stale value.
+        // PDAScanner.Add only raises an existing entry's count, the server's count is set as it is
         bool hadEntry = PDAScanner.GetPartialEntryByKey(packetTechType, out PDAScanner.Entry updatedEntry);
         int previousUnlocked = hadEntry ? updatedEntry.unlocked : 0;
         if (hadEntry)
