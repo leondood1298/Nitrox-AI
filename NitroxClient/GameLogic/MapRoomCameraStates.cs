@@ -98,6 +98,14 @@ public sealed partial class MapRoomCameraStates
     }
 
     /// <summary>
+    ///     Whether the game may damage or repair a camera here. A camera's health is the simulating player's to decide,
+    ///     like a vehicle's: in anybody else's game the change would show there alone, until the server's state undoes
+    ///     it. A repair by another player is passed on to the simulating player instead (see Welder_Weld_Patch).
+    /// </summary>
+    /// <param name="applyingServerState">Whether the change is the server's state being put into the camera.</param>
+    internal bool ChangesHealthHere(NitroxId cameraId, bool applyingServerState) => applyingServerState || simulationOwnership.HasAnyLockType(cameraId);
+
+    /// <summary>
     ///     A camera of the game, as far as its light, battery and health go. Tests put a camera without the game here.
     /// </summary>
     internal interface ICamera

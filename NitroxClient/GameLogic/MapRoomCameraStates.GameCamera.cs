@@ -39,6 +39,11 @@ public sealed partial class MapRoomCameraStates
         }
     }
 
+    /// <inheritdoc cref="ChangesHealthHere(NitroxId, bool)" />
+    public bool ChangesHealthHere(MapRoomCamera camera) =>
+        // A camera that is no entity is nobody's to decide.
+        !camera.TryGetNitroxId(out NitroxId cameraId) || ChangesHealthHere(cameraId, liveMixinManager.IsRemoteHealthChanging);
+
     /// <summary>
     ///     What the game shows for a camera, for the entity a client makes of it. The server keeps its own state for
     ///     a camera it knows and takes nothing from here.

@@ -148,6 +148,17 @@ public sealed class MapRoomCameraStatesTest
     }
 
     [TestMethod]
+    public void OnlyTheGameOfThePlayerWhoSimulatesACameraDamagesOrRepairsIt()
+    {
+        Assert.IsFalse(states.ChangesHealthHere(camera.Id, false), "Here the change would show in this game alone, until the server's state undoes it.");
+        Assert.IsTrue(states.ChangesHealthHere(camera.Id, true), "What the server holds is put into every client's camera.");
+
+        simulationOwnership.SimulateEntity(camera.Id, SimulationLockType.TRANSIENT);
+
+        Assert.IsTrue(states.ChangesHealthHere(camera.Id, false));
+    }
+
+    [TestMethod]
     public void NothingIsReportedWhileTheBatteryIsBeingPutIn()
     {
         states.Apply(camera, new MapRoomCameraMetadata(false, 60f, 400f, 2, 1));
