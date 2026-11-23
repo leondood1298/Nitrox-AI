@@ -36,6 +36,7 @@ public class PlayerEntitySpawner(PlayerManager playerManager, ILocalNitroxPlayer
 
         GameObject remotePlayerBody = CloneLocalPlayerBodyPrototype();
         remotePlayer.Value.InitializeGameObject(remotePlayerBody);
+        playerManager.BodyCreated(remotePlayer.Value);
 
         if (parent.HasValue)
         {

@@ -36,17 +36,26 @@ public sealed class StalkerFedByPlayerProcessorTest
     [TestMethod]
     public async Task FeedingReachesThePlayerWhoSimulatesTheStalkerOnly()
     {
-        await Send(feeder, new StalkerFedByPlayer(stalkerId, feeder.GameObjectId, 1.5f));
+        await Send(feeder, new StalkerFedByPlayer(stalkerId, feeder.GameObjectId, 1.5f, false));
 
         Assert.AreEqual(1.5f, ConnectedPlayers.SentTo<StalkerFedByPlayer>(packetSender, simulator).Single().FoodValue);
         Assert.AreEqual(0, ConnectedPlayers.SentTo<StalkerFedByPlayer>(packetSender, bystander).Count);
     }
 
     [TestMethod]
+    public async Task HeroPeeperFedByHandReachesTheSimulatingPlayerAsOne()
+    {
+        // The simulating player's game is where the Stalker's infection is decided, so the healing happens there
+        await Send(feeder, new StalkerFedByPlayer(stalkerId, feeder.GameObjectId, 1f, true));
+
+        Assert.IsTrue(ConnectedPlayers.SentTo<StalkerFedByPlayer>(packetSender, simulator).Single().HeroPeeper);
+    }
+
+    [TestMethod]
     public async Task PlayerCannotFeedInSomebodyElsesName()
     {
         // Or they could make any Stalker befriend anybody
-        await Send(feeder, new StalkerFedByPlayer(stalkerId, bystander.GameObjectId, 1f));
+        await Send(feeder, new StalkerFedByPlayer(stalkerId, bystander.GameObjectId, 1f, false));
 
         Assert.AreEqual(0, packetSender.ReceivedCalls().Count());
     }
@@ -58,7 +67,7 @@ public sealed class StalkerFedByPlayerProcessorTest
     [DataRow(float.NaN)]
     public void FoodValueOutsideWhatAFishFeedsIsRefused(float foodValue)
     {
-        Assert.IsFalse(StalkerFedByPlayerProcessor.IsValid(new StalkerFedByPlayer(stalkerId, feeder.GameObjectId, foodValue), simulator, feeder));
+        Assert.IsFalse(StalkerFedByPlayerProcessor.IsValid(new StalkerFedByPlayer(stalkerId, feeder.GameObjectId, foodValue, false), simulator, feeder));
     }
 
     [TestMethod]
@@ -66,7 +75,7 @@ public sealed class StalkerFedByPlayerProcessorTest
     {
         simulationOwnershipData.RevokeIfOwner(stalkerId, simulator);
 
-        await Send(feeder, new StalkerFedByPlayer(stalkerId, feeder.GameObjectId, 1f));
+        await Send(feeder, new StalkerFedByPlayer(stalkerId, feeder.GameObjectId, 1f, false));
 
         Assert.AreEqual(0, packetSender.ReceivedCalls().Count());
     }

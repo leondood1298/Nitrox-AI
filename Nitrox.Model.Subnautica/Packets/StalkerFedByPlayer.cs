@@ -6,7 +6,7 @@ namespace Nitrox.Model.Subnautica.Packets;
 
 /// <summary>
 ///     A Stalker ate a fish from the sender's hand on the sender's game, which does not simulate it. Sent to the player who
-///     simulates the Stalker, whose Stalker eats it and befriends the sender (MeleeAttack.TryEat, Stalker.OnFishEat).
+///     simulates the Stalker, whose Stalker eats it, is healed by a hero peeper and befriends the sender (MeleeAttack.TryEat, Stalker.OnFishEat).
 /// </summary>
 [Serializable]
 public class StalkerFedByPlayer : Packet
@@ -23,10 +23,16 @@ public class StalkerFedByPlayer : Packet
     /// </summary>
     public float FoodValue { get; }
 
-    public StalkerFedByPlayer(NitroxId stalkerId, NitroxId playerId, float foodValue)
+    /// <summary>
+    ///     The fish was a hero peeper, whose enzyme heals the Stalker's infection (MeleeAttack.TryEat).
+    /// </summary>
+    public bool HeroPeeper { get; }
+
+    public StalkerFedByPlayer(NitroxId stalkerId, NitroxId playerId, float foodValue, bool heroPeeper)
     {
         StalkerId = stalkerId;
         PlayerId = playerId;
         FoodValue = foodValue;
+        HeroPeeper = heroPeeper;
     }
 }

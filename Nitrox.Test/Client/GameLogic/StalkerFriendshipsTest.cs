@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.Packets;
@@ -9,8 +10,8 @@ using NSubstitute;
 namespace Nitrox.Test.Client.GameLogic;
 
 /// <summary>
-///     The smell another player leaves on an item they drop, as the game that simulates a Stalker remembers it. What the
-///     Stalker does with it needs the game.
+///     The smell another player leaves on an item they drop, as the game that simulates a Stalker remembers it, and the
+///     Stalkers waiting for a friend whose body is not there yet. What the Stalker does with either needs the game.
 /// </summary>
 [TestClass]
 public sealed class StalkerFriendshipsTest
@@ -27,7 +28,8 @@ public sealed class StalkerFriendshipsTest
         IMultiplayerSession multiplayerSession = Substitute.For<IMultiplayerSession>();
         multiplayerSession.Reservation.Returns(new MultiplayerSessionReservation((SessionId)(ushort)1));
         IPacketSender packetSender = Substitute.For<IPacketSender>();
-        friendships = new StalkerFriendships(packetSender, new SimulationOwnership(multiplayerSession, packetSender), new StalkerMetadataExtractor());
+        friendships = new StalkerFriendships(packetSender, new SimulationOwnership(multiplayerSession, packetSender), new StalkerMetadataExtractor(),
+                                             new PlayerManager(null!, null!, null!));
     }
 
     [TestMethod]
@@ -65,6 +67,38 @@ public sealed class StalkerFriendshipsTest
 
         Assert.IsFalse(friendships.TryGetSmell(itemId, 0f, out _, out _, out _), "Dropped when the next smell came in long after it faded.");
         Assert.IsTrue(friendships.TryGetSmell(otherItemId, 1000f, out _, out _, out _));
+    }
+
+    [TestMethod]
+    public void StalkerWaitingForItsFriendBefriendsThemWhenTheyAppearForWhatIsLeftOfTheFriendship()
+    {
+        NitroxId stalkerId = new();
+        friendships.RememberPendingFriend(stalkerId, playerId, 500d);
+
+        List<(NitroxId StalkerId, double Remaining)> appeared = friendships.TakePendingFriendships(playerId, 440d);
+
+        Assert.AreEqual(1, appeared.Count);
+        Assert.AreEqual(stalkerId, appeared[0].StalkerId);
+        Assert.AreEqual(60d, appeared[0].Remaining, 0.0001d);
+        Assert.AreEqual(0, friendships.TakePendingFriendships(playerId, 440d).Count, "Once.");
+    }
+
+    [TestMethod]
+    public void AnotherPlayerAppearingLeavesTheStalkerWaiting()
+    {
+        NitroxId stalkerId = new();
+        friendships.RememberPendingFriend(stalkerId, playerId, 500d);
+
+        Assert.AreEqual(0, friendships.TakePendingFriendships(new NitroxId(), 100d).Count);
+        Assert.AreEqual(1, friendships.TakePendingFriendships(playerId, 100d).Count);
+    }
+
+    [TestMethod]
+    public void FriendshipThatEndedBeforeTheFriendAppearedIsForgotten()
+    {
+        friendships.RememberPendingFriend(new NitroxId(), playerId, 500d);
+
+        Assert.AreEqual(0, friendships.TakePendingFriendships(playerId, 600d).Count);
     }
 
     [TestMethod]
