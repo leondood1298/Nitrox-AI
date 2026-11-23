@@ -4,7 +4,6 @@ using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
-using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 
 namespace Nitrox.Test.Server.Subnautica;

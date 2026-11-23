@@ -1,5 +1,4 @@
 using System.Linq;
-using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
@@ -124,7 +123,7 @@ internal sealed partial class ScannerRoomManager
     /// <summary>
     ///     Makes a camera a child of a room, or an entity without a parent. Only the entity tree changes: the camera's
     ///     transform stays a place in the world, as in the game, which does not put a docked camera under its room
-    ///     either. <see cref="EntityRegistry.ReparentEntity(Entity, Entity)" /> would make it relative to the transform
+    ///     either. <c>EntityRegistry.ReparentEntity</c> would make it relative to the transform
     ///     of the room entity, which is empty and cannot be inverted, and leave the camera without a position.
     /// </summary>
     private void SetParent(WorldEntity camera, MapRoomEntity? room)

@@ -134,6 +134,8 @@ public sealed class StalkerCameraGrabs(SimulationOwnership simulationOwnership, 
     {
         if (simulationOwnership.HasExclusiveLock(cameraId) && !mapRoomCameras.HasLocalControl(cameraId) && !mapRoomCameras.HasPendingControl(cameraId))
         {
+            // Known here at once, so that the next Stalker, or the player, asks for the exclusive lock again.
+            simulationOwnership.SimulateEntity(cameraId, SimulationLockType.TRANSIENT);
             simulationOwnership.RequestSimulationLock(cameraId, SimulationLockType.TRANSIENT);
         }
     }

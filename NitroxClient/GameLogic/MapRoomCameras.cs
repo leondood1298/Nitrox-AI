@@ -5,7 +5,6 @@ using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.Helper;
 using Nitrox.Model.Subnautica.Packets;
-using NitroxClient.Communication;
 using NitroxClient.Communication.Abstract;
 using NitroxClient.GameLogic.Simulation;
 using NitroxClient.MonoBehaviours;
@@ -139,6 +138,9 @@ public class MapRoomCameras
         packetSender.Send(new MapRoomCameraControlChanged(cameraId, multiplayerSession.Reservation.SessionId, false));
         if (simulationOwnership.HasExclusiveLock(cameraId))
         {
+            // Known here at once: a player who takes the camera again before the answer arrives has to ask for the
+            // exclusive lock again, or the server would see their control without it.
+            simulationOwnership.SimulateEntity(cameraId, SimulationLockType.TRANSIENT);
             simulationOwnership.RequestSimulationLock(cameraId, SimulationLockType.TRANSIENT);
         }
         diagnostics.Record("control_publish", "ok", cameraId, reason: "control_given_up");
@@ -171,6 +173,7 @@ public class MapRoomCameras
         {
             // The game did not take the camera after all: the screen is gone, or it chose another camera.
             diagnostics.Record("control_apply", "reject", cameraId, reason: "not_taken");
+            simulationOwnership.SimulateEntity(cameraId, SimulationLockType.TRANSIENT);
             simulationOwnership.RequestSimulationLock(cameraId, SimulationLockType.TRANSIENT);
         }
     }

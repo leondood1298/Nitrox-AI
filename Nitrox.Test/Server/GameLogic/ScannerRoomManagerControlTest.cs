@@ -2,7 +2,6 @@ using System.Threading.Tasks;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.GameLogic;
-using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Test.Model.Subnautica;
