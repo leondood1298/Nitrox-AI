@@ -118,7 +118,12 @@ public sealed partial class Constructable_Construct_Patch : NitroxPatch, IDynami
     public static IEnumerator BroadcastObjectBuilt(ConstructableBase constructableBase, NitroxId entityId)
     {
         BaseGhost baseGhost = constructableBase.model.GetComponent<BaseGhost>();
+        // Only what this very construction sets (WaterPark_TransferValue_Patch, during SetState) may be sent with it.
+        // Taken at once: a remote build applied during the frames below sets and clears it for itself.
+        Temp.ChildrenTransfer = (null, null);
         constructableBase.SetState(true, true);
+        (NitroxId, NitroxId) childrenTransfer = Temp.ChildrenTransfer;
+        Temp.ChildrenTransfer = (null, null);
         if (!baseGhost.targetBase)
         {
             Log.Error("Something wrong happened, couldn't find base after finishing building ghost");
@@ -171,7 +176,7 @@ public sealed partial class Constructable_Construct_Patch : NitroxPatch, IDynami
                 }
             }
 
-            SendUpdateBase(parentBase, parentId, entityId, builtPiece, moonpoolManager);
+            SendUpdateBase(parentBase, parentId, entityId, builtPiece, moonpoolManager, childrenTransfer);
         }
         else
         {
@@ -196,7 +201,7 @@ public sealed partial class Constructable_Construct_Patch : NitroxPatch, IDynami
         Temp.Dispose();
     }
 
-    private static void SendUpdateBase(Base @base, NitroxId baseId, NitroxId pieceId, GlobalRootEntity builtPieceEntity, MoonpoolManager moonpoolManager)
+    private static void SendUpdateBase(Base @base, NitroxId baseId, NitroxId pieceId, GlobalRootEntity builtPieceEntity, MoonpoolManager moonpoolManager, (NitroxId, NitroxId) childrenTransfer)
     {
         List<Entity> childEntities = BuildUtils.GetChildEntities(@base, baseId, Resolve<EntityMetadataManager>());
 
@@ -210,7 +215,7 @@ public sealed partial class Constructable_Construct_Patch : NitroxPatch, IDynami
         BuildingHandler.Main.EnsureTracker(baseId).LocalOperations++;
         int operationId = BuildingHandler.Main.GetCurrentOperationIdOrDefault(baseId);
 
-        UpdateBase updateBase = new(baseId, pieceId, BuildEntitySpawner.GetBaseData(@base), builtPieceEntity, updatedChildren, moonpoolManager.GetMoonpoolsUpdate(), updatedMapRooms, Temp.ChildrenTransfer, operationId);
+        UpdateBase updateBase = new(baseId, pieceId, BuildEntitySpawner.GetBaseData(@base), builtPieceEntity, updatedChildren, moonpoolManager.GetMoonpoolsUpdate(), updatedMapRooms, childrenTransfer, operationId);
 
         // TODO: (for server-side) Find a way to optimize this (maybe by copying BaseGhost.Finish() => Base.CopyFrom)
         Resolve<IPacketSender>().Send(updateBase);

@@ -254,7 +254,8 @@ internal sealed class BuildingManager
 
         NitroxId transferFromId = updateBase.ChildrenTransfer.Item1;
         NitroxId transferToId = updateBase.ChildrenTransfer.Item2;
-        if (transferFromId != null && transferToId != null)
+        // A transfer is between water parks of the updated base; one naming another base's pieces is stale
+        if (transferFromId != null && transferToId != null && IsChildOf(transferFromId, updateBase.BaseId) && IsChildOf(transferToId, updateBase.BaseId))
         {
             // NB: we don't want certain entities to be transferred (e.g. planters)
             entityRegistry.TransferChildren(transferFromId, transferToId, entity => entity is not PlanterEntity);
@@ -284,6 +285,8 @@ internal sealed class BuildingManager
         operationId = buildEntity.OperationId;
         return true;
     }
+
+    private bool IsChildOf(NitroxId entityId, NitroxId parentId) => entityRegistry.TryGetEntityById(entityId, out Entity entity) && entity.ParentId == parentId;
 
     /// <summary>
     /// Removes all children from the planter(s) of the param water park (<paramref name="interiorPieceEntity"/>)

@@ -221,10 +221,11 @@ public partial class BuildingHandler : MonoBehaviour
             Log.Error($"Couldn't find ghost with id: {updateBase.FormerGhostId} when processing packet: {updateBase}");
             yield break;
         }
-        Temp.ChildrenTransfer = updateBase.ChildrenTransfer;
-
         BaseGhost baseGhost = constructableBase.model.GetComponent<BaseGhost>();
         constructableBase.SetState(true, true);
+        // SetState lets WaterPark_TransferValue_Patch note the transfer of this remote build. It is the builder's to send,
+        // and kept here it would ride along with this player's next build and empty a water park's planter on the server.
+        Temp.ChildrenTransfer = (null, null);
         BasesCooldown[updateBase.BaseId] = DateTimeOffset.UtcNow;
         // In the case the built piece was an interior piece, we'll want to transfer the id to it.
         if (BuildUtils.TryTransferIdFromGhostToModule(baseGhost, updateBase.FormerGhostId, constructableBase, out GameObject moduleObject))
