@@ -30,12 +30,15 @@ public sealed class MapRoomCameraDockValidationTest
     }
 
     [DataTestMethod]
-    [DataRow(true, SimulationLockType.EXCLUSIVE, true)]
-    [DataRow(false, SimulationLockType.EXCLUSIVE, false)]
-    [DataRow(true, SimulationLockType.TRANSIENT, false)]
-    public void DockingPreservesOnlyTheControllersExclusiveLock(bool senderOwnsLock, SimulationLockType lockType, bool expected)
+    [DataRow(true, SimulationLockType.EXCLUSIVE, true, true)]
+    [DataRow(true, SimulationLockType.EXCLUSIVE, false, false)]
+    [DataRow(false, SimulationLockType.EXCLUSIVE, true, false)]
+    [DataRow(true, SimulationLockType.TRANSIENT, true, false)]
+    public void DockingPreservesOnlyTheControllersExclusiveLock(bool senderOwnsLock,
+        SimulationLockType lockType, bool senderIsActiveController, bool expected)
     {
-        Assert.AreEqual(expected, MapRoomCameraDockProcessor.ShouldPreserveControlLock(senderOwnsLock, lockType));
+        Assert.AreEqual(expected, MapRoomCameraDockProcessor.ShouldPreserveControlLock(
+            senderOwnsLock, lockType, senderIsActiveController));
     }
 
     [DataTestMethod]

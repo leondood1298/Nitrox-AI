@@ -33,17 +33,19 @@ public sealed class BasePowerSourceAuthorityTest
     }
 
     [TestMethod]
-    public void RejectsReplayFromSameOwnerWithoutMutation()
+    public void RejoinedPlayerOnReusedSessionIdCanRestartClientSequence()
     {
+        // A client restarts its counter at 1 on every join, and the server hands the same session id out again
+        // after the reuse delay. The returning player's updates must not be treated as stale.
         BasePowerSourceAuthority authority = new();
         ModuleEntity source = CreateModule();
-        Assert.IsTrue(authority.TryApply(source, firstOwner, Request(source.Id, BasePowerSourceType.SOLAR, 50f, 4), out PowerSourceMetadata accepted, out _));
+        Assert.IsTrue(authority.TryApply(source, firstOwner, Request(source.Id, BasePowerSourceType.SOLAR, 50f, 3600), out _, out _));
 
-        Assert.IsFalse(authority.TryApply(source, firstOwner, Request(source.Id, BasePowerSourceType.SOLAR, 10f, 4), out PowerSourceMetadata replayState, out string reason));
+        Assert.IsTrue(authority.TryApply(source, firstOwner, Request(source.Id, BasePowerSourceType.SOLAR, 10f, 1), out PowerSourceMetadata accepted, out string reason), reason);
 
-        Assert.AreSame(accepted, replayState);
-        Assert.AreEqual(50f, ((PowerSourceMetadata)source.Metadata).Power);
-        StringAssert.Contains(reason, "stale client sequence");
+        Assert.AreEqual(10f, accepted.Power);
+        Assert.AreEqual(2, accepted.Revision);
+        Assert.AreEqual(10f, ((PowerSourceMetadata)source.Metadata).Power);
     }
 
     [TestMethod]

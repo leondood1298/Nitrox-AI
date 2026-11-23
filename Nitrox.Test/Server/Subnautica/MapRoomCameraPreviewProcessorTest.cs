@@ -287,17 +287,19 @@ public sealed class MapRoomCameraPreviewProcessorTest
     }
 
     [TestMethod]
-    public async Task GenericDowngradeEndsPreviewEligibility()
+    public async Task GenericDowngradeCannotReplaceCanonicalControlRelease()
     {
         ScannerRoomScenarioFixture scenario = await CreateControlledScenarioAsync();
-        Assert.IsTrue((await scenario.RequestOwnershipAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId,
-            SimulationLockType.TRANSIENT)).LockAcquired);
+        Assert.IsFalse((await scenario.RequestOwnershipAsync(scenario.PlayerA,
+            ScannerRoomScenarioFixture.CameraAId, SimulationLockType.TRANSIENT)).LockAcquired);
         Assert.IsTrue(scenario.Ownership.TryGetLock(ScannerRoomScenarioFixture.CameraAId,
-            out SimulationOwnershipData.PlayerLock downgradedLock));
-        Assert.AreEqual(SimulationLockType.TRANSIENT, downgradedLock.LockType,
-            "Only explicit ownership requests retain downgrade semantics.");
-        Assert.IsTrue((await scenario.RequestOwnershipAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId,
-            SimulationLockType.EXCLUSIVE)).LockAcquired);
+            out SimulationOwnershipData.PlayerLock preservedLock));
+        Assert.AreEqual(SimulationLockType.EXCLUSIVE, preservedLock.LockType,
+            "Only the canonical MapRoomCameraControl release may end active camera control.");
+        Assert.IsTrue(scenario.ControlLifecycle.IsActiveController(
+            ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA.SessionId));
+        Assert.IsTrue((await scenario.RequestOwnershipAsync(scenario.PlayerA,
+            ScannerRoomScenarioFixture.CameraAId, SimulationLockType.EXCLUSIVE)).LockAcquired);
         MapRoomCameraPreviewProcessor processor = new(scenario.Ownership, scenario.EntityRegistry,
             scenario.ControlLifecycle, scenario.Diagnostics);
         RecordingSender sender = new();
@@ -306,8 +308,8 @@ public sealed class MapRoomCameraPreviewProcessorTest
             new MapRoomCameraPreview(ScannerRoomScenarioFixture.CameraAId, 1,
                 MapRoomCameraPreviewImageTest.CreateJpeg(64, 64)));
 
-        Assert.AreEqual(0, sender.ToAll.Count);
-        Assert.AreEqual(1, sender.Replies.Count(packet => !packet.Granted));
+        Assert.AreEqual(1, sender.ToAll.Count);
+        Assert.AreEqual(0, sender.Replies.Count);
     }
 
     private static async Task<ScannerRoomScenarioFixture> CreateControlledScenarioAsync()
@@ -316,6 +318,25 @@ public sealed class MapRoomCameraPreviewProcessorTest
         Assert.IsTrue((await scenario.DockAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
         Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA, ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
         return scenario;
+    }
+
+    [TestMethod]
+    public async Task PreviewForAnIdThatNeverHadControlIsDeniedWithoutMarkingItAsACamera()
+    {
+        // Any entity id can be put in a preview packet. It must not become a "known camera", because ownership
+        // requests for known ids that are not scanner cameras are denied (which would lock out e.g. a vehicle).
+        ScannerRoomScenarioFixture scenario = new();
+        MapRoomCameraPreviewProcessor processor = new(scenario.Ownership, scenario.EntityRegistry,
+            scenario.ControlLifecycle, scenario.Diagnostics);
+        RecordingSender sender = new();
+        NitroxId unrelatedEntityId = new();
+
+        await processor.Process(new AuthProcessorContext(scenario.PlayerA, sender),
+            new MapRoomCameraPreview(unrelatedEntityId, 1, MapRoomCameraPreviewImageTest.CreateJpeg(64, 64)));
+
+        Assert.IsFalse(sender.Replies.Single().Granted);
+        Assert.AreEqual(0, sender.ToAll.Count);
+        Assert.IsFalse(scenario.ControlLifecycle.IsKnown(unrelatedEntityId));
     }
 
     private sealed class RecordingSender : IPacketSender

@@ -130,6 +130,12 @@ public class LiteNetLibClient : IClient
         }
 
         MultiplayerProtocolMismatchException connectionFailure = await completion.Task.ConfigureAwait(false);
+        if (!IsConnected)
+        {
+            // The attempt ended without a connection (rejected or unreachable). LiteNetLib keeps its threads and socket
+            // until stopped, so release them here like the timeout path does; the next attempt starts it again.
+            Stop();
+        }
         if (connectionFailure != null)
         {
             throw connectionFailure;
@@ -177,6 +183,11 @@ public class LiteNetLibClient : IClient
             completion?.TrySetResult(null);
         }
     }
+
+    /// <summary>
+    ///     True while LiteNetLib's threads and socket are alive.
+    /// </summary>
+    internal bool IsRunning => client.IsRunning;
 
     /// <summary>
     ///     This should be called <b>once</b> each game tick

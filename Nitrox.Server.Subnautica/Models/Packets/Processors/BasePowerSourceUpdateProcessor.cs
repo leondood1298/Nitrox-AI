@@ -33,7 +33,8 @@ internal sealed class BasePowerSourceUpdateProcessor(EntityRegistry entityRegist
         {
             logger.ZLogInformation($"[BasePower] accepted {accepted.SourceType} source {packet.SourceId}: {accepted.Power:F2}/{accepted.MaxPower:F2}, fuel progress {accepted.FuelConsumed:F2}, revision {accepted.Revision}, client sequence {packet.ClientSequence}, owner {context.Sender.Name} #{context.Sender.SessionId}");
         }
-        await context.SendToAllAsync(Response(packet, accepted, true, ""));
+        // The owner already holds this state. Echoing it back would roll its simulation back by one round trip.
+        await context.SendToOthersAsync(Response(packet, accepted, true, ""));
     }
 
     private async Task Reject(AuthProcessorContext context, BasePowerSourceUpdate packet, PowerSourceMetadata canonical, string reason)

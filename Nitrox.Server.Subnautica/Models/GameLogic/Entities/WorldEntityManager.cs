@@ -253,29 +253,65 @@ internal sealed class WorldEntityManager
         }
     }
 
-    public async Task LoadAllUnspawnedEntitiesAsync(CancellationToken token)
+    public Task LoadAllUnspawnedEntitiesAsync(CancellationToken token)
     {
-        int totalBatches = SubnauticaMap.DimensionsInBatches.X * SubnauticaMap.DimensionsInBatches.Y * SubnauticaMap.DimensionsInBatches.Z;
-        int batchesLoaded = 0;
-
-        for (int x = 0; x < SubnauticaMap.DimensionsInBatches.X; x++)
-        {
-            token.ThrowIfCancellationRequested();
-            for (int y = 0; y < SubnauticaMap.DimensionsInBatches.Y; y++)
+        return ProcessBatchGridAsync(
+            SubnauticaMap.DimensionsInBatches,
+            async batchId =>
             {
-                for (int z = 0; z < SubnauticaMap.DimensionsInBatches.Z; z++)
+                int spawned = await LoadUnspawnedEntitiesAsync(batchId, true);
+                logger.ZLogDebug($"Loaded {spawned} entities from batch ({batchId.X}, {batchId.Y}, {batchId.Z})");
+            },
+            percentage => logger.ZLogInformation($"Loading : {percentage}%"),
+            token);
+    }
+
+    internal static async Task ProcessBatchGridAsync(
+        NitroxInt3 dimensionsInBatches,
+        Func<NitroxInt3, Task> processBatch,
+        Action<int> reportPercentage,
+        CancellationToken token)
+    {
+        ArgumentNullException.ThrowIfNull(processBatch);
+        ArgumentNullException.ThrowIfNull(reportPercentage);
+
+        if (dimensionsInBatches.X < 0 || dimensionsInBatches.Y < 0 || dimensionsInBatches.Z < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(dimensionsInBatches), dimensionsInBatches, "Batch-grid dimensions cannot be negative.");
+        }
+
+        token.ThrowIfCancellationRequested();
+        reportPercentage(0);
+        token.ThrowIfCancellationRequested();
+
+        long totalBatches = checked((long)dimensionsInBatches.X * dimensionsInBatches.Y * dimensionsInBatches.Z);
+        if (totalBatches == 0)
+        {
+            reportPercentage(100);
+            return;
+        }
+
+        long batchesProcessed = 0;
+        int lastReportedPercentage = 0;
+
+        for (int x = 0; x < dimensionsInBatches.X; x++)
+        {
+            for (int y = 0; y < dimensionsInBatches.Y; y++)
+            {
+                for (int z = 0; z < dimensionsInBatches.Z; z++)
                 {
-                    int spawned = await LoadUnspawnedEntitiesAsync(new(x, y, z), true);
-
-                    logger.ZLogDebug($"Loaded {spawned} entities from batch ({x}, {y}, {z})");
-
-                    batchesLoaded++;
+                    token.ThrowIfCancellationRequested();
+                    await processBatch(new(x, y, z));
+                    token.ThrowIfCancellationRequested();
+                    batchesProcessed++;
                 }
             }
 
-            if (batchesLoaded > 0)
+            int percentage = (int)(batchesProcessed * 100 / totalBatches);
+            if (percentage > lastReportedPercentage)
             {
-                logger.ZLogInformation($"Loading : {(int)(100f * batchesLoaded / totalBatches)}%");
+                reportPercentage(percentage);
+                lastReportedPercentage = percentage;
             }
         }
     }

@@ -95,6 +95,7 @@ public sealed class NitroxNetworkProtocolIntegrationTest
             MultiplayerProtocolMismatchException exception = (await connect.Should().ThrowAsync<MultiplayerProtocolMismatchException>()).Which;
             exception.ServerConnectionKey.Should().Be("nitrox-ai/3");
             exception.ClientConnectionKey.Should().Be(NitroxNetworkProtocol.ConnectionKey);
+            client.IsRunning.Should().BeFalse("a rejected attempt must release LiteNetLib's threads and socket");
         }
         finally
         {

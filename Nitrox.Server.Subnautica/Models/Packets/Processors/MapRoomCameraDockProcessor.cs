@@ -156,7 +156,10 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
 			bool preserveControlLock = false;
 			if (stateChanged && packet.IsDocked && simulationOwnershipData.TryGetLock(packet.CameraId, out SimulationOwnershipData.PlayerLock playerLock))
 			{
-				preserveControlLock = ShouldPreserveControlLock(playerLock.Player == context.Sender, playerLock.LockType);
+				preserveControlLock = ShouldPreserveControlLock(
+					playerLock.Player == context.Sender,
+					playerLock.LockType,
+					controlLifecycle.IsActiveController(packet.CameraId, context.Sender.SessionId));
 			}
 			if (stateChanged && packet.IsDocked && !preserveControlLock &&
 				simulationOwnershipData.RevokeOwnerOfId(packet.CameraId, out SimulationOwnershipData.PlayerLock revokedLock) &&
@@ -183,8 +186,9 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
 	internal static bool IsKnownCamera(bool validWorldCamera, bool registeredCamera) => validWorldCamera || registeredCamera;
 	internal static bool CanBootstrapRestoredCamera(bool isDocked, bool senderOwnsRoom, bool slotAvailable, int registeredCameraCount) =>
 		isDocked && senderOwnsRoom && slotAvailable && registeredCameraCount is >= 0 and < 2;
-	internal static bool ShouldPreserveControlLock(bool senderOwnsLock, SimulationLockType lockType) =>
-		senderOwnsLock && lockType == SimulationLockType.EXCLUSIVE;
+	internal static bool ShouldPreserveControlLock(bool senderOwnsLock, SimulationLockType lockType,
+		bool senderIsActiveController) =>
+		senderOwnsLock && lockType == SimulationLockType.EXCLUSIVE && senderIsActiveController;
 	internal static bool ShouldPersistLooseCamera(bool isDocked, bool entityExists, bool hasTransform) =>
 		!isDocked && !entityExists && hasTransform;
 	internal static bool IsRequestedStateCanonical(bool isDocked, NitroxId cameraId, NitroxId? slotCameraId, bool cameraDocked) =>

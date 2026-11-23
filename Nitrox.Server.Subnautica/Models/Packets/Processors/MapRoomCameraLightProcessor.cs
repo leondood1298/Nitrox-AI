@@ -1,4 +1,5 @@
 using System.Threading.Tasks;
+using Nitrox.Model.DataStructures;
 using Nitrox.Model.Packets.Core;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.GameLogic;
@@ -8,10 +9,13 @@ using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
-internal sealed class MapRoomCameraLightProcessor(SimulationOwnershipData simulationOwnershipData, EntityRegistry entityRegistry, ScannerRoomDiagnostics diagnostics) : IAuthPacketProcessor<MapRoomCameraLight>, IAuthPacketProcessor, IPacketProcessor, IPacketProcessor<AuthProcessorContext, MapRoomCameraLight>
+internal sealed class MapRoomCameraLightProcessor(SimulationOwnershipData simulationOwnershipData,
+	EntityRegistry entityRegistry, MapRoomCameraControlLifecycle controlLifecycle,
+	ScannerRoomDiagnostics diagnostics) : IAuthPacketProcessor<MapRoomCameraLight>, IAuthPacketProcessor, IPacketProcessor, IPacketProcessor<AuthProcessorContext, MapRoomCameraLight>
 {
 	private readonly SimulationOwnershipData simulationOwnershipData = simulationOwnershipData;
 	private readonly EntityRegistry entityRegistry = entityRegistry;
+	private readonly MapRoomCameraControlLifecycle controlLifecycle = controlLifecycle;
 	private readonly ScannerRoomDiagnostics diagnostics = diagnostics;
 
 	public async Task Process(AuthProcessorContext context, MapRoomCameraLight packet)
@@ -35,9 +39,16 @@ internal sealed class MapRoomCameraLightProcessor(SimulationOwnershipData simula
 			MapRoomCameraRecord? record = mapRoom.GetCameraRecord(packet.CameraId);
 			sendTask = simulationOwnershipData.ExecuteForOwner(context.Sender, [packet.CameraId], ownedIds =>
 			{
-				if (record == null || !ownedIds.Contains(packet.CameraId))
+				bool hasCanonicalControl =
+					simulationOwnershipData.TryGetLock(packet.CameraId,
+						out SimulationOwnershipData.PlayerLock cameraLock) &&
+					cameraLock.Player == context.Sender &&
+					cameraLock.LockType == SimulationLockType.EXCLUSIVE &&
+					controlLifecycle.IsActiveController(packet.CameraId, context.Sender.SessionId);
+				if (record == null || !ownedIds.Contains(packet.CameraId) || !hasCanonicalControl)
 				{
-					rejectionReason = record == null ? "association_changed" : "non_owner";
+					rejectionReason = record == null ? "association_changed" :
+						!ownedIds.Contains(packet.CameraId) ? "non_owner" : "control_required";
 					return Task.CompletedTask;
 				}
 
@@ -95,5 +106,4 @@ internal sealed class MapRoomCameraLightProcessor(SimulationOwnershipData simula
 		return found;
 	}
 }
-
 

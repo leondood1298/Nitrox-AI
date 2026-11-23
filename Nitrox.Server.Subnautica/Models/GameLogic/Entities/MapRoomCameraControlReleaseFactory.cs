@@ -104,6 +104,71 @@ internal sealed class MapRoomCameraControlReleaseFactory(EntityRegistry entityRe
         return false;
     }
 
+    /// <summary>
+    ///     Generic ownership is legitimate only for Stalker interaction with a coherent loose world
+    ///     camera, or as an idempotent exclusive refresh by the controller already validated through
+    ///     the canonical MapRoomCameraControl flow. A generic transient request may release a
+    ///     Stalker-purpose exclusive lock, but it cannot stand in for the canonical camera-control
+    ///     release packet.
+    /// </summary>
+    public bool CanGrantGenericOwnership(NitroxId cameraId, SessionId requesterSessionId,
+        SimulationLockType requestedLock, bool requesterOwnsExclusive)
+    {
+        CameraTopology topology = ResolveCameraTopology(cameraId);
+        if (topology.IsAmbiguous || !topology.IsKnownScannerCamera)
+        {
+            return false;
+        }
+
+        bool requesterIsActiveController =
+            controlLifecycle.IsActiveController(cameraId, requesterSessionId);
+        bool hasActiveController = controlLifecycle.HasActiveController(cameraId);
+        return requestedLock switch
+        {
+            SimulationLockType.EXCLUSIVE when hasActiveController =>
+                requesterIsActiveController && requesterOwnsExclusive,
+            SimulationLockType.EXCLUSIVE => topology.IsLooseWorldCamera,
+            SimulationLockType.TRANSIENT =>
+                !hasActiveController && requesterOwnsExclusive && topology.IsLooseWorldCamera,
+            _ => false
+        };
+    }
+
+    private CameraTopology ResolveCameraTopology(NitroxId cameraId)
+    {
+        bool validWorldCamera =
+            entityRegistry.TryGetEntityById(cameraId, out WorldEntity worldEntity) &&
+            mapRoomCameraTechType.Equals(worldEntity.TechType);
+        int registrations = 0;
+        int dockedAssociations = 0;
+        foreach (MapRoomEntity room in entityRegistry.GetEntities<MapRoomEntity>())
+        {
+            lock (room)
+            {
+                if (room.GetCameraRecord(cameraId) != null)
+                {
+                    registrations++;
+                }
+                if (room.IsCameraDocked(cameraId))
+                {
+                    dockedAssociations++;
+                }
+            }
+        }
+
+        bool isAmbiguous = registrations > 1 || dockedAssociations > 1 ||
+                           dockedAssociations == 1 && registrations != 1;
+        bool isKnownScannerCamera = !isAmbiguous && (validWorldCamera || registrations == 1);
+        bool isLooseWorldCamera =
+            isKnownScannerCamera && validWorldCamera && dockedAssociations == 0;
+        return new CameraTopology(isKnownScannerCamera, isLooseWorldCamera, isAmbiguous);
+    }
+
+    private readonly record struct CameraTopology(
+        bool IsKnownScannerCamera,
+        bool IsLooseWorldCamera,
+        bool IsAmbiguous);
+
     public IReadOnlyList<NitroxId> GetScannerCameraIds()
     {
         HashSet<NitroxId> ids = entityRegistry.GetEntities<WorldEntity>()

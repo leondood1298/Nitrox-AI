@@ -29,6 +29,7 @@ internal class WorldService : IHostedService
     private readonly EscapePodManager escapePodManager;
     private readonly ServerJsonSerializer jsonSerializer;
     private readonly ILogger<WorldService> logger;
+    private readonly MapRoomCameraControlLifecycle mapRoomCameraControlLifecycle;
     private readonly IOptions<SubnauticaServerOptions> options;
     private readonly PdaManager pdaManager;
     private readonly PlayerManager playerManager;
@@ -53,6 +54,7 @@ internal class WorldService : IHostedService
         IEnumerable<SaveDataUpgrade> upgrades,
         BatchEntitySpawner batchEntitySpawner,
         EntityRegistry entityRegistry,
+        MapRoomCameraControlLifecycle mapRoomCameraControlLifecycle,
         PlayerManager playerManager,
         StoryScheduler storyScheduler,
         StoryManager storyManager,
@@ -71,6 +73,7 @@ internal class WorldService : IHostedService
         this.upgrades = upgrades.ToArray();
         this.batchEntitySpawner = batchEntitySpawner;
         this.entityRegistry = entityRegistry;
+        this.mapRoomCameraControlLifecycle = mapRoomCameraControlLifecycle;
         this.playerManager = playerManager;
         this.storyScheduler = storyScheduler;
         this.storyManager = storyManager;
@@ -109,7 +112,9 @@ internal class WorldService : IHostedService
             GlobalRootData = GlobalRootData.From(worldEntityManager.GetPersistentGlobalRootEntities()),
             EntityData = EntityData.From(entityRegistry.GetAllEntities(true))
         };
-        bool saved = Save(persistedWorld, saveDir, () => entityRegistry.GetEntities<MapRoomEntity>(), cancellationToken,
+        // Once files are being written the save must finish. Honoring the stopping token here aborted a shutdown save
+        // after PlayerData/WorldData were written but before GlobalRootData/EntityData, leaving a mixed-generation save.
+        bool saved = Save(persistedWorld, saveDir, () => entityRegistry.GetEntities<MapRoomEntity>(), CancellationToken.None,
             out IReadOnlyList<SerializedScannerRoomState> serializedScannerRooms);
         if (saved)
         {
@@ -543,6 +548,8 @@ internal class WorldService : IHostedService
             // Entities
             entityRegistry.AddEntities(pWorldData.EntityData.Entities);
             entityRegistry.AddEntitiesIgnoringDuplicate(pWorldData.GlobalRootData.Entities.OfType<Entity>().ToList());
+            SeedLoadedMapRoomCameraLifecycles(
+                entityRegistry.GetEntities<MapRoomEntity>(), mapRoomCameraControlLifecycle);
             await escapePodManager.AddKnownPodsAsync(entityRegistry.GetEntities<EscapePodEntity>());
 
             // TODO: hacky code - see WorldEntityManager for more information.
@@ -574,6 +581,39 @@ internal class WorldService : IHostedService
         }
 
         logger.ZLogInformation($"World finished loading");
+    }
+
+    /// <summary>
+    ///     Seeds the O(1) Scanner Room camera identity index before loaded entities become available
+    ///     to automatic simulation. IDs remain remembered as lifecycle tombstones after removal.
+    /// </summary>
+    internal static int SeedLoadedMapRoomCameraLifecycles(
+        IEnumerable<MapRoomEntity> rooms, MapRoomCameraControlLifecycle controlLifecycle)
+    {
+        HashSet<NitroxId> cameraIds = [];
+        foreach (MapRoomEntity room in rooms)
+        {
+            lock (room)
+            {
+                foreach (MapRoomCameraRecord record in room.CameraRegistry)
+                {
+                    if (record?.CameraId != null)
+                    {
+                        cameraIds.Add(record.CameraId);
+                    }
+                }
+                if (room.LeftDockCameraId != null)
+                {
+                    cameraIds.Add(room.LeftDockCameraId);
+                }
+                if (room.RightDockCameraId != null)
+                {
+                    cameraIds.Add(room.RightDockCameraId);
+                }
+            }
+        }
+        controlLifecycle.RememberMany(cameraIds);
+        return cameraIds.Count;
     }
 
     private async Task<bool> LoadWorldFromSavePathAsync(string saveDir)

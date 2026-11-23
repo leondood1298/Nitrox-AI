@@ -80,8 +80,19 @@ namespace NitroxClient.MonoBehaviours
 
             if (gameObject.TryGetComponent(out NitroxEntity entity))
             {
-                gameObjectsById.Remove(entity.Id);
-                UniqueIdentifier.identifiers.Remove(entity.Id.ToString());
+                if (entity.Id != null &&
+                    gameObjectsById.TryGetValue(entity.Id, out GameObject registeredObject) &&
+                    registeredObject == gameObject)
+                {
+                    gameObjectsById.Remove(entity.Id);
+                }
+                if (entity.Id != null &&
+                    UniqueIdentifier.identifiers.TryGetValue(entity.Id.ToString(),
+                        out UniqueIdentifier registeredIdentifier) &&
+                    IsRegistrationOwner(registeredIdentifier, gameObject.GetComponent<UniqueIdentifier>()))
+                {
+                    UniqueIdentifier.identifiers.Remove(entity.Id.ToString());
+                }
             }
             else
             {
@@ -94,7 +105,10 @@ namespace NitroxClient.MonoBehaviours
             {
                 // To avoid unrequired error spams, we do the id setting manually
                 // If the current UID was already registered, we unregister it
-                if (!string.IsNullOrEmpty(uniqueIdentifier.id))
+                if (!string.IsNullOrEmpty(uniqueIdentifier.id) &&
+                    UniqueIdentifier.identifiers.TryGetValue(uniqueIdentifier.id,
+                        out UniqueIdentifier registeredIdentifier) &&
+                    IsRegistrationOwner(registeredIdentifier, uniqueIdentifier))
                 {
                     UniqueIdentifier.identifiers.Remove(uniqueIdentifier.id);
                 }
@@ -131,7 +145,11 @@ namespace NitroxClient.MonoBehaviours
         {
             if (gameObject.TryGetComponent(out NitroxEntity entity) && entity.Id != null)
             {
-                gameObjectsById.Remove(entity.Id);
+                if (gameObjectsById.TryGetValue(entity.Id, out GameObject registeredObject) &&
+                    registeredObject == gameObject)
+                {
+                    gameObjectsById.Remove(entity.Id);
+                }
                 DestroyImmediate(entity);
             }
         }
@@ -143,23 +161,50 @@ namespace NitroxClient.MonoBehaviours
         {
             if (Id != null)
             {
-                gameObjectsById.Remove(Id);
+                if (gameObjectsById.TryGetValue(Id, out GameObject registeredObject) &&
+                    registeredObject == gameObject)
+                {
+                    gameObjectsById.Remove(Id);
+                }
                 Id = null;
                 if (gameObject.TryGetComponent(out UniqueIdentifier uniqueIdentifier))
                 {
-                    uniqueIdentifier.Unregister();
+                    if (!string.IsNullOrEmpty(uniqueIdentifier.id) &&
+                        UniqueIdentifier.identifiers.TryGetValue(uniqueIdentifier.id,
+                            out UniqueIdentifier registeredIdentifier) &&
+                        IsRegistrationOwner(registeredIdentifier, uniqueIdentifier))
+                    {
+                        uniqueIdentifier.Unregister();
+                    }
                     uniqueIdentifier.id = null;
                 }
+            }
+        }
+
+        internal static bool IsRegistrationOwner<T>(T registered, T candidate) where T : class =>
+            ReferenceEquals(registered, candidate);
+
+        internal static bool CanClaimRegistration(bool hasLiveRegistration, bool registrationOwnedByCandidate) =>
+            !hasLiveRegistration || registrationOwnedByCandidate;
+
+        private void RegisterCurrentIdentityIfAvailable()
+        {
+            if (Id == null)
+            {
+                return;
+            }
+            bool hasLiveRegistration = gameObjectsById.TryGetValue(Id, out GameObject registeredObject) &&
+                                       registeredObject;
+            if (CanClaimRegistration(hasLiveRegistration, registeredObject == gameObject))
+            {
+                gameObjectsById[Id] = gameObject;
             }
         }
 
         public void Start()
         {
             // Just in case this object comes to life via serialization
-            if (Id != null)
-            {
-                gameObjectsById[Id] = gameObject;
-            }
+            RegisterCurrentIdentityIfAvailable();
         }
 
         public void OnProtoSerializeObjectTree(ProtobufSerializer _)
@@ -168,7 +213,7 @@ namespace NitroxClient.MonoBehaviours
 
         public void OnProtoDeserializeObjectTree(ProtobufSerializer _)
         {
-            gameObjectsById[Id] = gameObject;
+            RegisterCurrentIdentityIfAvailable();
         }
     }
 }

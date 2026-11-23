@@ -23,6 +23,25 @@ public sealed class WorldServiceScannerRoomSnapshotTest
     private static readonly NitroxId LowRoomId = new("00000000-0000-0000-0000-000000000201");
     private static readonly NitroxId HighRoomId = new("00000000-0000-0000-0000-000000000202");
 
+    [TestMethod]
+    public void LoadedCameraLifecycleSeedIncludesRegistrationsAndDockOnlyIds()
+    {
+        MapRoomEntity room = CreateRoom(LowRoomId);
+        NitroxId registeredCameraId = room.CameraRegistry.Single().CameraId;
+        NitroxId dockOnlyCameraId = new("00000000-0000-0000-0000-000000000299");
+        room.RightDockCameraId = dockOnlyCameraId;
+        MapRoomCameraControlLifecycle controlLifecycle = new();
+        Assert.IsFalse(controlLifecycle.IsKnown(registeredCameraId));
+        Assert.IsFalse(controlLifecycle.IsKnown(dockOnlyCameraId));
+
+        int seeded = WorldService.SeedLoadedMapRoomCameraLifecycles(
+            [room], controlLifecycle);
+
+        Assert.AreEqual(2, seeded);
+        Assert.IsTrue(controlLifecycle.IsKnown(registeredCameraId));
+        Assert.IsTrue(controlLifecycle.IsKnown(dockOnlyCameraId));
+    }
+
     [TestMethod, Timeout(10_000)]
     public void GlobalRootSerializationBlocksMutationAndCapturesExactSavedState()
     {

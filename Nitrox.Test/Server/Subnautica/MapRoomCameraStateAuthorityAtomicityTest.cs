@@ -21,9 +21,11 @@ public sealed class MapRoomCameraStateAuthorityAtomicityTest
     public async Task LightStateIsQueuedBeforeCameraOwnershipCanTransfer()
     {
         ScannerRoomScenarioFixture scenario = await CreateDockedScenarioAsync();
-        Assert.IsTrue(scenario.Ownership.TryToAcquire(ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA,
-            SimulationLockType.EXCLUSIVE));
-        MapRoomCameraLightProcessor processor = new(scenario.Ownership, scenario.EntityRegistry, scenario.Diagnostics);
+        Assert.IsTrue((await scenario.ControlAsync(scenario.PlayerA,
+            ScannerRoomScenarioFixture.CameraAId, 0, true)).Granted);
+        MapRoomCameraLightProcessor processor = new(
+            scenario.Ownership, scenario.EntityRegistry,
+            scenario.ControlLifecycle, scenario.Diagnostics);
         BlockingBroadcastPacketSender sender = new();
 
         Task process = Task.Run(() => processor.Process(new AuthProcessorContext(scenario.PlayerA, sender),
@@ -58,6 +60,31 @@ public sealed class MapRoomCameraStateAuthorityAtomicityTest
         Assert.IsFalse(rejected.Granted);
         Assert.IsTrue(record.LightOn, "A delayed former-owner packet changed canonical light state.");
         Assert.AreEqual(1, record.LightRevision);
+    }
+
+    [TestMethod]
+    public async Task TransientCameraOwnerCannotChangeLightWithoutCanonicalControl()
+    {
+        ScannerRoomScenarioFixture scenario = await CreateDockedScenarioAsync();
+        Assert.IsTrue(scenario.Ownership.TryToAcquire(
+            ScannerRoomScenarioFixture.CameraAId, scenario.PlayerA,
+            SimulationLockType.TRANSIENT));
+        MapRoomCameraLightProcessor processor = new(
+            scenario.Ownership, scenario.EntityRegistry,
+            scenario.ControlLifecycle, scenario.Diagnostics);
+        BlockingBroadcastPacketSender sender = new();
+
+        await processor.Process(new AuthProcessorContext(scenario.PlayerA, sender),
+            new MapRoomCameraLight(ScannerRoomScenarioFixture.CameraAId, true));
+
+        MapRoomCameraRecord record =
+            scenario.Room.GetCameraRecord(ScannerRoomScenarioFixture.CameraAId)!;
+        Assert.IsFalse(record.LightOn);
+        Assert.AreEqual(0, record.LightRevision);
+        MapRoomCameraLight rejected =
+            sender.All<MapRoomCameraLight>().Single();
+        Assert.IsFalse(rejected.Granted);
+        Assert.IsFalse(sender.BroadcastEntered.IsSet);
     }
 
     [TestMethod]

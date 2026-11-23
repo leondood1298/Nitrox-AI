@@ -25,8 +25,18 @@ internal sealed class PDAScanFinishedProcessor : IClientPacketProcessor<PDAScanF
             PDAScanner.complete.Add(packetTechType);
             return Task.CompletedTask;
         }
-        int previousUnlocked = PDAScanner.GetPartialEntryByKey(packetTechType, out PDAScanner.Entry entry) ? entry.unlocked : 0;
-        PDAScanner.Entry updatedEntry = PDAScanner.Add(packetTechType, packet.UnlockedAmount);
+        // PDAScanner.Add always appends, so an existing partial entry must be updated in place. A second entry for the
+        // same type would shadow this one and local scans would keep counting from the stale value.
+        bool hadEntry = PDAScanner.GetPartialEntryByKey(packetTechType, out PDAScanner.Entry updatedEntry);
+        int previousUnlocked = hadEntry ? updatedEntry.unlocked : 0;
+        if (hadEntry)
+        {
+            updatedEntry.unlocked = packet.UnlockedAmount;
+        }
+        else
+        {
+            updatedEntry = PDAScanner.Add(packetTechType, packet.UnlockedAmount);
+        }
         if (updatedEntry != null)
         {
             int totalFragments = PDAScanner.GetEntryData(packetTechType)?.totalFragments ?? 1;

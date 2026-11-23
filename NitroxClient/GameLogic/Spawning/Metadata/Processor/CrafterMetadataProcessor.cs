@@ -67,7 +67,7 @@ public class CrafterMetadataProcessor : EntityMetadataProcessor<CrafterMetadata>
     {
         gameObject.TryGetNitroxId(out NitroxId crafterId);
         bool initialSyncCompleted = Multiplayer.Main && Multiplayer.Main.InitialSyncCompleted;
-        if (!CrafterPowerAccounting.TryAccount(crafterId, metadata.StartTime, initialSyncCompleted))
+        if (!CrafterPowerAccounting.ShouldConsume(crafterId, metadata.StartTime, metadata.Duration, initialSyncCompleted))
         {
             return;
         }

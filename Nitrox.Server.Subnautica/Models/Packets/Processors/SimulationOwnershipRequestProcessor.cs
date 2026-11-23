@@ -26,6 +26,22 @@ internal sealed class SimulationOwnershipRequestProcessor(SimulationOwnershipDat
                 sessionId: context.Sender.SessionId, reason: "removed");
             return;
         }
+        bool requesterOwnsExclusive =
+            simulationOwnershipData.TryGetLock(ownershipRequest.Id,
+                out SimulationOwnershipData.PlayerLock currentLock) &&
+            currentLock.Player == context.Sender &&
+            currentLock.LockType == SimulationLockType.EXCLUSIVE;
+        if (hasScannerLifecycle &&
+            !cameraControlReleaseFactory.CanGrantGenericOwnership(
+                ownershipRequest.Id, context.Sender.SessionId,
+                ownershipRequest.LockType, requesterOwnsExclusive))
+        {
+            await context.ReplyAsync(new SimulationOwnershipResponse(
+                ownershipRequest.Id, false, ownershipRequest.LockType));
+            diagnostics.RecordRejected("camera_lock", cameraId: ownershipRequest.Id,
+                sessionId: context.Sender.SessionId, reason: "control_required");
+            return;
+        }
         bool aquiredLock = simulationOwnershipData.TryToAcquire(ownershipRequest.Id, context.Sender, ownershipRequest.LockType);
         if (aquiredLock && hasScannerLifecycle && ownershipRequest.LockType != SimulationLockType.EXCLUSIVE)
         {
