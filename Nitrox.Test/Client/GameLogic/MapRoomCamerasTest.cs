@@ -28,19 +28,7 @@ public sealed class MapRoomCamerasTest
         IMultiplayerSession multiplayerSession = Substitute.For<IMultiplayerSession>();
         multiplayerSession.Reservation.Returns(new MultiplayerSessionReservation(localSession));
         simulationOwnership = new SimulationOwnership(multiplayerSession, Substitute.For<IPacketSender>());
-        cameras = new MapRoomCameras(Substitute.For<IPacketSender>(), multiplayerSession, simulationOwnership, null!, new ScannerRoomClientDiagnostics());
-    }
-
-    [TestMethod]
-    [DataRow(0f, 100f, 10f)]
-    [DataRow(85f, 100f, 10f)]
-    [DataRow(99.5f, 100f, 0.5f)]
-    [DataRow(100f, 100f, 0f)]
-    [DataRow(-5f, 100f, 10f)]
-    [DataRow(0f, 0f, 0f)]
-    public void DockChargeIsATenthOfCapacityPerUpdateLikeTheGame(float current, float capacity, float expected)
-    {
-        Assert.AreEqual(expected, MapRoomCameras.CalculateDockCharge(current, capacity), 0.0001f);
+        cameras = new MapRoomCameras(Substitute.For<IPacketSender>(), multiplayerSession, simulationOwnership, new ScannerRoomClientDiagnostics());
     }
 
     [TestMethod]

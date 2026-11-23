@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using FMOD.Studio;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.Packets;
@@ -11,14 +10,16 @@ using UnityEngine;
 
 namespace NitroxClient.GameLogic;
 
+/// <summary>
+///     Who controls which Scanner Room camera. A player controls a camera with the exclusive simulation lock on it.
+///     This class asks for that lock and gives it back, tells the server when this player takes a camera or lets go
+///     of it, and keeps what the server says about the cameras other players control.
+/// </summary>
 public class MapRoomCameras
 {
-    private const float DOCK_CHARGE_FRACTION_PER_UPDATE = 0.1f;
-
     private readonly IPacketSender packetSender;
     private readonly IMultiplayerSession multiplayerSession;
     private readonly SimulationOwnership simulationOwnership;
-    private readonly MapRoomCameraStates cameraStates;
     private readonly ScannerRoomClientDiagnostics diagnostics;
 
     /// <summary>
@@ -37,13 +38,11 @@ public class MapRoomCameras
     /// </summary>
     private readonly Dictionary<NitroxId, SessionId> remoteControllers = [];
 
-    public MapRoomCameras(IPacketSender packetSender, IMultiplayerSession multiplayerSession, SimulationOwnership simulationOwnership,
-        MapRoomCameraStates cameraStates, ScannerRoomClientDiagnostics diagnostics)
+    public MapRoomCameras(IPacketSender packetSender, IMultiplayerSession multiplayerSession, SimulationOwnership simulationOwnership, ScannerRoomClientDiagnostics diagnostics)
     {
         this.packetSender = packetSender;
         this.multiplayerSession = multiplayerSession;
         this.simulationOwnership = simulationOwnership;
-        this.cameraStates = cameraStates;
         this.diagnostics = diagnostics;
     }
 
@@ -294,28 +293,6 @@ public class MapRoomCameras
     }
 
     /// <summary>
-    ///     A camera in a dock is recharged by the player who simulates it, like everything else about its battery.
-    /// </summary>
-    private bool CanSimulateDockedCamera(MapRoomCamera camera) =>
-        camera && camera.dockingPoint && camera.TryGetNitroxId(out NitroxId cameraId) && simulationOwnership.HasAnyLockType(cameraId);
-
-    /// <summary>
-    ///     Gives a camera the number the server assigned to it. Without one, the game numbers a camera by its place in
-    ///     this client's own list of cameras.
-    /// </summary>
-    /// <returns>True if the camera had another number before.</returns>
-    public bool SetCameraNumber(MapRoomCamera camera, int cameraNumber)
-    {
-        if (camera.cameraNumber == cameraNumber)
-        {
-            return false;
-        }
-        camera.cameraNumber = cameraNumber;
-        camera.UpdatePingLabel();
-        return true;
-    }
-
-    /// <summary>
     ///     Called when a camera has spawned and the state it was sent with is applied. If the server said before that
     ///     somebody controls it, as it does for a player who has just joined, the camera follows that player now.
     /// </summary>
@@ -325,58 +302,5 @@ public class MapRoomCameras
         {
             EnsureMovedByItsController(cameraId);
         }
-    }
-
-    public void UpdateEnergyRecharge(MapRoomCamera camera)
-    {
-        bool charging = false;
-        if (CanSimulateDockedCamera(camera) && camera.energyMixin.battery != null)
-        {
-            float current = camera.energyMixin.charge;
-            float amount = CalculateDockCharge(current, camera.energyMixin.capacity);
-            if (amount > 0f)
-            {
-                PowerRelay relay = camera.dockingPoint.GetComponentInParent<PowerRelay>();
-                float consumed = 0f;
-                if (relay)
-                {
-                    PowerSystem.ConsumeEnergy(relay, amount, out consumed);
-                }
-                // As in the game, whatever the base supplied is added, even when it could not supply all that was asked.
-                // ConsumeEnergy returns false for a partial draw but has still taken that energy from the base.
-                if (!GameModeUtils.RequiresPower())
-                {
-                    camera.energyMixin.AddEnergy(amount);
-                    charging = true;
-                }
-                else if (consumed > 0f)
-                {
-                    camera.energyMixin.AddEnergy(consumed);
-                    charging = true;
-                }
-            }
-        }
-        if (charging)
-        {
-            camera.chargingSound.Play();
-        }
-        else
-        {
-            camera.chargingSound.Stop(STOP_MODE.IMMEDIATE);
-        }
-        cameraStates.ReportIfChanged(camera);
-    }
-
-    /// <summary>
-    ///     Energy a docked camera takes in one update. This is the game's own rule (MapRoomCamera.UpdateEnergyRecharge):
-    ///     a tenth of the battery's capacity per update until full, so a docked camera is recharged almost at once.
-    /// </summary>
-    internal static float CalculateDockCharge(float current, float capacity)
-    {
-        if (capacity <= 0f || current >= capacity)
-        {
-            return 0f;
-        }
-        return Math.Min(capacity - Math.Max(0f, current), capacity * DOCK_CHARGE_FRACTION_PER_UPDATE);
     }
 }

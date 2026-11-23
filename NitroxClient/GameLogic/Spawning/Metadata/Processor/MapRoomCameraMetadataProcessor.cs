@@ -22,7 +22,7 @@ public class MapRoomCameraMetadataProcessor(MapRoomCameras mapRoomCameras, MapRo
         }
 
         // Before MapRoomCamera.Start, which gives a camera without a number its place in this client's own list.
-        if (metadata.CameraNumber > 0 && mapRoomCameras.SetCameraNumber(camera, metadata.CameraNumber))
+        if (metadata.CameraNumber > 0 && MapRoomCameraStates.SetCameraNumber(camera, metadata.CameraNumber))
         {
             // The screens show a camera's number with its picture.
             mapRoomCameraPreviews.ShowPending();

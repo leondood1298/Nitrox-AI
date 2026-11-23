@@ -8,8 +8,8 @@ using NSubstitute;
 namespace Nitrox.Test.Client.GameLogic;
 
 /// <summary>
-///     Which of a camera's light, battery and health a client takes from the server and which it reports, with a camera
-///     that needs no game.
+///     Which of a camera's light, battery and health a client takes from the server and which it reports, and how fast
+///     a docked camera is recharged, with a camera that needs no game.
 /// </summary>
 [TestClass]
 public sealed class MapRoomCameraStatesTest
@@ -156,6 +156,18 @@ public sealed class MapRoomCameraStatesTest
         simulationOwnership.SimulateEntity(camera.Id, SimulationLockType.TRANSIENT);
 
         Assert.IsTrue(states.ChangesHealthHere(camera.Id, false));
+    }
+
+    [TestMethod]
+    [DataRow(0f, 100f, 10f)]
+    [DataRow(85f, 100f, 10f)]
+    [DataRow(99.5f, 100f, 0.5f)]
+    [DataRow(100f, 100f, 0f)]
+    [DataRow(-5f, 100f, 10f)]
+    [DataRow(0f, 0f, 0f)]
+    public void DockChargeIsATenthOfCapacityPerUpdateLikeTheGame(float current, float capacity, float expected)
+    {
+        Assert.AreEqual(expected, MapRoomCameraStates.CalculateDockCharge(current, capacity), 0.0001f);
     }
 
     [TestMethod]

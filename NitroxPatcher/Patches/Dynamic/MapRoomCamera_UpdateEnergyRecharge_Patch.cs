@@ -12,17 +12,7 @@ public sealed partial class MapRoomCamera_UpdateEnergyRecharge_Patch : NitroxPat
 
     public static bool Prefix(MapRoomCamera __instance)
     {
-        // The base power the camera draws is reported to whoever simulates the power sources.
-        BasePowerConsumptionForwarder forwarder = Resolve<BasePowerConsumptionForwarder>();
-        forwarder.EnterConsumer();
-        try
-        {
-            Resolve<MapRoomCameras>().UpdateEnergyRecharge(__instance);
-        }
-        finally
-        {
-            forwarder.ExitConsumer();
-        }
+        Resolve<MapRoomCameraStates>().UpdateEnergyRecharge(__instance);
         return false;
     }
 }

@@ -10,8 +10,9 @@ namespace NitroxClient.GameLogic;
 /// <summary>
 ///     Light, battery and health of Scanner Room cameras. The server holds them as the metadata of the camera's entity
 ///     and decides who may change what: the light belongs to the player who holds the camera exclusively (who flies
-///     it), battery and health to the player who simulates it. That player's game is where they change, and this class
-///     reports the change; everybody else is told by the server, and this class applies it.
+///     it), battery and health to the player who simulates it. That player's game is where they change, which
+///     includes the recharging of a docked camera, and this class reports the change; everybody else is told by the
+///     server, and this class applies it.
 /// </summary>
 /// <remarks>
 ///     What this client decides is never taken back from the server. Its own report comes back in the camera's state

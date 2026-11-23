@@ -102,7 +102,7 @@ public sealed class ScannerRoomClientDiagnosticsTest
         IMultiplayerSession multiplayerSession = Substitute.For<IMultiplayerSession>();
         multiplayerSession.Reservation.Returns(new MultiplayerSessionReservation((SessionId)(ushort)1));
         ScannerRoomClientDiagnostics diagnostics = new();
-        MapRoomCameras cameras = new(multiplayerSession, multiplayerSession, new SimulationOwnership(multiplayerSession, multiplayerSession), null!, diagnostics);
+        MapRoomCameras cameras = new(multiplayerSession, multiplayerSession, new SimulationOwnership(multiplayerSession, multiplayerSession), diagnostics);
         NitroxId cameraId = new("11111111-1111-1111-1111-111111111111");
 
         // Session 2 takes a camera, session 3 says too late that it gave it up, then session 2 lets go of it.

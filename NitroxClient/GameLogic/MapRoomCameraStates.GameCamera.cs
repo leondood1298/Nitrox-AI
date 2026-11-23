@@ -21,10 +21,12 @@ public sealed partial class MapRoomCameraStates
     private readonly Dictionary<NitroxId, CameraBatteryInitialization> initializingCameraBatteries = [];
     private long nextCameraBatteryInitializationGeneration;
 
-    public MapRoomCameraStates(IPacketSender packetSender, SimulationOwnership simulationOwnership, LiveMixinManager liveMixinManager, ScannerRoomClientDiagnostics diagnostics)
+    public MapRoomCameraStates(IPacketSender packetSender, SimulationOwnership simulationOwnership, LiveMixinManager liveMixinManager,
+        BasePowerConsumptionForwarder powerConsumptionForwarder, ScannerRoomClientDiagnostics diagnostics)
         : this(packetSender, simulationOwnership, diagnostics)
     {
         this.liveMixinManager = liveMixinManager;
+        this.powerConsumptionForwarder = powerConsumptionForwarder;
     }
 
     /// <inheritdoc cref="Apply{TCamera}(TCamera, MapRoomCameraMetadata)" />
@@ -52,6 +54,22 @@ public sealed partial class MapRoomCameraStates
     {
         int dockingIndex = MapRoomCameraDocks.TryGetPlace(camera.dockingPoint, out _, out int index) ? index : MapRoomCameraMetadata.NOT_DOCKED;
         return new MapRoomCameraMetadata(IsLightOn(camera), camera.energyMixin.charge, camera.liveMixin.health, camera.cameraNumber, dockingIndex);
+    }
+
+    /// <summary>
+    ///     Gives a camera the number the server assigned to it. Without one, the game numbers a camera by its place in
+    ///     this client's own list of cameras.
+    /// </summary>
+    /// <returns>True if the camera had another number before.</returns>
+    public static bool SetCameraNumber(MapRoomCamera camera, int cameraNumber)
+    {
+        if (camera.cameraNumber == cameraNumber)
+        {
+            return false;
+        }
+        camera.cameraNumber = cameraNumber;
+        camera.UpdatePingLabel();
+        return true;
     }
 
     internal static void SetLight(MapRoomCamera camera, bool on)
