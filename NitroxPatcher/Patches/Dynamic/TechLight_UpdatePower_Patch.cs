@@ -13,7 +13,7 @@ namespace NitroxPatcher.Patches.Dynamic;
 /// </summary>
 public sealed partial class TechLight_UpdatePower_Patch : NitroxPatch, IDynamicPatch
 {
-    internal static readonly MethodInfo TARGET_METHOD = Reflect.Method((TechLight t) => t.UpdatePower());
+    private static readonly MethodInfo TARGET_METHOD = Reflect.Method((TechLight t) => t.UpdatePower());
 
     /*
      * PowerSystem.ConsumeEnergy(this.powerRelay, TechLight.powerPerSecond * TechLight.updateInterval, out float _);

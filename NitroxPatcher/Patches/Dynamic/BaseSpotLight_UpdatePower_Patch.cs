@@ -13,7 +13,7 @@ namespace NitroxPatcher.Patches.Dynamic;
 /// </summary>
 public sealed partial class BaseSpotLight_UpdatePower_Patch : NitroxPatch, IDynamicPatch
 {
-    internal static readonly MethodInfo TARGET_METHOD = Reflect.Method((BaseSpotLight t) => t.UpdatePower());
+    private static readonly MethodInfo TARGET_METHOD = Reflect.Method((BaseSpotLight t) => t.UpdatePower());
 
     /*
      * PowerSystem.ConsumeEnergy(this.powerRelay, BaseSpotLight.powerPerSecond * BaseSpotLight.updateInterval, out float _);

@@ -13,7 +13,7 @@ namespace NitroxPatcher.Patches.Dynamic;
 /// </summary>
 public sealed partial class FiltrationMachine_UpdateFiltering_Patch : NitroxPatch, IDynamicPatch
 {
-    internal static readonly MethodInfo TARGET_METHOD = Reflect.Method((FiltrationMachine t) => t.UpdateFiltering());
+    private static readonly MethodInfo TARGET_METHOD = Reflect.Method((FiltrationMachine t) => t.UpdateFiltering());
 
     /*
      * PowerSystem.ConsumeEnergy(powerRelay, 0.85f * dayNightSpeed, out float _);
