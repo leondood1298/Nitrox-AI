@@ -31,6 +31,11 @@ internal sealed class SetIntroCinematicModeProcessor(IntroCinematicPairing intro
         await context.SendToOthersAsync(packet);
         logger.ZLogDebug($"IntroCinematicMode set to {packet.Mode} for {context.Sender.PlayerContext.PlayerName}");
 
+        // The player chose to play alone at the moment the server paired it; its partner would start the intro with it
+        if (current == IntroCinematicMode.START && packet.Mode == IntroCinematicMode.SINGLEPLAYER)
+        {
+            await introCinematicPairing.ReleasePartnerAsync(context.Sender.SessionId);
+        }
         await introCinematicPairing.PairWaitingPlayersAsync();
     }
 }
