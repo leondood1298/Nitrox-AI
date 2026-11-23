@@ -10,6 +10,8 @@ namespace NitroxClient.GameLogic;
 
 public sealed class MapRoomScanResultBroadcaster(IPacketSender packetSender, ThrottledPacketSender throttledPacketSender, SimulationOwnership simulationOwnership)
 {
+    private const float RESULT_CHANGE_THROTTLE_SECONDS = 0.5f;
+
     public void BroadcastSnapshot(MapRoomFunctionality mapRoom)
     {
         if (!TryGetAuthority(mapRoom, out NitroxId roomId, out long generation))
@@ -78,7 +80,7 @@ public sealed class MapRoomScanResultBroadcaster(IPacketSender packetSender, Thr
         {
             MapRoomScanResultChanged packet = CreateChangedPacket(roomId, generation, info, removed: false,
                 isRangeExit: false, mapRoom.wireFrameWorld.position, mapRoom.GetScanRange());
-            throttledPacketSender.SendThrottled(packet, changed => (changed.MapRoomId, changed.ResourceId), 0.5f);
+            throttledPacketSender.SendThrottled(packet, changed => (changed.MapRoomId, changed.ResourceId), RESULT_CHANGE_THROTTLE_SECONDS);
         }
     }
 
@@ -125,7 +127,7 @@ public sealed class MapRoomScanResultBroadcaster(IPacketSender packetSender, Thr
     {
         MapRoomScanResultChanged packet = CreateChangedPacket(roomId, generation, info, removed: true,
             isRangeExit: true, mapRoom.wireFrameWorld.position, mapRoom.GetScanRange());
-        throttledPacketSender.SendThrottled(packet, changed => (changed.MapRoomId, changed.ResourceId), 0.5f);
+        throttledPacketSender.SendThrottled(packet, changed => (changed.MapRoomId, changed.ResourceId), RESULT_CHANGE_THROTTLE_SECONDS);
     }
 
     private void Send(MapRoomFunctionality mapRoom, NitroxId roomId, long generation, ResourceTrackerDatabase.ResourceInfo info, bool removed)

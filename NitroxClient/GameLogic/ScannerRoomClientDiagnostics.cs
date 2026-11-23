@@ -76,19 +76,9 @@ public sealed class ScannerRoomClientDiagnostics
         }
     }
 
-    internal static int EnergyBand(float energy) => ComponentBand(energy, MapRoomCameraRecord.MAX_ENERGY);
+    internal static int EnergyBand(float energy) => MapRoomCameraRecord.GetComponentBand(energy, MapRoomCameraRecord.MAX_ENERGY);
 
-    internal static int HealthBand(float health) => ComponentBand(health, MapRoomCameraRecord.MAX_HEALTH);
-
-    private static int ComponentBand(float value, float maximum) => value switch
-    {
-        <= 0f => 0,
-        _ when value <= maximum * 0.1f => 10,
-        _ when value <= maximum * 0.25f => 25,
-        _ when value <= maximum * 0.5f => 50,
-        _ when value <= maximum * 0.75f => 75,
-        _ => 100
-    };
+    internal static int HealthBand(float health) => MapRoomCameraRecord.GetComponentBand(health, MapRoomCameraRecord.MAX_HEALTH);
 
     private static string ShortId(NitroxId? id, bool distinguishSiblingCamera = false)
     {

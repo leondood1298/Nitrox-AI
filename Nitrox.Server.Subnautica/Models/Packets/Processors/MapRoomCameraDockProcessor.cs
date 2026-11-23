@@ -179,7 +179,7 @@ internal sealed class MapRoomCameraDockProcessor(EntityRegistry entityRegistry, 
 
     internal static bool IsKnownCamera(bool validWorldCamera, bool registeredCamera) => validWorldCamera || registeredCamera;
     internal static bool CanBootstrapRestoredCamera(bool isDocked, bool senderOwnsRoom, bool slotAvailable, int registeredCameraCount) =>
-        isDocked && senderOwnsRoom && slotAvailable && registeredCameraCount is >= 0 and < 2;
+        isDocked && senderOwnsRoom && slotAvailable && registeredCameraCount is >= 0 and < MapRoomEntity.DOCK_COUNT;
     internal static bool ShouldPreserveControlLock(bool senderOwnsLock, SimulationLockType lockType,
         bool senderIsActiveController) =>
         senderOwnsLock && lockType == SimulationLockType.EXCLUSIVE && senderIsActiveController;
