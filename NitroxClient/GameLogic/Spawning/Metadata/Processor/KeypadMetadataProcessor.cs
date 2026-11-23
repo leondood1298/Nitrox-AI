@@ -1,4 +1,6 @@
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
+using Nitrox.Model.Subnautica.Packets;
+using NitroxClient.Communication;
 using NitroxClient.GameLogic.Spawning.Metadata.Processor.Abstract;
 using UnityEngine;
 
@@ -15,13 +17,18 @@ public class KeypadMetadataProcessor : EntityMetadataProcessor<KeypadMetadata>
 
         if (metadata.Unlocked)
         {
-            if (keypad.root)
+            // The door patch would report the unlock with the door's current, possibly prefab, state. The door is its own
+            // entity and the player who typed the code already sent its state.
+            using (PacketSuppressor<EntityMetadataUpdate>.Suppress())
             {
-                keypad.root.BroadcastMessage("UnlockDoor");
-            }
-            else
-            {
-                keypad.BroadcastMessage("UnlockDoor");
+                if (keypad.root)
+                {
+                    keypad.root.BroadcastMessage("UnlockDoor");
+                }
+                else
+                {
+                    keypad.BroadcastMessage("UnlockDoor");
+                }
             }
 
             keypad.UnlockDoor();
