@@ -13,6 +13,8 @@ namespace NitroxClient.GameLogic;
 
 public sealed class MapRoomScanTypes(IPacketSender packetSender, SimulationOwnership simulationOwnership)
 {
+    private readonly MapRoomScanTypePublishGate publishGate = new();
+
     public void Publish(uGUI_MapRoomScanner scanner)
     {
         MapRoomFunctionality mapRoom = scanner ? scanner.mapRoom : null;
@@ -20,8 +22,14 @@ public sealed class MapRoomScanTypes(IPacketSender packetSender, SimulationOwner
         {
             return;
         }
+        // The vanilla handlers behind this run for every resource registered anywhere in the world.
+        float scanRange = mapRoom.GetScanRange();
+        if (!publishGate.ShouldPublish(roomId, scanner.availableTechTypes, scanRange, Time.realtimeSinceStartup))
+        {
+            return;
+        }
         packetSender.Send(CreateSnapshotPacket(roomId, scanner.availableTechTypes, ResourceTrackerDatabase.GetDetectableTechTypes(),
-            mapRoom.wireFrameWorld.position, mapRoom.GetScanRange()));
+            mapRoom.wireFrameWorld.position, scanRange));
     }
 
     public bool ShouldRunVanilla(uGUI_MapRoomScanner scanner)
@@ -40,7 +48,11 @@ public sealed class MapRoomScanTypes(IPacketSender packetSender, SimulationOwner
         {
             return true;
         }
-        ApplyToUi(scanner, state);
+        // This runs for every resource registered in the world, so only rebuild the list when it actually drifted.
+        if (!scanner.availableTechTypes.SetEquals(state.AvailableScanTypes))
+        {
+            ApplyToUi(scanner, state);
+        }
         return false;
     }
 

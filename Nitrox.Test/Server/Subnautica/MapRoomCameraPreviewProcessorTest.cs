@@ -320,6 +320,25 @@ public sealed class MapRoomCameraPreviewProcessorTest
         return scenario;
     }
 
+    [TestMethod]
+    public async Task PreviewForAnIdThatNeverHadControlIsDeniedWithoutMarkingItAsACamera()
+    {
+        // Any entity id can be put in a preview packet. It must not become a "known camera", because ownership
+        // requests for known ids that are not scanner cameras are denied (which would lock out e.g. a vehicle).
+        ScannerRoomScenarioFixture scenario = new();
+        MapRoomCameraPreviewProcessor processor = new(scenario.Ownership, scenario.EntityRegistry,
+            scenario.ControlLifecycle, scenario.Diagnostics);
+        RecordingSender sender = new();
+        NitroxId unrelatedEntityId = new();
+
+        await processor.Process(new AuthProcessorContext(scenario.PlayerA, sender),
+            new MapRoomCameraPreview(unrelatedEntityId, 1, MapRoomCameraPreviewImageTest.CreateJpeg(64, 64)));
+
+        Assert.IsFalse(sender.Replies.Single().Granted);
+        Assert.AreEqual(0, sender.ToAll.Count);
+        Assert.IsFalse(scenario.ControlLifecycle.IsKnown(unrelatedEntityId));
+    }
+
     private sealed class RecordingSender : IPacketSender
     {
         internal List<MapRoomCameraPreview> Replies { get; } = [];

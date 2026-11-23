@@ -112,7 +112,9 @@ internal class WorldService : IHostedService
             GlobalRootData = GlobalRootData.From(worldEntityManager.GetPersistentGlobalRootEntities()),
             EntityData = EntityData.From(entityRegistry.GetAllEntities(true))
         };
-        bool saved = Save(persistedWorld, saveDir, () => entityRegistry.GetEntities<MapRoomEntity>(), cancellationToken,
+        // Once files are being written the save must finish. Honoring the stopping token here aborted a shutdown save
+        // after PlayerData/WorldData were written but before GlobalRootData/EntityData, leaving a mixed-generation save.
+        bool saved = Save(persistedWorld, saveDir, () => entityRegistry.GetEntities<MapRoomEntity>(), CancellationToken.None,
             out IReadOnlyList<SerializedScannerRoomState> serializedScannerRooms);
         if (saved)
         {

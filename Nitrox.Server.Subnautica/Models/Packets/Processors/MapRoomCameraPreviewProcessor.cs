@@ -27,6 +27,16 @@ internal sealed class MapRoomCameraPreviewProcessor(SimulationOwnershipData simu
             return;
         }
 
+        // A preview is only valid after control was granted, which already created this camera's gate. Entering the
+        // gate for an arbitrary id would mark it as a scanner camera and block ownership requests for that entity.
+        if (!controlLifecycle.IsKnown(packet.CameraId))
+        {
+            diagnostics.RecordRejected("preview", cameraId: packet.CameraId, sessionId: context.Sender.SessionId,
+                reason: "unknown_camera");
+            await context.ReplyAsync(CreateDenied(packet.CameraId, 0));
+            return;
+        }
+
         using IDisposable lifecycleGate = await controlLifecycle.EnterAsync(packet.CameraId);
         bool validAssociation = TryResolveCameraNumber(packet.CameraId, packet.CameraNumber,
             out MapRoomEntity? room, out int cameraNumber);
