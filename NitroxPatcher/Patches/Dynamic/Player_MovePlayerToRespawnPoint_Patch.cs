@@ -5,7 +5,7 @@ using Nitrox.Model.DataStructures;
 namespace NitroxPatcher.Patches.Dynamic;
 
 /// <summary>
-/// Broadcast the escape pod and sub root changes of a player respawning.
+/// Broadcast the sub root change of a player respawning.
 /// </summary>
 public sealed partial class Player_MovePlayerToRespawnPoint_Patch : NitroxPatch, IDynamicPatch
 {
@@ -13,6 +13,14 @@ public sealed partial class Player_MovePlayerToRespawnPoint_Patch : NitroxPatch,
 
     public static void Postfix(Player __instance)
     {
+        // A respawn in the pod has already been sent by the pod patches (EscapePod_RespawnPlayer_Patch, also for the
+        // warpme command, and Player_SetCurrentEscapePod_Patch). The server keeps one sub root per player, so an empty
+        // sub root sent after them would take the player out of the pod again.
+        if (!__instance.currentSub && __instance.currentEscapePod)
+        {
+            return;
+        }
+
         Optional<NitroxId> currentSubId = Optional.Empty;
         if (__instance.currentSub)
         {
@@ -20,7 +28,5 @@ public sealed partial class Player_MovePlayerToRespawnPoint_Patch : NitroxPatch,
         }
 
         Resolve<LocalPlayer>().BroadcastSubrootChange(currentSubId);
-        
-        // BroadcastEscapePodChange() is handled by EscapePod_RespawnPlayer_Patch for cross-functionality with the warpme command 
     }
 }
