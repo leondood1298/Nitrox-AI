@@ -80,6 +80,7 @@
     "Nitrox_ResyncBuildings": "Resync base buildings",
     "Nitrox_ResyncOnCooldown": "You need to wait {TIME_LEFT} seconds to send another resync request",
     "Nitrox_ResyncRequested": "Issued a resync request for bases",
+    "Nitrox_RocketLaunchPlayersNotAboard": "Everyone has to be aboard the rocket to launch. Not aboard: {PLAYERS}",
     "Nitrox_SafeBuilding": "Safe building",
     "Nitrox_SafeBuildingLog": "Safe building log",
     "Nitrox_ScannerRoomWarn": "Please note: scanner rooms do not work properly in this version of Nitrox. Expect many bugs.",
