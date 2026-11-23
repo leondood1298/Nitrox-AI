@@ -97,6 +97,7 @@ namespace NitroxClient
             containerBuilder.RegisterType<LiveMixinManager>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<CreatureHealthManager>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<CreatureInfections>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<EnzymeBalls>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<CreatureAttacksOnPlayers>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<Entities>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<MedicalCabinets>().InstancePerLifetimeScope();
