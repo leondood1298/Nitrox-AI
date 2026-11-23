@@ -14,7 +14,8 @@ internal sealed class BasePowerSourceConsumeProcessor(SimulationOwnership simula
     public Task Process(ClientProcessorContext context, BasePowerSourceConsume packet)
     {
         bool sourceObjectExists = NitroxEntity.TryGetComponentFrom(packet.SourceId, out PowerSource powerSource);
-        bool finishedLoading = Multiplayer.Main && Multiplayer.Main.InitialSyncCompleted;
+        // During a resync the source is only gone until its base has been rebuilt, like during the initial load
+        bool finishedLoading = Multiplayer.Main && Multiplayer.Main.InitialSyncCompleted && !BasePowerBroadcaster.IsRebuildingBases();
         switch (state.DecideForwardedDraw(packet.SourceId, simulationOwnership.HasAnyLockType(packet.SourceId), sourceObjectExists, finishedLoading))
         {
             case ForwardedDraw.APPLY:
