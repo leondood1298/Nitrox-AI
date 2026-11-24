@@ -191,6 +191,8 @@ internal static partial class ServiceCollectionExtensions
                     .AddSingleton<CollectedTimeCapsules>()
                     .AddSingleton<ItemClaims>()
                     .AddSingleton<BatchEntitySpawner>()
+                    .AddSingleton<IBatchEntityGenerator>(provider => provider.GetRequiredService<BatchEntitySpawner>())
+                    .AddSingleton<SpawnedBatches>()
                     .AddSingleton<EntityRegistry>()
                     .AddSingleton<SessionSettings>()
                     .AddSingleton<PictureFrameFiles>()

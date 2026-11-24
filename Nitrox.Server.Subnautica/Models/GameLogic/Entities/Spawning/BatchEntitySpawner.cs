@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using Nitrox.Model.DataStructures;
@@ -14,6 +13,10 @@ using Nitrox.Server.Subnautica.Models.Serialization;
 
 namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities.Spawning;
 
+/// <summary>
+///     Fills one batch of the world from the game's baked cell files. Everything random comes from the batch's own random
+///     (<see cref="RandomFactory.GetBatchRandom" />), so the same seed fills a batch the same way in any order.
+/// </summary>
 internal sealed class BatchEntitySpawner(
     RandomFactory randomFactory,
     SubnauticaUweWorldEntityFactory worldEntityFactory,
@@ -23,85 +26,42 @@ internal sealed class BatchEntitySpawner(
     PrefabPlaceholderGroupsResource prefabPlaceholderGroupsResource,
     BatchCellsParser batchCellsParser,
     IOptions<SubnauticaServerOptions> options,
-    ILogger<BatchEntitySpawner> logger)
+    ILogger<BatchEntitySpawner> logger) : IBatchEntityGenerator
 {
-    private readonly BatchCellsParser batchCellsParser = batchCellsParser;
-
-    private readonly HashSet<NitroxInt3> emptyBatches = [];
-    private readonly PrefabPlaceholderGroupsResource prefabPlaceholderGroupsResource = prefabPlaceholderGroupsResource;
-    private readonly IOptions<SubnauticaServerOptions> options = options;
-    private readonly ILogger<BatchEntitySpawner> logger = logger;
-    private readonly IUwePrefabFactory prefabFactory = prefabFactory;
-    private readonly IEntityBootstrapperManager entityBootstrapperManager = entityBootstrapperManager;
-    private readonly PdaManager pdaManager = pdaManager;
-
-    private readonly XorRandom random = randomFactory.GetUnityLikeRandom();
-    private readonly SubnauticaUweWorldEntityFactory worldEntityFactory = worldEntityFactory;
-
-    private readonly ConcurrentDictionary<NitroxInt3, Lazy<Task<List<Entity>>>> batchLoadTasks = new();
-    private readonly Lock emptyBatchesLock = new();
-
-    public List<NitroxInt3> SerializableParsedBatches
-    {
-        get
-        {
-            List<NitroxInt3> empty;
-
-            lock (emptyBatchesLock)
-            {
-                empty = [.. emptyBatches];
-            }
-
-            return [.. batchLoadTasks.Keys.Except(empty)];
-        }
-        set
-        {
-            batchLoadTasks.Clear();
-            foreach (NitroxInt3 batchId in value)
-            {
-                batchLoadTasks.TryAdd(batchId, new Lazy<Task<List<Entity>>>(() => Task.FromResult(new List<Entity>())));
-            }
-        }
-    }
+    /// <summary>
+    ///     Radius of the sphere each further copy of a slot's prefab is moved within, from the previous copy (EntitySlot.SpawnVirtualEntities).
+    /// </summary>
+    private const float SLOT_COPY_OFFSET_RADIUS = 4f;
 
     private static readonly NitroxQuaternion prefabZUpRotation = NitroxQuaternion.FromEuler(new(-90f, 0f, 0f));
 
-    public bool IsBatchSpawned(NitroxInt3 batchId)
-    {
-        return batchLoadTasks.ContainsKey(batchId);
-    }
+    private readonly BatchCellsParser batchCellsParser = batchCellsParser;
+    private readonly IEntityBootstrapperManager entityBootstrapperManager = entityBootstrapperManager;
+    private readonly ILogger<BatchEntitySpawner> logger = logger;
+    private readonly IOptions<SubnauticaServerOptions> options = options;
+    private readonly PdaManager pdaManager = pdaManager;
+    private readonly IUwePrefabFactory prefabFactory = prefabFactory;
+    private readonly PrefabPlaceholderGroupsResource prefabPlaceholderGroupsResource = prefabPlaceholderGroupsResource;
+    private readonly RandomFactory randomFactory = randomFactory;
+    private readonly SubnauticaUweWorldEntityFactory worldEntityFactory = worldEntityFactory;
 
-    public Task<List<Entity>> LoadUnspawnedEntitiesAsync(NitroxInt3 batchId, bool fullCacheCreation = false)
+    public async Task<List<Entity>> GenerateAsync(NitroxInt3 batchId, bool fullCacheCreation)
     {
-        return batchLoadTasks.GetOrAdd(batchId, id => new Lazy<Task<List<Entity>>>(() => LoadBatchInternalAsync(id, fullCacheCreation))).Value;
-    }
-
-    private async Task<List<Entity>> LoadBatchInternalAsync(NitroxInt3 batchId, bool fullCacheCreation)
-    {
-        DeterministicGenerator deterministicBatchGenerator = new(options.Value.Seed, batchId.ToString());
+        Batch batch = new(new DeterministicGenerator(options.Value.Seed, batchId.ToString()), randomFactory.GetBatchRandom(batchId));
         List<EntitySpawnPoint> spawnPoints = batchCellsParser.ParseBatchData(batchId);
-        List<Entity> entities = await SpawnEntitiesAsync(spawnPoints, deterministicBatchGenerator);
+        List<Entity> entities = await SpawnEntitiesAsync(spawnPoints, batch);
 
-        if (entities.Count == 0)
-        {
-            lock (emptyBatchesLock)
-            {
-                emptyBatches.Add(batchId);
-            }
-        }
-        else if (!fullCacheCreation)
+        if (entities.Count > 0 && !fullCacheCreation)
         {
             logger.ZLogInformation($"Spawning {entities.Count} entities from {spawnPoints.Count} spawn points in batch {batchId}");
         }
 
-        for (int x = 0; x < entities.Count; x++)
+        HashSet<Entity> seen = [];
+        foreach (Entity entity in entities)
         {
-            for (int y = 0; y < entities.Count; y++)
+            if (!seen.Add(entity))
             {
-                if (entities[x] == entities[y] && x != y)
-                {
-                    logger.ZLogError($"Duplicate Entity detected! {entities[x]}");
-                }
+                logger.ZLogError($"Duplicate Entity detected! {entity}");
             }
         }
 
@@ -109,7 +69,7 @@ internal sealed class BatchEntitySpawner(
     }
 
     /// <inheritdoc cref="CreateEntityWithChildrenAsync" />
-    private async Task<List<Entity>> SpawnEntitiesUsingRandomDistributionAsync(EntitySpawnPoint entitySpawnPoint, List<UwePrefab> prefabs, DeterministicGenerator deterministicBatchGenerator, Entity? parentEntity = null)
+    private async Task<List<Entity>> SpawnEntitiesUsingRandomDistributionAsync(EntitySpawnPoint entitySpawnPoint, List<UwePrefab> prefabs, Batch batch, Entity? parentEntity = null)
     {
         // See CSVEntitySpawner.GetPrefabForSlot for reference
         (List<UwePrefab>? allowedPrefabs, float fragmentProbability, float completeFragmentProbability) = await FilterAllowedPrefabsAsync(prefabs, entitySpawnPoint);
@@ -131,7 +91,7 @@ internal sealed class BatchEntitySpawner(
         UwePrefab chosenPrefab = default;
         if (weightedFragmentProbability > 0f)
         {
-            float probabilityThreshold = random.NextFloat();
+            float probabilityThreshold = batch.Random.NextFloat();
             if (weightedFragmentProbability > 1f)
             {
                 probabilityThreshold *= weightedFragmentProbability;
@@ -156,18 +116,23 @@ internal sealed class BatchEntitySpawner(
         List<Entity> spawnedEntities = [];
         if (await worldEntityFactory.FindAsync(chosenPrefab.ClassId) is { } uweWorldEntity)
         {
+            NitroxVector3 offset = NitroxVector3.Zero;
             for (int i = 0; i < chosenPrefab.Count; i++)
             {
-                // Random position in sphere is only possible after first spawn, see EntitySlot.Spawn
+                // As in EntitySlot.SpawnVirtualEntities: each further copy is moved from where the previous one went
+                if (i > 0)
+                {
+                    offset += batch.Random.NextInsideSphere(SLOT_COPY_OFFSET_RADIUS);
+                }
                 List<Entity> entities = [.. await CreateEntityWithChildrenAsync(entitySpawnPoint,
-                                                                        chosenPrefab.ClassId,
-                                                                        uweWorldEntity.TechType,
-                                                                        uweWorldEntity.PrefabZUp,
-                                                                        uweWorldEntity.CellLevel,
-                                                                        uweWorldEntity.LocalScale,
-                                                                        deterministicBatchGenerator,
-                                                                        parentEntity,
-                                                                        i > 0)];
+                                                                                chosenPrefab.ClassId,
+                                                                                uweWorldEntity.TechType,
+                                                                                uweWorldEntity.PrefabZUp,
+                                                                                uweWorldEntity.CellLevel,
+                                                                                uweWorldEntity.LocalScale,
+                                                                                batch,
+                                                                                parentEntity,
+                                                                                offset)];
 
                 // Unparenting the new entity because it's directly under the cell root
                 entities[0].ParentId = null;
@@ -192,7 +157,7 @@ internal sealed class BatchEntitySpawner(
         for (int i = 0; i < prefabs.Count; i++)
         {
             UwePrefab prefab = prefabs[i];
-            // Adapted code from the while loop in CSVEntitySpawner.GetPrefabForSlot 
+            // Adapted code from the while loop in CSVEntitySpawner.GetPrefabForSlot
             if (prefab.ClassId != "None" && await worldEntityFactory.FindAsync(prefab.ClassId) is {} uweWorldEntity &&
                 entitySpawnPoint.AllowedTypes.Contains(uweWorldEntity.SlotType))
             {
@@ -224,38 +189,34 @@ internal sealed class BatchEntitySpawner(
     /// Spawns the regular (can be children of PrefabPlaceholdersGroup) which are always the same thus context independent.
     /// </summary>
     /// <inheritdoc cref="CreateEntityWithChildrenAsync" />
-    private async Task<List<Entity>> SpawnEntitiesStaticallyAsync(EntitySpawnPoint entitySpawnPoint, DeterministicGenerator deterministicBatchGenerator, WorldEntity? parentEntity = null)
+    private async Task<List<Entity>> SpawnEntitiesStaticallyAsync(EntitySpawnPoint entitySpawnPoint, Batch batch, WorldEntity? parentEntity = null)
     {
         if (await worldEntityFactory.FindAsync(entitySpawnPoint.ClassId) is { } uweWorldEntity)
         {
             // prefabZUp should not be taken into account for statically spawned entities
             return await CreateEntityWithChildrenAsync(entitySpawnPoint,
-                                            entitySpawnPoint.ClassId,
-                                            uweWorldEntity.TechType,
-                                            false,
-                                            uweWorldEntity.CellLevel,
-                                            entitySpawnPoint.Scale,
-                                            deterministicBatchGenerator,
-                                            parentEntity);
+                                                       entitySpawnPoint.ClassId,
+                                                       uweWorldEntity.TechType,
+                                                       false,
+                                                       uweWorldEntity.CellLevel,
+                                                       entitySpawnPoint.Scale,
+                                                       batch,
+                                                       parentEntity);
         }
 
         return [];
     }
 
     /// <returns>The first entity is a <see cref="WorldEntity"/> and the following are its children</returns>
-    private async Task<List<Entity>> CreateEntityWithChildrenAsync(EntitySpawnPoint entitySpawnPoint, string classId, NitroxTechType techType, bool prefabZUp, int cellLevel, NitroxVector3 localScale, DeterministicGenerator deterministicBatchGenerator, Entity? parentEntity = null, bool randomPosition = false)
+    private async Task<List<Entity>> CreateEntityWithChildrenAsync(EntitySpawnPoint entitySpawnPoint, string classId, NitroxTechType techType, bool prefabZUp, int cellLevel, NitroxVector3 localScale, Batch batch, Entity? parentEntity = null, NitroxVector3 positionOffset = default)
     {
         WorldEntity spawnedEntity;
-        NitroxVector3 position = entitySpawnPoint.LocalPosition;
+        NitroxVector3 position = entitySpawnPoint.LocalPosition + positionOffset;
         NitroxQuaternion rotation = entitySpawnPoint.LocalRotation;
         if (prefabZUp)
         {
             // See EntitySlot.SpawnVirtualEntities use of WorldEntityInfo.prefabZUp
             rotation *= prefabZUpRotation;
-        }
-        if (randomPosition)
-        {
-            position += random.NextInsideSphere(4f);
         }
 
         if (classId == CellRootEntity.CLASS_ID)
@@ -267,11 +228,11 @@ internal sealed class BatchEntitySpawner(
                                                cellLevel,
                                                classId,
                                                true,
-                                               deterministicBatchGenerator.NextId());
+                                               batch.Ids.NextId());
         }
         else
         {
-            prefabPlaceholderGroupsResource.PickRandomClassIdIfRequired(ref classId);
+            prefabPlaceholderGroupsResource.PickRandomClassIdIfRequired(ref classId, batch.Random);
             spawnedEntity = new WorldEntity(position,
                                             rotation,
                                             localScale,
@@ -279,18 +240,18 @@ internal sealed class BatchEntitySpawner(
                                             cellLevel,
                                             classId,
                                             true,
-                                            deterministicBatchGenerator.NextId(),
+                                            batch.Ids.NextId(),
                                             parentEntity);
         }
 
         // See EntitySlotsPlaceholder.Spawn
-        (bool createResult, spawnedEntity) = await TryCreatePrefabPlaceholdersGroupWithChildrenAsync(spawnedEntity, classId, deterministicBatchGenerator);
+        (bool createResult, spawnedEntity) = await TryCreatePrefabPlaceholdersGroupWithChildrenAsync(spawnedEntity, classId, batch);
         if (!createResult)
         {
-            spawnedEntity.ChildEntities = await SpawnEntitiesAsync(entitySpawnPoint.Children, deterministicBatchGenerator, spawnedEntity);
+            spawnedEntity.ChildEntities = await SpawnEntitiesAsync(entitySpawnPoint.Children, batch, spawnedEntity);
         }
 
-        spawnedEntity = await entityBootstrapperManager.PrepareEntityIfRequired(spawnedEntity, deterministicBatchGenerator);
+        spawnedEntity = await entityBootstrapperManager.PrepareEntityIfRequired(spawnedEntity, batch.Ids, batch.Random);
 
         // Order of addition is important, first, the created entity, then its children and the cell root children it created
         // so that this output can always be used to get the created entity
@@ -330,7 +291,7 @@ internal sealed class BatchEntitySpawner(
         return allChildren;
     }
 
-    private async Task<List<Entity>> SpawnEntitiesAsync(List<EntitySpawnPoint> entitySpawnPoints, DeterministicGenerator deterministicBatchGenerator, WorldEntity? parentEntity = null)
+    private async Task<List<Entity>> SpawnEntitiesAsync(List<EntitySpawnPoint> entitySpawnPoints, Batch batch, WorldEntity? parentEntity = null)
     {
         List<Entity> entities = [];
         foreach (EntitySpawnPoint esp in entitySpawnPoints)
@@ -339,7 +300,7 @@ internal sealed class BatchEntitySpawner(
             {
                 // We add the cell's coordinate because this entity isn't parented so it needs to know about its global position
                 NitroxTransform transform = new(serializedEsp.LocalPosition + serializedEsp.AbsoluteEntityCell.Position, serializedEsp.LocalRotation, serializedEsp.Scale);
-                SerializedWorldEntity entity = new(serializedEsp.SerializedComponents, serializedEsp.Layer, transform, deterministicBatchGenerator.NextId(), parentEntity?.Id, serializedEsp.AbsoluteEntityCell);
+                SerializedWorldEntity entity = new(serializedEsp.SerializedComponents, serializedEsp.Layer, transform, batch.Ids.NextId(), parentEntity?.Id, serializedEsp.AbsoluteEntityCell);
                 entities.Add(entity);
                 continue;
             }
@@ -348,11 +309,11 @@ internal sealed class BatchEntitySpawner(
             {
                 if (await prefabFactory.TryGetPossiblePrefabsAsync(esp.BiomeType) is [_, ..] prefabs)
                 {
-                    entities.AddRange(await SpawnEntitiesUsingRandomDistributionAsync(esp, prefabs, deterministicBatchGenerator, parentEntity));
+                    entities.AddRange(await SpawnEntitiesUsingRandomDistributionAsync(esp, prefabs, batch, parentEntity));
                 }
                 else if (!string.IsNullOrEmpty(esp.ClassId))
                 {
-                    entities.AddRange(await SpawnEntitiesStaticallyAsync(esp, deterministicBatchGenerator, parentEntity));
+                    entities.AddRange(await SpawnEntitiesStaticallyAsync(esp, batch, parentEntity));
                 }
             }
         }
@@ -366,7 +327,7 @@ internal sealed class BatchEntitySpawner(
     /// This is suppressed on the client so we don't get virtual entities that the server doesn't know about.
     /// </summary>
     /// <returns>If this Entity is a PrefabPlaceholdersGroup</returns>
-    private async Task<(bool Success, WorldEntity ChangedEntity)> TryCreatePrefabPlaceholdersGroupWithChildrenAsync(WorldEntity entity, string classId, DeterministicGenerator deterministicBatchGenerator)
+    private async Task<(bool Success, WorldEntity ChangedEntity)> TryCreatePrefabPlaceholdersGroupWithChildrenAsync(WorldEntity entity, string classId, Batch batch)
     {
         if (!prefabPlaceholderGroupsResource.GroupsByClassId.TryGetValue(classId, out PrefabPlaceholdersGroupAsset groupAsset))
         {
@@ -384,7 +345,7 @@ internal sealed class BatchEntitySpawner(
             // Two cases, either the PrefabPlaceholder holds a visible GameObject or an EntitySlot (a MB which has a chance of spawning a prefab)
             if (prefabAsset is PrefabPlaceholderAsset placeholderAsset && placeholderAsset.EntitySlot.HasValue)
             {
-                WorldEntity? spawnedEntity = await SpawnPrefabAssetInEntitySlotAsync(placeholderAsset.Transform, placeholderAsset.EntitySlot.Value, deterministicBatchGenerator, entity.AbsoluteEntityCell, entity);
+                WorldEntity? spawnedEntity = await SpawnPrefabAssetInEntitySlotAsync(placeholderAsset.Transform, placeholderAsset.EntitySlot.Value, batch, entity.AbsoluteEntityCell, entity);
                 if (spawnedEntity != null)
                 {
                     // Spawned child will not be of the same type as the current prefabAsset
@@ -401,12 +362,12 @@ internal sealed class BatchEntitySpawner(
                 string prefabClassId = prefabAsset.ClassId;
                 if (prefabAsset is PrefabPlaceholderRandomAsset randomAsset && randomAsset.ClassIds.Count > 0)
                 {
-                    int randomIndex = random.NextIntRange(0, randomAsset.ClassIds.Count);
+                    int randomIndex = batch.Random.NextIntRange(0, randomAsset.ClassIds.Count);
                     prefabClassId = randomAsset.ClassIds[randomIndex];
                 }
 
                 EntitySpawnPoint esp = new(entity.AbsoluteEntityCell, prefabAsset.Transform.Position, prefabAsset.Transform.Rotation, prefabAsset.Transform.LocalScale, prefabClassId);
-                WorldEntity spawnedEntity = (WorldEntity)(await SpawnEntitiesStaticallyAsync(esp, deterministicBatchGenerator, entity)).First();
+                WorldEntity spawnedEntity = (WorldEntity)(await SpawnEntitiesStaticallyAsync(esp, batch, entity)).First();
                 if (prefabAsset is PrefabPlaceholdersGroupAsset)
                 {
                     spawnedEntity = new PlaceholderGroupWorldEntity(spawnedEntity, i);
@@ -423,7 +384,7 @@ internal sealed class BatchEntitySpawner(
         return (true, entity);
     }
 
-    private async Task<WorldEntity?> SpawnPrefabAssetInEntitySlotAsync(NitroxTransform transform, NitroxEntitySlot entitySlot, DeterministicGenerator deterministicBatchGenerator, AbsoluteEntityCell cell, Entity parentEntity)
+    private async Task<WorldEntity?> SpawnPrefabAssetInEntitySlotAsync(NitroxTransform transform, NitroxEntitySlot entitySlot, Batch batch, AbsoluteEntityCell cell, Entity parentEntity)
     {
         if (await prefabFactory.TryGetPossiblePrefabsAsync(entitySlot.BiomeType) is not [_, ..] prefabs)
         {
@@ -431,12 +392,16 @@ internal sealed class BatchEntitySpawner(
         }
         List<Entity> entities = [];
 
-        EntitySpawnPoint entitySpawnPoint = new(cell, transform.Position, transform.Rotation, [.. entitySlot.AllowedTypes], 1f, entitySlot.BiomeType);
-        entities.AddRange(await SpawnEntitiesUsingRandomDistributionAsync(entitySpawnPoint, prefabs, deterministicBatchGenerator, parentEntity));
+        EntitySpawnPoint entitySpawnPoint = new(cell, transform.Position, transform.Rotation, [.. entitySlot.AllowedTypes], entitySlot.Density, entitySlot.BiomeType);
+        entities.AddRange(await SpawnEntitiesUsingRandomDistributionAsync(entitySpawnPoint, prefabs, batch, parentEntity));
         if (entities.Count > 0)
         {
             return (WorldEntity)entities[0];
         }
         return null;
     }
+
+    /// <param name="Ids">Gives the batch's entity ids.</param>
+    /// <param name="Random">Makes every random choice of the batch.</param>
+    private sealed record Batch(DeterministicGenerator Ids, XorRandom Random);
 }
