@@ -1,5 +1,6 @@
 using System.Reflection;
 using NitroxClient.Communication.Abstract;
+using NitroxClient.GameLogic;
 using NitroxClient.GameLogic.Spawning.Metadata.Extractor;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
@@ -35,7 +36,8 @@ public sealed partial class PickPrefab_SetPickedUp_Patch : NitroxPatch, IDynamic
         {
             // TODO: Refer to the TODO in PlantableMetadata.
             // When TODO is done, change this to only update the FruitPlant metadata (like the above if)
-            PlantableMetadata metadata = Resolve<PlantableMetadataExtractor>().Extract(plantable);
+            PlantFruitDiagnostics.Report("pick", fruitPlant, plantable, System.Array.IndexOf(fruitPlant.fruits, __instance));
+            PlantableMetadata metadata = Resolve<PlantableMetadataExtractor>().Extract(plantable, fruitPlant);
             Resolve<IPacketSender>().Send(new EntityMetadataUpdate(plantableId, metadata));
         }
     }

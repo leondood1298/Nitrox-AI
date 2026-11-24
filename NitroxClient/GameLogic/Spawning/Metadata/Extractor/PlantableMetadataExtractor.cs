@@ -9,6 +9,16 @@ public class PlantableMetadataExtractor(FruitPlantMetadataExtractor fruitPlantMe
 
     public override PlantableMetadata Extract(Plantable plantable)
     {
+        return Extract(plantable, null);
+    }
+
+    /// <param name="changedFruitPlant">
+    ///     The plant whose fruit just changed (a fruit picked or grown), which the fruit is taken from. A report then
+    ///     describes the plant the player picked from or saw grow, also should the seed's grown plant
+    ///     (<see cref="Plantable.linkedGrownPlant" />) be another object (see PlantFruitDiagnostics).
+    /// </param>
+    public PlantableMetadata Extract(Plantable plantable, FruitPlant changedFruitPlant)
+    {
         // An entity has one metadata slot: a plantable food that is carried keeps its decay there (EatableMetadata)
         if (!HasStateToKeep(plantable.currentPlanter))
         {
@@ -19,9 +29,13 @@ public class PlantableMetadataExtractor(FruitPlantMetadataExtractor fruitPlantMe
         PlantableMetadata metadata = new(plantable.growingPlant ? plantable.growingPlant.timeStartGrowth : -1, plantable.GetSlotID());
 
         // TODO: Refer to the TODO in PlantableMetadata
+        if (changedFruitPlant)
+        {
+            metadata.FruitPlantMetadata = fruitPlantMetadataExtractor.Extract(changedFruitPlant);
+        }
         if (plantable.linkedGrownPlant)
         {
-            if (plantable.linkedGrownPlant.TryGetComponent(out FruitPlant fruitPlant))
+            if (!changedFruitPlant && plantable.linkedGrownPlant.TryGetComponent(out FruitPlant fruitPlant))
             {
                 metadata.FruitPlantMetadata = fruitPlantMetadataExtractor.Extract(fruitPlant);
             }

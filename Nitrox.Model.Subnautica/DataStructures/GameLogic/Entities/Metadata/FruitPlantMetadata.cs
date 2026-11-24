@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.Serialization;
 using BinaryPack.Attributes;
 
@@ -24,6 +25,24 @@ public class FruitPlantMetadata : EntityMetadata
     {
         PickedStates = pickedStates;
         TimeNextFruit = timeNextFruit;
+    }
+
+    /// <returns>The indices of the fruit that are on the plant (not picked), in the order of the plant's fruit.</returns>
+    public static int[] PresentIndices(bool[] pickedStates)
+    {
+        if (pickedStates == null)
+        {
+            return [];
+        }
+        List<int> present = [];
+        for (int i = 0; i < pickedStates.Length; i++)
+        {
+            if (!pickedStates[i])
+            {
+                present.Add(i);
+            }
+        }
+        return present.ToArray();
     }
 
     public override string ToString()
