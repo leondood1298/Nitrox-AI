@@ -114,6 +114,10 @@ internal partial class ManageServerViewModel : RoutableViewModelBase, IServerVie
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(UndoCommand), nameof(BackCommand), nameof(RestoreBackupCommand), nameof(StartServerCommand))]
+    public partial string? ServerAdminPassword { get; set; }
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(UndoCommand), nameof(BackCommand), nameof(RestoreBackupCommand), nameof(StartServerCommand))]
     public partial int ServerPlayerCount { get; set; }
 
     [ObservableProperty]
@@ -189,6 +193,7 @@ internal partial class ManageServerViewModel : RoutableViewModelBase, IServerVie
         ServerName = Server.Name;
         ServerIcon = Server.ServerIcon;
         ServerPassword = Server.Password;
+        ServerAdminPassword = Server.AdminPassword;
         ServerGameMode = Server.GameMode;
         ServerSeed = Server.Seed;
         ServerDefaultPlayerPerm = Server.PlayerPermissions;
@@ -207,6 +212,7 @@ internal partial class ManageServerViewModel : RoutableViewModelBase, IServerVie
                                  (ServerName != Server.Name ||
                                   ServerIcon != Server.ServerIcon ||
                                   ServerPassword != Server.Password ||
+                                  (ServerAdminPassword ?? "") != (Server.AdminPassword ?? "") ||
                                   ServerGameMode != Server.GameMode ||
                                   ServerSeed != Server.Seed ||
                                   ServerDefaultPlayerPerm != Server.PlayerPermissions ||
@@ -265,6 +271,7 @@ internal partial class ManageServerViewModel : RoutableViewModelBase, IServerVie
         Server.Name = ServerName;
         Server.ServerIcon = ServerIcon;
         Server.Password = ServerPassword;
+        Server.AdminPassword = ServerAdminPassword ?? "";
         Server.GameMode = ServerGameMode;
         Server.Seed = ServerSeed;
         Server.PlayerPermissions = ServerDefaultPlayerPerm;
@@ -280,6 +287,7 @@ internal partial class ManageServerViewModel : RoutableViewModelBase, IServerVie
 
         Config config = NitroxConfig.Load<Config>(SaveFolderDirectory);
         config.ServerPassword = Server.Password;
+        config.AdminPassword = Server.AdminPassword;
         if (Server.IsNewServer) { config.Seed = Server.Seed; }
         config.GameMode = Server.GameMode;
         config.DefaultPlayerPerm = Server.PlayerPermissions;
@@ -315,6 +323,7 @@ internal partial class ManageServerViewModel : RoutableViewModelBase, IServerVie
         ServerName = Server.Name;
         ServerIcon = Server.ServerIcon;
         ServerPassword = Server.Password;
+        ServerAdminPassword = Server.AdminPassword;
         ServerGameMode = Server.GameMode;
         ServerSeed = Server.Seed;
         ServerDefaultPlayerPerm = Server.PlayerPermissions;
