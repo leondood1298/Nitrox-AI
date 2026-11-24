@@ -7,14 +7,13 @@ namespace NitroxClient.MonoBehaviours;
 
 /// <summary>
 ///     Sounds of another player's body that its game plays only for its own player and does not send: the splash when it
-///     goes through the surface, and the engine of a Seaglide it holds. They are made here from that player's movement,
-///     as the vehicles' engines are.
+///     goes through the surface, made here from that player's movement, and the fading of the engine of a Seaglide it
+///     holds, which runs with its propeller.
 /// </summary>
 public class RemotePlayerSounds : MonoBehaviour
 {
     private const string SEAGLIDE_RPM_SOUND_PATH = "event:/sub/seamoth/seaglide_loop_rpm";
     private const float FALLBACK_RADIUS = 10f;
-    private const float SEAGLIDE_SEARCH_INTERVAL = 0.5f;
 
     private RemotePlayer remotePlayer;
     private string splashSoundPath;
@@ -22,8 +21,6 @@ public class RemotePlayerSounds : MonoBehaviour
     private float seaglideRadius = FALLBACK_RADIUS;
     private float previousY;
     private float lastSplashTime = float.MinValue;
-    private Seaglide seaglide;
-    private float nextSeaglideSearchTime;
 
     public void Init(RemotePlayer player, FMODWhitelist whitelist)
     {
@@ -60,37 +57,12 @@ public class RemotePlayerSounds : MonoBehaviour
             FMODEmitterController.PlayEventOneShot(splashSoundPath, splashRadius, transform.position);
         }
         previousY = y;
-
-        UpdateSeaglide(y < RemotePlayerSoundRules.SURFACE_LEVEL && !inside);
-    }
-
-    private void UpdateSeaglide(bool underwater)
-    {
-        if (!seaglide || !seaglide.gameObject.activeInHierarchy)
-        {
-            seaglide = null;
-            // Looking through the body every frame is wasted while the player holds something else
-            if (Time.time < nextSeaglideSearchTime)
-            {
-                return;
-            }
-            nextSeaglideSearchTime = Time.time + SEAGLIDE_SEARCH_INTERVAL;
-            seaglide = GetComponentInChildren<Seaglide>();
-            if (!seaglide)
-            {
-                return;
-            }
-        }
-        float speed = remotePlayer.AnimationController ? remotePlayer.AnimationController.Velocity.magnitude : 0f;
-        if (RemotePlayerSoundRules.SeaglideRuns(speed, underwater) && seaglide.engineRPMManager)
-        {
-            // What Seaglide.Update does for the player using it
-            seaglide.engineRPMManager.AccelerateInput(1f);
-        }
     }
 
     public void LateUpdate()
     {
+        // The engine runs with the propeller (RemotePlayerToolLook, which replaces Seaglide.Update for this copy)
+        Seaglide seaglide = remotePlayer?.HeldTool as Seaglide;
         if (!seaglide || !seaglide.engineRPMManager || !Player.main)
         {
             return;

@@ -30,12 +30,4 @@ public sealed class RemotePlayerSoundRulesTest
     {
         RemotePlayerSoundRules.ShouldSplash(0.5f, -0.5f, true, 5f).Should().BeFalse();
     }
-
-    [TestMethod]
-    public void TheSeaglideRunsWhenItsHolderMovesFastUnderwater()
-    {
-        RemotePlayerSoundRules.SeaglideRuns(RemotePlayerSoundRules.SEAGLIDE_RUNNING_SPEED + 1f, true).Should().BeTrue();
-        RemotePlayerSoundRules.SeaglideRuns(1f, true).Should().BeFalse();
-        RemotePlayerSoundRules.SeaglideRuns(RemotePlayerSoundRules.SEAGLIDE_RUNNING_SPEED + 1f, false).Should().BeFalse();
-    }
 }

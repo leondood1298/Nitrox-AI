@@ -112,6 +112,12 @@ public sealed class RemotePlayerToolLook : MonoBehaviour
         {
             SafeAnimator.SetBool(seaglide.animator, "moving", active);
         }
+        if (active && seaglide.engineRPMManager)
+        {
+            // What Seaglide.Update does for the player using it: the engine sound runs with the propeller
+            // (RemotePlayerSounds fades it by distance)
+            seaglide.engineRPMManager.AccelerateInput(1f);
+        }
         if (active != seaglideActive || glidingSeaglide != seaglide)
         {
             seaglide.SetVFXActive(active);
