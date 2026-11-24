@@ -84,6 +84,15 @@ public class InstalledModuleEntitySpawner : SyncEntitySpawner<InstalledModuleEnt
         };
         inventoryItem.item.Reparent(equipment.tr);
 
+        // The server gives a slot to one item. Another one still in it here is this game's own that lost the slot (its
+        // way back is on its way from the server) or one whose removal this game has not heard of: it is removed so
+        // that it is not left behind, out of the slot and out of reach.
+        if (equipment.equipment.TryGetValue(entity.Slot, out InventoryItem occupant) && occupant != null && occupant.item && occupant.item.gameObject != gameObject)
+        {
+            Log.Info($"Slot {entity.Slot} of {parentObject.GetFullHierarchyPath()} still held {occupant.item.GetTechType()}, removed for {pickupable.GetTechType()} ({entity.Id})");
+            Entities.DestroyObject(occupant.item.gameObject);
+        }
+
         equipment.equipment[entity.Slot] = inventoryItem;
 
         equipment.UpdateCount(pickupable.GetTechType(), true);

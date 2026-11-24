@@ -62,6 +62,7 @@ internal sealed class ScannerRoomScenarioFixture
     internal PlayerManager PlayerManager { get; }
     internal EntitySimulation EntitySimulation { get; }
     internal WorldEntityManager WorldEntityManager { get; }
+    internal ItemClaims ItemClaims { get; }
     internal MapRoomEntity Room { get; }
     internal ServerPlayer PlayerA { get; }
     internal ServerPlayer PlayerB { get; }
@@ -103,11 +104,12 @@ internal sealed class ScannerRoomScenarioFixture
             Options.Create(new SubnauticaServerOptions()), Manager, NullLogger<BuildingManager>.Instance);
         placeBaseProcessor = new(buildingManager, EntitySimulation, Manager);
         updateBaseProcessor = new(buildingManager, EntitySimulation, Manager);
-        destroyProcessor = new(PlayerManager, EntitySimulation, WorldEntityManager, Manager);
+        ItemClaims = new ItemClaims(EntityRegistry, PlayerManager);
+        destroyProcessor = new(PlayerManager, EntitySimulation, WorldEntityManager, Manager, EntityRegistry, ItemClaims);
         // Base power sources are not part of these scenarios.
-        metadataProcessor = new(PlayerManager, EntityRegistry, Ownership, Manager, null!, WorldEntityManager, EntitySimulation, NullLogger<EntityMetadataUpdateProcessor>.Instance);
-        pickupProcessor = new(EntityRegistry, WorldEntityManager, Ownership, Manager);
-        spawnProcessor = new(PlayerManager, EntityRegistry, WorldEntityManager, EntitySimulation, Manager);
+        metadataProcessor = new(PlayerManager, EntityRegistry, Ownership, Manager, null!, WorldEntityManager, EntitySimulation, ItemClaims, NullLogger<EntityMetadataUpdateProcessor>.Instance);
+        pickupProcessor = new(EntityRegistry, WorldEntityManager, Ownership, Manager, ItemClaims);
+        spawnProcessor = new(PlayerManager, EntityRegistry, WorldEntityManager, EntitySimulation, Manager, ItemClaims);
     }
 
     /// <summary>

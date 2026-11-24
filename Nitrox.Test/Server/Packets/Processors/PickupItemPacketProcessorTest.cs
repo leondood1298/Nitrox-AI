@@ -38,7 +38,7 @@ public sealed class PickupItemPacketProcessorTest
         WorldEntityManager worldEntityManager = new(packetSender, entityRegistry, null!, players.PlayerManager, null!, NullLogger<WorldEntityManager>.Instance);
         ScannerRoomManager scannerRoomManager = ScannerRoomScenarioFixture.CreateManager(entityRegistry, ownership, new ScannerRoomDiagnostics(NullLogger<ScannerRoomDiagnostics>.Instance),
             packetSender, players.PlayerManager, worldEntityManager);
-        PickupItemPacketProcessor processor = new(entityRegistry, worldEntityManager, ownership, scannerRoomManager);
+        PickupItemPacketProcessor processor = new(entityRegistry, worldEntityManager, ownership, scannerRoomManager, new ItemClaims(entityRegistry, players.PlayerManager));
 
         PlaceholderGroupWorldEntity crate = new(new NitroxTransform(new NitroxVector3(10, -20, 30), NitroxQuaternion.Identity, NitroxVector3.One), 0, BATTERY_CRATE_CLASS_ID, true,
             new NitroxId(), new NitroxTechType("None"), new SupplyCrateMetadata(true, false, 0), null, [], 0);
@@ -55,4 +55,47 @@ public sealed class PickupItemPacketProcessorTest
         crate.Metadata.Should().BeOfType<SupplyCrateMetadata>().Which.Open.Should().BeTrue();
         entityRegistry.GetEntityById(item.Id).Value.Should().BeSameAs(taken);
     }
+
+    [TestMethod]
+    public async Task TheFirstOfTwoPlayersToPickUpAnItemGetsIt()
+    {
+        ItemClaimScenario scenario = new();
+        PickupItemPacketProcessor processor = CreateProcessor(scenario);
+        WorldEntity item = scenario.AddWorldItem();
+
+        await processor.Process(scenario.Context(scenario.PlayerA), new PickupItem(ItemClaimScenario.InInventoryOf(item.Id, scenario.PlayerA)));
+        await processor.Process(scenario.Context(scenario.PlayerB), new PickupItem(ItemClaimScenario.InInventoryOf(item.Id, scenario.PlayerB)));
+
+        scenario.EntityRegistry.GetEntityById(item.Id).Value.ParentId.Should().Be(scenario.PlayerA.GameObjectId);
+        // Bob's game is told where the item is and who got it; nobody hears of Bob's pickup
+        scenario.SentTo<SpawnEntities>(scenario.PlayerB).Single().Entities.Single().ParentId.Should().Be(scenario.PlayerA.GameObjectId);
+        ItemClaimLost lost = scenario.SentTo<ItemClaimLost>(scenario.PlayerB).Single();
+        lost.WinnerName.Should().Be("Alice");
+        lost.RemoveLocalCopy.Should().BeFalse();
+        scenario.SentToOthersOf<SpawnEntities>(scenario.PlayerB).Should().BeEmpty();
+        scenario.SentToOthersOf<SpawnEntities>(scenario.PlayerA).Should().ContainSingle();
+    }
+
+    [TestMethod]
+    public async Task AnItemMadeFromASourceAnotherPlayerGotFirstIsRemoved()
+    {
+        ItemClaimScenario scenario = new();
+        PickupItemPacketProcessor processor = CreateProcessor(scenario);
+        ItemSource cabinet = new(new NitroxId(), "medkit");
+        InventoryItemEntity alicesMedkit = new(new NitroxId(), "medkit", new NitroxTechType("FirstAidKit"), null, scenario.PlayerA.GameObjectId, []);
+        InventoryItemEntity bobsMedkit = new(new NitroxId(), "medkit", new NitroxTechType("FirstAidKit"), null, scenario.PlayerB.GameObjectId, []);
+
+        await processor.Process(scenario.Context(scenario.PlayerA), new PickupItem(alicesMedkit, cabinet));
+        await processor.Process(scenario.Context(scenario.PlayerB), new PickupItem(bobsMedkit, cabinet));
+
+        scenario.EntityRegistry.GetEntityById(alicesMedkit.Id).HasValue.Should().BeTrue();
+        scenario.EntityRegistry.GetEntityById(bobsMedkit.Id).HasValue.Should().BeFalse();
+        ItemClaimLost lost = scenario.SentTo<ItemClaimLost>(scenario.PlayerB).Single();
+        lost.ItemId.Should().Be(bobsMedkit.Id);
+        lost.RemoveLocalCopy.Should().BeTrue();
+        lost.WinnerName.Should().Be("Alice");
+    }
+
+    private static PickupItemPacketProcessor CreateProcessor(ItemClaimScenario scenario) =>
+        new(scenario.EntityRegistry, scenario.WorldEntityManager, scenario.Ownership, scenario.ScannerRoomManager, scenario.ItemClaims);
 }

@@ -10,6 +10,11 @@ public sealed partial class MedicalCabinet_OnHandClick_Patch : NitroxPatch, IDyn
 {
     private static readonly MethodInfo TARGET_METHOD = Reflect.Method((MedicalCabinet t) => t.OnHandClick(default(GUIHand)));
 
+    public static void Prefix(MedicalCabinet __instance)
+    {
+        Resolve<MedicalCabinets>().Clicking(__instance);
+    }
+
     public static void Postfix(MedicalCabinet __instance)
     {
         Resolve<MedicalCabinets>().BroadcastState(__instance);

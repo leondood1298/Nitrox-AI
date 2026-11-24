@@ -46,6 +46,9 @@ public class CrafterMetadataProcessor : EntityMetadataProcessor<CrafterMetadata>
         if (metadata.LinkedIndex == -1)
         {
             crafterLogic.Craft(metadata.TechType.ToUnity(), duration);
+            // The craft began when its crafter started it, in every game: its result is named by that moment when it is
+            // taken (see Fabricators.TakingResult), and its progress shows how much of it has passed
+            crafterLogic.timeCraftingBegin = metadata.StartTime;
             SetCrafterState(gameObject, true);
         }
         else

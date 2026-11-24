@@ -189,6 +189,7 @@ internal static partial class ServiceCollectionExtensions
                     .AddSingleton<ActiveTeleporters>()
                     .AddSingleton<RocketLaunchManager>()
                     .AddSingleton<CollectedTimeCapsules>()
+                    .AddSingleton<ItemClaims>()
                     .AddSingleton<BatchEntitySpawner>()
                     .AddSingleton<EntityRegistry>()
                     .AddSingleton<SessionSettings>()

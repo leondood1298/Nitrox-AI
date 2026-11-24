@@ -11,10 +11,17 @@ public class EntitySpawnedByClient : Packet
     public bool RequireRespawn { get; }
     public bool RequireSimulation { get; }
 
-    public EntitySpawnedByClient(Entity entity, bool requireRespawn = false, bool requireSimulation = true)
+    /// <summary>
+    ///     Set when the game made the entity, an item, from a source (see <see cref="ItemSource" />); the server then
+    ///     decides whether this player got it.
+    /// </summary>
+    public ItemSource? Source { get; }
+
+    public EntitySpawnedByClient(Entity entity, bool requireRespawn = false, bool requireSimulation = true, ItemSource? source = null)
     {
         Entity = entity;
         RequireRespawn = requireRespawn;
         RequireSimulation = requireSimulation;
+        Source = source;
     }
 }

@@ -6,7 +6,7 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 namespace NitroxPatcher.Patches.Dynamic;
 
 /// <summary>
-/// Broadcasts crafting start and claims exclusive ownership on the crafter
+/// Broadcasts crafting start
 /// </summary>
 public sealed partial class GhostCrafter_OnCraftingBegin_Patch : NitroxPatch, IDynamicPatch
 {
@@ -20,11 +20,9 @@ public sealed partial class GhostCrafter_OnCraftingBegin_Patch : NitroxPatch, ID
         // Also for base upgrade console module, crafterLogic is nullified and never updated, so we use _logic instead for every crafter
         if (__instance._logic.TryGetIdOrWarn(out NitroxId crafterLogicId))
         {
-            Resolve<Entities>().BroadcastMetadataUpdate(crafterLogicId, new CrafterMetadata(techType.ToDto(), DayNightCycle.main.timePassedAsFloat, duration, __instance._logic.numCrafted, __instance._logic.linkedIndex));
-
-            // Async request to be the person to auto-pickup the result. In the future this can be improved to lock down all crafting based on ownership
-            // but will require redoing our hooks.
-            Resolve<SimulationOwnership>().RequestSimulationLock(crafterLogicId, SimulationLockType.EXCLUSIVE);
+            // The craft only began because this game holds the fabricator's exclusive lock (see Fabricators.MayCraft), which
+            // it keeps until the craft is done
+            Resolve<Entities>().BroadcastMetadataUpdate(crafterLogicId, new CrafterMetadata(techType.ToDto(), __instance._logic.timeCraftingBegin, duration, __instance._logic.numCrafted, __instance._logic.linkedIndex));
         }
     }
 }

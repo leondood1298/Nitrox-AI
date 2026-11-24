@@ -1,13 +1,11 @@
 using System.Reflection;
-using NitroxClient.GameLogic.Helper;
-using NitroxClient.MonoBehaviours;
+using NitroxClient.GameLogic;
 
 namespace NitroxPatcher.Patches.Dynamic;
 
 /// <summary>
-/// Local-only bookkeeping: keeps <see cref="BatteryChildEntityHelper"/>'s pending-installed-battery tracking in sync
-/// with actual battery removals, so a later pickup doesn't resurrect a battery that isn't there anymore. This does not
-/// broadcast anything over the network; item battery state is still fully (re-)derived on pickup/drop, as before.
+///     A battery or power cell taken out of a tool or vehicle goes to the player's inventory, and the other players take it
+///     out of the slot (see <see cref="ItemContainers.BatteryRemoved" />).
 /// </summary>
 public sealed partial class EnergyMixin_OnRemoveItem_Patch : NitroxPatch, IDynamicPatch
 {
@@ -15,12 +13,9 @@ public sealed partial class EnergyMixin_OnRemoveItem_Patch : NitroxPatch, IDynam
 
     public static void Postfix(EnergyMixin __instance, InventoryItem item)
     {
-        NitroxEntity parent = __instance.gameObject.FindAncestor<NitroxEntity>();
-        if (item == null || !parent)
+        if (item != null)
         {
-            return;
+            Resolve<ItemContainers>().BatteryRemoved(__instance, item);
         }
-
-        BatteryChildEntityHelper.ForgetPendingInstalledBattery(__instance, parent.Id);
     }
 }

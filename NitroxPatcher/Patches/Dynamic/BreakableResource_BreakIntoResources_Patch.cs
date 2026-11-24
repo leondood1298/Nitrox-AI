@@ -19,6 +19,9 @@ public sealed partial class BreakableResource_BreakIntoResources_Patch : NitroxP
             return;
         }
 
+        // Two players who break the same outcrop at the same moment would both get its resources
+        Resolve<ItemSources>().Breaking(__instance);
+
         // The server does not echo EntityDestroyed to its sender. Remove the outcrop's local
         // Scanner Room result now so the collector cannot retain a stale HUD marker.
         Resolve<MapRoomScans>().RemoveResource(destroyedId, CraftData.GetTechType(__instance.gameObject), __instance.transform.position);

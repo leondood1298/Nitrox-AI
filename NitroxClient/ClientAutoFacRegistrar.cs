@@ -121,6 +121,15 @@ namespace NitroxClient
             containerBuilder.RegisterType<PdaNotifications>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<EscapePodRepairState>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<Items>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<ItemSources>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<ItemClaims>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<Fabricators>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<BatteryCharges>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<OxygenTanks>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<Trashcans>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<Repulsions>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<GravityTraps>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<DiveReels>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<EquipmentSlots>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<ItemContainers>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<Cyclops>().InstancePerLifetimeScope();

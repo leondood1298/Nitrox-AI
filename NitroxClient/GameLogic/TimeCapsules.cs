@@ -42,17 +42,19 @@ public class TimeCapsules
     private readonly IPacketSender packetSender;
     private readonly Entities entities;
     private readonly EntityMetadataManager entityMetadataManager;
+    private readonly ItemSources itemSources;
 
     /// <summary>
     ///     The capsule of the rocket being launched, to be submitted once its content has arrived.
     /// </summary>
     private NitroxId? submitWhenShown;
 
-    public TimeCapsules(IPacketSender packetSender, Entities entities, EntityMetadataManager entityMetadataManager)
+    public TimeCapsules(IPacketSender packetSender, Entities entities, EntityMetadataManager entityMetadataManager, ItemSources itemSources)
     {
         this.packetSender = packetSender;
         this.entities = entities;
         this.entityMetadataManager = entityMetadataManager;
+        this.itemSources = itemSources;
     }
 
     /// <summary>
@@ -406,6 +408,13 @@ public class TimeCapsules
         if (string.IsNullOrEmpty(contentId))
         {
             return;
+        }
+
+        // Two players who open the capsule at the same moment would both get its items: the server gives them to one
+        List<TimeCapsuleItem> items = TimeCapsuleContentProvider.GetItems(contentId);
+        if (items is { Count: > 0 } && timeCapsule.TryGetNitroxId(out NitroxId capsuleId))
+        {
+            itemSources.ExpectAny(ItemSourceUse.PICKUP, capsuleId, "capsule", items.Count);
         }
 
         // Only this player's game fetched the content, from the online service

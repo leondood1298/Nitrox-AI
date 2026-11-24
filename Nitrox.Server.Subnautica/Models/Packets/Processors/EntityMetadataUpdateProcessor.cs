@@ -10,12 +10,13 @@ using Nitrox.Server.Subnautica.Models.Packets.Core;
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
 internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager, EntityRegistry entityRegistry, SimulationOwnershipData simulationOwnershipData, ScannerRoomManager scannerRoomManager, BasePowerManager basePowerManager,
-    WorldEntityManager worldEntityManager, EntitySimulation entitySimulation, ILogger<EntityMetadataUpdateProcessor> logger) : IAuthPacketProcessor<EntityMetadataUpdate>
+    WorldEntityManager worldEntityManager, EntitySimulation entitySimulation, ItemClaims itemClaims, ILogger<EntityMetadataUpdateProcessor> logger) : IAuthPacketProcessor<EntityMetadataUpdate>
 {
     private readonly WorldEntityManager worldEntityManager = worldEntityManager;
     private readonly EntitySimulation entitySimulation = entitySimulation;
     private readonly PlayerManager playerManager = playerManager;
     private readonly EntityRegistry entityRegistry = entityRegistry;
+    private readonly ItemClaims itemClaims = itemClaims;
     private readonly ILogger<EntityMetadataUpdateProcessor> logger = logger;
 
     public async Task Process(AuthProcessorContext context, EntityMetadataUpdate packet)
@@ -53,7 +54,8 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
              GateFiltrationMachineMetadata(context.Sender, entity, packet.NewValue) ??
              GateTimeCapsuleMetadata(context.Sender, entity, packet.NewValue) ??
              GatePictureFrameMetadata(context.Sender, entity, packet.NewValue) ??
-             GateDrillableMetadata(context.Sender, entity, packet.NewValue)) is { } result)
+             GateDrillableMetadata(context.Sender, entity, packet.NewValue) ??
+             GateCrafterMetadata(context.Sender, entity, packet.NewValue)) is { } result)
         {
             await SendResultAsync(context, entity, result);
             return;
@@ -267,6 +269,28 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
     }
 
     /// <summary>
+    ///     A fabricator runs one craft at a time, and its result is taken by one player (see <see cref="ItemClaims" />): a
+    ///     game that started a second craft, or took a result that was not its player's, is given the fabricator's state
+    ///     back.
+    /// </summary>
+    /// <returns>Null when the update is no fabricator state.</returns>
+    private MetadataUpdateResult? GateCrafterMetadata(Player sender, Entity entity, EntityMetadata metadata)
+    {
+        if (metadata is not CrafterMetadata update)
+        {
+            return null;
+        }
+        CrafterMetadata? stored = entity.Metadata as CrafterMetadata;
+        if (itemClaims.AcceptCrafterUpdate(entity.Id, stored, update, sender))
+        {
+            entity.Metadata = update;
+            return MetadataUpdateResult.Accept(update);
+        }
+        logger.ZLogInformation($"Player {sender.Name} changed fabricator {entity.Id} while it was not theirs to change: {update}");
+        return stored != null ? MetadataUpdateResult.RejectAndCorrect(stored) : MetadataUpdateResult.Reject;
+    }
+
+    /// <summary>
     ///     Sends what a manager decided about an update. The manager has already stored what it accepted.
     /// </summary>
     private async Task SendResultAsync(AuthProcessorContext context, Entity entity, MetadataUpdateResult result)
@@ -329,8 +353,8 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
     }
 
     /// <summary>
-    ///     Any player may click a cabinet or see its medkit appear. Two players who take the medkit at the same moment may
-    ///     both get one; the server does not decide between them.
+    ///     Any player may click a cabinet or see its medkit appear. Of two players who take the medkit at the same moment,
+    ///     the first keeps it (see <see cref="ItemClaims" />); the state they both send is the same.
     /// </summary>
     private bool ProcessMedicalCabinetMetadata(Player sendingPlayer, Entity entity)
     {

@@ -319,8 +319,17 @@ namespace NitroxClient.GameLogic
             }
             if (gameObject.TryGetComponent(out Pickupable pickupable))
             {
-                // Running this now means it won't get ran in OnDestroy() at the end of the frame, so no packets get sent
-                pickupable.SetInventoryItem(null);
+                // Running this now means it won't get ran in OnDestroy() at the end of the frame, so no packets get sent.
+                // Taking the item out of its container tells the game's own listeners (an equipment's patch, a tool's
+                // battery slot), which would report the item as unequipped, moved or destroyed: what is destroyed here
+                // was already decided elsewhere.
+                using (PacketSuppressor<EntityDestroyed>.Suppress())
+                using (PacketSuppressor<EntityReparented>.Suppress())
+                using (PacketSuppressor<EntitySpawnedByClient>.Suppress())
+                using (PacketSuppressor<PickupItem>.Suppress())
+                {
+                    pickupable.SetInventoryItem(null);
+                }
             }
 
             UnityEngine.Object.Destroy(gameObject);
