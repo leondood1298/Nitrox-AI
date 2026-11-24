@@ -16,7 +16,21 @@ public static class NitroxDirectory
 {
     private static readonly NitroxDirectoryShared implementation;
 
+    public const string DATA_PATH_ARG = "--data-path";
+
+    /// <summary>
+    ///     Same as <see cref="DATA_PATH_ARG" /> for processes that are not given command line arguments (tests, child
+    ///     processes). The argument wins when both are given.
+    /// </summary>
+    public const string DATA_PATH_ENV_VAR_NAME = "NITROX_DATA_PATH";
+
     public static string HomePath => implementation.HomePath;
+
+    /// <summary>
+    ///     The data folder the user chose with <see cref="DATA_PATH_ARG" /> or <see cref="DATA_PATH_ENV_VAR_NAME" />, or null
+    ///     when Nitrox uses its default folders. Passed on to the game so both write to the same place.
+    /// </summary>
+    public static string? UserDataPath => implementation.UserDataPathOrNull;
 
     /// <inheritdoc cref="NitroxDirectoryShared.ConfigPath" />
     public static string ConfigPath => implementation.ConfigPath;
@@ -99,16 +113,24 @@ public static class NitroxDirectory
                 }
 
                 // If user specified a path, use it as is.
-                string? applicationData = NitroxEnvironment.CommandLineArgs.GetCommandArgs("--data-path").FirstOrDefault();
-                if (!string.IsNullOrWhiteSpace(applicationData) && Path.IsPathRooted(applicationData))
+                foreach (string? applicationData in new[]
+                         {
+                             NitroxEnvironment.CommandLineArgs.GetCommandArgs(DATA_PATH_ARG).FirstOrDefault(),
+                             Environment.GetEnvironmentVariable(DATA_PATH_ENV_VAR_NAME)
+                         })
                 {
-                    Directory.CreateDirectory(applicationData);
-                    return field = applicationData;
+                    if (!string.IsNullOrWhiteSpace(applicationData) && Path.IsPathRooted(applicationData))
+                    {
+                        Directory.CreateDirectory(applicationData);
+                        return field = applicationData;
+                    }
                 }
                 field = "";
                 return null;
             }
         }
+
+        public string? UserDataPathOrNull => UserSpecifiedDataPath;
 
         /// <summary>
         ///     Gets the path where configuration files should be stored. This is %APPDATA%\Nitrox on Windows and ~/.config/Nitrox
