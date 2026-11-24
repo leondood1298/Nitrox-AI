@@ -3,12 +3,12 @@ using System.Reflection;
 using System.Reflection.Emit;
 using HarmonyLib;
 
-namespace NitroxPatcher.Patches.Persistent;
+namespace NitroxPatcher.Patches.Dynamic;
 
 /// <summary>
-/// Remove the option for PDA pause
+/// Remove the option for PDA pause during a session, where it is forced off. Single-player play keeps the option.
 /// </summary>
-public sealed partial class uGUI_OptionsPanel_AddAccessibilityTab_Patch : NitroxPatch, IPersistentPatch
+public sealed partial class uGUI_OptionsPanel_AddAccessibilityTab_Patch : NitroxPatch, IDynamicPatch
 {
     private static readonly MethodInfo TARGET_METHOD = Reflect.Method((uGUI_OptionsPanel t) => t.AddAccessibilityTab());
 
