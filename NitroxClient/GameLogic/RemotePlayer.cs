@@ -787,7 +787,8 @@ public class RemotePlayer : INitroxPlayer
         static void CopyEmitter(FMOD_CustomEmitter src, FMOD_CustomEmitter dst)
         {
             dst.asset = src.asset;
-            dst.playOnAwake = src.playOnAwake;
+            // Only a target for what the other player's game sends (FMODEmitterController): it must not start by itself
+            dst.playOnAwake = false;
             dst.stopImmediatelyOnDisable = src.stopImmediatelyOnDisable;
             dst.followParent = src.followParent;
             dst.restartOnPlay = src.restartOnPlay;
