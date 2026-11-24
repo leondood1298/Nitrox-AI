@@ -11,6 +11,11 @@ internal sealed class PlayerMovementProcessor(EntityRegistry entityRegistry) : I
 
     public async Task Process(AuthProcessorContext context, PlayerMovement packet)
     {
+        // A place that is not a number would be stored, saved and passed on to every other game.
+        if (!packet.Position.IsFinite() || !packet.BodyRotation.IsFinite())
+        {
+            return;
+        }
         Optional<PlayerEntity> playerEntity = entityRegistry.GetEntityById<PlayerEntity>(context.Sender.PlayerContext.PlayerNitroxId);
 
         if (playerEntity.HasValue)

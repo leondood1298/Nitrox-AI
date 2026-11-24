@@ -163,19 +163,39 @@ internal sealed class WorldEntityManager
                 return false;
             }
 
+            // A place that is not a number is neither stored nor passed on: it would break the entity in every game it
+            // reaches, and be saved. The entity keeps its last good place.
+            if (!position.IsFinite() || !rotation.IsFinite())
+            {
+                logger.ZLogWarningOnce($"Refused a position update for {id} with a position or rotation that is not a finite number: {position} {rotation}");
+                newCell = null;
+                return false;
+            }
+            if (worldEntity.Transform == null)
+            {
+                newCell = null;
+                return false;
+            }
+
             // Return early because a GlobalRootEntity doesn't have an AbsoluteEntityCell, thus it would throw an exception
             if (worldEntity is GlobalRootEntity)
             {
-                worldEntity.Transform.Position = position;
-                worldEntity.Transform.Rotation = rotation;
+                if (!TrySetPlace(worldEntity, position, rotation))
+                {
+                    newCell = null;
+                    return false;
+                }
                 newCell = null;
                 return true;
             }
 
             AbsoluteEntityCell oldCell = worldEntity.AbsoluteEntityCell;
 
-            worldEntity.Transform.Position = position;
-            worldEntity.Transform.Rotation = rotation;
+            if (!TrySetPlace(worldEntity, position, rotation))
+            {
+                newCell = null;
+                return false;
+            }
 
             newCell = worldEntity.AbsoluteEntityCell;
 
@@ -187,6 +207,26 @@ internal sealed class WorldEntityManager
 
             return true;
         }
+    }
+
+    /// <summary>
+    ///     Stores a place given in world space. Should the entity's transform still turn it into something that is not a
+    ///     number, the place it had is kept.
+    /// </summary>
+    private bool TrySetPlace(WorldEntity worldEntity, NitroxVector3 position, NitroxQuaternion rotation)
+    {
+        NitroxVector3 previousPosition = worldEntity.Transform.LocalPosition;
+        NitroxQuaternion previousRotation = worldEntity.Transform.LocalRotation;
+        worldEntity.Transform.Position = position;
+        worldEntity.Transform.Rotation = rotation;
+        if (worldEntity.Transform.IsFinite())
+        {
+            return true;
+        }
+        worldEntity.Transform.LocalPosition = previousPosition;
+        worldEntity.Transform.LocalRotation = previousRotation;
+        logger.ZLogWarningOnce($"Refused a position update for {worldEntity.Id}: its transform turned {position} into a place that is not a finite number ({worldEntity.Transform})");
+        return false;
     }
 
     public Optional<Entity> RemoveGlobalRootEntity(NitroxId entityId, bool removeFromRegistry = true)

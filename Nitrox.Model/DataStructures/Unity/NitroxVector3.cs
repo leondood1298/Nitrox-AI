@@ -31,6 +31,13 @@ namespace Nitrox.Model.DataStructures.Unity
 
         public static NitroxVector3 One => new(1, 1, 1);
 
+        /// <summary>
+        ///     False if any component is NaN or infinite. Such a value breaks every transform it reaches, in the game too.
+        /// </summary>
+        public bool IsFinite() => IsFinite(X) && IsFinite(Y) && IsFinite(Z);
+
+        internal static bool IsFinite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);
+
         public static bool operator ==(NitroxVector3 left, NitroxVector3 right) => left.Equals(right);
 
         public static bool operator !=(NitroxVector3 left, NitroxVector3 right) => !left.Equals(right);

@@ -31,6 +31,9 @@ namespace Nitrox.Model.DataStructures.Unity
             W = w;
         }
 
+        /// <inheritdoc cref="NitroxVector3.IsFinite()" />
+        public bool IsFinite() => NitroxVector3.IsFinite(X) && NitroxVector3.IsFinite(Y) && NitroxVector3.IsFinite(Z) && NitroxVector3.IsFinite(W);
+
         public static NitroxQuaternion Normalize(NitroxQuaternion value) => (NitroxQuaternion)Quaternion.Normalize((Quaternion)value);
 
         public static NitroxQuaternion FromEuler(NitroxVector3 vector) => FromEuler(vector.X, vector.Y, vector.Z);

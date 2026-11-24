@@ -88,5 +88,70 @@ namespace Nitrox.Model.DataStructures.Unity
             grandgrandchild1.Position.Equals(afterChildGlobalPosition, TOLERANCE).Should().BeTrue($"Expected: {afterChildGlobalPosition} Found: {grandgrandchild1.Position}");
             grandgrandchild1.Rotation.Equals(afterChildGlobalRotation, TOLERANCE).Should().BeTrue($"Expected: {afterChildGlobalRotation} Found: {grandgrandchild1.Rotation}");
         }
+
+        [TestMethod]
+        public void CameraLoadedUnderItsRoomKeepsAFinitePlaceWhenItIsMovedAfterLeavingItsDock()
+        {
+            // As the test world was saved and loaded: a base, a Scanner Room whose transform is empty, and a docked
+            // camera whose transform holds a place in the world. The loader links every child to its parent's transform.
+            (NitroxTransform _, NitroxTransform _, NitroxTransform camera) = LoadedScannerRoomHierarchy();
+            NitroxVector3 reported = new(-215f, -65f, 127f);
+
+            // The camera leaves its dock (only the entity tree changes) and its simulating player reports where it is.
+            camera.Position = reported;
+            camera.Rotation = NitroxQuaternion.Identity;
+
+            camera.IsFinite().Should().BeTrue($"the transform was {camera}");
+            camera.Position.Equals(reported, TOLERANCE).Should().BeTrue($"Expected: {reported} Found: {camera.Position}");
+        }
+
+        [TestMethod]
+        public void CameraLoadedUnderItsRoomKeepsItsPlaceWhenItIsTakenOutOfTheRoom()
+        {
+            (NitroxTransform _, NitroxTransform _, NitroxTransform camera) = LoadedScannerRoomHierarchy();
+            NitroxVector3 saved = camera.LocalPosition;
+
+            // What EntityRegistry.RemoveFromParent does for any entity that leaves its parent.
+            camera.SetParent(null, true);
+
+            camera.IsFinite().Should().BeTrue($"the transform was {camera}");
+            camera.Position.Equals(saved, TOLERANCE).Should().BeTrue($"Expected: {saved} Found: {camera.Position}");
+        }
+
+        [TestMethod]
+        public void ChildOfAParentWithoutSizeKeepsItsLastPlaceInsteadOfTakingOneThatIsNotANumber()
+        {
+            NitroxTransform flat = new(new NitroxVector3(10, 0, 0), NitroxQuaternion.Identity, new NitroxVector3(0, 1, 1));
+            NitroxTransform child = new(new NitroxVector3(1, 2, 3), NitroxQuaternion.Identity, NitroxVector3.One);
+            child.SetParent(flat, false);
+
+            child.Position = new NitroxVector3(50, 60, 70);
+            child.Rotation = NitroxQuaternion.FromEuler(0, 90, 0);
+            child.SetParent(null, true);
+
+            child.IsFinite().Should().BeTrue($"the transform was {child}");
+        }
+
+        [TestMethod]
+        public void TransformWithANumberThatIsNotFiniteIsNotFinite()
+        {
+            new NitroxTransform(NitroxVector3.Zero, NitroxQuaternion.Identity, NitroxVector3.One).IsFinite().Should().BeTrue();
+            new NitroxTransform(new NitroxVector3(float.NaN, 0, 0), NitroxQuaternion.Identity, NitroxVector3.One).IsFinite().Should().BeFalse();
+            new NitroxTransform(NitroxVector3.Zero, new NitroxQuaternion(0, float.NaN, 0, 1), NitroxVector3.One).IsFinite().Should().BeFalse();
+            new NitroxTransform(NitroxVector3.Zero, NitroxQuaternion.Identity, new NitroxVector3(1, float.PositiveInfinity, 1)).IsFinite().Should().BeFalse();
+        }
+
+        /// <summary>
+        ///     Base 858c4b56, room 9b3ce5a6 and camera 2 as the test world of 2026-11-24 saved them.
+        /// </summary>
+        private static (NitroxTransform Base, NitroxTransform Room, NitroxTransform Camera) LoadedScannerRoomHierarchy()
+        {
+            NitroxTransform baseTransform = new(new NitroxVector3(-152.28033f, -15.6695175f, 99.544716f), new NitroxQuaternion(0f, -0.8469493f, 0f, 0.53167367f), NitroxVector3.One);
+            NitroxTransform room = new();
+            NitroxTransform camera = new(new NitroxVector3(-142.92966f, -14.782113f, 105.73807f), new NitroxQuaternion(0f, 0.97483367f, 0f, 0.22293334f), NitroxVector3.One);
+            room.SetParent(baseTransform, false);
+            camera.SetParent(room, false);
+            return (baseTransform, room, camera);
+        }
     }
 }
