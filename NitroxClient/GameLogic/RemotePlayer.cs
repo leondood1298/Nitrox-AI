@@ -866,9 +866,7 @@ public class RemotePlayer : INitroxPlayer
     {
         if (vitals)
         {
-            // TODO: only show health and oxygen in freedom mode
-            bool visible = PlayerContext.GameMode != SubnauticaGameMode.CREATIVE;
-            vitals.SetStatsVisible(visible);
+            vitals.SetGameMode(PlayerContext.GameMode);
         }
     }
 
