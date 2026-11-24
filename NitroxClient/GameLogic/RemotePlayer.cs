@@ -67,6 +67,11 @@ public class RemotePlayer : INitroxPlayer
 
     public bool InCinematic { get; set; }
 
+    /// <summary>
+    ///     The tool in this player's hand, or null.
+    /// </summary>
+    public PlayerTool? HeldTool { get; private set; }
+
     public readonly Event<RemotePlayer> PlayerDeathEvent = new();
 
     public readonly Event<RemotePlayer> PlayerDisconnectEvent = new();
@@ -494,6 +499,24 @@ public class RemotePlayer : INitroxPlayer
         if (change == pdaVisibilityChange && pdaModel)
         {
             pdaModel.SetActive(false);
+        }
+    }
+
+    public void SetHeldTool(PlayerTool? tool)
+    {
+        HeldTool = tool;
+    }
+
+    /// <summary>
+    ///     The tool-use event of this body's animation, which the game would otherwise send to the local player's tool.
+    ///     Only the look of the tool follows: what the use does is sent by the player's own game.
+    /// </summary>
+    public void OnToolUseAnimation()
+    {
+        // DiveReel.OnToolUseAnim plays this on the reel when it throws a node
+        if (HeldTool is DiveReel diveReel && diveReel.animationController)
+        {
+            diveReel.animationController.SetTrigger("divereel_fire");
         }
     }
 
