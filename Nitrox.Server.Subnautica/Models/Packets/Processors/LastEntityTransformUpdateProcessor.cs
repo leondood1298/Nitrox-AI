@@ -29,7 +29,8 @@ internal sealed class LastEntityTransformUpdateProcessor(WorldEntityManager worl
             return;
         }
 
-        if (!worldEntityManager.TryUpdateEntityPosition(lastUpdate.Id, lastUpdate.Position, lastUpdate.Rotation, out AbsoluteEntityCell currentCell, out WorldEntity worldEntity))
+        if (!worldEntityManager.TryUpdateEntityPosition(lastUpdate.Id, lastUpdate.Position, lastUpdate.Rotation, out AbsoluteEntityCell currentCell, out WorldEntity worldEntity,
+                                                        out AbsoluteEntityCell? previousCell))
         {
             return;
         }
@@ -45,7 +46,7 @@ internal sealed class LastEntityTransformUpdateProcessor(WorldEntityManager worl
 
         foreach (Player player in playerManager.GetConnectedPlayersExcept(context.Sender.SessionId))
         {
-            if (player.CanSee(worldEntity))
+            if (player.SeesMove(worldEntity, previousCell))
             {
                 await context.SendAsync(entityTransformUpdates, player.SessionId);
             }

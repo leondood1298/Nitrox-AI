@@ -149,8 +149,11 @@ internal sealed class WorldEntityManager
         }
     }
 
-    public bool TryUpdateEntityPosition(NitroxId id, NitroxVector3 position, NitroxQuaternion rotation, out AbsoluteEntityCell? newCell, out WorldEntity worldEntity)
+    /// <param name="previousCell">The cell the entity left with this move, or null if it stayed in its cell.</param>
+    public bool TryUpdateEntityPosition(NitroxId id, NitroxVector3 position, NitroxQuaternion rotation, out AbsoluteEntityCell? newCell, out WorldEntity worldEntity,
+        out AbsoluteEntityCell? previousCell)
     {
+        previousCell = null;
         lock (worldEntitiesLock)
         {
             if (!entityRegistry.TryGetEntityById(id, out worldEntity))
@@ -178,6 +181,7 @@ internal sealed class WorldEntityManager
 
             if (oldCell != newCell)
             {
+                previousCell = oldCell;
                 EntitySwitchedCells(worldEntity, oldCell, newCell);
             }
 

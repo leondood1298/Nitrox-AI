@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Reflection.Emit;
 using HarmonyLib;
 using Nitrox.Model.DataStructures;
+using NitroxClient.GameLogic;
 using NitroxClient.MonoBehaviours;
 using UnityEngine;
 
@@ -56,6 +57,13 @@ public sealed partial class LargeWorldEntity_UpdateCell_Patch : NitroxPatch, IDy
             {
                 entityObject.EnsureComponent<OutOfCellEntity>().Init(nitroxId);
             }
+            return;
+        }
+
+        // A cell waking up puts its waiters back when it is awake. Its entity list may have come from the server before this
+        // entity got there, so destroying it would lose it for this game until the cell is loaded again.
+        if (EntityCells.TryGetCellOf(largeWorldEntity, out EntityCell entityCell) && EntityCells.IsWakingAfterLoadWasReported(entityCell.state))
+        {
             return;
         }
 

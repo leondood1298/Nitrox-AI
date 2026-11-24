@@ -189,6 +189,17 @@ namespace Nitrox.Server.Subnautica.Models
         }
 
         /// <summary>
+        ///     True if the player sees the entity now, or had loaded the cell it just left. A player who saw it leave has to
+        ///     hear of the move: their game then puts it where it went (in a cell it does not have, which removes it) instead of
+        ///     keeping it frozen at the edge of the cell, where a later destroy would never reach it.
+        /// </summary>
+        /// <param name="previousCell">The cell the entity left with this move, or null if it stayed in its cell.</param>
+        public bool SeesMove(WorldEntity entity, AbsoluteEntityCell? previousCell)
+        {
+            return CanSee(entity) || (previousCell != null && HasCellLoaded(previousCell));
+        }
+
+        /// <summary>
         ///     Where the player is now. Inside a base or Cyclops the body is held by the sub, so a Cyclops that moved since
         ///     the player last walked has taken the player along; <see cref="Position" /> only changes when the player
         ///     moves.
