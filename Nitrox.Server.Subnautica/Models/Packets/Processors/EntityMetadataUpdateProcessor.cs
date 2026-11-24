@@ -52,7 +52,8 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
              GateCreatureMetadata(context.Sender, entity, packet.NewValue) ??
              GateFiltrationMachineMetadata(context.Sender, entity, packet.NewValue) ??
              GateTimeCapsuleMetadata(context.Sender, entity, packet.NewValue) ??
-             GatePictureFrameMetadata(context.Sender, entity, packet.NewValue)) is { } result)
+             GatePictureFrameMetadata(context.Sender, entity, packet.NewValue) ??
+             GateDrillableMetadata(context.Sender, entity, packet.NewValue)) is { } result)
         {
             await SendResultAsync(context, entity, result);
             return;
@@ -194,6 +195,27 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
         }
         logger.ZLogWarningOnce($"Player {sender.Name} tried setting the picture of {entity.Id} with {metadata.GetType().Name}");
         return MetadataUpdateResult.Reject;
+    }
+
+    /// <summary>
+    ///     A deposit's chunks only lose health, whoever drills them (see <see cref="DrillableMetadataAuthority" />). A sender
+    ///     whose copy still had a chunk another player broke gets the merged state.
+    /// </summary>
+    /// <returns>Null when the update is no drilling report.</returns>
+    private MetadataUpdateResult? GateDrillableMetadata(Player sender, Entity entity, EntityMetadata metadata)
+    {
+        if (metadata is not DrillableMetadata requested)
+        {
+            return null;
+        }
+        // Only the ion cube deposit of the Primary Containment Facility is restored by the game; it is a child of the facility
+        if (DrillableMetadataAuthority.Merge(entity.Metadata as DrillableMetadata, requested, entity is PathBasedChildEntity) is not { } accepted)
+        {
+            logger.ZLogWarningOnce($"Player {sender.Name} sent drilling state with another number of chunks for {entity.Id}");
+            return MetadataUpdateResult.Reject;
+        }
+        entity.Metadata = accepted;
+        return DrillableMetadataAuthority.SenderIsBehind(requested, accepted) ? MetadataUpdateResult.AcceptAndEcho(accepted) : MetadataUpdateResult.Accept(accepted);
     }
 
     /// <summary>
