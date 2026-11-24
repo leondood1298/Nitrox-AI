@@ -365,7 +365,7 @@ event:/player/breathing;true;false;20
 event:/player/bubbles;true;false;20
 event:/player/change_mission;false;false;0
 event:/player/cold_damage;true;false;20
-event:/player/coughing;false;false;0
+event:/player/coughing;false;false;20
 event:/player/cube terminal_close;false;false;0
 event:/player/cube terminal_open;false;false;0
 event:/player/cube terminal_use;false;false;0
@@ -447,11 +447,11 @@ event:/player/oxygen_10_sec;false;false;0
 event:/player/oxygen_25;false;false;0
 event:/player/oxygen_30_sec;false;false;0
 event:/player/oxygen_50;false;false;0
-event:/player/Pain;false;false;0
-event:/player/Pain_no_tank;false;false;0
-event:/player/Pain_no_tank_light;false;false;0
+event:/player/Pain;false;false;20
+event:/player/Pain_no_tank;false;false;20
+event:/player/Pain_no_tank_light;false;false;20
 event:/player/Pain_over_time;false;false;0
-event:/player/Pain_surface;false;false;0
+event:/player/Pain_surface;false;false;20
 event:/player/Precursor_Gun_ControlRoom;false;false;0
 event:/player/Precursor_Gun_DisableDenied;false;false;0
 event:/player/Precursor_Gun_LostRiverHint;false;false;0

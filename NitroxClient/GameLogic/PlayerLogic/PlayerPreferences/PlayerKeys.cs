@@ -7,27 +7,28 @@ namespace NitroxClient.GameLogic.PlayerLogic.PlayerPreferences;
 
 /// <summary>
 ///     The key a server ties the player's name to. It is derived from one secret this game installation makes once and
-///     keeps with its other preferences, and from the server's address, so that a server never learns the key the
-///     player uses on another server.
+///     keeps with its other preferences, and from the identity of the world the server runs (sent in the session
+///     policy). So the key is the same whatever address the server is reached through, and no server learns the key the
+///     player uses on another world.
 /// </summary>
 public static class PlayerKeys
 {
     private const string SECRET_PREF_KEY_NAME = "NITROX_PLAYER_SECRET";
     private const int SECRET_LENGTH = 32;
 
-    /// <param name="serverAddress">The address the player typed or picked for the server, as preferences are kept per server.</param>
-    public static string GetKeyFor(string serverAddress)
+    /// <param name="worldIdentity">The identity the server sent in its session policy.</param>
+    public static string GetKeyFor(string worldIdentity)
     {
-        return Derive(GetOrCreateSecret(), serverAddress);
+        return Derive(GetOrCreateSecret(), worldIdentity);
     }
 
     /// <summary>
-    ///     The key for one server. Unity-free, so that it can be tested.
+    ///     The key for one world. Unity-free, so that it can be tested.
     /// </summary>
-    public static string Derive(byte[] secret, string serverAddress)
+    public static string Derive(byte[] secret, string worldIdentity)
     {
         using HMACSHA256 hmac = new(secret);
-        byte[] key = hmac.ComputeHash(Encoding.UTF8.GetBytes((serverAddress ?? string.Empty).Trim().ToLowerInvariant()));
+        byte[] key = hmac.ComputeHash(Encoding.UTF8.GetBytes(worldIdentity ?? string.Empty));
         return Convert.ToBase64String(key);
     }
 

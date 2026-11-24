@@ -31,7 +31,8 @@ internal sealed class ConnectedPlayers
 
     public PlayerManager PlayerManager { get; }
 
-    public ConnectedPlayers()
+    /// <param name="worldIdentity">For tests of names tied to keys across a change of the world identity.</param>
+    public ConnectedPlayers(WorldIdentity? worldIdentity = null)
     {
         // The ban check a connecting player goes through waits until the ban list has been loaded, which happens when
         // the service starts. No save has this name, so there is no ban file to read.
@@ -39,7 +40,7 @@ internal sealed class ConnectedPlayers
         BanService banService = new(new ServerJsonSerializer(NullLogger<ServerJsonSerializer>.Instance), Options.Create(startOptions), NullLogger<BanService>.Instance);
         banService.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
         banService.StopAsync(CancellationToken.None).GetAwaiter().GetResult();
-        PlayerManager = new PlayerManager(sessionManager, banService, Options.Create(new SubnauticaServerOptions()), NullLogger<PlayerManager>.Instance);
+        PlayerManager = new PlayerManager(sessionManager, banService, Options.Create(new SubnauticaServerOptions()), NullLogger<PlayerManager>.Instance, worldIdentity);
     }
 
     public SessionManager SessionManager => sessionManager;
