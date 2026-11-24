@@ -80,7 +80,7 @@ public static class RendererExtensions
         Texture2D mainTexture = (Texture2D)material.mainTexture;
         Texture2D clonedTexture = mainTexture.Clone();
         // Marks it as made for one player's body, to be destroyed with it (BodyRenderResources)
-        clonedTexture.name = BodyRenderResources.CLONED_TEXTURE_PREFIX + mainTexture.name;
+        clonedTexture.name = $"{BodyRenderResources.CLONED_TEXTURE_PREFIX}{mainTexture.name}";
         material.mainTexture = clonedTexture;
     }
 
