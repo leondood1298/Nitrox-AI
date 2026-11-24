@@ -2,6 +2,7 @@
 using System.ComponentModel;
 using System.Linq;
 using System.Text;
+using Nitrox.Model.DataStructures.GameLogic;
 using Nitrox.Server.Subnautica.Models.Commands.Core;
 
 namespace Nitrox.Server.Subnautica.Models.Commands;
@@ -10,6 +11,7 @@ namespace Nitrox.Server.Subnautica.Models.Commands;
 ///     Shows helpful information about available commands.
 /// </summary>
 [Alias("?")]
+[RequiresPermission(Perms.NONE)] // Every rank may ask what it can do, also on a server whose default rank is NONE
 internal sealed class HelpCommand(Func<CommandRegistryService> registryProvider) : ICommandHandler, ICommandHandler<string>
 {
     /// <summary>

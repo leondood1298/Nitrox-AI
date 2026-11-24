@@ -18,9 +18,15 @@ internal sealed class SeedNearPositionCommand(RandomStartResource randomStart) :
 {
     private readonly RandomStartResource randomStart = randomStart;
 
+    /// <summary>
+    ///     The most seeds one run tries: the work grows with it and runs on every core.
+    /// </summary>
+    private const int MAX_ITERATIONS = 1_000_000;
+
     public async Task Execute(ICommandContext context, int x, int z, int iterations)
     {
-        iterations = int.Max(1000, iterations);
+        // Capped: the earlier int.Max raised small counts but let any large one through
+        iterations = int.Clamp(iterations, 1, MAX_ITERATIONS);
         RandomStartGenerator randomResource = await randomStart.GetRandomStartGeneratorAsync();
         NitroxVector3 desiredPos = new(x, 0, z);
         LoopState best = new(0, null, "");
