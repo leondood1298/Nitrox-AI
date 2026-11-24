@@ -97,6 +97,8 @@ namespace NitroxClient.MonoBehaviours
 
         public static void SubnauticaLoadingStarted()
         {
+            // A modal of an earlier attempt would otherwise block closing this world's in-game menu
+            Gui.Modals.Modal.ClearCurrent();
             OnBeforeMultiplayerStart?.Invoke();
         }
 

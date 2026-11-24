@@ -9,6 +9,7 @@ using Nitrox.Model.Core;
 using NitroxClient.Communication.Abstract;
 using NitroxClient.Debuggers;
 using NitroxClient.MonoBehaviours;
+using NitroxClient.MonoBehaviours.Gui.MainMenu.ServerJoin;
 using NitroxClient.MonoBehaviours.Gui.Modals;
 using Nitrox.Model.Networking;
 using Nitrox.Model.Packets;
@@ -259,7 +260,15 @@ public class LiteNetLibClient : IClient
 
         if (showLostConnection)
         {
-            Modal.Get<LostConnectionModal>()?.Show();
+            // Before the world loads there is no in-game menu to show the modal in; the main menu says it instead
+            if (JoinServerBackend.IsJoiningFromMenu)
+            {
+                JoinServerBackend.OnConnectionLost();
+            }
+            else
+            {
+                Modal.Get<LostConnectionModal>()?.Show();
+            }
         }
         Log.Info("Disconnected from server");
     }
