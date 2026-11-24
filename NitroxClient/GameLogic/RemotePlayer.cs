@@ -196,23 +196,22 @@ public class RemotePlayer : INitroxPlayer
         SetPilotingChair(null);
         StopCyclopsWalk();
 
-        float teleportThreshold = MovementHelper.GetTeleportThreshold(velocity.magnitude);
-        MovementHelper.TeleportIfTooFar(Body.transform, RigidBody, position, bodyRotation, teleportThreshold);
-
-        AnimationController.AimingRotation = aimingRotation;
-        AnimationController.UpdatePlayerAnimations = true;
-        AnimationController.Velocity = MovementHelper.GetCorrectedVelocity(position, velocity, Body.transform.position, Time.fixedDeltaTime);
-
-        // The rotations are sent relative to a base the player is in (the position is sent in world space)
+        // The rotations are sent relative to a base the player is in (the position is sent in world space). They are
+        // turned into the world's first, so that a body moved by a teleport faces the right way at once.
         Vector3 worldPosition = position;
         if (SubRoot && SubRoot.isBase)
         {
-            Quaternion vehicleAngle = SubRoot.transform.rotation;
-            position = vehicleAngle * position;
-            position += SubRoot.transform.position;
-            bodyRotation = vehicleAngle * bodyRotation;
-            aimingRotation = vehicleAngle * aimingRotation;
+            Quaternion baseRotation = SubRoot.transform.rotation;
+            bodyRotation = baseRotation * bodyRotation;
+            aimingRotation = baseRotation * aimingRotation;
         }
+
+        float teleportThreshold = MovementHelper.GetTeleportThreshold(velocity.magnitude);
+        MovementHelper.TeleportIfTooFar(Body.transform, RigidBody, worldPosition, bodyRotation, teleportThreshold);
+
+        AnimationController.AimingRotation = aimingRotation;
+        AnimationController.UpdatePlayerAnimations = true;
+        AnimationController.Velocity = MovementHelper.GetCorrectedVelocity(worldPosition, velocity, Body.transform.position, Time.fixedDeltaTime);
 
         // A player who stopped sends no further packet (PlayerMovementThrottle), so the corrective speed computed
         // above would never be taken back and the body would drift or spin: it is put in place instead
