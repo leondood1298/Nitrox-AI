@@ -129,6 +129,7 @@ namespace NitroxClient
             containerBuilder.RegisterType<Trashcans>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<PingPreferences>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<Beacons>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<BaseSpotLights>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<Repulsions>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<GravityTraps>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<DiveReels>().InstancePerLifetimeScope();
