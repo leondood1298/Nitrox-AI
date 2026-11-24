@@ -1,3 +1,4 @@
+using System.Linq;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
@@ -8,8 +9,11 @@ using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
-internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager, EntityRegistry entityRegistry, SimulationOwnershipData simulationOwnershipData, ScannerRoomManager scannerRoomManager, BasePowerManager basePowerManager, ILogger<EntityMetadataUpdateProcessor> logger) : IAuthPacketProcessor<EntityMetadataUpdate>
+internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager, EntityRegistry entityRegistry, SimulationOwnershipData simulationOwnershipData, ScannerRoomManager scannerRoomManager, BasePowerManager basePowerManager,
+    WorldEntityManager worldEntityManager, EntitySimulation entitySimulation, ILogger<EntityMetadataUpdateProcessor> logger) : IAuthPacketProcessor<EntityMetadataUpdate>
 {
+    private readonly WorldEntityManager worldEntityManager = worldEntityManager;
+    private readonly EntitySimulation entitySimulation = entitySimulation;
     private readonly PlayerManager playerManager = playerManager;
     private readonly EntityRegistry entityRegistry = entityRegistry;
     private readonly ILogger<EntityMetadataUpdateProcessor> logger = logger;
@@ -33,6 +37,12 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
                 return;
             }
             logger.ZLogError($"Entity metadata {packet.NewValue.GetType()} updated on an entity unknown to the server {packet.Id}");
+            return;
+        }
+
+        if (packet.NewValue is CyclopsMetadata requestedCyclops)
+        {
+            await ProcessCyclopsMetadataAsync(context, entity, requestedCyclops);
             return;
         }
 
@@ -187,6 +197,54 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
     }
 
     /// <summary>
+    ///     A Cyclops' helm controls belong to its pilot, its hull to its simulating player (see
+    ///     <see cref="CyclopsMetadataAuthority" />). A sender whose helm controls were not taken gets the kept ones back.
+    ///     When the Cyclops is destroyed, the vehicles docked in it go with it, as in the game, also in the saved world.
+    /// </summary>
+    private async Task ProcessCyclopsMetadataAsync(AuthProcessorContext context, Entity cyclops, CyclopsMetadata requested)
+    {
+        if (cyclops is not VehicleEntity)
+        {
+            logger.ZLogWarningOnce($"Player {context.Sender.Name} tried applying Cyclops metadata to {cyclops.GetType().Name} {cyclops.Id}");
+            return;
+        }
+
+        CyclopsMetadata? stored = cyclops.Metadata as CyclopsMetadata;
+        Player? simulator = simulationOwnershipData.GetPlayerForLock(cyclops.Id);
+        bool senderSimulates = simulator == null || simulator == context.Sender;
+        Player? pilot = playerManager.GetConnectedPlayers().FirstOrDefault(player => player.PlayerContext?.DrivingVehicle == cyclops.Id);
+        bool senderControlsHelm = pilot == null ? senderSimulates : pilot == context.Sender;
+
+        CyclopsMetadata accepted = CyclopsMetadataAuthority.Merge(stored, requested, senderSimulates, senderControlsHelm);
+        cyclops.Metadata = accepted;
+        await SendUpdateToVisiblePlayersAsync(context, new EntityMetadataUpdate(cyclops.Id, accepted), cyclops, CyclopsMetadataAuthority.HelmWasRefused(requested, accepted));
+
+        if (CyclopsMetadataAuthority.IsNewlyDestroyed(stored, accepted))
+        {
+            await DestroyDockedVehiclesAsync(context, cyclops);
+        }
+    }
+
+    private async Task DestroyDockedVehiclesAsync(AuthProcessorContext context, Entity cyclops)
+    {
+        foreach (VehicleEntity docked in CyclopsMetadataAuthority.FindDockedVehicles(cyclops))
+        {
+            entitySimulation.EntityDestroyed(docked.Id);
+            worldEntityManager.MovePlayerChildrenToRoot(docked);
+            if (!worldEntityManager.TryDestroyEntity(docked.Id, out _))
+            {
+                continue;
+            }
+            logger.ZLogInformation($"Vehicle {docked.Id} was destroyed with the Cyclops {cyclops.Id} it was docked in");
+            // Every game already lost it to the Cyclops' "OnKill"; this keeps a copy from staying anywhere
+            foreach (Player player in playerManager.GetConnectedPlayers())
+            {
+                await context.SendAsync(new EntityDestroyed(docked.Id), player.SessionId);
+            }
+        }
+    }
+
+    /// <summary>
     ///     Sends what a manager decided about an update. The manager has already stored what it accepted.
     /// </summary>
     private async Task SendResultAsync(AuthProcessorContext context, Entity entity, MetadataUpdateResult result)
@@ -227,13 +285,6 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
                 return false;
             }
             metadata = EscapePodMetadataAuthority.Merge(entity.Metadata as EscapePodMetadata, requestedEscapePodMetadata);
-            return true;
-        }
-
-        if (metadata is CyclopsMetadata requestedCyclops)
-        {
-            Player? simulator = simulationOwnershipData.GetPlayerForLock(entity.Id);
-            metadata = CyclopsMetadataAuthority.Merge(entity.Metadata as CyclopsMetadata, requestedCyclops, simulator == null || simulator == sendingPlayer);
             return true;
         }
 
