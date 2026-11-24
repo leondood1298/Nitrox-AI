@@ -10,9 +10,10 @@ namespace NitroxClient.GameLogic.PlayerLogic;
 public sealed class CyclopsWalkVelocity
 {
     /// <summary>
-    ///     Packets closer together than this arrived in the same frame; the speed is measured over a longer span instead.
+    ///     Packets closer together than this arrived in the same frame (the game's clock stands still within one); the
+    ///     speed is measured from the last of them.
     /// </summary>
-    public const float MINIMUM_INTERVAL = 0.01f;
+    public const float MINIMUM_INTERVAL = 0.0001f;
 
     /// <summary>
     ///     Without a packet for this long the player is taken to stand still.
@@ -51,6 +52,8 @@ public sealed class CyclopsWalkVelocity
         float elapsed = now - referenceTime;
         if (elapsed < MINIMUM_INTERVAL)
         {
+            // Packets that arrive in one frame: the last one is where the player is now
+            referencePosition = localPosition;
             return;
         }
 

@@ -26,13 +26,14 @@ public sealed class CyclopsWalkVelocityTest
     }
 
     [TestMethod]
-    public void PacketsThatArriveInOneFrameAreMeasuredOverALongerSpan()
+    public void PacketsThatArriveInOneFrameAreMeasuredFromTheLastOfThem()
     {
+        // 2 metres per second; two packets sent 0.01 seconds apart arrive in the same frame
         CyclopsWalkVelocity walk = new();
         walk.OnPacket(Vector3.zero, 0f);
+        walk.OnPacket(new Vector3(0.08f, 0, 0), 0.05f);
         walk.OnPacket(new Vector3(0.1f, 0, 0), 0.05f);
-        walk.OnPacket(new Vector3(0.2f, 0, 0), 0.05f);
-        walk.OnPacket(new Vector3(0.3f, 0, 0), 0.1f);
+        walk.OnPacket(new Vector3(0.2f, 0, 0), 0.1f);
 
         walk.GetVelocity(0.1f).x.Should().BeApproximately(2f, 0.01f);
     }
