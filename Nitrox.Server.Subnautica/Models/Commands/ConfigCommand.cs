@@ -10,7 +10,9 @@ internal sealed class ConfigCommand(IOptions<ServerStartOptions> optionsProvider
 {
     private readonly IOptions<ServerStartOptions> optionsProvider = optionsProvider;
 
-    [Description("Opens the server configuration file")]
+    internal const string EDIT_WARNING = "Stop the server before editing this file: it is read when the server starts, and the server writes it back with its own settings on every save.";
+
+    [Description("Opens the server configuration file (to edit it, stop the server first)")]
     public async Task Execute(ICommandContext context)
     {
         string filePath = optionsProvider.Value.GetServerConfigFilePath();
@@ -21,6 +23,7 @@ internal sealed class ConfigCommand(IOptions<ServerStartOptions> optionsProvider
             return;
         }
 
+        await context.ReplyAsync(EDIT_WARNING);
         FileSystem.Instance.OpenOrExecuteFile(filePath);
     }
 }
