@@ -95,6 +95,13 @@ internal sealed class EntitySpawnedByClientProcessor(PlayerManager playerManager
             return false;
         }
 
+        // One planter slot holds one plant: the later of two seeds planted in it at the same moment is moved by its game
+        if (entity.ParentId != null && entityRegistry.TryGetEntityById(entity.ParentId, out Entity? planter) && PlanterSlots.IsTaken(planter.ChildEntities, entity))
+        {
+            await context.ReplyAsync(new PlanterSlotTaken(entity.Id, ((PlantableMetadata)entity.Metadata).SlotID));
+            return false;
+        }
+
         // One slot holds one item: two players who filled the same slot at the same moment
         string? occupant = null;
         bool slotFree = entity switch

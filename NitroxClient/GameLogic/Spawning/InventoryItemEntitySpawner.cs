@@ -18,6 +18,11 @@ namespace NitroxClient.GameLogic.Spawning;
 
 public class InventoryItemEntitySpawner(EntityMetadataManager entityMetadataManager) : SyncEntitySpawner<InventoryItemEntity>
 {
+    /// <summary>
+    ///     How long a seed of another player waits for this game's own seed to leave the slot they were both planted in.
+    /// </summary>
+    private const float SLOT_WAIT_SECONDS = 10f;
+
     private readonly EntityMetadataManager entityMetadataManager = entityMetadataManager;
 
     protected override IEnumerator SpawnAsync(InventoryItemEntity entity, TaskResult<Optional<GameObject>> result)
@@ -127,22 +132,16 @@ public class InventoryItemEntitySpawner(EntityMetadataManager entityMetadataMana
                     Plantable plantable = pickupable.GetComponent<Plantable>();
                     pickupable.SetTechTypeOverride(plantable.plantTechType, false);
                     inventoryItem.isEnabled = false;
-                    planter.AddItem(plantable, metadata.SlotID);
 
-                    // Apply the plantable metadata after the GrowingPlant (or the GrownPlant) is spawned
-                    // this will allow the GrowingPlant to know about its progress
-                    entityMetadataManager.ApplyMetadata(plantable.gameObject, metadata);
-
-                    // Plant spawning occurs in multiple steps over frames:
-                    // spawning the item, adding it to the planter, having the GrowingPlant created, and eventually having it create a GrownPlant (when progress == 1)
-                    // therefore we give the metadata to the object so it can be used when required
-                    if (metadata.FruitPlantMetadata != null && plantable.growingPlant && plantable.growingPlant.GetProgress() == 1f)
+                    Planter.PlantSlot slot = planter.GetSlotByID(metadata.SlotID);
+                    if (slot == null || Planters.CanTakeSlot(slot.isOccupied, slot.plantable == plantable))
                     {
-                        plantable.growingPlant.AddReference(metadata.FruitPlantMetadata);
+                        Plant(planter, plantable, metadata.SlotID, metadata);
+                        return;
                     }
-
-                    // NB: Entities.SpawnBatchAsync (which is the function calling the current spawner)
-                    // will still apply the metadata another time but we don't care as it's not destructive
+                    // This game planted its own seed in that slot at the same moment: the server kept this seed there and
+                    // the own seed moves away (Planters.SlotTaken)
+                    CoroutineHost.StartCoroutine(PlantOnceSlotIsFree(planter, plantable, slot, metadata));
                 });
             }
         }
@@ -152,6 +151,48 @@ public class InventoryItemEntitySpawner(EntityMetadataManager entityMetadataMana
             {
                 trashcan.AddItem(inventoryItem);
             });
+        }
+    }
+
+    private void Plant(Planter planter, Plantable plantable, int slotId, PlantableMetadata metadata)
+    {
+        planter.AddItem(plantable, slotId);
+
+        // Apply the plantable metadata after the GrowingPlant (or the GrownPlant) is spawned
+        // this will allow the GrowingPlant to know about its progress
+        entityMetadataManager.ApplyMetadata(plantable.gameObject, metadata);
+
+        // Plant spawning occurs in multiple steps over frames:
+        // spawning the item, adding it to the planter, having the GrowingPlant created, and eventually having it create a GrownPlant (when progress == 1)
+        // therefore we give the metadata to the object so it can be used when required
+        if (plantable.growingPlant && plantable.growingPlant.GetProgress() == 1f)
+        {
+            plantable.growingPlant.AddReference(metadata);
+        }
+
+        // NB: Entities.SpawnBatchAsync (which is the function calling the current spawner)
+        // will still apply the metadata another time but we don't care as it's not destructive
+    }
+
+    private IEnumerator PlantOnceSlotIsFree(Planter planter, Plantable plantable, Planter.PlantSlot slot, PlantableMetadata metadata)
+    {
+        float giveUpAt = Time.realtimeSinceStartup + SLOT_WAIT_SECONDS;
+        yield return new WaitUntil(() => !planter || !plantable || !slot.isOccupied || Time.realtimeSinceStartup > giveUpAt);
+        if (!planter || !plantable || plantable.currentPlanter)
+        {
+            yield break;
+        }
+        // A slot still taken (a large and a small plant over each other, which the server cannot tell): any free one
+        int slotId = slot.isOccupied ? planter.GetFreeSlotID(plantable.size == Plantable.PlantSize.Large) : metadata.SlotID;
+        if (slotId < 0)
+        {
+            Log.Warn($"[{nameof(InventoryItemEntitySpawner)}] No free slot left in {planter.name} for {plantable.name}");
+            yield break;
+        }
+        using (PacketSuppressor<EntityReparented>.Suppress())
+        using (PacketSuppressor<EntityMetadataUpdate>.Suppress())
+        {
+            Plant(planter, plantable, slotId, metadata);
         }
     }
 
