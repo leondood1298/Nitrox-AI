@@ -120,6 +120,12 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities
             }
         }
 
+        /// <summary>
+        ///     Raised for every entity that leaves the registry, its children included, whatever removed it. Lasting state
+        ///     that points at an entity can be released here once, instead of in each of the many ways an entity is removed.
+        /// </summary>
+        public event Action<Entity>? EntityRemoved;
+
         public Optional<Entity> RemoveEntity(NitroxId id)
         {
             if (entitiesById.TryRemove(id, out Entity entity))
@@ -130,6 +136,8 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities
                 {
                     RemoveEntity(child.Id);
                 }
+
+                EntityRemoved?.Invoke(entity);
             }
 
             return Optional.OfNullable(entity);

@@ -7,9 +7,8 @@ namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
 internal sealed class RemoveCreatureCorpseProcessor(IPacketSender packetSender, PlayerManager playerManager,
     EntitySimulation entitySimulation, WorldEntityManager worldEntityManager,
-    ScannerRoomManager scannerRoomManager, CrashHomeRespawns? crashHomeRespawns = null) : IAuthPacketProcessor<RemoveCreatureCorpse>
+    ScannerRoomManager scannerRoomManager) : IAuthPacketProcessor<RemoveCreatureCorpse>
 {
-    private readonly CrashHomeRespawns? crashHomeRespawns = crashHomeRespawns;
     private readonly IPacketSender packetSender = packetSender;
     private readonly PlayerManager playerManager = playerManager;
     private readonly EntitySimulation entitySimulation = entitySimulation;
@@ -33,11 +32,6 @@ internal sealed class RemoveCreatureCorpseProcessor(IPacketSender packetSender, 
             // Not filtered by visibility because the server position of a creature can be outdated
             // and a player who still has it loaded would then keep it alive
             await context.SendToOthersAsync(packet);
-
-            if (crashHomeRespawns != null)
-            {
-                await crashHomeRespawns.EntityRemovedAsync(entity);
-            }
         }
     }
 }
