@@ -7,6 +7,7 @@ using NitroxClient.Communication.MultiplayerSession;
 using NitroxClient.GameLogic;
 using NitroxClient.GameLogic.Bases;
 using NitroxClient.GameLogic.ChatUI;
+using NitroxClient.GameLogic.FMOD;
 using NitroxClient.GameLogic.PlayerLogic.PlayerModel.Abstract;
 using NitroxClient.GameLogic.PlayerLogic.PlayerModel.ColorSwap;
 using NitroxClient.MonoBehaviours.Cyclops;
@@ -172,7 +173,11 @@ namespace NitroxClient.MonoBehaviours
                 {
                     throw new Exception($"Failed to find packet processor for packet {packet.GetType()}");
                 }
-                processor.Execute(packetProcessorContext, packet).ContinueWithHandleError();
+                // What another player did is repeated here: its sounds are that player's to send, not this game's
+                using (ReplayedSoundScope.Enter())
+                {
+                    processor.Execute(packetProcessorContext, packet).ContinueWithHandleError();
+                }
             }
             catch (Exception ex)
             {
