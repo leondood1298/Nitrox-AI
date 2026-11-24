@@ -11,9 +11,10 @@ using UnityEngine;
 
 namespace NitroxClient.GameLogic.Spawning.WorldEntities;
 
-public class VehicleEntitySpawner(MobileVehicleBay mobileVehicleBay) : EntitySpawner<VehicleEntity>
+public class VehicleEntitySpawner(MobileVehicleBay mobileVehicleBay, LavaLarvae lavaLarvae) : EntitySpawner<VehicleEntity>
 {
     private readonly MobileVehicleBay bays = mobileVehicleBay;
+    private readonly LavaLarvae lavaLarvae = lavaLarvae;
 
     // The constructor has mixed results when the remote player is a long distance away.  UWE even has a built in distance tracker to ensure
     // that they are within allowed range.  However, this range is a bit restrictive. We will allow constructor spawning up to a specified 
@@ -117,6 +118,9 @@ public class VehicleEntitySpawner(MobileVehicleBay mobileVehicleBay) : EntitySpa
         {
             vehicle.constructionFallOverride = false;
         }
+
+        // Lava Larvae loaded before their vehicle go on it now
+        lavaLarvae.VehicleSpawned(vehicleEntity.Id, gameObject);
 
         result.Set(gameObject);
     }

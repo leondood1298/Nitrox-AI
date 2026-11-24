@@ -79,6 +79,39 @@ public sealed class CreatureMetadataAuthorityTest
     }
 
     [TestMethod]
+    public void LavaLarvaAttachingKeepsItsInfectionLeashAndSize()
+    {
+        StayAtLeashPositionMetadata stored = new(leashPosition, 1f);
+        stored.WithSize(0.7f);
+        NitroxId prawnId = new();
+        LavaLarvaMetadata attaching = new(true, prawnId, 3, CreatureMetadata.UNDECIDED);
+
+        CreatureMetadata? accepted = CreatureMetadataAuthority.Merge(stored, attaching);
+
+        LavaLarvaMetadata larva = accepted.Should().BeOfType<LavaLarvaMetadata>().Subject;
+        larva.Attached.Should().BeTrue();
+        larva.VehicleId.Should().Be(prawnId);
+        larva.AttachPoint.Should().Be(3);
+        larva.InfectedAmount.Should().Be(1f);
+        larva.LeashPosition.Should().Be(leashPosition);
+        larva.Size.Should().Be(0.7f);
+    }
+
+    [TestMethod]
+    public void AttachedLavaLarvaStaysAttachedWhenItsInfectionChanges()
+    {
+        NitroxId seamothId = new();
+        LavaLarvaMetadata stored = new(true, seamothId, 1, CreatureMetadata.UNDECIDED);
+
+        CreatureMetadata? accepted = CreatureMetadataAuthority.Merge(stored, new CreatureInfectionMetadata(0f));
+
+        LavaLarvaMetadata larva = accepted.Should().BeOfType<LavaLarvaMetadata>().Subject;
+        larva.Attached.Should().BeTrue();
+        larva.VehicleId.Should().Be(seamothId);
+        larva.InfectedAmount.Should().Be(0f);
+    }
+
+    [TestMethod]
     public void StalkerKeepsItsFriendWhenCured()
     {
         NitroxId friendId = new();

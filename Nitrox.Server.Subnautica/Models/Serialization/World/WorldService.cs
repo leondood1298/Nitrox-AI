@@ -419,6 +419,7 @@ internal class WorldService : IHostedService
             entityRegistry.AddEntitiesIgnoringDuplicate(pWorldData.GlobalRootData.Entities.OfType<Entity>().ToList());
             // Before loaded entities become available to automatic simulation.
             scannerRoomManager.WorldLoaded();
+            LavaLarvaAttachments.DetachFromMissingVehicles(entityRegistry);
             await escapePodManager.AddKnownPodsAsync(entityRegistry.GetEntities<EscapePodEntity>());
 
             // TODO: hacky code - see WorldEntityManager for more information.
