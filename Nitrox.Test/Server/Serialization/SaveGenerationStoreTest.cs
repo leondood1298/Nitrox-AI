@@ -51,6 +51,33 @@ public sealed class SaveGenerationStoreTest
     }
 
     [TestMethod]
+    public void ASaveReadsEachFileOnceToHashIt()
+    {
+        SaveGenerationStore store = new();
+        store.Write(saveDir, Files("one"));
+        int afterFirst = store.FilesHashed;
+
+        store.Write(saveDir, Files("two"));
+
+        // Only what was written; the generation it replaces was hashed when it was written
+        (store.FilesHashed - afterFirst).Should().Be(fileNames.Length);
+        AssertWholeGeneration(store.FindGenerations(saveDir)[0], "two");
+    }
+
+    [TestMethod]
+    public void AFileChangedSinceItWasHashedIsHashedAgain()
+    {
+        SaveGenerationStore store = new();
+        store.Write(saveDir, Files("one"));
+        string entityData = Path.Combine(saveDir, "EntityData.json");
+        // Same length, other content, as a damaged or replaced file could be
+        File.WriteAllText(entityData, new string('x', File.ReadAllText(entityData).Length));
+        File.SetLastWriteTimeUtc(entityData, DateTime.UtcNow.AddMinutes(1));
+
+        store.FindGenerations(saveDir).Should().NotContain(generation => generation.Source == GenerationSource.CURRENT);
+    }
+
+    [TestMethod]
     public void SaveOfTheSameWorldIsReportedUnchanged()
     {
         SaveGenerationStore store = new();

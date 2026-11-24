@@ -132,6 +132,11 @@ internal sealed class SaveService(Func<WorldService> worldServiceProvider, ISave
         try
         {
             DateTime now = DateTime.Now;
+            if (!WorldBackups.IsBackupDue(saveDir, now, TimeSpan.FromMinutes(options.Value.BackupIntervalMinutes)))
+            {
+                logger.ZLogTrace($"No backup yet: the last one is less than {options.Value.BackupIntervalMinutes} minutes old");
+                return;
+            }
             WorldBackups.Create(saveDir, now);
             IReadOnlyList<string> removed = WorldBackups.Prune(saveDir, options.Value.MaxBackups, now);
             logger.ZLogInformation($"World backed up{(removed.Count > 0 ? $", {removed.Count} older backup(s) thinned out" : "")}");
