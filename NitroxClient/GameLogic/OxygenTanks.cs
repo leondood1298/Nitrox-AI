@@ -31,4 +31,21 @@ public class OxygenTanks
             entities.EntityMetadataChanged(oxygen, id);
         }
     }
+
+    /// <summary>
+    ///     Called after the player's air bladder was filled or let air out. The others see it as full as it is, and it
+    ///     keeps its air after a rejoin (<see cref="Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata.AirBladderMetadata" />).
+    /// </summary>
+    public void AirBladderChanged(AirBladder airBladder, float previousOxygen)
+    {
+        // Reported per unit, and when it is full or empty; a bladder holds a few units only
+        if (!BatteryCharges.ShouldReport(previousOxygen, airBladder.oxygen, airBladder.oxygenCapacity) || !airBladder.TryGetNitroxId(out NitroxId id))
+        {
+            return;
+        }
+        if (!entities.SpawningEntities && entities.IsKnownEntity(id))
+        {
+            entities.EntityMetadataChanged(airBladder, id);
+        }
+    }
 }
