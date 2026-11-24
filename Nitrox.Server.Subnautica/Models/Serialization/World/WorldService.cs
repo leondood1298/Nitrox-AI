@@ -42,6 +42,7 @@ internal class WorldService : IHostedService
     private readonly WorldEntityManager worldEntityManager;
     private readonly ActiveTeleporters activeTeleporters;
     private readonly CollectedTimeCapsules collectedTimeCapsules;
+    private readonly CrashHomeRespawns crashHomeRespawns;
     public IServerSerializer Serializer { get; private set; }
 
     /// <summary>
@@ -68,8 +69,11 @@ internal class WorldService : IHostedService
         IOptions<ServerStartOptions> startOptions,
         ActiveTeleporters activeTeleporters,
         CollectedTimeCapsules collectedTimeCapsules,
+        CrashHomeRespawns crashHomeRespawns,
         ILogger<WorldService> logger)
     {
+        // Made here, at startup, so that it hears of every crashfish that leaves the registry from the first one on
+        this.crashHomeRespawns = crashHomeRespawns;
         this.options = options;
         this.entityRegistry = entityRegistry;
         this.playerManager = playerManager;
@@ -407,7 +411,7 @@ internal class WorldService : IHostedService
             // Entities
             entityRegistry.AddEntities(pWorldData.EntityData.Entities);
             entityRegistry.AddEntitiesIgnoringDuplicate(pWorldData.GlobalRootData.Entities.OfType<Entity>().ToList());
-            int repairedCrashHomes = CrashHomeRespawns.RepairAfterLoad(entityRegistry.GetAllEntities());
+            int repairedCrashHomes = crashHomeRespawns.RepairAfterLoad();
             if (repairedCrashHomes > 0)
             {
                 logger.ZLogInformation($"{repairedCrashHomes} crash homes without their crashfish make a new one when next loaded.");
