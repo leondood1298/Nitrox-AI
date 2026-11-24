@@ -17,6 +17,11 @@ public class FlashlightMetadataProcessor : EntityMetadataProcessor<FlashlightMet
             if (lights)
             {
                 lights.lightsActive = metadata.On;
+                // As the game's ToggleLights.OnProtoDeserialize does: the flag alone left the light as the prefab had it
+                if (lights.lightsParent)
+                {
+                    lights.lightsParent.SetActive(metadata.On);
+                }
             }
             else
             {
