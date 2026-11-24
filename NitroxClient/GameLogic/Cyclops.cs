@@ -45,13 +45,19 @@ namespace NitroxClient.GameLogic
             packetSender.Send(packet);
         }
 
+        /// <summary>
+        ///     Another player launched a decoy from this Cyclops: the voice line and the button's cooldown. The decoy itself
+        ///     is made in that player's game only and shown here as a copy (see <see cref="CyclopsDecoys" />).
+        /// </summary>
         public void LaunchDecoy(NitroxId id)
         {
-            GameObject cyclops = NitroxEntity.RequireObjectFrom(id);
+            if (!NitroxEntity.TryGetObjectFrom(id, out GameObject cyclops))
+            {
+                return;
+            }
             CyclopsDecoyManager decoyManager = cyclops.RequireComponent<CyclopsDecoyManager>();
             using (PacketSuppressor<EntityMetadataUpdate>.Suppress())
             {
-                decoyManager.Invoke(nameof(CyclopsDecoyManager.LaunchWithDelay), 3f);
                 decoyManager.decoyLaunchButton.UpdateText();
                 decoyManager.subRoot.voiceNotificationManager.PlayVoiceNotification(decoyManager.subRoot.decoyNotification, false, true);
                 decoyManager.subRoot.BroadcastMessage(nameof(CyclopsDecoyManager.UpdateTotalDecoys), decoyManager.decoyCount, SendMessageOptions.DontRequireReceiver);

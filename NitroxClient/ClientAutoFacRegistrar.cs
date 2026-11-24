@@ -123,6 +123,7 @@ namespace NitroxClient
             containerBuilder.RegisterType<EquipmentSlots>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<ItemContainers>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<Cyclops>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<CyclopsDecoys>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<Rockets>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<TimeCapsules>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<PrecursorTeleporters>().InstancePerLifetimeScope();

@@ -81,6 +81,9 @@ public sealed class LoadingPacketGate
         typeof(TorpedoTargetAcquired),
         typeof(StasisSphereShot),
         typeof(StasisSphereHit),
+        // A Cyclops decoy lives for a moment; the snapshot holds the decoys left in the tube
+        typeof(CyclopsDecoyLaunch),
+        typeof(CyclopsDecoyUpdate),
         // Sent every few seconds
         typeof(PlayerStats),
         // A loading player is not in bed: it must not get the sleep screen or wake up from a sleep it was not part of
