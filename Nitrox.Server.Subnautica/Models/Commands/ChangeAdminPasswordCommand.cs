@@ -10,11 +10,12 @@ internal sealed class ChangeAdminPasswordCommand(IOptions<SubnauticaServerOption
     private readonly IOptions<SubnauticaServerOptions> options = options;
     private readonly ILogger<ChangeAdminPasswordCommand> logger = logger;
 
-    [Description("Changes admin password")]
-    public Task Execute(ICommandContext context, string newPassword)
+    [Description("Changes the password of /login (any text, the rest of the line); kept from the next save on")]
+    public async Task Execute(ICommandContext context, [Description("The new admin password")] string newPassword)
     {
         options.Value.AdminPassword = newPassword;
-        logger.ZLogInformation($"Admin password changed to '{newPassword:@Password}'");
-        return Task.CompletedTask;
+        // The password itself never goes to the log, which is kept and often shared
+        logger.ZLogInformation($"Admin password changed by {context.OriginName}");
+        await context.ReplyAsync("Admin password has been updated");
     }
 }

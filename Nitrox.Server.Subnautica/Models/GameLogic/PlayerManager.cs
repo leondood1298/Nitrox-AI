@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Net;
+using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using Nitrox.Model.Constants;
 using Nitrox.Model.Core;
@@ -12,6 +13,7 @@ using Nitrox.Model.GameLogic.PlayerAnimation;
 using Nitrox.Model.MultiplayerSession;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.MultiplayerSession;
+using Nitrox.Server.Subnautica.Models.Administration;
 using Nitrox.Server.Subnautica.Models.AppEvents;
 using Nitrox.Server.Subnautica.Models.Communication;
 using Nitrox.Server.Subnautica.Services;
@@ -44,10 +46,24 @@ internal sealed partial class PlayerManager(SessionManager sessionManager, BanSe
     };
 
     /// <summary>
-    ///     The hash of the key a reserving session sent, until it becomes a connected player and the key is stored with
-    ///     the player.
+    ///     The public key a reserving session proved it holds, and whether the name was already tied to it, until the
+    ///     session becomes a connected player and the key is stored with the player.
     /// </summary>
-    private readonly ThreadSafeDictionary<SessionId, string> pendingKeyHashes = [];
+    private readonly ThreadSafeDictionary<SessionId, PendingKey> pendingKeys = [];
+
+    /// <summary>
+    ///     The challenge each connecting session was sent in its session policy, used once by its reservation.
+    /// </summary>
+    private readonly ThreadSafeDictionary<SessionId, string> joinChallenges = [];
+
+    /// <summary>
+    ///     Names nobody may join with: "Server" is how server messages are shown in chat.
+    /// </summary>
+    private static readonly string[] RESERVED_NAMES = ["Server"];
+
+    private readonly GuessLimiter passwordGuesses = new();
+
+    private sealed record PendingKey(string PublicKey, bool WasTiedBefore);
 
     private readonly SessionManager sessionManager = sessionManager;
     private readonly BanService banService = banService;
@@ -104,17 +120,45 @@ internal sealed partial class PlayerManager(SessionManager sessionManager, BanSe
             return new MultiplayerSessionReservation(sessionId, rejectedState);
         }
 
-        if (!string.IsNullOrEmpty(options.Value.ServerPassword) && (!authenticationContext.ServerPassword.HasValue || authenticationContext.ServerPassword.Value != options.Value.ServerPassword))
+        if (!string.IsNullOrEmpty(options.Value.ServerPassword))
         {
+            string[] guessKeys = [$"address:{endPoint.Address}", $"session:{sessionId}"];
+            TimeSpan wait = passwordGuesses.GetRemainingWait(guessKeys);
+            if (wait > TimeSpan.Zero)
+            {
+                MultiplayerSessionReservationState rejectedState = MultiplayerSessionReservationState.REJECTED | MultiplayerSessionReservationState.AUTHENTICATION_FAILED;
+                return new MultiplayerSessionReservation(sessionId, rejectedState, $"Too many wrong passwords. Try again in {Math.Ceiling(wait.TotalSeconds)} seconds.");
+            }
+            if (!authenticationContext.ServerPassword.HasValue || !SecretComparison.AreEqual(authenticationContext.ServerPassword.Value, options.Value.ServerPassword))
+            {
+                passwordGuesses.RecordFailure(guessKeys);
+                MultiplayerSessionReservationState rejectedState = MultiplayerSessionReservationState.REJECTED | MultiplayerSessionReservationState.AUTHENTICATION_FAILED;
+                return new MultiplayerSessionReservation(sessionId, rejectedState);
+            }
+            passwordGuesses.RecordSuccess(guessKeys);
+        }
+
+        if (!IsAllowedName(authenticationContext.Username))
+        {
+            MultiplayerSessionReservationState rejectedState = MultiplayerSessionReservationState.REJECTED | MultiplayerSessionReservationState.INCORRECT_USERNAME;
+            return new MultiplayerSessionReservation(sessionId, rejectedState);
+        }
+
+        // The key is proven by signing this connection's challenge, so a key seen once (on the network, or by a server
+        // posing as this world) cannot be used again.
+        joinChallenges.Remove(sessionId, out string? challenge);
+        string? publicKey = authenticationContext.PlayerPublicKey;
+        if (!PlayerIdentityProof.Verify(publicKey, authenticationContext.PlayerSignature, worldIdentity?.Value ?? "", challenge))
+        {
+            logger.ZLogWarning($"Refused {authenticationContext.Username} from {endPoint}: the game did not prove it holds a player key");
             MultiplayerSessionReservationState rejectedState = MultiplayerSessionReservationState.REJECTED | MultiplayerSessionReservationState.AUTHENTICATION_FAILED;
             return new MultiplayerSessionReservation(sessionId, rejectedState);
         }
 
-
-        if (!PlayerNameRegex().IsMatch(authenticationContext.Username))
+        if (banService.IsKeyBanned(publicKey))
         {
-            MultiplayerSessionReservationState rejectedState = MultiplayerSessionReservationState.REJECTED | MultiplayerSessionReservationState.INCORRECT_USERNAME;
-            return new MultiplayerSessionReservation(sessionId, rejectedState);
+            MultiplayerSessionReservationState rejectedState = MultiplayerSessionReservationState.REJECTED | MultiplayerSessionReservationState.PLAYER_BANNED;
+            return new MultiplayerSessionReservation(sessionId, rejectedState, banService.GetKeyBanRejectionDetail(publicKey));
         }
 
         string playerName = authenticationContext.Username;
@@ -128,8 +172,7 @@ internal sealed partial class PlayerManager(SessionManager sessionManager, BanSe
         }
 
         UntieNamesIfTheWorldIdentityIsNew();
-        string keyHash = PlayerIdentityKey.Hash(authenticationContext.PlayerKey);
-        if (player != null && !PlayerIdentityKey.Matches(player.IdentityKeyHash, keyHash))
+        if (player != null && !PlayerIdentityKey.Matches(player.IdentityPublicKey, publicKey))
         {
             logger.ZLogWarning($"Refused {playerName} from {endPoint}: the key does not match the one this name joined with before");
             MultiplayerSessionReservationState rejectedState = MultiplayerSessionReservationState.REJECTED | MultiplayerSessionReservationState.PLAYER_KEY_MISMATCH;
@@ -141,10 +184,7 @@ internal sealed partial class PlayerManager(SessionManager sessionManager, BanSe
             MultiplayerSessionReservationState rejectedState = MultiplayerSessionReservationState.REJECTED | MultiplayerSessionReservationState.UNIQUE_PLAYER_NAME_CONSTRAINT_VIOLATED;
             return new MultiplayerSessionReservation(sessionId, rejectedState);
         }
-        if (keyHash != null)
-        {
-            pendingKeyHashes[sessionId] = keyHash;
-        }
+        pendingKeys[sessionId] = new PendingKey(publicKey, player?.IdentityPublicKey != null);
 
         bool hasSeenPlayerBefore = player != null;
         NitroxId playerNitroxId = hasSeenPlayerBefore ? player.GameObjectId : new NitroxId();
@@ -154,8 +194,7 @@ internal sealed partial class PlayerManager(SessionManager sessionManager, BanSe
 
         SessionManager.Session session = sessionManager.GetOrCreateSession(endPoint);
 
-        // TODO: At some point, store the muted state of a player
-        PlayerContext playerContext = new(playerName, session.Id, playerNitroxId, !hasSeenPlayerBefore, playerSettings, false, gameMode, null, introCinematicMode, animation);
+        PlayerContext playerContext = new(playerName, session.Id, playerNitroxId, !hasSeenPlayerBefore, playerSettings, player?.IsMuted ?? false, gameMode, null, introCinematicMode, animation);
 
         reservations.Add(session.Id, playerContext);
 
@@ -200,9 +239,15 @@ internal sealed partial class PlayerManager(SessionManager sessionManager, BanSe
         }
 
         // The first key a name joins with is the one it keeps (also for a player saved before keys existed)
-        if (pendingKeyHashes.Remove(sessionId, out string keyHash) && player.IdentityKeyHash == null)
+        player.IdentityVerifiedThisSession = false;
+        if (pendingKeys.Remove(sessionId, out PendingKey? pendingKey))
         {
-            player.IdentityKeyHash = keyHash;
+            if (player.IdentityPublicKey == null)
+            {
+                player.IdentityPublicKey = pendingKey.PublicKey;
+            }
+            // Untying the name while this session waited in the queue makes the name new again
+            player.IdentityVerifiedThisSession = pendingKey.WasTiedBefore && player.IdentityPublicKey == pendingKey.PublicKey;
         }
 
         player.HasFinishedInitialSync = false;
@@ -281,14 +326,67 @@ internal sealed partial class PlayerManager(SessionManager sessionManager, BanSe
         {
             return false;
         }
-        player.IdentityKeyHash = null;
+        PlayerRanks.Untie(player);
         return true;
+    }
+
+    /// <summary>
+    ///     Any player who has joined this world under <paramref name="playerName" />, online or not.
+    /// </summary>
+    public bool TryGetKnownPlayerByName(string playerName, [NotNullWhen(true)] out Player? player)
+    {
+        return allPlayersByName.TryGetValue(playerName, out player);
+    }
+
+    /// <summary>
+    ///     The key a queued or loading session proved it holds, before it is stored with the player.
+    /// </summary>
+    public string? GetPendingPublicKey(SessionId sessionId) => pendingKeys.TryGetValue(sessionId, out PendingKey? pending) ? pending.PublicKey : null;
+
+    /// <summary>
+    ///     The rank a queued session will have once it joins, so that a command cannot act on someone it could not act on
+    ///     a moment later.
+    /// </summary>
+    public Perms GetRankOnJoin(SessionId sessionId)
+    {
+        Perms defaultPerms = options.Value.DefaultPlayerPerm;
+        Player? player = null;
+        if (reservations.TryGetValue(sessionId, out PlayerContext? context))
+        {
+            allPlayersByName.TryGetValue(context.PlayerName, out player);
+        }
+        bool verified = pendingKeys.TryGetValue(sessionId, out PendingKey? pending) && pending.WasTiedBefore && player?.IdentityPublicKey == pending.PublicKey;
+        return PlayerRanks.OnJoin(verified, player?.GrantedPermissions, defaultPerms, options.Value.LocalhostIsAdmin, sessionManager.GetEndPoint(sessionId)?.Address);
+    }
+
+    /// <summary>
+    ///     Makes the challenge the connecting session must sign to join (see <see cref="PlayerIdentityProof" />). A new one
+    ///     replaces any earlier one of the same session.
+    /// </summary>
+    public string IssueJoinChallenge(SessionId sessionId)
+    {
+        string challenge = Convert.ToBase64String(RandomNumberGenerator.GetBytes(PlayerIdentityProof.CHALLENGE_LENGTH));
+        joinChallenges[sessionId] = challenge;
+        return challenge;
+    }
+
+    /// <summary>
+    ///     Names a player may join with: the allowed characters, and none that passes for the server in chat.
+    /// </summary>
+    internal static bool IsAllowedName(string? name)
+    {
+        if (name == null || !PlayerNameRegex().IsMatch(name))
+        {
+            return false;
+        }
+        return !RESERVED_NAMES.Contains(name.Trim(), StringComparer.OrdinalIgnoreCase);
     }
 
     public Task OnEventAsync(ISessionCleaner.Args args)
     {
         reservations.Remove(args.Session.Id);
-        pendingKeyHashes.Remove(args.Session.Id);
+        pendingKeys.Remove(args.Session.Id);
+        joinChallenges.Remove(args.Session.Id);
         ReleaseNameOf(args.Session.Id);
         if (!connectedPlayersBySessionId.Remove(args.Session.Id, out Player player))
         {
@@ -313,11 +411,11 @@ internal sealed partial class PlayerManager(SessionManager sessionManager, BanSe
         int untied = 0;
         foreach (Player player in allPlayersByName.Values)
         {
-            if (player.IdentityKeyHash != null)
+            if (player.IdentityPublicKey != null)
             {
-                player.IdentityKeyHash = null;
                 untied++;
             }
+            PlayerRanks.Untie(player);
         }
         if (untied > 0)
         {

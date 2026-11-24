@@ -1,36 +1,48 @@
 ﻿using System.ComponentModel;
 using Nitrox.Model.DataStructures.GameLogic;
+using Nitrox.Server.Subnautica.Models.Commands.ArgConverters;
 using Nitrox.Server.Subnautica.Models.Commands.Core;
+using Nitrox.Server.Subnautica.Models.GameLogic;
 
 namespace Nitrox.Server.Subnautica.Models.Commands;
 
 [RequiresPermission(Perms.MODERATOR)]
-internal sealed class MuteCommand : ICommandHandler<Player>
+internal sealed class MuteCommand(IOptions<SubnauticaServerOptions> options) : ICommandHandler<KnownPlayer>
 {
-    public async Task Execute(ICommandContext context, [Description("Player to mute")] Player targetPlayer)
+    private readonly IOptions<SubnauticaServerOptions> options = options;
+
+    [Description("Stops a player's chat and whispers, also one who is offline; kept when they join again")]
+    public async Task Execute(ICommandContext context, [Description("Player to mute")] KnownPlayer target)
     {
-        if (context.OriginId == targetPlayer.SessionId)
+        Player targetPlayer = target.Player;
+        if (targetPlayer.IsOnline && context.OriginId == targetPlayer.SessionId)
         {
             await context.ReplyAsync("You can't mute yourself");
             return;
         }
-        if (context.Permissions <= targetPlayer.Permissions)
+        if (!PlayerRanks.MayActOn(context.Permissions, PlayerRanks.RankOf(targetPlayer, options.Value.DefaultPlayerPerm)))
         {
             await context.ReplyAsync($"You're not allowed to mute {targetPlayer.Name}");
             return;
         }
 
-        if (targetPlayer.PlayerContext.IsMuted)
+        if (targetPlayer.IsMuted)
         {
             await context.ReplyAsync($"{targetPlayer.Name} is already muted");
-            // Send state anyway in case it got desynced.
-            await context.ReplyAsync(new MutePlayer(targetPlayer.SessionId, targetPlayer.PlayerContext.IsMuted));
+            if (targetPlayer.IsOnline)
+            {
+                // Send state anyway in case it got desynced.
+                await context.ReplyAsync(new MutePlayer(targetPlayer.SessionId, true));
+            }
             return;
         }
 
-        targetPlayer.PlayerContext.IsMuted = true;
-        await context.SendToAllAsync(new MutePlayer(targetPlayer.SessionId, targetPlayer.PlayerContext.IsMuted));
-        await context.SendAsync(targetPlayer.SessionId, "You're now muted");
+        PlayerMutes.Set(targetPlayer, true);
+        if (targetPlayer.IsOnline)
+        {
+            await context.SendToAllAsync(new MutePlayer(targetPlayer.SessionId, true));
+            await context.SendAsync(targetPlayer.SessionId, "You're now muted");
+        }
         await context.ReplyAsync($"Muted {targetPlayer.Name}");
     }
 }

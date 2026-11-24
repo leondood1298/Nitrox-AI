@@ -160,7 +160,7 @@ public class uGUI_PlayerPingEntry : uGUI_PingEntry
             {
                 if (player is RemotePlayer remotePlayer)
                 {
-                    packetSender.Send(new ServerCommand($"{(mute ? "" : "un")}mute {player.PlayerName}"));
+                    packetSender.Send(new ServerCommand($"{(mute ? "" : "un")}mute \"{player.PlayerName}\""));
                 }
             });
         });
@@ -168,21 +168,21 @@ public class uGUI_PlayerPingEntry : uGUI_PingEntry
         {
             Modal.Get<ConfirmModal>()?.Show(GetLocalizedText("Nitrox_Kick", true), () =>
             {
-                packetSender.Send(new ServerCommand($"kick {player.PlayerName}"));
+                packetSender.Send(new ServerCommand($"kick \"{player.PlayerName}\""));
             });
         });
         GetToggle(TeleportToObject).onValueChanged.AddListener(delegate (bool toggled)
         {
             Modal.Get<ConfirmModal>()?.Show(GetLocalizedText("Nitrox_TeleportTo", true), () =>
             {
-                packetSender.Send(new ServerCommand($"warp {player.PlayerName}"));
+                packetSender.Send(new ServerCommand($"warp \"{player.PlayerName}\""));
             });
         });
         GetToggle(TeleportToMeObject).onValueChanged.AddListener(delegate (bool toggled)
         {
             Modal.Get<ConfirmModal>()?.Show(GetLocalizedText("Nitrox_TeleportToMe", true), () =>
             {
-                packetSender.Send(new ServerCommand($"warp {player.PlayerName} {localPlayer.PlayerName}"));
+                packetSender.Send(new ServerCommand($"warp \"{player.PlayerName}\" \"{localPlayer.PlayerName}\""));
             });
         });
 

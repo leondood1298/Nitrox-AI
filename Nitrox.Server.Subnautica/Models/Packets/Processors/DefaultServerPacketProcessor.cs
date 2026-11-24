@@ -3,19 +3,12 @@ using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
+/// <summary>
+///     Handles a packet the server has no processor of its own for: passes it on to the other players if it is one that
+///     games send each other (<see cref="PacketRelayPolicy.RELAYED" />), and drops it otherwise.
+/// </summary>
 internal sealed class DefaultServerPacketProcessor(ILogger<DefaultServerPacketProcessor> logger) : IAuthPacketProcessor<Packet>
 {
-    /// <summary>
-    ///     Packet types which don't have a server packet processor but should not be transmitted
-    /// </summary>
-    private readonly HashSet<Type> defaultPacketProcessorBlacklist =
-    [
-        typeof(GameModeChanged),
-        typeof(DropSimulationOwnership),
-        // Only the server starts the ending, once everybody is aboard (RocketLaunchRequestProcessor)
-        typeof(RocketLaunch)
-    ];
-
     private readonly ILogger<DefaultServerPacketProcessor> logger = logger;
 
     private readonly HashSet<Type> loggingPacketBlackList =
@@ -32,7 +25,7 @@ internal sealed class DefaultServerPacketProcessor(ILogger<DefaultServerPacketPr
         typeof(StasisSphereShot),
         typeof(StasisSphereHit),
         typeof(SeaTreaderChunkPickedUp),
-        typeof(ToggleLights)
+        typeof(Nitrox.Model.Subnautica.Packets.ToggleLights)
     ];
 
     public async Task Process(AuthProcessorContext context, Packet packet)
@@ -42,9 +35,9 @@ internal sealed class DefaultServerPacketProcessor(ILogger<DefaultServerPacketPr
         {
             logger.ZLogDebug($"Using default packet processor for: {packet} and player #{context.Sender.SessionId}");
         }
-        if (defaultPacketProcessorBlacklist.Contains(packetType))
+        if (!PacketRelayPolicy.IsRelayed(packetType))
         {
-            logger.ZLogErrorOnce($"Player {context.Sender.Name} #{context.Sender.SessionId} sent a packet which is blacklisted by the server. It's likely that the said player is using a modified version of Nitrox and action could be taken accordingly.");
+            logger.ZLogErrorOnce($"Player {context.Sender.Name} #{context.Sender.SessionId} sent a {packetType.Name}, which only the server sends. It's likely that the said player is using a modified version of Nitrox and action could be taken accordingly.");
             return;
         }
 

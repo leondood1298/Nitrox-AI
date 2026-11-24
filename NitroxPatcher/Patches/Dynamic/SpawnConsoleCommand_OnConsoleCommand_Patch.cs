@@ -1,11 +1,10 @@
 using System.Reflection;
-using Nitrox.Model.DataStructures.GameLogic;
 using NitroxClient.GameLogic;
 
 namespace NitroxPatcher.Patches.Dynamic;
 
 /// <summary>
-/// Prevents local player from using "spawn" command without at least the <see cref="Perms.MODERATOR"/> permissions.
+/// Prevents local player from using "spawn" command without the rank the console needs (<see cref="ConsoleCommandPolicy.REQUIRED_PERMS" />).
 /// </summary>
 public sealed partial class SpawnConsoleCommand_OnConsoleCommand_Patch : NitroxPatch, IDynamicPatch
 {
@@ -13,9 +12,9 @@ public sealed partial class SpawnConsoleCommand_OnConsoleCommand_Patch : NitroxP
 
     public static bool Prefix(NotificationCenter.Notification n)
     {
-        if (Resolve<LocalPlayer>().Permissions < Perms.MODERATOR)
+        if (!ConsoleCommandPolicy.MaySubmit(Resolve<LocalPlayer>().Permissions))
         {
-            Log.InGame(Language.main.Get("Nitrox_MissingPermission").Replace("{PERMISSION}", nameof(Perms.MODERATOR)));
+            Log.InGame(Language.main.Get("Nitrox_MissingPermission").Replace("{PERMISSION}", ConsoleCommandPolicy.REQUIRED_PERMS.ToString()));
             return false;
         }
         return true;

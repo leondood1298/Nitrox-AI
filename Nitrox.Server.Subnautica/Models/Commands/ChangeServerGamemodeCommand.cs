@@ -12,19 +12,14 @@ internal sealed class ChangeServerGamemodeCommand(PlayerManager playerManager, I
     private readonly IOptions<SubnauticaServerOptions> serverConfig = serverConfig;
     private readonly PlayerManager playerManager = playerManager;
 
-    [Description("Changes server gamemode")]
+    [Description("Changes the game mode of the server and of every player, also offline ones")]
     public async Task Execute(ICommandContext context, [Description("Gamemode to change to")] SubnauticaGameMode newGameMode)
     {
-        if (serverConfig.Value.GameMode == newGameMode)
-        {
-            await context.ReplyAsync("Server is already using this gamemode");
-            return;
-        }
-
+        // Applied even if the server's mode is the same already: single players may have been given another one
         serverConfig.Value.GameMode = newGameMode;
         foreach (Player player in playerManager.GetAllPlayers())
         {
-            player.GameMode = newGameMode;
+            player.SetGameMode(newGameMode);
         }
         await context.SendToAllAsync(GameModeChanged.ForAllPlayers(newGameMode));
         await context.SendToAllAsync($"Server gamemode changed to \"{newGameMode}\" by {context.OriginName}");

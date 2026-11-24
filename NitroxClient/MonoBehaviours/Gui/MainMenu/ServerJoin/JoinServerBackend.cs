@@ -18,6 +18,7 @@ using Nitrox.Model.MultiplayerSession;
 using Nitrox.Model.Networking;
 using Nitrox.Model.Subnautica.DataStructures;
 using Nitrox.Model.Subnautica.MultiplayerSession;
+using Nitrox.Model.Subnautica.Packets;
 using UnityEngine;
 using UWE;
 
@@ -63,19 +64,35 @@ public static class JoinServerBackend
         preferencesManager.SetPreference(serverIp, new PlayerPreference(playerName, playerColor));
 
         Optional<string> opPassword = JoinPassword.ToSend(multiplayerSession.SessionPolicy.RequiresServerPassword, MainMenuEnterPasswordPanel.LastEnteredPassword);
-        // Keyed by the world, whatever address it is reached through
-        AuthenticationContext authenticationContext = new(playerName, opPassword, PlayerKeys.GetKeyFor(multiplayerSession.SessionPolicy.WorldIdentity));
+        IMultiplayerSession session = multiplayerSession;
+        MultiplayerSessionPolicy policy = session.SessionPolicy;
+        int provingAttempt = attempt;
 
         MainMenuNotificationPanel.ShowLoading();
-        try
+        // Keyed by the world, whatever address it is reached through; the first time, the key takes a moment to make
+        CoroutineHost.StartCoroutine(PlayerKeys.ProveAsync(policy.WorldIdentity, policy.JoinChallenge, proof =>
         {
-            multiplayerSession.RequestSessionReservation(new PlayerSettings(playerColor.ToDto()), authenticationContext);
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Asking the server for a reservation failed");
-            Fail(Language.main.Get("Nitrox_DisconnectedSession"));
-        }
+            // The player may have left this attempt while the key was being made
+            if (attempt != provingAttempt || session != multiplayerSession || session.CurrentState.CurrentStage != MultiplayerSessionConnectionStage.AWAITING_RESERVATION_CREDENTIALS)
+            {
+                return;
+            }
+            if (proof == null)
+            {
+                Fail(Language.main.Get("Nitrox_PlayerKeyFailed"));
+                return;
+            }
+            try
+            {
+                AuthenticationContext authenticationContext = new(playerName, opPassword, proof.PublicKey, proof.Signature);
+                session.RequestSessionReservation(new PlayerSettings(playerColor.ToDto()), authenticationContext);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Asking the server for a reservation failed");
+                Fail(Language.main.Get("Nitrox_DisconnectedSession"));
+            }
+        }));
     }
 
     private static void SessionConnectionStateChangedHandler(IMultiplayerSessionConnectionState state)

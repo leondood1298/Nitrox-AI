@@ -8,11 +8,11 @@ public sealed partial class PlatformUtils_GetDevToolsEnabled_Patch : NitroxPatch
     public static readonly MethodInfo TargetMethod = Reflect.Method(() => PlatformUtils.GetDevToolsEnabled());
 
     /// <summary>
-    ///     Disable dev console if server has disabled cheats.
+    ///     Disable dev console if server has disabled cheats, for players below admin (see <see cref="ConsoleCommandPolicy" />).
     /// </summary>
     public static void Postfix(ref bool __result)
     {
-        if (NitroxConsole.DisableConsole)
+        if (!ConsoleCommandPolicy.IsConsoleAllowed(NitroxConsole.DisableConsole, Resolve<LocalPlayer>().Permissions))
         {
             __result = false;
         }

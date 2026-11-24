@@ -27,7 +27,8 @@ internal sealed class BanListCommand(BanService banService) : ICommandHandler
             string playerName = string.IsNullOrEmpty(ban.PlayerName) ? "?" : ban.PlayerName;
             string expiry = ban.ExpiresAtUtc.HasValue ? $"expires {ban.ExpiresAtUtc.Value:u}" : "permanent";
             string reason = string.IsNullOrEmpty(ban.Reason) ? "" : $" - {ban.Reason}";
-            builder.AppendLine($"{playerName} ({ban.IP}) - {expiry}{reason}");
+            string bannedBy = ban.PlayerPublicKey == null ? ban.IP?.ToString() ?? "?" : ban.IP == null ? "key" : $"{ban.IP} and key";
+            builder.AppendLine($"{playerName} ({bannedBy}) - {expiry}, by {ban.BannedBy} ({ban.IssuerRank?.ToString() ?? BanService.UNKNOWN_ISSUER_RANK.ToString()}){reason}");
         }
 
         await context.ReplyAsync(builder.ToString());

@@ -9,7 +9,7 @@ using UnityEngine;
 namespace NitroxPatcher.Patches.Dynamic;
 
 /// <summary>
-/// Prevents local player from using "sub" command without at least the <see cref="Perms.MODERATOR"/> permissions.
+/// Prevents local player from using "sub" command without the rank the console needs (<see cref="ConsoleCommandPolicy.REQUIRED_PERMS" />).
 /// Once they have the permissions, sync this command.
 /// </summary>
 public sealed partial class SubConsoleCommand_OnConsoleCommand_sub_Patch : NitroxPatch, IDynamicPatch
@@ -18,9 +18,9 @@ public sealed partial class SubConsoleCommand_OnConsoleCommand_sub_Patch : Nitro
 
     public static bool Prefix(NotificationCenter.Notification n)
     {
-        if (Resolve<LocalPlayer>().Permissions < Perms.MODERATOR)
+        if (!ConsoleCommandPolicy.MaySubmit(Resolve<LocalPlayer>().Permissions))
         {
-            Log.InGame(Language.main.Get("Nitrox_MissingPermission").Replace("{PERMISSION}", nameof(Perms.MODERATOR)));
+            Log.InGame(Language.main.Get("Nitrox_MissingPermission").Replace("{PERMISSION}", ConsoleCommandPolicy.REQUIRED_PERMS.ToString()));
             return false;
         }
 

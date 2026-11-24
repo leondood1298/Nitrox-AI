@@ -88,4 +88,25 @@ public sealed class ServerEntryTest
             Directory.Delete(Path.GetDirectoryName(saveDir)!, true);
         }
     }
+
+    [TestMethod]
+    public async Task TheAdminPasswordIsReadFromTheWorld()
+    {
+        string saveDir = Path.Combine(Path.GetTempPath(), $"nitrox-entry-test-{Guid.NewGuid():N}", "My World");
+        Directory.CreateDirectory(saveDir);
+        try
+        {
+            NitroxConfig.CreateFile(saveDir, new SubnauticaServerOptions { AdminPassword = "let me in" });
+            File.WriteAllText(Path.Combine(saveDir, "Version.json"), "");
+            ServerEntry entry = new() { Name = "My World" };
+
+            await entry.RefreshFromDirectoryAsync(saveDir);
+
+            entry.AdminPassword.Should().Be("let me in");
+        }
+        finally
+        {
+            Directory.Delete(Path.GetDirectoryName(saveDir)!, true);
+        }
+    }
 }

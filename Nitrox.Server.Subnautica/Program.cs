@@ -99,8 +99,10 @@ internal sealed class Program
             ApplicationName = NitroxEnvironment.AppName
         });
         // Nitrox config can be overriden by development.json or command line args if supplied.
+        // server.cfg is read once, at start: most settings cannot change while the server runs, and the server writes the
+        // file back with its own values on every save, so an edit made meanwhile would apply only in part and then be lost.
         builder.Configuration
-               .AddNitroxConfigFile<SubnauticaServerOptions>(startOptions.GetServerConfigFilePath(), SubnauticaServerOptions.CONFIG_SECTION_PATH, true, true)
+               .AddNitroxConfigFile<SubnauticaServerOptions>(startOptions.GetServerConfigFilePath(), SubnauticaServerOptions.CONFIG_SECTION_PATH, true, false)
                .AddConditionalCsharpProjectJsonFile(builder.Environment.IsDevelopment(), "server.Development.json", typeof(Program).Namespace, true, true)
                .AddConditionalUpstreamJsonFile(builder.Environment.IsDevelopment(), "server.Development.json", true, true)
                .AddCommandLine(args)
