@@ -19,6 +19,12 @@ public sealed partial class Battery_charge_set_Patch : NitroxPatch, IDynamicPatc
             return;
         }
 
+        // A vehicle's cells are drained and charged in the game simulating the vehicle, which reports them
+        if (Resolve<Vehicles>().IsSimulatedElsewhere(__instance))
+        {
+            return;
+        }
+
         // Broadcast update only once per integer change
         if (Math.Abs(Math.Floor(__instance.charge) - Math.Floor(value)) > 0.0 &&
             __instance.TryGetIdOrWarn(out NitroxId id))

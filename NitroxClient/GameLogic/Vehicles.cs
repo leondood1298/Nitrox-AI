@@ -23,6 +23,7 @@ public class Vehicles
     private readonly PlayerManager playerManager;
     private readonly EntityMetadataManager entityMetadataManager;
     private readonly Entities entities;
+    private readonly SimulationOwnership simulationOwnership;
 
     private readonly Dictionary<TechType, string> pilotingChairByTechType = [];
 
@@ -35,8 +36,10 @@ public class Vehicles
 
     private int lastRemoteDockingNumber;
 
-    public Vehicles(IPacketSender packetSender, IMultiplayerSession multiplayerSession, PlayerManager playerManager, EntityMetadataManager entityMetadataManager, Entities entities)
+    public Vehicles(IPacketSender packetSender, IMultiplayerSession multiplayerSession, PlayerManager playerManager, EntityMetadataManager entityMetadataManager, Entities entities,
+                    SimulationOwnership simulationOwnership)
     {
+        this.simulationOwnership = simulationOwnership;
         this.packetSender = packetSender;
         this.multiplayerSession = multiplayerSession;
         this.playerManager = playerManager;
@@ -152,6 +155,16 @@ public class Vehicles
         {
             SetOnPilotMode(vehicleObject, sessionId, isPiloting);
         }
+    }
+
+    /// <returns>
+    ///     True if <paramref name="part" /> belongs to a Seamoth or Prawn suit that another player's game simulates: the
+    ///     vehicle's energy (its lights' drain, its charge reports) is that game's.
+    /// </returns>
+    public bool IsSimulatedElsewhere(Component part)
+    {
+        Vehicle vehicle = part.GetComponentInParent<Vehicle>();
+        return vehicle && vehicle.TryGetNitroxId(out NitroxId vehicleId) && !simulationOwnership.HasAnyLockType(vehicleId);
     }
 
     /// <returns>The number of this docking, to be given to <see cref="IsRemoteDockingCurrent" />.</returns>
