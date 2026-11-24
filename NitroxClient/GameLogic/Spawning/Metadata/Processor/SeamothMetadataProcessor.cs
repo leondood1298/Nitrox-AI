@@ -31,7 +31,7 @@ public class SeamothMetadataProcessor : VehicleMetadataProcessor<SeamothMetadata
             SetLights(seamoth, metadata.LightsOn);
             SetHealth(seamoth.gameObject, metadata.Health);
             SetInPrecursor(seamoth, metadata.InPrecursor);
-            SetNameAndColors(subName, metadata.Name, metadata.Colors);
+            SetNameAndColors(subName, metadata);
         }
     }
 

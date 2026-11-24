@@ -6,7 +6,16 @@ internal sealed class VehicleOnPilotModeChangedProcessor : IAuthPacketProcessor<
 {
     public async Task Process(AuthProcessorContext context, VehicleOnPilotModeChanged packet)
     {
-        context.Sender.PlayerContext.DrivingVehicle = packet.IsPiloting ? packet.VehicleId : null;
-        await context.SendToOthersAsync(packet);
+        if (packet.IsPiloting)
+        {
+            context.Sender.PlayerContext.DrivingVehicle = packet.VehicleId;
+        }
+        else if (packet.VehicleId.Equals(context.Sender.PlayerContext.DrivingVehicle))
+        {
+            // Leaving one vehicle does not end piloting another one entered since
+            context.Sender.PlayerContext.DrivingVehicle = null;
+        }
+        // A player only seats or unseats itself, whatever session the packet named
+        await context.SendToOthersAsync(new VehicleOnPilotModeChanged(packet.VehicleId, context.Sender.SessionId, packet.IsPiloting));
     }
 }

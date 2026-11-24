@@ -8,6 +8,7 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.MultiplayerSession;
 using Nitrox.Model.Subnautica.Packets;
+using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
 using Nitrox.Test.Server.GameLogic;
 using NSubstitute;
@@ -319,7 +320,9 @@ public sealed class VehicleMovementsPacketProcessorTest
 
         Assert.AreEqual(1, test.Forwarded().Count);
         AssertCanonicalTransform(test.Entity(cameraId), movement.Position, movement.Rotation);
-        Assert.AreEqual(movement.Position, test.Scenario.PlayerA.Position);
+        // Kept above the vehicle: a pilot who leaves or is on the server when it stops comes back beside the vehicle,
+        // not inside its hull without being seated
+        Assert.AreEqual(new NitroxVector3(8f, 9f + VehiclePilotPosition.HEIGHT_ABOVE_VEHICLE, 10f), test.Scenario.PlayerA.Position);
         Assert.AreEqual(movement.Rotation, test.Scenario.PlayerA.Rotation);
     }
 

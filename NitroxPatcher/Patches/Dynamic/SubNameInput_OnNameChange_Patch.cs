@@ -1,5 +1,6 @@
 using System.Reflection;
 using NitroxClient.GameLogic;
+using NitroxClient.MonoBehaviours.Vehicles;
 using Nitrox.Model.DataStructures;
 
 namespace NitroxPatcher.Patches.Dynamic;
@@ -28,7 +29,13 @@ public sealed partial class SubNameInput_OnNameChange_Patch : NitroxPatch, IDyna
         if (subName.TryGetComponent(out Vehicle vehicle))
         {
             target = vehicle;
-            return vehicle.TryGetNitroxId(out targetId);
+            if (!vehicle.TryGetNitroxId(out targetId))
+            {
+                return false;
+            }
+            // Only called for a rename or recolour made here: it is newer than the name this game knows (see VehicleMetadataAuthority)
+            VehicleNameVersion.Raise(vehicle.gameObject);
+            return true;
         }
         else if (subName.TryGetComponentInParent(out Rocket rocket, true))
         {

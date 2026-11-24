@@ -105,7 +105,7 @@ internal sealed class ScannerRoomScenarioFixture
         updateBaseProcessor = new(buildingManager, EntitySimulation, Manager);
         destroyProcessor = new(PlayerManager, EntitySimulation, WorldEntityManager, Manager);
         // Base power sources are not part of these scenarios.
-        metadataProcessor = new(PlayerManager, EntityRegistry, Ownership, Manager, null!, NullLogger<EntityMetadataUpdateProcessor>.Instance);
+        metadataProcessor = new(PlayerManager, EntityRegistry, Ownership, Manager, null!, WorldEntityManager, EntitySimulation, NullLogger<EntityMetadataUpdateProcessor>.Instance);
         pickupProcessor = new(EntityRegistry, WorldEntityManager, Ownership, Manager);
         spawnProcessor = new(PlayerManager, EntityRegistry, WorldEntityManager, EntitySimulation, Manager);
     }

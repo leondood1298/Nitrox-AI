@@ -16,7 +16,8 @@ public sealed partial class VehicleDockingBay_OnTriggerEnter : NitroxPatch, IDyn
         Vehicle vehicle = other.GetComponentInParent<Vehicle>();
         __state = __instance.interpolatingVehicle;
         Optional<NitroxId> opVehicleId = vehicle.GetId();
-        return !vehicle || (opVehicleId.HasValue && Resolve<SimulationOwnership>().HasAnyLockType(opVehicleId.Value));
+        // A bay another player's vehicle is docking into is taken even before that docking shows here
+        return !vehicle || (opVehicleId.HasValue && Resolve<SimulationOwnership>().HasAnyLockType(opVehicleId.Value) && !Resolve<Vehicles>().IsBayTakenByAnother(__instance, vehicle));
     }
 
     public static void Postfix(VehicleDockingBay __instance, ref Vehicle __state)
