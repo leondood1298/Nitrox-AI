@@ -14,7 +14,7 @@ internal sealed class ServerCommandProcessor(CommandService cmdProcessor, IPacke
 
     public async Task Process(AuthProcessorContext context, ServerCommand packet)
     {
-        logger.ZLogInformation($"{context.Sender.Name} issued command '/{packet.Cmd}'");
+        logger.ZLogInformation($"{context.Sender.Name} issued command '/{CommandLogText.Redact(packet.Cmd ?? ""):@Command}'");
         string commandOutput = "";
         bool success;
         using (logger.BeginPlainScope())
