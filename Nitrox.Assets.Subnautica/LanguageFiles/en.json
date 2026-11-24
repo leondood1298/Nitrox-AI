@@ -76,6 +76,7 @@
     "Nitrox_ReactorFuelRuntimeHoursMinutes": "{HOURS}h {MINUTES}m",
     "Nitrox_ReactorFuelRuntimeMinutes": "{MINUTES}m",
     "Nitrox_ReactorFuelStatus": "Fuel: {COUNT} {ITEMS}, {ENERGY} energy (~{TIME} at full output)",
+    "Nitrox_ReceivingWorld": "Receiving the multiplayer world ({SIZE} MB)…",
     "Nitrox_RemotePlayerObstacle": "Another player's either inside or too close to the deconstructable target.",
     "Nitrox_RequestingSessionPolicy": "Requesting session policy info…",
     "Nitrox_ResyncBuildings": "Resync base buildings",

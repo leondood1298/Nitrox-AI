@@ -33,6 +33,8 @@ public class LiteNetLibClient : IClient
     private TaskCompletionSource<MultiplayerProtocolMismatchException> connectionCompletion;
 
     public bool IsConnected { get; private set; }
+
+    public long BytesReceived => client.Statistics.BytesReceived;
     public int PingInterval
     {
         get => client.PingInterval;
@@ -60,6 +62,8 @@ public class LiteNetLibClient : IClient
             UpdateTime = 15,
             ChannelsCount = (byte)typeof(Packet.UdpChannelId).GetEnumValues().Length,
             IPv6Enabled = true,
+            // For the progress of a large first sync (BytesReceived)
+            EnableStatistics = true,
 #if DEBUG
             DisconnectTimeout = 300_000, //Disables Timeout (for 5 min) for debug purpose (like if you jump though the server code)
 #else

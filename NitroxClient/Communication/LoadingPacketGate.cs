@@ -55,6 +55,7 @@ public sealed class LoadingPacketGate
         typeof(MultiplayerSessionReservation),
         typeof(JoinQueueInfo),
         typeof(InitialPlayerSync),
+        typeof(InitialSyncTransfer),
         typeof(PlayerKicked),
         typeof(ServerStopped),
         typeof(DiscordRequestIP)
