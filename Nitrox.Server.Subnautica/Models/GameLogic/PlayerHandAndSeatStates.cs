@@ -15,7 +15,62 @@ internal sealed class PlayerHandAndSeatStates : ISessionCleaner
 {
     private readonly Dictionary<SessionId, PlayerHeldItemChanged> drawnBySession = [];
     private readonly Dictionary<SessionId, NitroxId> benchBySession = [];
+    private readonly HashSet<SessionId> weldingSessions = [];
+    private readonly Dictionary<SessionId, NitroxId> propulsionGrabBySession = [];
+    private readonly Dictionary<SessionId, PlayerCinematicControllerCall> cinematicBySession = [];
     private readonly Lock statesLock = new();
+
+    /// <summary>
+    ///     A welder in use shows sparks, which a joiner would otherwise not see until the player stops and starts again.
+    /// </summary>
+    public void OnWelderUse(SessionId sessionId, bool welding)
+    {
+        lock (statesLock)
+        {
+            if (welding)
+            {
+                weldingSessions.Add(sessionId);
+            }
+            else
+            {
+                weldingSessions.Remove(sessionId);
+            }
+        }
+    }
+
+    public void OnPropulsionGrab(SessionId sessionId, NitroxId? grabbedId)
+    {
+        lock (statesLock)
+        {
+            if (grabbedId != null)
+            {
+                propulsionGrabBySession[sessionId] = grabbedId;
+            }
+            else
+            {
+                propulsionGrabBySession.Remove(sessionId);
+            }
+        }
+    }
+
+    /// <summary>
+    ///     A cinematic under way (a ladder, a hatch, a terminal) is played for a joiner from its start; its end then follows
+    ///     as for everyone.
+    /// </summary>
+    public void OnCinematic(SessionId sessionId, PlayerCinematicControllerCall call)
+    {
+        lock (statesLock)
+        {
+            if (call.StartPlaying)
+            {
+                cinematicBySession[sessionId] = call;
+            }
+            else
+            {
+                cinematicBySession.Remove(sessionId);
+            }
+        }
+    }
 
     public void OnHeldItemChanged(SessionId sessionId, PlayerHeldItemChanged change)
     {
@@ -32,6 +87,9 @@ internal sealed class PlayerHandAndSeatStates : ISessionCleaner
                     if (drawnBySession.TryGetValue(sessionId, out PlayerHeldItemChanged drawn) && drawn.ItemId.Equals(change.ItemId))
                     {
                         drawnBySession.Remove(sessionId);
+                        // A tool put away is no longer welding or holding anything
+                        weldingSessions.Remove(sessionId);
+                        propulsionGrabBySession.Remove(sessionId);
                     }
                     break;
             }
@@ -60,9 +118,17 @@ internal sealed class PlayerHandAndSeatStates : ISessionCleaner
     {
         lock (statesLock)
         {
-            drawnBySession.Remove(sessionId);
-            benchBySession.Remove(sessionId);
+            Forget(sessionId);
         }
+    }
+
+    private void Forget(SessionId sessionId)
+    {
+        drawnBySession.Remove(sessionId);
+        benchBySession.Remove(sessionId);
+        weldingSessions.Remove(sessionId);
+        propulsionGrabBySession.Remove(sessionId);
+        cinematicBySession.Remove(sessionId);
     }
 
     /// <summary>
@@ -80,11 +146,33 @@ internal sealed class PlayerHandAndSeatStates : ISessionCleaner
                     announcements.Add(pair.Value);
                 }
             }
+            // After the held items, so that the welder or cannon is in the hand when its use is shown
+            foreach (SessionId welding in weldingSessions)
+            {
+                if (welding != joiningSessionId)
+                {
+                    announcements.Add(new WelderUse(welding, true));
+                }
+            }
+            foreach (KeyValuePair<SessionId, NitroxId> pair in propulsionGrabBySession)
+            {
+                if (pair.Key != joiningSessionId)
+                {
+                    announcements.Add(new PlayerPropulsionGrab(pair.Key, pair.Value));
+                }
+            }
             foreach (KeyValuePair<SessionId, NitroxId> pair in benchBySession)
             {
                 if (pair.Key != joiningSessionId)
                 {
                     announcements.Add(new BenchChanged(pair.Key, pair.Value, Nitrox.Model.Subnautica.Packets.BenchChanged.BenchChangeState.SITTING_DOWN));
+                }
+            }
+            foreach (KeyValuePair<SessionId, PlayerCinematicControllerCall> pair in cinematicBySession)
+            {
+                if (pair.Key != joiningSessionId)
+                {
+                    announcements.Add(pair.Value);
                 }
             }
         }
@@ -95,8 +183,7 @@ internal sealed class PlayerHandAndSeatStates : ISessionCleaner
     {
         lock (statesLock)
         {
-            drawnBySession.Remove(args.Session.Id);
-            benchBySession.Remove(args.Session.Id);
+            Forget(args.Session.Id);
         }
         return Task.CompletedTask;
     }

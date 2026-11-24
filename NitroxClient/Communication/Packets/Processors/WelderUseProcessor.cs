@@ -1,5 +1,4 @@
 using System.Threading.Tasks;
-using Nitrox.Model.Packets.Core;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication.Packets.Processors.Core;
 using NitroxClient.GameLogic;
@@ -12,37 +11,11 @@ internal sealed class WelderUseProcessor(PlayerManager playerManager) : IClientP
 
     public Task Process(ClientProcessorContext context, WelderUse packet)
     {
-        if (!playerManager.TryFind(packet.PlayerId, out RemotePlayer remotePlayer) || !remotePlayer.ItemAttachPoint)
+        // Kept even before the welder is in the hand: a joiner is told about the welding just after the drawing,
+        // which may take a few frames to show
+        if (playerManager.TryFind(packet.PlayerId, out RemotePlayer remotePlayer))
         {
-            return Task.CompletedTask;
-        }
-        Welder componentInChildren = remotePlayer.ItemAttachPoint.GetComponentInChildren<Welder>(includeInactive: true);
-        if (!componentInChildren)
-        {
-            return Task.CompletedTask;
-        }
-        if (componentInChildren.weldSound)
-        {
-            if (packet.Welding)
-            {
-                componentInChildren.weldSound.Play();
-            }
-            else
-            {
-                componentInChildren.weldSound.Stop();
-            }
-        }
-        if (componentInChildren.fxControl)
-        {
-            if (packet.Welding && MiscSettings.flashes)
-            {
-                int i = (remotePlayer.AnimationController["is_underwater"] ? 1 : 0);
-                componentInChildren.fxControl.Play(i);
-            }
-            else
-            {
-                componentInChildren.fxControl.StopAndDestroy(0f);
-            }
+            remotePlayer.SetWelding(packet.Welding);
         }
         return Task.CompletedTask;
     }

@@ -49,6 +49,8 @@ public class RemotePlayer : INitroxPlayer
     /// </summary>
     private bool isUnderwater = true;
 
+    private bool isWelding;
+
     private GameObject pdaModel;
     private int pdaVisibilityChange;
 
@@ -588,9 +590,62 @@ public class RemotePlayer : INitroxPlayer
         }
     }
 
+    public void SetWelding(bool welding)
+    {
+        isWelding = welding;
+        ShowWelding();
+    }
+
+    /// <summary>
+    ///     The sparks and sound of the welder in this player's hand, as <c>Welder.Update</c> shows them for the local player.
+    /// </summary>
+    private void ShowWelding()
+    {
+        if (!ItemAttachPoint)
+        {
+            return;
+        }
+        Welder welder = ItemAttachPoint.GetComponentInChildren<Welder>(true);
+        if (!welder)
+        {
+            return;
+        }
+        if (welder.weldSound)
+        {
+            if (isWelding)
+            {
+                welder.weldSound.Play();
+            }
+            else
+            {
+                welder.weldSound.Stop();
+            }
+        }
+        if (welder.fxControl)
+        {
+            if (isWelding && MiscSettings.flashes)
+            {
+                welder.fxControl.Play(isUnderwater ? 1 : 0);
+            }
+            else
+            {
+                welder.fxControl.StopAndDestroy(0f);
+            }
+        }
+    }
+
     public void SetHeldTool(PlayerTool? tool)
     {
+        if (HeldTool is Welder && HeldTool != tool && isWelding)
+        {
+            // A welder put away stops welding (Welder_OnHolster_Patch tells it too, but may come later)
+            SetWelding(false);
+        }
         HeldTool = tool;
+        if (tool is Welder && isWelding)
+        {
+            ShowWelding();
+        }
         // ArmsController.Update sets this for the local player every frame; it does not run for this body
         AnimationController.SetBoolIfPresent("holding_tool", tool);
         RequestArmsReconfigure();
