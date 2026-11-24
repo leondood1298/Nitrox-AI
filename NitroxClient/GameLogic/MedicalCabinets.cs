@@ -17,17 +17,19 @@ public class MedicalCabinets
     private readonly Entities entities;
     private readonly EntityMetadataManager entityMetadataManager;
     private readonly IPacketSender packetSender;
+    private readonly ItemSources itemSources;
 
     /// <summary>
     ///     The cabinets whose timer this game has reported, once per loaded cabinet.
     /// </summary>
     private readonly HashSet<MedicalCabinet> timersReported = [];
 
-    public MedicalCabinets(Entities entities, EntityMetadataManager entityMetadataManager, IPacketSender packetSender)
+    public MedicalCabinets(Entities entities, EntityMetadataManager entityMetadataManager, IPacketSender packetSender, ItemSources itemSources)
     {
         this.entities = entities;
         this.entityMetadataManager = entityMetadataManager;
         this.packetSender = packetSender;
+        this.itemSources = itemSources;
     }
 
     /// <summary>
@@ -63,6 +65,18 @@ public class MedicalCabinets
         {
             timersReported.Add(cabinet);
             packetSender.Send(new MedicalCabinetTimerStarted(id, state));
+        }
+    }
+
+    /// <summary>
+    ///     Called before the local player clicks the cabinet. A click on an open cabinet with a medkit gives the medkit,
+    ///     which two players can take at the same moment: the server gives it to one of them (see <see cref="ItemSources" />).
+    /// </summary>
+    public void Clicking(MedicalCabinet cabinet)
+    {
+        if (cabinet.doorOpen && cabinet.hasMedKit && cabinet.TryGetNitroxId(out NitroxId id))
+        {
+            itemSources.Expect(TechType.FirstAidKit, id, "medkit");
         }
     }
 

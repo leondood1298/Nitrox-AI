@@ -120,6 +120,9 @@ namespace NitroxClient
             containerBuilder.RegisterType<PdaNotifications>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<EscapePodRepairState>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<Items>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<ItemSources>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<ItemClaims>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<Fabricators>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<EquipmentSlots>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<ItemContainers>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<Cyclops>().InstancePerLifetimeScope();

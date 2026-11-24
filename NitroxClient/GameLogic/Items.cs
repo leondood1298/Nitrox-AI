@@ -24,6 +24,7 @@ public class Items
     private readonly EntityMetadataManager entityMetadataManager;
     private readonly SimulationOwnership simulationOwnership;
     private readonly MapRoomScans mapRoomScans;
+    private readonly ItemSources itemSources;
 
     /// <summary>
     /// Whether or not <see cref="Inventory.Pickup"/> or a similar method is running (if greater than 0).
@@ -33,9 +34,10 @@ public class Items
     public int PickingUpCount;
 
     public Items(IPacketSender packetSender, Entities entities, EntityMetadataManager entityMetadataManager, SimulationOwnership simulationOwnership,
-        MapRoomScans mapRoomScans)
+        MapRoomScans mapRoomScans, ItemSources itemSources)
     {
         this.mapRoomScans = mapRoomScans;
+        this.itemSources = itemSources;
         this.packetSender = packetSender;
         this.entities = entities;
         this.entityMetadataManager = entityMetadataManager;
@@ -65,6 +67,7 @@ public class Items
         // Try catch to avoid blocking PickingUpObject with a non-null value outside the current context
         try
         {
+            ItemSource? source = IsNewItem(gameObject) ? itemSources.Take(techType, ItemSourceUse.PICKUP) : null;
             InventoryItemEntity inventoryItemEntity = ConvertToInventoryEntityUntracked(gameObject, containerId);
 
             if (inventoryItemEntity.TechType.ToUnity() != techType)
@@ -72,7 +75,7 @@ public class Items
                 Log.Warn($"Provided TechType: {techType} is different than the one automatically attributed to the item {inventoryItemEntity.TechType}");
             }
 
-            PickupItem pickupItem = new(inventoryItemEntity);
+            PickupItem pickupItem = new(inventoryItemEntity, source);
 
             if (packetSender.Send(pickupItem))
             {
@@ -89,9 +92,10 @@ public class Items
 
     public void MovedIntoInventory(GameObject gameObject, NitroxId parentId)
     {
+        ItemSource? source = IsNewItem(gameObject) ? itemSources.Take(CraftData.GetTechType(gameObject), ItemSourceUse.PICKUP) : null;
         InventoryItemEntity inventoryItemEntity = ConvertToInventoryEntityUntracked(gameObject, parentId);
 
-        if (packetSender.Send(new EntitySpawnedByClient(inventoryItemEntity, true)))
+        if (packetSender.Send(new EntitySpawnedByClient(inventoryItemEntity, true, source: source)))
         {
             Log.Debug($"Recreated item {inventoryItemEntity} (planted or moved out of equipment)");
         }
@@ -112,6 +116,7 @@ public class Items
             waterParkCreature.ManagedUpdate();
         }
 
+        bool isNewItem = IsNewItem(gameObject);
         NitroxId id = NitroxEntity.GetIdOrGenerateNew(gameObject);
         Optional<EntityMetadata> metadata = entityMetadataManager.Extract(gameObject);
         PrefabIdentifier prefabIdentifier = gameObject.GetComponent<PrefabIdentifier>();
@@ -120,6 +125,7 @@ public class Items
             Log.Error($"[{nameof(Items)}] Cannot sync dropped object '{gameObject.name}': missing PrefabIdentifier");
             return;
         }
+        ItemSource? source = isNewItem ? itemSources.Take(techType.Value, ItemSourceUse.DROP) : null;
         string classId = prefabIdentifier.ClassId;
         int level = gameObject.TryGetComponent(out LargeWorldEntity largeWorldEntity) ? (int)largeWorldEntity.cellLevel : 0;
 
@@ -175,7 +181,7 @@ public class Items
 
         bool changesPosition = SimulationWhitelist.ShouldSimulateEntityMovement(droppedItem);
         simulationOwnership.TakeOwnership(id, SimulationLockType.TRANSIENT, changesPosition);
-        if (packetSender.Send(new EntitySpawnedByClient(droppedItem, true, true)))
+        if (packetSender.Send(new EntitySpawnedByClient(droppedItem, true, true, source)))
         {
             Log.Debug($"Dropping item: {droppedItem}");
         }
@@ -256,6 +262,15 @@ public class Items
                 }
             }
         }
+    }
+
+    /// <summary>
+    ///     An item this game just made, which the server does not know yet (a crafted item, a picked fruit, a resource
+    ///     of a broken outcrop).
+    /// </summary>
+    private bool IsNewItem(GameObject gameObject)
+    {
+        return !gameObject.TryGetNitroxId(out NitroxId id) || !entities.IsKnownEntity(id);
     }
 
     /// <summary>

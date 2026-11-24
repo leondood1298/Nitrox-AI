@@ -1,5 +1,8 @@
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging.Abstractions;
 using Nitrox.Model.DataStructures;
+using Nitrox.Server.Subnautica.Models.GameLogic;
+using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
@@ -60,5 +63,69 @@ public sealed class EntitySpawnedByClientProcessorTest
 
         Assert.IsNull(fixture.Ownership.GetPlayerForLock(respawner.Id));
         Assert.AreEqual(0, fixture.Sent<SimulationOwnershipChange>().Count);
+    }
+
+    [TestMethod]
+    public async Task OfTwoPlayersFillingTheSameSlotTheFirstGetsIt()
+    {
+        ItemClaimScenario scenario = new();
+        EntitySpawnedByClientProcessor processor = CreateProcessor(scenario);
+        InventoryItemEntity alicesBattery = scenario.AddItemIn(scenario.PlayerA.GameObjectId);
+        InventoryItemEntity bobsBattery = scenario.AddItemIn(scenario.PlayerB.GameObjectId);
+
+        await processor.Process(scenario.Context(scenario.PlayerA), new EntitySpawnedByClient(new InstalledModuleEntity("BatteryCharger1", "battery", alicesBattery.Id, alicesBattery.TechType, null,
+            scenario.Locker.Id, []), true));
+        await processor.Process(scenario.Context(scenario.PlayerB), new EntitySpawnedByClient(new InstalledModuleEntity("BatteryCharger1", "battery", bobsBattery.Id, bobsBattery.TechType, null,
+            scenario.Locker.Id, []), true));
+
+        scenario.Locker.ChildEntities.OfType<InstalledModuleEntity>().Should().ContainSingle().Which.Id.Should().Be(alicesBattery.Id);
+        // Bob's battery goes back to his inventory
+        scenario.EntityRegistry.GetEntityById(bobsBattery.Id).Value.Should().BeOfType<InventoryItemEntity>().Which.ParentId.Should().Be(scenario.PlayerB.GameObjectId);
+        scenario.SentTo<SpawnEntities>(scenario.PlayerB).Should().Contain(spawn => spawn.ForceRespawn && spawn.Entities.Single().Id == bobsBattery.Id);
+        scenario.SentTo<ItemClaimLost>(scenario.PlayerB).Single().WinnerName.Should().Be("Alice");
+    }
+
+    [TestMethod]
+    public async Task APlayerCannotDropAnItemAnotherPlayerHolds()
+    {
+        ItemClaimScenario scenario = new();
+        EntitySpawnedByClientProcessor processor = CreateProcessor(scenario);
+        InventoryItemEntity item = scenario.AddItemIn(scenario.PlayerA.GameObjectId);
+        WorldEntity dropped = new(new NitroxVector3(1, 2, 3), NitroxQuaternion.Identity, NitroxVector3.One, item.TechType, 0, item.ClassId, false, item.Id, null);
+
+        await processor.Process(scenario.Context(scenario.PlayerB), new EntitySpawnedByClient(dropped, true));
+
+        scenario.EntityRegistry.GetEntityById(item.Id).Value.Should().BeSameAs(item);
+    }
+
+    [TestMethod]
+    public async Task TheResourcesOfAnOutcropTwoPlayersBrokeGoToTheFirst()
+    {
+        ItemClaimScenario scenario = new();
+        EntitySpawnedByClientProcessor processor = CreateProcessor(scenario);
+        ItemSource outcrop = new(new NitroxId(), "break");
+        WorldEntity alicesTitanium = NewResource();
+        WorldEntity alicesCopper = NewResource();
+        WorldEntity bobsTitanium = NewResource();
+
+        await processor.Process(scenario.Context(scenario.PlayerA), new EntitySpawnedByClient(alicesTitanium, true, true, outcrop));
+        await processor.Process(scenario.Context(scenario.PlayerB), new EntitySpawnedByClient(bobsTitanium, true, true, outcrop));
+        await processor.Process(scenario.Context(scenario.PlayerA), new EntitySpawnedByClient(alicesCopper, true, true, outcrop));
+
+        scenario.EntityRegistry.GetEntityById(alicesTitanium.Id).HasValue.Should().BeTrue();
+        scenario.EntityRegistry.GetEntityById(alicesCopper.Id).HasValue.Should().BeTrue();
+        scenario.EntityRegistry.GetEntityById(bobsTitanium.Id).HasValue.Should().BeFalse();
+        scenario.SentTo<ItemClaimLost>(scenario.PlayerB).Single().RemoveLocalCopy.Should().BeTrue();
+    }
+
+    private static WorldEntity NewResource() => new(new NitroxVector3(1, -2, 3), NitroxQuaternion.Identity, NitroxVector3.One, new NitroxTechType("Titanium"), 0,
+        ItemClaimScenario.TITANIUM_CLASS_ID, false, new NitroxId(), null);
+
+    private static EntitySpawnedByClientProcessor CreateProcessor(ItemClaimScenario scenario)
+    {
+        EntitySimulation entitySimulation = new(scenario.PacketSender, scenario.EntityRegistry, scenario.WorldEntityManager, scenario.Ownership, scenario.Players.PlayerManager,
+            scenario.ScannerRoomManager, NullLogger<EntitySimulation>.Instance);
+        return new EntitySpawnedByClientProcessor(scenario.Players.PlayerManager, scenario.EntityRegistry, scenario.WorldEntityManager, entitySimulation, scenario.ScannerRoomManager,
+            scenario.ItemClaims);
     }
 }

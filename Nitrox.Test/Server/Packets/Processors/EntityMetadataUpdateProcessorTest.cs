@@ -55,7 +55,7 @@ public sealed class EntityMetadataUpdateProcessorTest
         scannerDiagnostics = new ScannerRoomDiagnostics(NullLogger<ScannerRoomDiagnostics>.Instance);
         ScannerRoomManager scannerRoomManager = ScannerRoomScenarioFixture.CreateManager(entityRegistry, simulationOwnershipData, scannerDiagnostics, packetSender, players.PlayerManager);
         processor = new EntityMetadataUpdateProcessor(players.PlayerManager, entityRegistry, simulationOwnershipData, scannerRoomManager, basePowerManager,
-            NullLogger<EntityMetadataUpdateProcessor>.Instance);
+            new ItemClaims(entityRegistry, players.PlayerManager), NullLogger<EntityMetadataUpdateProcessor>.Instance);
         simulator = players.Connect("Simulator");
         otherPlayer = players.Connect("Other");
         thirdPlayer = players.Connect("Third");
@@ -363,6 +363,22 @@ public sealed class EntityMetadataUpdateProcessorTest
         Assert.AreSame(crafting, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, simulator).Single().NewValue);
         Assert.AreSame(crafting, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, thirdPlayer).Single().NewValue);
         Assert.AreEqual(0, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, otherPlayer).Count);
+    }
+
+    [TestMethod]
+    public async Task ASecondCraftOnABusyFabricatorIsAnsweredWithTheRunningOne()
+    {
+        PathBasedChildEntity fabricator = new("fabricator", new NitroxId(), null, null, null, []);
+        entityRegistry.AddEntity(fabricator);
+        CrafterMetadata first = new(titanium, 12.5f, 4f, 1, -1);
+        await Send(simulator, fabricator, first);
+        packetSender.ClearReceivedCalls();
+
+        await Send(otherPlayer, fabricator, new CrafterMetadata(quartz, 13f, 4f, 1, -1));
+
+        Assert.AreSame(first, fabricator.Metadata);
+        Assert.AreSame(first, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, otherPlayer).Single().NewValue);
+        Assert.AreEqual(0, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, thirdPlayer).Count);
     }
 
     [TestMethod]
