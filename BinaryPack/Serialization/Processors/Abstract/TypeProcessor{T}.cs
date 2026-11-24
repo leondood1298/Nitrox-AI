@@ -1,5 +1,7 @@
-﻿using System.Reflection.Emit;
+﻿using System.Reflection;
+using System.Reflection.Emit;
 using BinaryPack.Delegates;
+using BinaryPack.Serialization.Reflection;
 
 namespace BinaryPack.Serialization.Processors.Abstract
 {
@@ -90,7 +92,38 @@ namespace BinaryPack.Serialization.Processors.Abstract
             startedEmitting = true;
 
             SerializerInfo.Emit(EmitSerializer);
-            DeserializerInfo.Emit(EmitDeserializer);
+            if (CountsNesting)
+            {
+                // The body goes into its own method, so that the depth is counted once around it whatever way it returns
+                DynamicMethod<BinaryDeserializer<T>> body = DynamicMethod<BinaryDeserializer<T>>.New();
+                body.Emit(EmitDeserializer);
+                DeserializerInfo.Emit(il => EmitNestingCounter(il, body.MethodInfo));
+            }
+            else
+            {
+                DeserializerInfo.Emit(EmitDeserializer);
+            }
+        }
+
+        /// <summary>
+        /// Whether reading an item of this type counts as one level of nesting. Only objects can lead back to their
+        /// own type, so only their processors count, which bounds the recursion of any data.
+        /// </summary>
+        protected virtual bool CountsNesting => false;
+
+        /// <summary>
+        /// reader.EnterNested(); T result = body(ref reader); reader.ExitNested(); return result;
+        /// </summary>
+        /// <remarks>A throw needs no matching exit: it ends the whole read, reader included.</remarks>
+        private static void EmitNestingCounter(ILGenerator il, MethodInfo body)
+        {
+            il.Emit(OpCodes.Ldarg_0);
+            il.Emit(OpCodes.Call, KnownMembers.BinaryReader.EnterNested);
+            il.Emit(OpCodes.Ldarg_0);
+            il.Emit(OpCodes.Call, body);
+            il.Emit(OpCodes.Ldarg_0);
+            il.Emit(OpCodes.Call, KnownMembers.BinaryReader.ExitNested);
+            il.Emit(OpCodes.Ret);
         }
 
         private void BuildMethods()

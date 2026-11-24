@@ -29,6 +29,9 @@ namespace BinaryPack.Serialization.Processors
         public static ObjectProcessor<T> Instance { get; } = new ObjectProcessor<T>();
 
         /// <inheritdoc/>
+        protected override bool CountsNesting => true;
+
+        /// <inheritdoc/>
         protected override void EmitSerializer(ILGenerator il)
         {
             /* Perform a null check only if the type is a reference type.

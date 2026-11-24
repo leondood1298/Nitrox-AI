@@ -155,9 +155,12 @@ namespace BinaryPack.Serialization.Processors.Arrays
             if (!T.IsUnmanaged()) il.DeclareLocal(T.MakeByRefType());
             else il.DeclareLocal(T.MakeArrayType());
 
-            // int length = reader.Read<int>();
+            LocalBuilder product = il.DeclareLocal(typeof(int));
+
+            // int length = reader.ReadLength(...);
             il.EmitLoadArgument(Arguments.Read.RefBinaryReader);
-            il.EmitCall(KnownMembers.BinaryReader.ReadT(typeof(int)));
+            il.EmitLoadInt32(KnownMembers.BinaryReader.MinBytesPerItem(T));
+            il.EmitCall(KnownMembers.BinaryReader.ReadLength);
             il.EmitStoreLocal(Locals.Read.Length);
 
             // if (length == -1) return null;
@@ -168,13 +171,25 @@ namespace BinaryPack.Serialization.Processors.Arrays
             il.Emit(OpCodes.Ldnull);
             il.Emit(OpCodes.Ret);
 
-            // T[...,] array = new T[a, ..., b];
+            // T[...,] array = new T[a, ..., b]; the dimensions must multiply to the length read, or the array would be
+            // larger than the data or smaller than the items copied into it
             il.MarkLabel(isNotNull);
+            il.EmitLoadInt32(1);
+            il.Emit(OpCodes.Stloc, product);
             for (int i = 0; i < Rank; i++)
             {
                 il.EmitLoadArgument(Arguments.Read.RefBinaryReader);
-                il.EmitCall(KnownMembers.BinaryReader.ReadT(typeof(int)));
+                il.EmitLoadLocal(Locals.Read.Length);
+                il.Emit(OpCodes.Ldloc, product);
+                il.EmitCall(KnownMembers.BinaryReader.ReadDimension);
+                il.Emit(OpCodes.Dup);
+                il.Emit(OpCodes.Ldloc, product);
+                il.Emit(OpCodes.Mul_Ovf);
+                il.Emit(OpCodes.Stloc, product);
             }
+            il.EmitLoadLocal(Locals.Read.Length);
+            il.Emit(OpCodes.Ldloc, product);
+            il.EmitCall(KnownMembers.BinaryReader.CheckDimensions);
 
             il.Emit(OpCodes.Newobj, typeof(TArray).GetConstructor(Enumerable.Repeat(typeof(int), Rank).ToArray()));
             il.EmitStoreLocal(Locals.Read.ArrayT);

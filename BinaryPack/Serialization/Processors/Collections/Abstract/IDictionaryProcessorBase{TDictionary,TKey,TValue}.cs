@@ -123,9 +123,10 @@ namespace BinaryPack.Serialization.Processors.Collections.Abstract
             il.DeclareLocal(typeof(Dictionary<TKey, TValue>));
             il.DeclareLocals<Locals.Read>();
 
-            // int count = reader.Read<int>();
+            // int count = reader.ReadLength(...);
             il.EmitLoadArgument(Arguments.Read.RefBinaryReader);
-            il.EmitCall(KnownMembers.BinaryReader.ReadT(typeof(int)));
+            il.EmitLoadInt32(KnownMembers.BinaryReader.MinBytesPerItem(typeof(TKey)) + KnownMembers.BinaryReader.MinBytesPerItem(typeof(TValue)));
+            il.EmitCall(KnownMembers.BinaryReader.ReadLength);
             il.EmitStoreLocal(Locals.Read.Count);
 
             // if (count == -1) return null;

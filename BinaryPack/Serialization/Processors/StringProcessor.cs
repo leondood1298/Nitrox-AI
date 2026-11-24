@@ -99,9 +99,10 @@ namespace BinaryPack.Serialization.Processors
         {
             il.DeclareLocals<Locals.Read>();
 
-            // int length = reader.Read<int>();
+            // int length = reader.ReadLength(1);
             il.EmitLoadArgument(Arguments.Read.RefBinaryReader);
-            il.EmitCall(KnownMembers.BinaryReader.ReadT(typeof(int)));
+            il.EmitLoadInt32(1);
+            il.EmitCall(KnownMembers.BinaryReader.ReadLength);
             il.EmitStoreLocal(Locals.Read.Length);
 
             // if (length == -1) return null;

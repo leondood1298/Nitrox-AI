@@ -103,9 +103,10 @@ namespace BinaryPack.Serialization.Processors.Collections.Abstract
             il.DeclareLocals<Locals.Read>();
             il.DeclareLocal(typeof(TElement).MakeByRefType());
 
-            // int count = reader.Read<int>();
+            // int count = reader.ReadLength(...);
             il.EmitLoadArgument(Arguments.Read.RefBinaryReader);
-            il.EmitCall(KnownMembers.BinaryReader.ReadT(typeof(int)));
+            il.EmitLoadInt32(KnownMembers.BinaryReader.MinBytesPerItem(typeof(TElement)));
+            il.EmitCall(KnownMembers.BinaryReader.ReadLength);
             il.Emit(OpCodes.Dup);
             il.EmitStoreLocal(Locals.Read.Count);
 

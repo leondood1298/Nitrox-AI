@@ -120,9 +120,10 @@ namespace BinaryPack.Serialization.Processors.Arrays
             il.DeclareLocals<Locals.Read>();
             if (!typeof(T).IsUnmanaged()) il.DeclareLocal(typeof(T).MakeByRefType());
 
-            // int length = reader.Read<int>();
+            // int length = reader.ReadLength(...);
             il.EmitLoadArgument(Arguments.Read.RefBinaryReader);
-            il.EmitCall(KnownMembers.BinaryReader.ReadT(typeof(int)));
+            il.EmitLoadInt32(KnownMembers.BinaryReader.MinBytesPerItem(typeof(T)));
+            il.EmitCall(KnownMembers.BinaryReader.ReadLength);
             il.EmitStoreLocal(Locals.Read.Length);
 
             // if (length == -1) return null;
