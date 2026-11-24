@@ -1,3 +1,4 @@
+using System;
 using NitroxClient.GameLogic.PlayerLogic;
 using UnityEngine;
 
@@ -19,6 +20,13 @@ public class AnimationController : MonoBehaviour
     public bool UpdatePlayerAnimations { get; set; } = true;
     public Quaternion AimingRotation { get; set; }
     public Vector3 Velocity { get; set; }
+
+    /// <summary>
+    ///     When set, gives the world velocity each physics step instead of <see cref="Velocity" />: inside a Cyclops the
+    ///     speed is worked out from packets as they arrive and has to fall to zero when they stop.
+    /// </summary>
+    public Func<Vector3>? VelocityProvider { get; set; }
+
     public Quaternion BodyRotation { get; set; }
 
     private Vector3 smoothedVelocity = Vector3.zero;
@@ -35,7 +43,8 @@ public class AnimationController : MonoBehaviour
     {
         if (UpdatePlayerAnimations)
         {
-            Vector3 rotationCorrectedVelocity = transform.rotation.GetInverse() * Velocity;
+            Vector3 velocity = VelocityProvider != null ? VelocityProvider() : Velocity;
+            Vector3 rotationCorrectedVelocity = transform.rotation.GetInverse() * velocity;
 
             smoothedVelocity = UWE.Utils.SlerpVector(smoothedVelocity, rotationCorrectedVelocity, Vector3.Normalize(rotationCorrectedVelocity - smoothedVelocity) * (SMOOTHING_SPEED * Time.fixedDeltaTime));
 

@@ -35,6 +35,8 @@ public class RemotePlayer : INitroxPlayer
     /// </summary>
     private const float PDA_LOWERING_SECONDS = 0.3f;
 
+    private readonly CyclopsWalkVelocity cyclopsWalk = new();
+
     private GameObject pdaModel;
     private int pdaVisibilityChange;
 
@@ -182,6 +184,7 @@ public class RemotePlayer : INitroxPlayer
         // When receiving movement packets, a player can not be controlling a vehicle (they can walk through subroots though).
         SetVehicle(null);
         SetPilotingChair(null);
+        StopCyclopsWalk();
 
         float teleportThreshold = MovementHelper.GetTeleportThreshold(velocity.magnitude);
         MovementHelper.TeleportIfTooFar(Body.transform, RigidBody, position, bodyRotation, teleportThreshold);
@@ -216,7 +219,7 @@ public class RemotePlayer : INitroxPlayer
         RigidBody.angularVelocity = MovementHelper.GetCorrectedAngularVelocity(bodyRotation, Vector3.zero, Body.transform.rotation, Time.fixedDeltaTime);
     }
 
-    public void UpdatePositionInCyclops(Vector3 localPosition, Quaternion localRotation)
+    public void UpdatePositionInCyclops(Vector3 localPosition, Quaternion localRotation, Quaternion localAimingRotation)
     {
         if (Pawn == null || PilotingChair)
         {
@@ -229,13 +232,33 @@ public class RemotePlayer : INitroxPlayer
         {
             SetVehicle(null);
 
-            AnimationController.AimingRotation = localRotation;
+            // The pitch only matters to the animation (view_pitch), and is relative to the Cyclops like the body
+            AnimationController.AimingRotation = localAimingRotation;
             AnimationController.UpdatePlayerAnimations = true;
         }
-        AnimationController.Velocity = (localPosition - Pawn.Handle.transform.localPosition) / Time.fixedDeltaTime;
+
+        // The walk is measured in the Cyclops' frame from this game's clock, and turned into the world frame the
+        // animation expects, with the Cyclops' heading at the moment it is shown
+        cyclopsWalk.OnPacket(localPosition, Time.time);
+        AnimationController.VelocityProvider = CyclopsWalkWorldVelocity;
 
         Pawn.Handle.transform.localPosition = localPosition;
         Pawn.Handle.transform.localRotation = localRotation;
+    }
+
+    private Vector3 CyclopsWalkWorldVelocity()
+    {
+        Vector3 localVelocity = cyclopsWalk.GetVelocity(Time.time);
+        return SubRoot ? SubRoot.transform.rotation * localVelocity : localVelocity;
+    }
+
+    private void StopCyclopsWalk()
+    {
+        cyclopsWalk.Reset();
+        if (AnimationController)
+        {
+            AnimationController.VelocityProvider = null;
+        }
     }
 
     public void SetPilotingChair(PilotingChair newPilotingChair)
@@ -297,6 +320,7 @@ public class RemotePlayer : INitroxPlayer
             // Unregister from previous cyclops
             Pawn?.Unregister();
             Pawn = null;
+            StopCyclopsWalk();
 
             if (newSubRoot)
             {
