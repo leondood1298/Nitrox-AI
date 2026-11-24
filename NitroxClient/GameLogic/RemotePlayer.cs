@@ -44,6 +44,11 @@ public class RemotePlayer : INitroxPlayer
     private readonly CyclopsWalkVelocity cyclopsWalk = new();
     private GameObject? bodyPrototype;
 
+    /// <summary>
+    ///     As last told (the animator starts out underwater, see <see cref="AnimationController" />).
+    /// </summary>
+    private bool isUnderwater = true;
+
     private GameObject pdaModel;
     private int pdaVisibilityChange;
 
@@ -442,6 +447,30 @@ public class RemotePlayer : INitroxPlayer
             pdaVisibilityChange++;
             pdaModel.SetActive(false);
         }
+        equipment?.ShowAllSlots();
+        RestoreLastingPose();
+    }
+
+    /// <summary>
+    ///     The rebind in <see cref="ResetStates" /> puts every animator parameter back to its default, but some of what they
+    ///     showed is still true: the player is still underwater or not, and may still hold their tool (a Cyclops or vehicle
+    ///     that was destroyed around them does not take it).
+    /// </summary>
+    private void RestoreLastingPose()
+    {
+        AnimationController["is_underwater"] = isUnderwater;
+        UpdateCollider();
+
+        if (HeldTool && ItemAttachPoint && HeldTool.transform.IsChildOf(ItemAttachPoint))
+        {
+            AnimationController.SetBoolIfPresent($"holding_{HeldTool.animToolName}", true);
+            AnimationController.SetBoolIfPresent("holding_tool", true);
+            RequestArmsReconfigure();
+        }
+        else
+        {
+            HeldTool = null;
+        }
     }
 
     public void Destroy()
@@ -459,7 +488,8 @@ public class RemotePlayer : INitroxPlayer
         switch (type)
         {
             case AnimChangeType.UNDERWATER:
-                AnimationController["is_underwater"] = state != AnimChangeState.OFF;
+                isUnderwater = state != AnimChangeState.OFF;
+                AnimationController["is_underwater"] = isUnderwater;
                 break;
             case AnimChangeType.INFECTION_REVEAL:
                 // Player.TriggerInfectionRevealAsync sets a trigger, and takes the gloves off for the look at the hand
@@ -486,6 +516,15 @@ public class RemotePlayer : INitroxPlayer
                 break;
         }
 
+        UpdateCollider();
+    }
+
+    private void UpdateCollider()
+    {
+        if (!Collider)
+        {
+            return;
+        }
         // Rough estimation for different collider boxes in different animation stages
         if (AnimationController["is_underwater"])
         {
