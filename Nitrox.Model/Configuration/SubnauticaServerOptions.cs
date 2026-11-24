@@ -22,8 +22,11 @@ public sealed partial class SubnauticaServerOptions
     [Range(1, ushort.MaxValue)]
     public ushort ServerPort { get; set; } = SubnauticaServerConstants.DEFAULT_PORT;
 
+    /// <remarks>
+    ///     Any text is allowed: the password is only compared, so spaces and symbols are fine. A stricter rule here made
+    ///     the server refuse to start with a password the launcher and the change command had accepted.
+    /// </remarks>
     [PropertyDescription("If not empty, users will be asked to enter a password to join the server")]
-    [RegularExpression(@"\w+")]
     public string ServerPassword { get; set; } = "";
 
     public SubnauticaGameMode GameMode { get; set; }
@@ -39,9 +42,10 @@ public sealed partial class SubnauticaServerOptions
     public int InitialSyncTimeout { get; set; } = 300000;
 
     [PropertyDescription("Possible values:", typeof(Perms))]
+    [EnumDataType(typeof(Perms))]
     public Perms DefaultPlayerPerm { get; set; } = Perms.DEFAULT;
 
-    [PropertyDescription("If true, players using localhost get admin by default - disable if you're using a proxy server")]
+    [PropertyDescription("If true, a player joining from 127.0.0.1 (this computer) gets admin. WARNING: a tunnel or proxy program running on this computer (playit and the like) makes every player it forwards come from 127.0.0.1, so all of them would get admin - turn this off if you use one.")]
     public bool LocalhostIsAdmin { get; set; } = true;
 
     public float DefaultOxygenValue { get; set; } = 45;
@@ -67,7 +71,10 @@ public sealed partial class SubnauticaServerOptions
     [RegularExpression(@"\w+")]
     public string Seed { get; set; } = "";
 
+    [PropertyDescription("If true, players below admin cannot open the game's developer console. Admins always can.")]
     public bool DisableConsole { get; set; }
+
+    [PropertyDescription("Password for the /login chat command, which makes a player admin. Empty turns /login off.")]
     public string? AdminPassword { get; set; } = "";
     public bool KeepInventoryOnDeath { get; set; }
 

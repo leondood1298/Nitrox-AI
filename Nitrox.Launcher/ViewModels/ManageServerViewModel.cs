@@ -94,7 +94,8 @@ internal partial class ManageServerViewModel : RoutableViewModelBase, IServerVie
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(UndoCommand), nameof(BackCommand), nameof(RestoreBackupCommand), nameof(StartServerCommand))]
-    [Range(1, 1000)]
+    // The server keeps this in a byte (SubnauticaServerOptions.MaxConnections): a larger value would wrap around
+    [Range(1, byte.MaxValue)]
     [NotifyDataErrorInfo]
     public partial int ServerMaxPlayers { get; set; }
 
@@ -118,7 +119,8 @@ internal partial class ManageServerViewModel : RoutableViewModelBase, IServerVie
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(UndoCommand), nameof(BackCommand), nameof(RestoreBackupCommand), nameof(StartServerCommand))]
     [NotifyDataErrorInfo]
-    [Range(ushort.MinValue, ushort.MaxValue)]
+    // Port 0 is refused by the server's own check (SubnauticaServerOptions.ServerPort)
+    [Range(1, ushort.MaxValue)]
     public partial int ServerPort { get; set; }
 
     [ObservableProperty]
