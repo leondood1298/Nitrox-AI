@@ -3,6 +3,7 @@ using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.Serialization;
 using Nitrox.Server.Subnautica.Models.Serialization.World;
@@ -65,6 +66,39 @@ public sealed class PersistedEntitiesTest
         loaded.Entities.Should().HaveCount(2);
         loaded.Entities.Single(entity => entity.Id == parent.Id).ChildEntities.Should().ContainSingle().Which.Should().BeSameAs(loaded.Entities.Single(entity => entity.Id == child.Id));
         loaded.Orphans.Should().Be(0);
+    }
+
+    [TestMethod]
+    public void ADroppedToolSavedWithItsBatteryTwiceIsLoadedWithTheBatteryThatKeptTheCharge()
+    {
+        // A build before this saved a dropped tool's battery as a prefab child with the charge at the drop and again as
+        // the installed battery, which alone received the charge afterwards
+        WorldEntity flashlight = NewWorldEntity((WorldEntity?)null);
+        NitroxId batteryId = new();
+        flashlight.ChildEntities.Add(new PrefabChildEntity(batteryId, "battery", new NitroxTechType("Battery"), 0, new BatteryMetadata(82.2f), flashlight.Id));
+        flashlight.ChildEntities.Add(new InstalledBatteryEntity(0, batteryId, new NitroxTechType("Battery"), new BatteryMetadata(45f), flashlight.Id, []));
+
+        PersistedEntities.LoadedEntities loaded = PersistedEntities.PrepareLoaded(WriteAndRead(PersistedEntities.SelectForSave([flashlight])), []);
+
+        loaded.DuplicateChildren.Should().Be(1);
+        Entity battery = loaded.Entities.Single(entity => entity.Id == flashlight.Id).ChildEntities.Should().ContainSingle().Subject;
+        battery.Should().BeOfType<InstalledBatteryEntity>().Which.Metadata.Should().BeOfType<BatteryMetadata>().Which.Charge.Should().Be(45f);
+        loaded.Entities.Single(entity => entity.Id == batteryId).Should().BeSameAs(battery);
+    }
+
+    [TestMethod]
+    public void AGlobalRootToolSavedWithItsBatteryTwiceKeepsTheBatteryThatKeptTheCharge()
+    {
+        GlobalRootEntity flashlight = new(new NitroxTransform(NitroxVector3.Zero, NitroxQuaternion.Identity, NitroxVector3.One), 0, "flashlight", false, new NitroxId(),
+                                          new NitroxTechType("Flashlight"), null, null, []);
+        NitroxId batteryId = new();
+        flashlight.ChildEntities.Add(new PrefabChildEntity(batteryId, "battery", new NitroxTechType("Battery"), 0, new BatteryMetadata(82.2f), flashlight.Id));
+        flashlight.ChildEntities.Add(new InstalledBatteryEntity(0, batteryId, new NitroxTechType("Battery"), new BatteryMetadata(45f), flashlight.Id, []));
+
+        PersistedEntities.LoadedEntities loaded = PersistedEntities.PrepareLoaded([], [flashlight]);
+
+        loaded.DuplicateChildren.Should().Be(1);
+        flashlight.ChildEntities.Should().ContainSingle().Which.Should().BeOfType<InstalledBatteryEntity>();
     }
 
     [TestMethod]

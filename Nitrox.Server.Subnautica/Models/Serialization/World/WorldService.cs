@@ -288,6 +288,10 @@ internal class WorldService : IHostedService
             {
                 logger.ZLogWarning($"Left out {loadedEntities.Orphans} saved entities whose parent was not saved (such as the contents of a destroyed Cyclops).");
             }
+            if (loadedEntities.DuplicateChildren > 0)
+            {
+                logger.ZLogInformation($"Removed {loadedEntities.DuplicateChildren} stale copies of children that had the id of another child under the same parent (such as a dropped tool's battery).");
+            }
             if (loadedEntities.SerializedDuplicates > 0)
             {
                 logger.ZLogInformation($"Removed {loadedEntities.SerializedDuplicates} copies of the game's lights and other fixed objects, which an older build made twice.");

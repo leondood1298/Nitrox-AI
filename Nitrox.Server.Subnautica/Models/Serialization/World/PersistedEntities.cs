@@ -37,10 +37,18 @@ internal static class PersistedEntities
     /// <param name="globalRootEntities">The entities read from <see cref="GlobalRootData" />, with their children.</param>
     public static LoadedEntities PrepareLoaded(List<Entity> topEntities, IEnumerable<GlobalRootEntity> globalRootEntities)
     {
+        // A dropped tool's battery was saved twice under the tool with one id, the first copy with the charge at the drop.
+        // The last one is kept, the one that received the charge (as the id index already did for global root entities).
+        int duplicateChildren = 0;
         HashSet<NitroxId> globalRootTreeIds = [];
         foreach (GlobalRootEntity globalRootEntity in globalRootEntities)
         {
+            duplicateChildren += EntityRegistry.KeepLastChildPerId(globalRootEntity);
             CollectIds(globalRootEntity, globalRootTreeIds);
+        }
+        foreach (Entity topEntity in topEntities)
+        {
+            duplicateChildren += EntityRegistry.KeepLastChildPerId(topEntity);
         }
 
         // An older world lists a child both at the top and inside its parent; the top copy is kept, as before
@@ -90,7 +98,7 @@ internal static class PersistedEntities
             }
         }
 
-        return new LoadedEntities(kept, orphans, duplicates, copiesOfGlobalRootChildren);
+        return new LoadedEntities(kept, orphans, duplicates, copiesOfGlobalRootChildren, duplicateChildren);
     }
 
     /// <summary>
@@ -182,5 +190,6 @@ internal static class PersistedEntities
     /// <param name="Orphans">Entities left out because no parent of theirs was saved.</param>
     /// <param name="SerializedDuplicates">Exact copies of the game's serialized objects left out.</param>
     /// <param name="CopiesOfGlobalRootChildren">Entities left out because they are read from <see cref="GlobalRootData" />.</param>
-    public sealed record LoadedEntities(List<Entity> Entities, int Orphans, int SerializedDuplicates, int CopiesOfGlobalRootChildren);
+    /// <param name="DuplicateChildren">Earlier children with the id of a later child under the same parent, left out.</param>
+    public sealed record LoadedEntities(List<Entity> Entities, int Orphans, int SerializedDuplicates, int CopiesOfGlobalRootChildren, int DuplicateChildren);
 }
