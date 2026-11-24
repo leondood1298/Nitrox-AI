@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -31,6 +32,9 @@ public class MainMenuServerListPanel : MonoBehaviour, uGUI_INavigableIconGrid, u
     private GameObject scrollBar;
 
     public bool IsJoining { get; set; }
+
+    private readonly LanServerTracker lanServers = new();
+    private DateTime nextSilenceCheck;
 
     public void Setup(GameObject savedGamesRef)
     {
@@ -241,40 +245,83 @@ public class MainMenuServerListPanel : MonoBehaviour, uGUI_INavigableIconGrid, u
         ServerList.Refresh();
         foreach (ServerList.Entry entry in ServerList.Instance.Entries)
         {
-            CreateServerButton(entry.Name, entry.Address, entry.Port);
+            CreateServerButton(entry);
         }
     }
 
-    private IEnumerator FindLANServers()
+    private void OnEnable()
     {
-        void LateAddButton(IPEndPoint serverEndPoint)
-        {
-            if (!ServerList.Instance.Entries.Any(e => e.Address == serverEndPoint.Address.ToString() && e.Port == serverEndPoint.Port))
-            {
-                Log.Info($"Adding LAN server: {serverEndPoint}");
-                // Add ServerList entry to keep indices in sync with servers UI, to enable removal by index
-                ServerList.Instance.Add(new ServerList.Entry("LAN Server", serverEndPoint.Address, serverEndPoint.Port, false));
-                CreateServerButton("LAN Server", serverEndPoint.Address.ToString(), serverEndPoint.Port, true);
-            }
-        }
-
-        using Task<IEnumerable<IPEndPoint>> searchTask = LANBroadcastClient.SearchAsync();
-        while (!searchTask.IsCompleted)
-        {
-            while (LANBroadcastClient.DiscoveredServers.TryDequeue(out IPEndPoint endPoint))
-            {
-                LateAddButton(endPoint);
-            }
-            yield return null;
-        }
-        while (LANBroadcastClient.DiscoveredServers.TryDequeue(out IPEndPoint endPoint))
-        {
-            LateAddButton(endPoint);
-        }
-        ServerList.Instance.Save();
+        // Servers are looked for while the list is open, so one started later appears and one stopped leaves
+        lanServers.RestartWaiting(DateTime.UtcNow);
+        LANBroadcastClient.Start();
     }
 
-    public GameObject CreateServerButton(string serverName, string address, int port, bool isReadOnly = false)
+    private void OnDisable()
+    {
+        LANBroadcastClient.Stop();
+    }
+
+    private void OnDestroy()
+    {
+        LANBroadcastClient.Stop();
+    }
+
+    private void Update()
+    {
+        if (!serverAreaContent)
+        {
+            return;
+        }
+
+        DateTime now = DateTime.UtcNow;
+        while (LANBroadcastClient.TryTakeAnswer(out IPEndPoint endPoint))
+        {
+            if (lanServers.Answered(endPoint, now))
+            {
+                AddLanServer(endPoint);
+            }
+        }
+
+        if (now < nextSilenceCheck)
+        {
+            return;
+        }
+        nextSilenceCheck = now.AddSeconds(1);
+        foreach (IPEndPoint silent in lanServers.TakeSilent(now))
+        {
+            RemoveLanServer(silent);
+        }
+    }
+
+    private void AddLanServer(IPEndPoint serverEndPoint)
+    {
+        // A server the player saved is shown as that entry already
+        if (ServerList.Instance.Entries.Any(e => e.Persist && e.Address == serverEndPoint.Address.ToString() && e.Port == serverEndPoint.Port))
+        {
+            return;
+        }
+        Log.Info($"Adding LAN server: {serverEndPoint}");
+        ServerList.Entry entry = new(Language.main.Get("Nitrox_LanServer"), serverEndPoint.Address, serverEndPoint.Port, false);
+        ServerList.Instance.Add(entry);
+        CreateServerButton(entry);
+    }
+
+    private void RemoveLanServer(IPEndPoint serverEndPoint)
+    {
+        foreach (MainMenuServerButton button in serverAreaContent.GetComponentsInChildren<MainMenuServerButton>(true))
+        {
+            ServerList.Entry entry = button.Entry;
+            if (entry != null && !entry.Persist && entry.Address == serverEndPoint.Address.ToString() && entry.Port == serverEndPoint.Port)
+            {
+                Log.Info($"Removing LAN server that stopped answering: {serverEndPoint}");
+                ServerList.Instance.Remove(entry);
+                Destroy(button.gameObject);
+            }
+        }
+        scrollBar.SetActive(serverAreaContent.childCount >= 4);
+    }
+
+    public GameObject CreateServerButton(ServerList.Entry entry)
     {
         GameObject multiplayerButtonInst = Instantiate(multiplayerServerButtonRef, serverAreaContent, false);
         multiplayerButtonInst.name = $"NitroxServer_{serverAreaContent.childCount - 2}";
@@ -285,7 +332,7 @@ public class MainMenuServerListPanel : MonoBehaviour, uGUI_INavigableIconGrid, u
         multiplayerLoadButtonInst.name = "Load";
 
         MainMenuServerButton serverButton = multiplayerButtonInst.AddComponent<MainMenuServerButton>();
-        serverButton.Init(serverName, address, port, isReadOnly);
+        serverButton.Init(entry);
 
         scrollBar.SetActive(serverAreaContent.childCount >= 4);
         foreach (EventTrigger eventTrigger in multiplayerButtonInst.GetComponentsInChildren<EventTrigger>(true))
@@ -346,6 +393,7 @@ public class MainMenuServerListPanel : MonoBehaviour, uGUI_INavigableIconGrid, u
 
         CreateAddServerButton();
         LoadSavedServers();
-        CoroutineHost.StartCoroutine(FindLANServers());
+        // The reloaded list holds no found servers: they are found again at their next answer
+        lanServers.Clear();
     }
 }

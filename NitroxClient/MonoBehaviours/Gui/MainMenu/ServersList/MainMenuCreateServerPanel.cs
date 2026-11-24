@@ -39,7 +39,7 @@ public class MainMenuCreateServerPanel : MonoBehaviour, uGUI_INavigableIconGrid,
         GameObject serverName = Instantiate(inputFieldBlueprint, transform, false);
         serverName.transform.localPosition = new Vector3(-160, 300, 0);
         serverNameInput = serverName.GetComponent<TMP_InputField>();
-        serverNameInput.placeholder.GetComponent<TranslationLiveUpdate>().translationKey = Language.main.Get("Nitrox_AddServer_NamePlaceholder");
+        SetTranslatedPlaceholder(serverNameInput, "Nitrox_AddServer_NamePlaceholder");
         GameObject serverNameDesc = Instantiate(generalTextRef, serverName.transform, false);
         serverNameDesc.transform.localPosition = new Vector3(-200, 0, 0);
         serverNameDesc.GetComponent<TextMeshProUGUI>().text = Language.main.Get("Nitrox_AddServer_NameDescription");
@@ -47,7 +47,7 @@ public class MainMenuCreateServerPanel : MonoBehaviour, uGUI_INavigableIconGrid,
         GameObject serverAddress = Instantiate(inputFieldBlueprint, transform, false);
         serverAddress.transform.localPosition = new Vector3(-160, 225, 0);
         serverAddressInput = serverAddress.GetComponent<TMP_InputField>();
-        serverAddressInput.placeholder.GetComponent<TranslationLiveUpdate>().translationKey = Language.main.Get("Nitrox_AddServer_AddressPlaceholder");
+        SetTranslatedPlaceholder(serverAddressInput, "Nitrox_AddServer_AddressPlaceholder");
         GameObject serverAddressDesc = Instantiate(generalTextRef, serverAddress.transform, false);
         serverAddressDesc.transform.localPosition = new Vector3(-200, 0, 0);
         serverAddressDesc.GetComponent<TextMeshProUGUI>().text = Language.main.Get("Nitrox_AddServer_AddressDescription");
@@ -56,7 +56,7 @@ public class MainMenuCreateServerPanel : MonoBehaviour, uGUI_INavigableIconGrid,
         serverPort.transform.localPosition = new Vector3(-160, 150, 0);
         serverPortInput = serverPort.GetComponent<TMP_InputField>();
         serverPortInput.characterValidation = TMP_InputField.CharacterValidation.Integer;
-        serverPortInput.placeholder.GetComponent<TranslationLiveUpdate>().translationKey = Language.main.Get("Nitrox_AddServer_PortPlaceholder");
+        SetTranslatedPlaceholder(serverPortInput, "Nitrox_AddServer_PortPlaceholder");
         serverPortInput.text = SubnauticaServerConstants.DEFAULT_PORT.ToString();
         GameObject serverPortDesc = Instantiate(generalTextRef, serverPort.transform, false);
         serverPortDesc.transform.localPosition = new Vector3(-200, 0, 0);
@@ -86,23 +86,37 @@ public class MainMenuCreateServerPanel : MonoBehaviour, uGUI_INavigableIconGrid,
         legendChange.legendButtonConfiguration = confirmButtonButton.GetComponent<mGUI_Change_Legend_On_Select>().legendButtonConfiguration.Take(2).ToArray();
     }
 
+    /// <summary>
+    ///     The placeholder keeps its language key, so a change of language later also changes it.
+    /// </summary>
+    public static void SetTranslatedPlaceholder(TMP_InputField inputField, string key)
+    {
+        TranslationLiveUpdate liveUpdate = inputField.placeholder.GetComponent<TranslationLiveUpdate>();
+        liveUpdate.translationKey = key;
+        // The live update skips an empty text, so the text starts translated
+        ((TMP_Text)inputField.placeholder).text = Language.main.Get(key);
+    }
+
     private void SaveServer()
     {
         string serverNameText = serverNameInput.text.Trim();
         string serverHostText = serverAddressInput.text.Trim();
         string serverPortText = serverPortInput.text.Trim();
 
-        if (string.IsNullOrWhiteSpace(serverNameText) ||
+        // A '|' in the name would split the saved line and lose the server at the next start
+        if (!ServerList.IsValidName(serverNameText) ||
             !IsValidDnsOrIp(serverHostText) ||
             string.IsNullOrWhiteSpace(serverPortText) ||
-            !int.TryParse(serverPortText, out int serverPort))
+            !int.TryParse(serverPortText, out int serverPort) ||
+            !ServerList.IsValidPort(serverPort))
         {
             Log.InGame(Language.main.Get("Nitrox_AddServer_InvalidInput"));
             return;
         }
 
-        GameObject newEntry = MainMenuServerListPanel.Main.CreateServerButton(serverNameText, serverHostText, serverPort);
-        ServerList.Instance.Add(new ServerList.Entry(serverNameText, serverHostText, serverPort));
+        ServerList.Entry entry = new(serverNameText, serverHostText, serverPort);
+        ServerList.Instance.Add(entry);
+        GameObject newEntry = MainMenuServerListPanel.Main.CreateServerButton(entry);
         ServerList.Instance.Save();
         OnBack();
         MainMenuServerListPanel.Main.StartCoroutine(DelayedScrollToNewEntry());

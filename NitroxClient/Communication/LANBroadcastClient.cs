@@ -1,80 +1,60 @@
 ﻿using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using LiteNetLib;
 using LiteNetLib.Utils;
 using Nitrox.Model.Constants;
+using Nitrox.Model.Extensions;
 using Nitrox.Model.Helper;
 
 namespace NitroxClient.Communication;
 
+/// <summary>
+///     Asks the local network for Nitrox servers, again and again for as long as it runs, so that servers started later are
+///     found and every server that still runs answers each time (see <see cref="LanServerTracker" /> for dropping the others).
+/// </summary>
 public static class LANBroadcastClient
 {
-    private static event Action<IPEndPoint> serverFound;
+    private const int BROADCAST_INTERVAL_MS = 3000;
+    private const int POLL_INTERVAL_MS = 100;
 
-    public static event Action<IPEndPoint> ServerFound
+    private static readonly ConcurrentQueue<IPEndPoint> answers = [];
+    private static readonly object stateLock = new();
+    private static CancellationTokenSource? searchCancellation;
+
+    /// <summary>
+    ///     Starts asking, unless already asking. Answers are queued until taken with <see cref="TryTakeAnswer" />.
+    /// </summary>
+    public static void Start()
     {
-        add
+        lock (stateLock)
         {
-            serverFound += value;
-
-            // Trigger event for servers already found.
-            foreach (IPEndPoint server in DiscoveredServers)
+            if (searchCancellation != null)
             {
-                value?.Invoke(server);
+                return;
             }
+            searchCancellation = new CancellationTokenSource();
+            CancellationToken token = searchCancellation.Token;
+            Task.Run(() => SearchAsync(token), token).ContinueWithHandleError(ex => Log.Warn($"LAN server search stopped: {ex.Message}"));
         }
-        remove => serverFound -= value;
     }
 
-    private static Task<IEnumerable<IPEndPoint>> lastTask;
-    public static ConcurrentQueue<IPEndPoint> DiscoveredServers = [];
-
-    public static async Task<IEnumerable<IPEndPoint>> SearchAsync(bool force = false, CancellationToken cancellationToken = default)
+    public static void Stop()
     {
-        if (!force && lastTask != null)
+        lock (stateLock)
         {
-            DiscoveredServers = [];
-            foreach (IPEndPoint ipEndPoint in await lastTask)
-            {
-                DiscoveredServers.Enqueue(ipEndPoint);
-            }
-            return DiscoveredServers;
+            searchCancellation?.Cancel();
+            searchCancellation?.Dispose();
+            searchCancellation = null;
         }
-
-        return await (lastTask = SearchInternalAsync(cancellationToken));
     }
 
-    private static async Task<IEnumerable<IPEndPoint>> SearchInternalAsync(CancellationToken cancellationToken = default)
+    public static bool TryTakeAnswer(out IPEndPoint endPoint) => answers.TryDequeue(out endPoint);
+
+    private static async Task SearchAsync(CancellationToken cancellationToken)
     {
-        static void ReceivedResponse(IPEndPoint remoteEndPoint, NetPacketReader reader, UnconnectedMessageType messageType)
-        {
-            if (messageType != UnconnectedMessageType.Broadcast)
-            {
-                return;
-            }
-            string responseString = reader.GetString();
-            if (responseString != LANDiscoveryConstants.BROADCAST_RESPONSE_STRING)
-            {
-                return;
-            }
-            int serverPort = reader.GetInt();
-            IPEndPoint serverEndPoint = new(remoteEndPoint.Address.TryExtractMappedIPv4(), serverPort);
-            if (DiscoveredServers.Contains(serverEndPoint))
-            {
-                return;
-            }
-
-            Log.Debug($"Found LAN server at {serverEndPoint}.");
-            DiscoveredServers.Enqueue(serverEndPoint);
-            OnServerFound(serverEndPoint);
-        }
-
-        cancellationToken = cancellationToken == default ? new CancellationTokenSource(TimeSpan.FromMinutes(1)).Token : cancellationToken;
         EventBasedNetListener listener = new();
         NetManager client = new(listener)
         {
@@ -93,57 +73,56 @@ public static class LANBroadcastClient
         if (!client.IsRunning)
         {
             Log.Warn("Failed to start LAN discover client: none of the defined ports are available");
-            return [];
+            return;
         }
 
         Log.Info("Searching for LAN servers...");
         listener.NetworkReceiveUnconnectedEvent += ReceivedResponse;
-        Task broadcastTask = Task.Run(async () =>
+        try
         {
+            DateTime nextBroadcast = DateTime.MinValue;
             while (!cancellationToken.IsCancellationRequested)
             {
-                NetDataWriter writer = new();
-                writer.Put(LANDiscoveryConstants.BROADCAST_REQUEST_STRING);
-                foreach (int port in LANDiscoveryConstants.BROADCAST_PORTS)
+                if (DateTime.UtcNow >= nextBroadcast)
                 {
-                    client.SendBroadcast(writer, port);
+                    NetDataWriter writer = new();
+                    writer.Put(LANDiscoveryConstants.BROADCAST_REQUEST_STRING);
+                    foreach (int port in LANDiscoveryConstants.BROADCAST_PORTS)
+                    {
+                        client.SendBroadcast(writer, port);
+                    }
+                    nextBroadcast = DateTime.UtcNow.AddMilliseconds(BROADCAST_INTERVAL_MS);
                 }
-                try
-                {
-                    await Task.Delay(5000, cancellationToken);
-                }
-                catch (TaskCanceledException)
-                {
-                    // ignore
-                }
-            }
-        }, cancellationToken);
-        Task receiveTask = Task.Run(async () =>
-        {
-            while (!cancellationToken.IsCancellationRequested)
-            {
                 client.PollEvents();
                 try
                 {
-                    await Task.Delay(100, cancellationToken);
+                    await Task.Delay(POLL_INTERVAL_MS, cancellationToken);
                 }
                 catch (TaskCanceledException)
                 {
-                    // ignore
+                    // Stopped
                 }
             }
-        }, cancellationToken);
+        }
+        finally
+        {
+            listener.ClearNetworkReceiveUnconnectedEvent();
+            client.Stop();
+        }
 
-        await Task.WhenAll(broadcastTask, receiveTask);
-        // Cleanup
-        listener.ClearNetworkReceiveUnconnectedEvent();
-        client.Stop();
-        listener.NetworkReceiveUnconnectedEvent -= ReceivedResponse;
-        return DiscoveredServers;
-    }
-
-    private static void OnServerFound(IPEndPoint obj)
-    {
-        serverFound?.Invoke(obj);
+        static void ReceivedResponse(IPEndPoint remoteEndPoint, NetPacketReader reader, UnconnectedMessageType messageType)
+        {
+            if (messageType != UnconnectedMessageType.Broadcast)
+            {
+                return;
+            }
+            string responseString = reader.GetString();
+            if (responseString != LANDiscoveryConstants.BROADCAST_RESPONSE_STRING)
+            {
+                return;
+            }
+            int serverPort = reader.GetInt();
+            answers.Enqueue(new IPEndPoint(remoteEndPoint.Address.TryExtractMappedIPv4(), serverPort));
+        }
     }
 }

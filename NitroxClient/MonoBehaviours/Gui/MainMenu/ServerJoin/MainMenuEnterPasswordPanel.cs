@@ -42,7 +42,7 @@ public class MainMenuEnterPasswordPanel : MonoBehaviour, uGUI_INavigableIconGrid
         passwordInput.characterValidation = TMP_InputField.CharacterValidation.None;
         passwordInput.onSubmit = new TMP_InputField.SubmitEvent();
         passwordInput.onSubmit.AddListener(_ => OnConfirmButtonClicked());
-        passwordInput.placeholder.GetComponent<TranslationLiveUpdate>().translationKey = Language.main.Get("Nitrox_JoinServerPlaceholder");
+        MainMenuCreateServerPanel.SetTranslatedPlaceholder(passwordInput, "Nitrox_JoinServerPlaceholder");
         GameObject passwordInputDesc = Instantiate(generalTextRef, passwordInputGameObject.transform, false);
         passwordInputDesc.transform.localPosition = new Vector3(-200, 0, 0);
         passwordInputDesc.GetComponent<TextMeshProUGUI>().text = Language.main.Get("Nitrox_JoinServerPassword");
