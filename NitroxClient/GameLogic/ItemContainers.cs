@@ -18,13 +18,15 @@ public class ItemContainers
     private readonly EntityMetadataManager entityMetadataManager;
     private readonly Items items;
     private readonly Entities entities;
+    private readonly Trashcans trashcans;
 
-    public ItemContainers(IPacketSender packetSender, EntityMetadataManager entityMetadataManager, Items items, Entities entities)
+    public ItemContainers(IPacketSender packetSender, EntityMetadataManager entityMetadataManager, Items items, Entities entities, Trashcans trashcans)
     {
         this.packetSender = packetSender;
         this.entityMetadataManager = entityMetadataManager;
         this.items = items;
         this.entities = entities;
+        this.trashcans = trashcans;
     }
 
     public void BroadcastItemAdd(Pickupable pickupable, Transform containerTransform, ItemsContainer container)
@@ -57,6 +59,11 @@ public class ItemContainers
         if (items.PickingUpCount > 0)
         {
             return;
+        }
+
+        if (containerTransform.GetComponentInParent<Trashcan>(true))
+        {
+            trashcans.ItemPutIn(itemId);
         }
 
         // If the entity existed but was deleted (for example by module remove), fall back to respawning. An item known as
