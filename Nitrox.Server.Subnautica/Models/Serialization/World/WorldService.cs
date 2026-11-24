@@ -484,7 +484,7 @@ internal class WorldService : IHostedService
         {
             try
             {
-                if (TryReadSaveFormat(candidate.PathOf(versionFileName)) is not NitroxSaveFormat.CURRENT)
+                if (TryReadSaveFormat(candidate.PathOf(versionFileName)) is not { } candidateFormat || !NitroxSaveFormat.CanRead(candidateFormat))
                 {
                     logger.ZLogWarning($"Skipped the {candidate.Description} of world \"{worldName}\": it is of another save format.");
                     continue;
