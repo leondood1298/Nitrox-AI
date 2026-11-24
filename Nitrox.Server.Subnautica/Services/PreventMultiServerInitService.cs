@@ -3,7 +3,11 @@ namespace Nitrox.Server.Subnautica.Services;
 /// <summary>
 ///     Waits for other Nitrox servers to finish starting, if any.
 /// </summary>
-internal sealed class PreventMultiServerInitService(ILogger<PreventMultiServerInitService> logger) : IHostedLifecycleService
+/// <remarks>
+///     A server that fails to start is never told it started or stopped: its hold ends when the host is disposed. The
+///     thread holding it must not keep the process alive either, or a server that refused its world would never end.
+/// </remarks>
+internal sealed class PreventMultiServerInitService(ILogger<PreventMultiServerInitService> logger) : IHostedLifecycleService, IDisposable
 {
     private readonly SemaphoreSlim callerGate = new(1);
     private readonly ILogger<PreventMultiServerInitService> logger = logger;
@@ -32,6 +36,11 @@ internal sealed class PreventMultiServerInitService(ILogger<PreventMultiServerIn
     public Task StoppingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public void Dispose()
+    {
+        ReleaseMutex();
+    }
 
     private async Task HoldMutexAsync(CancellationToken ct = default)
     {
@@ -68,7 +77,10 @@ internal sealed class PreventMultiServerInitService(ILogger<PreventMultiServerIn
                 mutex.ReleaseMutex();
                 logger.ZLogDebug($"Releasing hold on server initializations");
             }
-        });
+        })
+        {
+            IsBackground = true
+        };
         await mutexReleaseGate.WaitAsync(-1, ct);
         await callerGate.WaitAsync(0, ct);
         thread.Start();
