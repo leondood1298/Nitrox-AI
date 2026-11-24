@@ -3,8 +3,10 @@ using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Packets;
+using NitroxClient.Communication;
 using NitroxClient.Communication.Abstract;
 using NitroxClient.GameLogic.Spawning.Metadata;
+using NitroxClient.MonoBehaviours;
 using UnityEngine;
 
 namespace NitroxClient.GameLogic;
@@ -35,7 +37,7 @@ public class EquipmentSlots
 
         if (owner.TryGetComponent(out Player player))
         {
-            entities.EntityMetadataChanged(player, ownerId);
+            ReportPlayerEquipment(player, ownerId);
         }
         else
         {
@@ -65,20 +67,68 @@ public class EquipmentSlots
             return;
         }
 
+        bool ownerIsPlayer = owner.TryGetComponent(out Player player);
+
         // Sync oxygen tank metadata when unequipped
-        if (pickupable.TryGetComponent(out Oxygen oxygen))
+        if (pickupable.TryGetComponent(out Oxygen oxygen) && (!ownerIsPlayer || InRunningGame))
         {
             entities.EntityMetadataChanged(oxygen, itemId);
         }
 
-        if (owner.TryGetComponent(out Player player))
+        if (ownerIsPlayer)
         {
-            entities.EntityMetadataChanged(player, ownerId);
+            ReportPlayerEquipment(player, ownerId);
         }
         else
         {
             entities.RemoveEntity(itemId);
             packetSender.Send(new EntityDestroyed(itemId));
+        }
+    }
+
+    /// <summary>
+    ///     The server keeps the list of what the player wears and hands it back on joining. Only an item the player puts
+    ///     on or takes off in a running game changes it, never the player being put together while joining or taken
+    ///     apart while leaving.
+    /// </summary>
+    internal static bool IsPlayersOwnChange(bool sessionJoined, bool initialSyncCompleted) => sessionJoined && initialSyncCompleted;
+
+    private static bool InRunningGame => IsPlayersOwnChange(Multiplayer.Joined, Multiplayer.Main && Multiplayer.Main.InitialSyncCompleted);
+
+    private void ReportPlayerEquipment(Player player, NitroxId playerId)
+    {
+        if (!InRunningGame)
+        {
+            return;
+        }
+        entities.EntityMetadataChanged(player, playerId);
+    }
+
+    /// <summary>
+    ///     Puts an item the server has as worn into a slot of the local player, the way the game restores a saved one:
+    ///     without the game's equip path and without telling the server, where this comes from.
+    /// </summary>
+    public static void PutOnLocalPlayer(Equipment equipment, Pickupable pickupable, string slot)
+    {
+        // Both the body's metadata (PlayerMetadataProcessor) and the join's list of worn items put the items on. A second
+        // time, the item would first be taken off (a new InventoryItem empties the item's old container), and that was
+        // reported to the server as the player taking it off.
+        if (equipment.equipment.TryGetValue(slot, out InventoryItem worn) && worn != null && worn.item == pickupable)
+        {
+            return;
+        }
+
+        using (PacketSuppressor<EntityMetadataUpdate>.Suppress())
+        using (PacketSuppressor<EntitySpawnedByClient>.Suppress())
+        {
+            InventoryItem inventoryItem = new(pickupable);
+            inventoryItem.container = equipment;
+            pickupable.Reparent(equipment.tr);
+
+            equipment.equipment[slot] = inventoryItem;
+            equipment.UpdateCount(pickupable.GetTechType(), true);
+            Equipment.SendEquipmentEvent(pickupable, 0, equipment.owner, slot);
+            equipment.NotifyEquip(slot, inventoryItem);
         }
     }
 }

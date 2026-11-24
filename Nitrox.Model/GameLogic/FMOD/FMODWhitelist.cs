@@ -9,8 +9,10 @@ namespace Nitrox.Model.GameLogic.FMOD;
 
 public class FMODWhitelist : IDisposable
 {
-    private readonly Dictionary<string, SoundData> soundsWhitelist = [];
-    private readonly HashSet<string> whitelistedPaths = [];
+    // FMOD finds events by path whatever their case, and the game writes some differently than its banks: the emitter
+    // of the light pain sound plays "event:/player/pain_no_tank_light", which the banks spell "Pain_no_tank_light"
+    private readonly Dictionary<string, SoundData> soundsWhitelist = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> whitelistedPaths = new(StringComparer.OrdinalIgnoreCase);
     private bool isDisposed;
 
     private FMODWhitelist(GameInfo game)

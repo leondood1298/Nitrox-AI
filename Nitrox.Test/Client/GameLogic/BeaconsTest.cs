@@ -28,4 +28,23 @@ public sealed class BeaconsTest
     {
         Beacons.ShouldBroadcastLabel("Beacon", "Base entrance", false, false).Should().BeFalse();
     }
+
+    [TestMethod]
+    public void ABeaconLyingInTheWorldHumsAlsoWhenItWasThereBeforeTheJoin()
+    {
+        Beacons.ShouldHum(false, false, false).Should().BeTrue();
+    }
+
+    [TestMethod]
+    public void AHummingBeaconIsNotStartedAgain()
+    {
+        Beacons.ShouldHum(true, false, false).Should().BeFalse();
+    }
+
+    [TestMethod]
+    public void ABeaconInHandOrInAnInventoryOrLockerIsSilent()
+    {
+        Beacons.ShouldHum(false, true, false).Should().BeFalse();
+        Beacons.ShouldHum(false, false, true).Should().BeFalse();
+    }
 }
