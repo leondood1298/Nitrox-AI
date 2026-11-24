@@ -13,6 +13,7 @@ public class PlayerMovementBroadcaster : MonoBehaviour
 {
     private LocalPlayer localPlayer;
     private readonly PlayerMovementThrottle movementThrottle = new();
+    private readonly PlayerMovementThrottle inCyclopsThrottle = new();
     private ScannerRoomClientDiagnostics scannerRoomDiagnostics;
     private bool scannerAnchorActive;
     private MapRoomCamera scannerAnchorCamera;
@@ -165,10 +166,17 @@ public class PlayerMovementBroadcaster : MonoBehaviour
         if (!Player.main.isPiloting && Player.main.TryGetComponent(out CyclopsMotor cyclopsMotor) && cyclopsMotor.Pawn != null)
         {
             Transform pawnTransform = cyclopsMotor.Pawn.Handle.transform;
-            PlayerInCyclopsMovement packet = new(this.Resolve<LocalPlayer>().SessionId.Value, pawnTransform.localPosition.ToDto(), pawnTransform.localRotation.ToDto());
-            this.Resolve<IPacketSender>().Send(packet);
+            movementThrottle.Reset();
+            // Throttled like walking outside: it used to go out every frame, standing still included. The packet has no
+            // speed, so a still player is one that stopped moving and turning.
+            if (inCyclopsThrottle.ShouldSend(pawnTransform.localPosition.ToDto(), pawnTransform.localRotation.ToDto(), pawnTransform.localRotation.ToDto(), 0f, Time.unscaledTime))
+            {
+                PlayerInCyclopsMovement packet = new(this.Resolve<LocalPlayer>().SessionId.Value, pawnTransform.localPosition.ToDto(), pawnTransform.localRotation.ToDto());
+                this.Resolve<IPacketSender>().Send(packet);
+            }
             return true;
         }
+        inCyclopsThrottle.Reset();
         return false;
     }
 }

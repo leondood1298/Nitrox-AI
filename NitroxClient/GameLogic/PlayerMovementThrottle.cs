@@ -4,15 +4,15 @@ using Nitrox.Model.DataStructures.Unity;
 namespace NitroxClient.GameLogic;
 
 /// <summary>
-///     Decides whether the local player's movement is worth a packet. A moving or turning player is sent every frame as
-///     before, so remote players look the same; a player standing still sends one last packet with no speed (on which
-///     the others' games put the body exactly in place) and then only a resync every few seconds, instead of a packet
-///     every frame.
+///     Decides whether the local player's movement is worth a packet. A moving or turning player is sent every frame, up
+///     to <see cref="MAX_SENDS_PER_SECOND" />; a player standing still sends one last packet with no speed (on which the
+///     others' games put the body exactly in place) and then only a resync every few seconds, instead of a packet every
+///     frame. Used for walking in the world and for walking inside a Cyclops alike.
 /// </summary>
 /// <remarks>
-///     Adapted from upstream pull request 2804, without its 30 Hz cap (remote players would move less smoothly) and
-///     without its change to base-relative positions, which this fork's receiver and server do not expect.
-///     Unity-free, so that it can be tested.
+///     Adapted from upstream pull request 2804, with a 60 Hz cap instead of its 30 Hz (remote players move as smoothly
+///     as on a 60 Hz screen) and without its change to base-relative positions, which this fork's receiver and server do
+///     not expect. Unity-free, so that it can be tested.
 /// </remarks>
 public sealed class PlayerMovementThrottle
 {
@@ -28,7 +28,17 @@ public sealed class PlayerMovementThrottle
     /// <summary>A still player is sent again this often (in seconds), in case a packet was lost.</summary>
     public const float RESYNC_PERIOD = 2f;
 
+    /// <summary>The most packets sent in a second, whatever the frame rate.</summary>
+    public const int MAX_SENDS_PER_SECOND = 60;
+
+    /// <summary>
+    ///     How early (in seconds) a frame may come and still send: frame times wobble, and at 60 frames a second a strict
+    ///     limit would skip every frame that came a little early.
+    /// </summary>
+    private const float SEND_TIME_TOLERANCE = 0.002f;
+
     private bool hasSent;
+    private float nextSendTime;
     private bool sentStop;
     private NitroxVector3 lastPosition;
     private NitroxQuaternion lastBodyRotation;
@@ -60,15 +70,32 @@ public sealed class PlayerMovementThrottle
             send = now - lastSentTime >= RESYNC_PERIOD;
         }
 
+        // At a high frame rate a moving player was a packet per frame, for every other player: at most MAX_SENDS_PER_SECOND
+        if (send && hasSent && now < nextSendTime - SEND_TIME_TOLERANCE)
+        {
+            return false;
+        }
+
         if (send)
         {
             hasSent = true;
+            nextSendTime = Math.Max(nextSendTime + 1f / MAX_SENDS_PER_SECOND, now);
             lastPosition = position;
             lastBodyRotation = bodyRotation;
             lastAimingRotation = aimingRotation;
             lastSentTime = now;
         }
         return send;
+    }
+
+    /// <summary>
+    ///     Forgets what was sent, so that the next call sends: for when the movement is sent another way for a while
+    ///     (walking in a Cyclops, then outside it), and the others last heard of it in that other way.
+    /// </summary>
+    public void Reset()
+    {
+        hasSent = false;
+        sentStop = false;
     }
 
     /// <summary>
