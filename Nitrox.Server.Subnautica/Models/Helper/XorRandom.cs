@@ -132,9 +132,19 @@ internal sealed class XorRandom
         return (min - max) * ((float)(XorShift() << 9) / 0xFFFFFFFF) + max;
     }
 
+    /// <returns>
+    ///     A point spread evenly inside a sphere of <paramref name="radius" />, in every direction, like Unity's
+    ///     Random.insideUnitSphere scaled. Taking each axis from 0 to 1 only ever pointed into one eighth of the sphere.
+    /// </returns>
     public NitroxVector3 NextInsideSphere(float radius = 1f)
     {
-        NitroxVector3 pointInUnitSphere = new NitroxVector3(NextFloat(), NextFloat(), NextFloat()).Normalized;
-        return pointInUnitSphere * NextFloatRange(0, radius);
+        while (true)
+        {
+            NitroxVector3 point = new(NextFloatRange(-1f, 1f), NextFloatRange(-1f, 1f), NextFloatRange(-1f, 1f));
+            if (point.X * point.X + point.Y * point.Y + point.Z * point.Z <= 1f)
+            {
+                return point * radius;
+            }
+        }
     }
 }

@@ -4,65 +4,61 @@ using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Server.Subnautica.Models.UnityStubs;
 
-namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities.Spawning
+namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities.Spawning;
+
+public class SubnauticaEntitySpawnPointFactory : EntitySpawnPointFactory
 {
-    public class SubnauticaEntitySpawnPointFactory : EntitySpawnPointFactory
+    public override List<EntitySpawnPoint> From(AbsoluteEntityCell absoluteEntityCell, NitroxTransform transform, GameObject gameObject, Dictionary<string, EntitySpawnPoint> spawnPointsById)
     {
-        private readonly Dictionary<string, EntitySpawnPoint> spawnPointsByUid = new Dictionary<string, EntitySpawnPoint>();
+        List<EntitySpawnPoint> spawnPoints = [];
+        EntitySlotsPlaceholder entitySlotsPlaceholder = gameObject.GetComponent<EntitySlotsPlaceholder>();
 
-        public override List<EntitySpawnPoint> From(AbsoluteEntityCell absoluteEntityCell, NitroxTransform transform, GameObject gameObject)
+        if (gameObject.CreateEmptyObject)
         {
-            List<EntitySpawnPoint> spawnPoints = new List<EntitySpawnPoint>();
-            EntitySlotsPlaceholder entitySlotsPlaceholder = gameObject.GetComponent<EntitySlotsPlaceholder>();
+            SerializedEntitySpawnPoint entitySpawnPoint = new(gameObject.SerializedComponents, gameObject.Layer, absoluteEntityCell, transform);
 
-            if (gameObject.CreateEmptyObject)
+            // Placed once, under its parent or at the top: adding it to the top as well spawned every baked light twice
+            HandleParenting(spawnPoints, entitySpawnPoint, gameObject, spawnPointsById);
+        }
+        else if (!ReferenceEquals(entitySlotsPlaceholder, null))
+        {
+            foreach (EntitySlotData entitySlotData in entitySlotsPlaceholder.slotsData)
             {
-                SerializedEntitySpawnPoint entitySpawnPoint = new(gameObject.SerializedComponents, gameObject.Layer, absoluteEntityCell, transform);
+                List<EntitySlot.Type> slotTypes = SlotsHelper.ConvertSlotTypes(entitySlotData.allowedTypes);
+                List<string> stringSlotTypes = slotTypes.Select(s => s.ToString()).ToList();
+                EntitySpawnPoint entitySpawnPoint = new(absoluteEntityCell,
+                                                        entitySlotData.localPosition.ToDto(),
+                                                        entitySlotData.localRotation.ToDto(),
+                                                        stringSlotTypes,
+                                                        entitySlotData.density,
+                                                        entitySlotData.biomeType.ToString());
 
-                HandleParenting(spawnPoints, entitySpawnPoint, gameObject);
-                spawnPoints.Add(entitySpawnPoint);
+                HandleParenting(spawnPoints, entitySpawnPoint, gameObject, spawnPointsById);
             }
-            else if (!ReferenceEquals(entitySlotsPlaceholder, null))
-            {
-                foreach (EntitySlotData entitySlotData in entitySlotsPlaceholder.slotsData)
-                {
-                    List<EntitySlot.Type> slotTypes = SlotsHelper.ConvertSlotTypes(entitySlotData.allowedTypes);
-                    List<string> stringSlotTypes = slotTypes.Select(s => s.ToString()).ToList();
-                    EntitySpawnPoint entitySpawnPoint = new(absoluteEntityCell,
-                                             entitySlotData.localPosition.ToDto(),
-                                             entitySlotData.localRotation.ToDto(),
-                                             stringSlotTypes,
-                                             entitySlotData.density,
-                                             entitySlotData.biomeType.ToString());
+        }
+        else
+        {
+            EntitySpawnPoint entitySpawnPoint = new(absoluteEntityCell, transform.LocalPosition, transform.LocalRotation, transform.LocalScale, gameObject.ClassId);
 
-
-                    HandleParenting(spawnPoints, entitySpawnPoint, gameObject);
-                }
-            }
-            else
-            {
-                EntitySpawnPoint entitySpawnPoint = new(absoluteEntityCell, transform.LocalPosition, transform.LocalRotation, transform.LocalScale, gameObject.ClassId);
-
-                HandleParenting(spawnPoints, entitySpawnPoint, gameObject);
-            }
-
-            return spawnPoints;
+            HandleParenting(spawnPoints, entitySpawnPoint, gameObject, spawnPointsById);
         }
 
-        private void HandleParenting(List<EntitySpawnPoint> spawnPoints, EntitySpawnPoint entitySpawnPoint, GameObject gameObject)
+        return spawnPoints;
+    }
+
+    private static void HandleParenting(List<EntitySpawnPoint> spawnPoints, EntitySpawnPoint entitySpawnPoint, GameObject gameObject, Dictionary<string, EntitySpawnPoint> spawnPointsById)
+    {
+        if (gameObject.Parent != null && spawnPointsById.TryGetValue(gameObject.Parent, out EntitySpawnPoint parent))
         {
-            if (gameObject.Parent != null && spawnPointsByUid.TryGetValue(gameObject.Parent, out EntitySpawnPoint parent))
-            {
-                entitySpawnPoint.Parent = parent;
-                parent.Children.Add(entitySpawnPoint);
-            }
+            entitySpawnPoint.Parent = parent;
+            parent.Children.Add(entitySpawnPoint);
+        }
 
-            spawnPointsByUid[gameObject.Id] = entitySpawnPoint;
+        spawnPointsById[gameObject.Id] = entitySpawnPoint;
 
-            if (gameObject.Parent == null)
-            {
-                spawnPoints.Add(entitySpawnPoint);
-            }
+        if (gameObject.Parent == null)
+        {
+            spawnPoints.Add(entitySpawnPoint);
         }
     }
 }

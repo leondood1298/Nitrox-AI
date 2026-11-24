@@ -7,13 +7,13 @@ using Nitrox.Server.Subnautica.Models.Helper;
 
 namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities.Spawning;
 
-internal sealed class SubnauticaEntityBootstrapperManager(RandomFactory randomFactory, SubnauticaUweWorldEntityFactory subnauticaUweWorldEntityFactory) : IEntityBootstrapperManager
+internal sealed class SubnauticaEntityBootstrapperManager(SubnauticaUweWorldEntityFactory subnauticaUweWorldEntityFactory) : IEntityBootstrapperManager
 {
     private readonly Dictionary<string, IEntityBootstrapper> entityBootstrappersByClassId = new()
     {
-        ["ce0b4131-86e2-444b-a507-45f7b824a286"] = new GeyserBootstrapper(randomFactory.GetUnityLikeRandom(1)), // Geyser.prefab
-        ["63462cb4-d177-4551-822f-1904f809ec1f"] = new GeyserBootstrapper(randomFactory.GetUnityLikeRandom(2)), // GeyserShort.prefab
-        ["8d3d3c8b-9290-444a-9fea-8e5493ecd6fe"] = new ReefbackBootstrapper(randomFactory.GetUnityLikeRandom(3), subnauticaUweWorldEntityFactory)
+        ["ce0b4131-86e2-444b-a507-45f7b824a286"] = new GeyserBootstrapper(), // Geyser.prefab
+        ["63462cb4-d177-4551-822f-1904f809ec1f"] = new GeyserBootstrapper(), // GeyserShort.prefab
+        ["8d3d3c8b-9290-444a-9fea-8e5493ecd6fe"] = new ReefbackBootstrapper(subnauticaUweWorldEntityFactory)
     };
 
     private readonly Dictionary<NitroxTechType, IEntityBootstrapper> entityBootstrappersByTechType = new()
@@ -44,16 +44,16 @@ internal sealed class SubnauticaEntityBootstrapperManager(RandomFactory randomFa
 
     private static readonly IEntityBootstrapper leashBootstrapper = new StayAtLeashPositionBootstrapper();
 
-    public Task<WorldEntity> PrepareEntityIfRequired(WorldEntity spawnedEntity, DeterministicGenerator generator)
+    public Task<WorldEntity> PrepareEntityIfRequired(WorldEntity spawnedEntity, DeterministicGenerator generator, XorRandom random)
     {
         if (entityBootstrappersByTechType.TryGetValue(spawnedEntity.TechType, out IEntityBootstrapper bootstrapper) ||
             (!string.IsNullOrEmpty(spawnedEntity.ClassId) && entityBootstrappersByClassId.TryGetValue(spawnedEntity.ClassId, out bootstrapper)))
         {
-            return bootstrapper.Prepare(spawnedEntity, generator);
+            return bootstrapper.Prepare(spawnedEntity, generator, random);
         }
         if (spawnedEntity.Metadata == null && creaturesLeashedWhereTheySpawn.Contains(spawnedEntity.TechType))
         {
-            return leashBootstrapper.Prepare(spawnedEntity, generator);
+            return leashBootstrapper.Prepare(spawnedEntity, generator, random);
         }
         return Task.FromResult(spawnedEntity);
     }

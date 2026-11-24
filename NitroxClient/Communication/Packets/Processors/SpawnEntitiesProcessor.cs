@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.Packets;
@@ -17,7 +20,7 @@ internal sealed class SpawnEntitiesProcessor(Entities entities, SimulationOwners
     {
         if (packet.ForceRespawn)
         {
-            entities.CleanupExistingEntities(packet.Entities);
+            entities.CleanupExistingEntities(SelectForCleanup(packet, simulationOwnership.HasAnyLockType));
         }
 
         foreach (SimulatedEntity simulatedEntity in packet.SimulatedEntities)
@@ -48,5 +51,23 @@ internal sealed class SpawnEntitiesProcessor(Entities entities, SimulationOwners
             terrain.AddFullySpawnedCell(spawnedEntityCell);
         }
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    ///     The entities of a forced respawn whose objects are destroyed before they are spawned again.
+    /// </summary>
+    /// <remarks>
+    ///     The answer to cells this game loaded lists everything the server has in them, including what this game
+    ///     simulates and moved into a cell between the cell waking up and the answer. That object is the newest copy:
+    ///     replacing it with the server's put the creature back where the server last heard of it, reset its behaviour and
+    ///     could stop its movement being sent. Any other forced respawn (a correction from the server) replaces everything.
+    /// </remarks>
+    internal static List<Entity> SelectForCleanup(SpawnEntities packet, Func<NitroxId, bool> isSimulatedHere)
+    {
+        if (packet.SpawnedCells.Count == 0)
+        {
+            return packet.Entities;
+        }
+        return [.. packet.Entities.Where(entity => !isSimulatedHere(entity.Id))];
     }
 }

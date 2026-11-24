@@ -138,6 +138,7 @@ namespace NitroxClient
             containerBuilder.RegisterType<Cyclops>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<CyclopsDecoys>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<LavaLarvae>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<CrashHomes>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<Rockets>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<TimeCapsules>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<PrecursorTeleporters>().InstancePerLifetimeScope();

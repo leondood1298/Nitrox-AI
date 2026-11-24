@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using Nitrox.Model.DataStructures;
 using Nitrox.Server.Subnautica.Models.Helper;
 
 namespace Nitrox.Server.Subnautica.Models.Factories;
@@ -26,4 +27,10 @@ internal sealed class RandomFactory(IOptions<SubnauticaServerOptions> options)
 
     /// <inheritdoc cref="GetDotnetRandom" />
     public XorRandom GetUnityLikeRandom(int seedId = 0, [CallerFilePath] string filePath = "") => new(CreateSeedInt32(options.Value.Seed, filePath, seedId));
+
+    /// <summary>
+    ///     The random that fills one batch of the world. It depends only on the world seed and the batch, so a batch is
+    ///     filled the same way whichever batches were filled before it.
+    /// </summary>
+    public XorRandom GetBatchRandom(NitroxInt3 batchId) => new(CreateSeedInt32(options.Value.Seed, $"WorldBatch/{batchId.X}/{batchId.Y}/{batchId.Z}"));
 }
