@@ -1,5 +1,7 @@
+using System.Collections;
 using System.Collections.Generic;
 using NitroxClient.Communication.Abstract;
+using NitroxClient.GameLogic.Simulation;
 using NitroxClient.MonoBehaviours;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
@@ -15,6 +17,7 @@ namespace NitroxClient.GameLogic;
 public class MobileVehicleBay
 {
     private readonly IPacketSender packetSender;
+    private readonly SimulationOwnership simulationOwnership;
 
     /// <summary>Bays replaying another player's build, with the id that build's vehicle gets.</summary>
     private readonly Dictionary<ConstructorInput, NitroxId> replayingBays = [];
@@ -22,10 +25,87 @@ public class MobileVehicleBay
     /// <summary>Vehicles made by a replay, until the replay takes them.</summary>
     private readonly Dictionary<NitroxId, GameObject> replayedVehicles = [];
 
-    public MobileVehicleBay(IPacketSender packetSender)
+    /// <summary>The bay whose build was granted its lock and is being started (ConstructorInput.Craft runs again).</summary>
+    private ConstructorInput grantedBay;
+
+    public MobileVehicleBay(IPacketSender packetSender, SimulationOwnership simulationOwnership)
     {
         this.packetSender = packetSender;
+        this.simulationOwnership = simulationOwnership;
     }
+
+    /// <summary>
+    ///     Called before ConstructorInput.Craft, which takes the resources and starts the build. As a pilot's seat, a bay
+    ///     builds for one player at a time: the build only starts once the bay's exclusive lock is granted to the player who
+    ///     picked the vehicle. Two players who pick within one round trip both see the bay free, the server grants one of
+    ///     them, and the other's resources are left alone.
+    /// </summary>
+    /// <returns>True if the build may start now; otherwise it starts, or not, once the lock is answered.</returns>
+    public bool MayStartBuild(ConstructorInput bay, TechType techType, float duration)
+    {
+        if (grantedBay == bay)
+        {
+            grantedBay = null;
+            return true;
+        }
+        if (!bay.constructor || !bay.constructor.TryGetNitroxId(out NitroxId bayId) || simulationOwnership.HasExclusiveLock(bayId))
+        {
+            return true;
+        }
+        simulationOwnership.RequestSimulationLock(new LockRequest<BuildRequest>(bayId, SimulationLockType.EXCLUSIVE, OnBuildLockAnswered, new BuildRequest(bay, techType, duration)));
+        return false;
+    }
+
+    private void OnBuildLockAnswered(NitroxId bayId, bool granted, BuildRequest request)
+    {
+        ConstructorInput bay = request.Bay;
+        if (!bay)
+        {
+            return;
+        }
+        // Granted after another player's build reached this game (its replay made the bay busy): that build has the bay
+        if (!granted || (bay.logic && bay.logic.inProgress))
+        {
+            ErrorMessage.AddMessage(Language.main.Get("Nitrox_DenyOwnershipHand"));
+            if (granted)
+            {
+                simulationOwnership.RequestSimulationLock(bayId, SimulationLockType.TRANSIENT);
+            }
+            return;
+        }
+
+        grantedBay = bay;
+        try
+        {
+            bay.Craft(request.TechType, request.Duration);
+        }
+        finally
+        {
+            grantedBay = null;
+        }
+        if (bay.logic && bay.logic.inProgress)
+        {
+            // The bay is free for the others again once the build is done
+            bay.StartCoroutine(ReleaseBayAfterBuild(bayId, bay));
+        }
+        else
+        {
+            // Not started (no resources, no room): nothing to hold the bay for
+            simulationOwnership.RequestSimulationLock(bayId, SimulationLockType.TRANSIENT);
+        }
+    }
+
+    private IEnumerator ReleaseBayAfterBuild(NitroxId bayId, ConstructorInput bay)
+    {
+        // ConstructorInput.Craft sets the build time itself (10 s for a Seamoth, 20 s for a Cyclops...)
+        yield return new WaitUntil(() => !bay || !bay.logic || !bay.logic.inProgress);
+        if (simulationOwnership.HasExclusiveLock(bayId))
+        {
+            simulationOwnership.RequestSimulationLock(bayId, SimulationLockType.TRANSIENT);
+        }
+    }
+
+    private sealed record BuildRequest(ConstructorInput Bay, TechType TechType, float Duration) : LockRequestContext;
 
     /// <summary>
     ///     Replays another player's build at this bay: the vehicle the game makes next at this bay gets

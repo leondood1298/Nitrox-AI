@@ -46,7 +46,7 @@ namespace NitroxClient.GameLogic
         public bool ShouldSkipFrame => Time.realtimeSinceStartup >= timeUntilNextYieldSeconds;
 
         public Entities(IPacketSender packetSender, ThrottledPacketSender throttledPacketSender, EntityMetadataManager entityMetadataManager, PlayerManager playerManager, LocalPlayer localPlayer, LiveMixinManager liveMixinManager, TimeManager timeManager, SimulationOwnership simulationOwnership, Terrain terrain,
-                        MobileVehicleBay mobileVehicleBay)
+                        MobileVehicleBay mobileVehicleBay, LavaLarvae lavaLarvae)
         {
             this.packetSender = packetSender;
             this.throttledPacketSender = throttledPacketSender;
@@ -69,7 +69,7 @@ namespace NitroxClient.GameLogic
             entitySpawnersByType[typeof(EscapePodEntity)] = new EscapePodEntitySpawner(localPlayer);
             entitySpawnersByType[typeof(EscapePodPowerCellEntity)] = new EscapePodPowerCellEntitySpawner(entityMetadataManager);
             entitySpawnersByType[typeof(PlayerEntity)] = new PlayerEntitySpawner(playerManager, localPlayer, this);
-            entitySpawnersByType[typeof(VehicleEntity)] = new VehicleEntitySpawner(mobileVehicleBay);
+            entitySpawnersByType[typeof(VehicleEntity)] = new VehicleEntitySpawner(mobileVehicleBay, lavaLarvae);
             entitySpawnersByType[typeof(SerializedWorldEntity)] = entitySpawnersByType[typeof(WorldEntity)];
             entitySpawnersByType[typeof(GlobalRootEntity)] = new GlobalRootEntitySpawner();
             entitySpawnersByType[typeof(BaseLeakEntity)] = new BaseLeakEntitySpawner(liveMixinManager);
