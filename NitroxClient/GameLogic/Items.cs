@@ -74,6 +74,11 @@ public class Items
             {
                 Log.Warn($"Provided TechType: {techType} is different than the one automatically attributed to the item {inventoryItemEntity.TechType}");
             }
+            // Inventory.Pickup secures an item picked up in a base or vehicle right after this
+            if (PickingUpCount > 0 && Utils.GetSubRoot())
+            {
+                inventoryItemEntity.DestroyOnDeath = false;
+            }
 
             PickupItem pickupItem = new(inventoryItemEntity, source);
 
@@ -265,6 +270,18 @@ public class Items
     }
 
     /// <summary>
+    ///     Called after the game secured everything the player carries (entering a base or vehicle): the server keeps it, so
+    ///     that the items are safe on death after a rejoin too.
+    /// </summary>
+    public void InventorySecured()
+    {
+        if (Multiplayer.Main && Multiplayer.Main.InitialSyncCompleted)
+        {
+            packetSender.Send(new PlayerItemsSecured());
+        }
+    }
+
+    /// <summary>
     ///     An item this game just made, which the server does not know yet (a crafted item, a picked fruit, a resource
     ///     of a broken outcrop).
     /// </summary>
@@ -305,7 +322,7 @@ public class Items
         List<Entity> children = GetPrefabChildren(gameObject, itemId, entityMetadataManager).ToList();
 
         children.AddRange(GetStoredItems(gameObject, itemId, entityMetadataManager));
-        InventoryItemEntity inventoryItemEntity = new(itemId, classId, techType.ToDto(), metadata.OrNull(), parentId, children);
+        InventoryItemEntity inventoryItemEntity = new(itemId, classId, techType.ToDto(), metadata.OrNull(), parentId, children, gameObject.GetComponent<Pickupable>().destroyOnDeath);
         BatteryChildEntityHelper.TryPopulateInstalledBattery(gameObject, inventoryItemEntity.ChildEntities, itemId, entityMetadataManager, allowDefaultBattery);
 
         return inventoryItemEntity;
