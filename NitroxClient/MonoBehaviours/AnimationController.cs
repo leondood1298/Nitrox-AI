@@ -37,6 +37,16 @@ public class AnimationController : MonoBehaviour
         animator = GetComponent<Animator>();
 
         this["is_underwater"] = true;
+        ApplyCinematicsEnabled();
+    }
+
+    /// <summary>
+    ///     <c>ArmsController.Update</c> keeps <c>cinematics_enabled</c> at "not in VR" for the local player every frame,
+    ///     in and out of cinematics. It does not run for this body, so it is set here, once and after every rebind.
+    /// </summary>
+    public void ApplyCinematicsEnabled()
+    {
+        SafeAnimator.SetBool(animator, "cinematics_enabled", !GameOptions.GetVrAnimationMode());
     }
 
     public void FixedUpdate()
@@ -120,5 +130,6 @@ public class AnimationController : MonoBehaviour
         switchHold.Clear();
 		animator.Rebind();
 		animator.Update(0f);
+        ApplyCinematicsEnabled();
 	}
 }
