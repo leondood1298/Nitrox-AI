@@ -78,7 +78,7 @@ public class PatchesTranspilerTest
         [typeof(MeleeAttack_CanDealDamageTo_Patch), 7],
         [typeof(PDAScanner_Scan_Patch), 3],
         [typeof(Peeper_InitializeOnce_Patch), 1],
-        [typeof(PickPrefab_AddToContainerAsync_Patch), 4],
+        [typeof(PickPrefab_AddToContainerAsync_Patch), 5],
         [typeof(Player_OnKill_Patch), 0],
         [typeof(PlayerTimeCapsule_SpawnRoutine_Patch), 2],
         [typeof(PrecursorDoorMotorModeSetter_OnTriggerEnter_Patch), 3],

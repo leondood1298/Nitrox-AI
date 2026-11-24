@@ -84,6 +84,17 @@ public sealed class ItemSourcesTest
     }
 
     [TestMethod]
+    [DataRow(200f, false, DisplayName = "Whole chunk")]
+    [DataRow(5.5f, false, DisplayName = "More than one hit left")]
+    [DataRow(5f, true, DisplayName = "Exactly one hit left")]
+    [DataRow(0.5f, true, DisplayName = "Less than one hit left")]
+    [DataRow(0f, false, DisplayName = "Chunk already broken")]
+    public void OnlyTheHitThatBreaksAChunkAnnouncesItsResources(float health, bool breaks)
+    {
+        ItemSources.HitBreaksChunk(health).Should().Be(breaks);
+    }
+
+    [TestMethod]
     public void ASecondClickAnnouncesTheSameItemOnce()
     {
         NitroxId cabinet = new();

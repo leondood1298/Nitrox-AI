@@ -16,6 +16,12 @@ public sealed partial class Drillable_OnDrill_Patch : NitroxPatch, IDynamicPatch
 {
     public static readonly MethodInfo TARGET_METHOD = Reflect.Method((Drillable t) => t.OnDrill(default, default, out Reflect.Ref<GameObject>.Field));
 
+    public static void Prefix(Drillable __instance, Vector3 position)
+    {
+        // Two Prawn Suits that break the same chunk at the same moment would both get its resources
+        Resolve<ItemSources>().Drilling(__instance, position);
+    }
+
     public static void Postfix(Drillable __instance)
     {
         if (__instance.TryGetNitroxId(out NitroxId id))

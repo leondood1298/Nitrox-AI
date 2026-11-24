@@ -20,6 +20,11 @@ public class ItemSources
     /// </summary>
     public const float EXPECTATION_LIFETIME = 10f;
 
+    /// <summary>
+    ///     Health one hit of a drill arm takes from a deposit's chunk (Drillable.OnDrill).
+    /// </summary>
+    private const float DRILL_HIT_DAMAGE = 5f;
+
     private readonly Func<float> clock;
     private readonly List<Expectation> expectations = [];
 
@@ -112,6 +117,32 @@ public class ItemSources
             // Every chance can drop one resource, and a default one is dropped when no chance did
             ExpectAny(ItemSourceUse.DROP, id, "break", breakable.numChances + 1);
         }
+    }
+
+    /// <summary>
+    ///     Called before a drill arm hits a deposit (Drillable.OnDrill): when the hit breaks a chunk, the resources that
+    ///     chunk gives are made anew by every game that breaks it.
+    /// </summary>
+    public void Drilling(Drillable drillable, Vector3 position)
+    {
+        if (drillable.resources.Length == 0 || !drillable.TryGetNitroxId(out NitroxId id))
+        {
+            return;
+        }
+        // The chunk the game picks for this hit
+        int chunk = drillable.FindClosestMesh(position, out Vector3 _);
+        if (HitBreaksChunk(drillable.health[chunk]))
+        {
+            ExpectAny(ItemSourceUse.DROP, id, $"chunk{chunk}", drillable.maxResourcesToSpawn);
+        }
+    }
+
+    /// <summary>
+    ///     Whether a chunk of a deposit with <paramref name="health" /> breaks when a drill arm hits it once more.
+    /// </summary>
+    internal static bool HitBreaksChunk(float health)
+    {
+        return health > 0f && health <= DRILL_HIT_DAMAGE;
     }
 
     private void Add(Expectation expectation)
