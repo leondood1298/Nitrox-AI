@@ -27,7 +27,7 @@ public class ExosuitMetadataProcessor : VehicleMetadataProcessor<ExosuitMetadata
         {
             SetHealth(gameObject, metadata.Health);
             SetInPrecursor(exosuit, metadata.InPrecursor);
-            SetNameAndColors(subName, metadata.Name, metadata.Colors);
+            SetNameAndColors(subName, metadata);
         }
     }
 }

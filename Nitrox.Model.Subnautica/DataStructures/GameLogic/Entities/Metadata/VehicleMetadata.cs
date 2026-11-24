@@ -16,20 +16,28 @@ public abstract class VehicleMetadata : NamedColoredMetadata
     [DataMember(Order = 2)]
     public bool InPrecursor { get; init; }
 
+    /// <summary>
+    ///     Counts the renames and recolours. A player who renames sends one more than the last one it knows of, so the
+    ///     server can tell a rename from a report of the simulating player that still carries the former name.
+    /// </summary>
+    [DataMember(Order = 3)]
+    public int NameVersion { get; init; }
+
     [IgnoreConstructor]
     protected VehicleMetadata()
     {
         // Constructor for serialization. Has to be "protected" for json serialization.
     }
 
-    public VehicleMetadata(float health, bool inPrecusor, string name, NitroxVector3[] colors) : base(name, colors)
+    public VehicleMetadata(float health, bool inPrecusor, string name, NitroxVector3[] colors, int nameVersion) : base(name, colors)
     {
         Health = health;
         InPrecursor = inPrecusor;
+        NameVersion = nameVersion;
     }
 
     public override string ToString()
     {
-        return $"[{nameof(VehicleMetadata)} Health: {Health}, InPrecursor: {InPrecursor}, {base.ToString()}]";
+        return $"[{nameof(VehicleMetadata)} Health: {Health}, InPrecursor: {InPrecursor}, NameVersion: {NameVersion}, {base.ToString()}]";
     }
 }

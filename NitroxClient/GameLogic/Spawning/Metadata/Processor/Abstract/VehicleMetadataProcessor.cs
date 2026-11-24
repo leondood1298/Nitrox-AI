@@ -1,5 +1,5 @@
-using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
+using NitroxClient.MonoBehaviours.Vehicles;
 using UnityEngine;
 
 namespace NitroxClient.GameLogic.Spawning.Metadata.Processor.Abstract;
@@ -24,5 +24,10 @@ public abstract class VehicleMetadataProcessor<T> : EntityMetadataProcessor<T> w
         vehicle.precursorOutOfWater = inPrecursor;
     }
 
-    protected void SetNameAndColors(SubName subName, string text, NitroxVector3[] nitroxColor) => SubNameInputMetadataProcessor.SetNameAndColors(subName, text, nitroxColor);
+    protected void SetNameAndColors(SubName subName, VehicleMetadata metadata)
+    {
+        SubNameInputMetadataProcessor.SetNameAndColors(subName, metadata.Name, metadata.Colors);
+        // The next rename made here must be newer than the one just received (see VehicleMetadataAuthority)
+        VehicleNameVersion.Set(subName.gameObject, metadata.NameVersion);
+    }
 }

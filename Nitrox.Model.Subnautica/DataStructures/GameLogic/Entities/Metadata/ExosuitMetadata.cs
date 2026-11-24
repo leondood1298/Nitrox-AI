@@ -14,7 +14,7 @@ public class ExosuitMetadata : VehicleMetadata
         // Constructor for serialization. Has to be "protected" for json serialization.
     }
 
-    public ExosuitMetadata(float health, bool inPrecursor, string name, NitroxVector3[] colors) : base(health, inPrecursor, name, colors)
+    public ExosuitMetadata(float health, bool inPrecursor, string name, NitroxVector3[] colors, int nameVersion) : base(health, inPrecursor, name, colors, nameVersion)
     { }
 
     public override string ToString()

@@ -237,6 +237,13 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
             return true;
         }
 
+        if (metadata is VehicleMetadata requestedVehicle)
+        {
+            Player? simulator = simulationOwnershipData.GetPlayerForLock(entity.Id);
+            metadata = VehicleMetadataAuthority.Merge(entity.Metadata as VehicleMetadata, requestedVehicle, simulator == null || simulator == sendingPlayer);
+            return true;
+        }
+
         return metadata switch
         {
             PlayerMetadata playerMetadata => ProcessPlayerMetadata(sendingPlayer, entity, playerMetadata),

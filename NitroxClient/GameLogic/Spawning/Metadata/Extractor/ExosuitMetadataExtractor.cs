@@ -1,5 +1,6 @@
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using NitroxClient.GameLogic.Spawning.Metadata.Extractor.Abstract;
+using NitroxClient.MonoBehaviours.Vehicles;
 
 namespace NitroxClient.GameLogic.Spawning.Metadata.Extractor;
 
@@ -10,6 +11,7 @@ public class ExosuitMetadataExtractor : EntityMetadataExtractor<Exosuit, Exosuit
         LiveMixin liveMixin = exosuit.liveMixin;
         SubName subName = exosuit.subName;
 
-        return new(liveMixin.health, exosuit.precursorOutOfWater, SubNameInputMetadataExtractor.GetName(subName), SubNameInputMetadataExtractor.GetColors(subName));
+        return new(liveMixin.health, exosuit.precursorOutOfWater, SubNameInputMetadataExtractor.GetName(subName), SubNameInputMetadataExtractor.GetColors(subName),
+                   VehicleNameVersion.Of(exosuit.gameObject));
     }
 }
