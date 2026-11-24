@@ -182,6 +182,22 @@ public class LocalPlayer : ILocalNitroxPlayer
             }
         }
 
+        // These follow the local player whichever body they are on (BreathingSound.Start takes Utils.GetLocalPlayer,
+        // PlayerBreathBubbles.Start the Player above it, which a copy has none of): a copy would breathe with the local
+        // player. A remote body gets its own breathing and bubbles (RemotePlayer.SetupPlayerSounds).
+        int removed = 0;
+        foreach (BreathingSound breathing in clone.GetComponentsInChildren<BreathingSound>(true))
+        {
+            Object.DestroyImmediate(breathing);
+            removed++;
+        }
+        foreach (PlayerBreathBubbles bubbles in clone.GetComponentsInChildren<PlayerBreathBubbles>(true))
+        {
+            Object.DestroyImmediate(bubbles);
+            removed++;
+        }
+        Log.Info($"[{nameof(LocalPlayer)}] Removed {removed} breathing component(s) bound to the local player from the body prototype");
+
         return clone;
     }
 }
