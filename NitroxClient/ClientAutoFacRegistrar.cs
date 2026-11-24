@@ -162,6 +162,8 @@ namespace NitroxClient
             containerBuilder.Register(_ => FMODWhitelist.Load(GameInfo.Subnautica)).InstancePerLifetimeScope();
             containerBuilder.RegisterType<FMODSystem>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<PlayerPainSounds>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<RemoteSoundLoops>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<RemoteEntitySounds>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<NitroxSettingsManager>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<ThrottledPacketSender>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<PlayerCinematics>().InstancePerLifetimeScope();

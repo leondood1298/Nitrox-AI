@@ -11,7 +11,8 @@ public sealed partial class FMOD_StudioEventEmitter_Start_Patch : NitroxPatch, I
 
     public static void Postfix(FMOD_StudioEventEmitter __instance)
     {
-        if (!Resolve<FMODWhitelist>().IsWhitelisted(__instance.asset.path, out float radius))
+        // The game allows an emitter without an asset
+        if (!__instance.asset || !Resolve<FMODWhitelist>().IsWhitelisted(__instance.asset.path, out float radius))
         {
             return;
         }

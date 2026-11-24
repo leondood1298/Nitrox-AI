@@ -72,7 +72,6 @@ public sealed class LoadingPacketGate
         typeof(FootstepPacket),
         typeof(FMODAssetPacket),
         typeof(FMODCustomEmitterPacket),
-        typeof(FMODCustomLoopingEmitterPacket),
         typeof(FMODStudioEmitterPacket),
         typeof(FMODEventInstancePacket),
         typeof(CreatureBitePlayed),

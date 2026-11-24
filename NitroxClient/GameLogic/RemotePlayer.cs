@@ -560,6 +560,7 @@ public class RemotePlayer : INitroxPlayer
         GameObject remotePlayerSoundsRoot = new("RemotePlayerSounds");
         remotePlayerSoundsRoot.transform.SetParent(Body.transform);
         FMODEmitterController emitterController = Body.AddComponent<FMODEmitterController>();
+        Body.AddComponent<RemotePlayerSounds>().Init(this, fmodWhitelist);
 
         static void CopyEmitter(FMOD_CustomEmitter src, FMOD_CustomEmitter dst)
         {

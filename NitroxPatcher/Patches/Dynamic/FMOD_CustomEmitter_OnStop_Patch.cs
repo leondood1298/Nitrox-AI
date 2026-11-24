@@ -1,5 +1,4 @@
 using System.Reflection;
-using FMOD.Studio;
 using NitroxClient.GameLogic.FMOD;
 using NitroxClient.MonoBehaviours;
 using Nitrox.Model.GameLogic.FMOD;
@@ -12,25 +11,21 @@ public sealed partial class FMOD_CustomEmitter_OnStop_Patch : NitroxPatch, IDyna
 
     public static void Postfix(FMOD_CustomEmitter __instance)
     {
-        if (!Resolve<FMODWhitelist>().IsWhitelisted(__instance.asset.path))
+        if (!__instance.asset || !Resolve<FMODWhitelist>().IsWhitelisted(__instance.asset.path) || FMODSystem.IsOnRemotePlayer(__instance))
         {
             return;
         }
 
         if (__instance.TryGetComponentInParent(out NitroxEntity nitroxEntity, true))
         {
-            EventInstance evt = __instance.GetEventInstance();
-            evt.getVolume(out float volume, out float _);
-            evt.getDescription(out EventDescription description);
-            description.is3D(out bool is3D);
-
-            if (is3D)
+            string path = __instance.asset.path;
+            if (FMODSystem.GetEventKind(path).Is3D)
             {
-                Resolve<FMODSystem>().SendCustomEmitterStop(nitroxEntity.Id, __instance.asset.path);
+                Resolve<FMODSystem>().SendCustomEmitterStop(nitroxEntity.Id, path);
             }
             else
             {
-                Resolve<FMODSystem>().SendEventInstanceStop(nitroxEntity.Id, __instance.asset.path, __instance.transform.position.ToDto(), volume);
+                Resolve<FMODSystem>().SendEventInstanceStop(nitroxEntity.Id, path, __instance.transform.position.ToDto());
             }
         }
     }

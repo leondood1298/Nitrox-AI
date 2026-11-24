@@ -3,19 +3,26 @@
 namespace NitroxClient.GameLogic.FMOD;
 
 /// <summary>
-/// Suppresses sounds played by base Subnautica, but not by Nitrox
+///     Silences the sounds the game starts while it is held, but never a stop: a sound that should end must end.
+///     Scopes nest; the game is silent until the outermost one ends.
 /// </summary>
 public readonly struct FMODSoundSuppressor : IDisposable
 {
-    public static bool SuppressFMODEvents { get; private set; }
+    private static int suppressCount;
 
-    public FMODSoundSuppressor()
+    public static bool SuppressFMODEvents => suppressCount > 0;
+
+    public static FMODSoundSuppressor Suppress()
     {
-        SuppressFMODEvents = true;
+        suppressCount++;
+        return default;
     }
 
     public void Dispose()
     {
-        SuppressFMODEvents = false;
+        if (suppressCount > 0)
+        {
+            suppressCount--;
+        }
     }
 }
