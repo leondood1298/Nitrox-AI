@@ -196,7 +196,8 @@ public class VehicleEntitySpawner : EntitySpawner<VehicleEntity>
             return;
         }
 
-        dockingBay.DockVehicle(vehicle);        
+        // Not DockVehicle: it would also play the local player's docking goal ("Dock_Seamoth") for every docked vehicle loaded
+        Vehicles.DockWithoutPlayer(dockingBay, vehicle);
     }
     
     private float GetCraftDuration(TechType techType)

@@ -11,6 +11,10 @@ using UnityEngine;
 
 namespace NitroxClient.Communication.Packets.Processors;
 
+/// <summary>
+///     Another player's vehicle docked. Also replayed after loading, when the snapshot may already show the vehicle docked
+///     (nothing to do) or the vehicle may have been undocked meanwhile (the undocking cancels the docking still played).
+/// </summary>
 internal sealed class VehicleDockingProcessor(Vehicles vehicles) : IClientPacketProcessor<VehicleDocking>
 {
     private readonly Vehicles vehicles = vehicles;
@@ -29,13 +33,21 @@ internal sealed class VehicleDockingProcessor(Vehicles vehicles) : IClientPacket
             return Task.CompletedTask;
         }
 
-        VehicleMovementReplicator vehicleMovementReplicator = vehicle.GetComponent<VehicleMovementReplicator>();
+        if (dockingBay.GetDockedVehicle() == vehicle)
+        {
+            // Already docked there, e.g. loaded so from the snapshot this packet was held for
+            vehicles.SetOnPilotMode(packet.VehicleId, packet.SessionId, false);
+            return Task.CompletedTask;
+        }
 
-        vehicle.StartCoroutine(DelayAnimationAndDisablePiloting(vehicle, vehicleMovementReplicator, dockingBay, packet.VehicleId, packet.SessionId));
+        int dockingNumber = vehicles.BeginRemoteDocking(vehicle, dockingBay);
+        VehicleMovementReplicator vehicleMovementReplicator = vehicle.GetComponent<VehicleMovementReplicator>();
+        vehicle.StartCoroutine(DelayAnimationAndDisablePiloting(vehicle, vehicleMovementReplicator, dockingBay, packet.VehicleId, packet.SessionId, dockingNumber));
         return Task.CompletedTask;
     }
 
-    private IEnumerator DelayAnimationAndDisablePiloting(Vehicle vehicle, VehicleMovementReplicator vehicleMovementReplicator, VehicleDockingBay vehicleDockingBay, NitroxId vehicleId, SessionId sessionId)
+    private IEnumerator DelayAnimationAndDisablePiloting(Vehicle vehicle, VehicleMovementReplicator vehicleMovementReplicator, VehicleDockingBay vehicleDockingBay, NitroxId vehicleId,
+                                                         SessionId sessionId, int dockingNumber)
     {
         // Consider the vehicle movement latency (we don't teleport the vehicle to the docking position)
         if (vehicleMovementReplicator)
@@ -49,31 +61,19 @@ internal sealed class VehicleDockingProcessor(Vehicles vehicles) : IClientPacket
             yield return Yielders.WaitFor1Second;
         }
 
+        // Undocked meanwhile (e.g. both were held during loading), or the bay was destroyed
+        if (!vehicles.IsRemoteDockingCurrent(vehicle, dockingNumber) || !vehicleDockingBay)
+        {
+            yield break;
+        }
+        vehicles.EndRemoteDocking(vehicle);
+
         // DockVehicle sets the rigid body kinematic of the vehicle to true, we don't want that behaviour
         // Therefore disable kinematic (again) to remove the bouncing behavior
-        DockRemoteVehicle(vehicleDockingBay, vehicle);
+        Vehicles.DockWithoutPlayer(vehicleDockingBay, vehicle);
         vehicle.useRigidbody.isKinematic = false;
 
         yield return Yielders.WaitFor2Seconds;
         vehicles.SetOnPilotMode(vehicleId, sessionId, false);
-    }
-
-    /// Copy of
-    /// <see cref="VehicleDockingBay.DockVehicle" />
-    /// without the player centric bits
-    private void DockRemoteVehicle(VehicleDockingBay bay, Vehicle vehicle)
-    {
-        bay.dockedVehicle = vehicle;
-        LargeWorldStreamer.main.cellManager.UnregisterEntity(bay.dockedVehicle.gameObject);
-        bay.dockedVehicle.transform.parent = bay.GetSubRoot().transform;
-        vehicle.docked = true;
-        bay.vehicle_docked_param = true;
-        SkyEnvironmentChanged.Broadcast(vehicle.gameObject, bay.subRoot);
-        bay.GetSubRoot().BroadcastMessage("UnlockDoors", SendMessageOptions.DontRequireReceiver);
-
-        // We are only actually adding the health if we have a lock on the vehicle so we're fine to keep this routine going on.
-        // If vehicle ownership changes then it'll still be fine because the verification will still be on the vehicle ownership.
-        bay.CancelInvoke(nameof(VehicleDockingBay.RepairVehicle));
-        bay.InvokeRepeating(nameof(VehicleDockingBay.RepairVehicle), 0.0f, 5f);
     }
 }
