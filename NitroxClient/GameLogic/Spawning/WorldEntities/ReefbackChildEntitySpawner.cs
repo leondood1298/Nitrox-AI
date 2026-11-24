@@ -27,11 +27,13 @@ public class ReefbackChildEntitySpawner : IWorldEntitySpawner, IWorldEntitySyncS
             prefab = prefabResult.Get();
         }
 
-        GameObject gameObject = GameObjectExtensions.InstantiateWithId(prefab, entity.Id);
+        // Checked before the object is made: made first, it stayed in the scene holding the entity's id when the
+        // reefback was missing
         if (!VerifyCanSpawnOrError(reefbackChildEntity, out ReefbackLife parentReefbackLife))
         {
             yield break;
         }
+        GameObject gameObject = GameObjectExtensions.InstantiateWithId(prefab, entity.Id);
 
         SetupObject(reefbackChildEntity, gameObject, parentReefbackLife);
 

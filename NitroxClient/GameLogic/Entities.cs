@@ -375,6 +375,16 @@ namespace NitroxClient.GameLogic
 
         public void RemoveEntity(NitroxId id) => spawnedAsType.Remove(id);
 
+        /// <summary>
+        ///     Undoes an entity spawned over several frames whose cell went to sleep before it was done: its object and its
+        ///     children's are destroyed and none of them counts as spawned, so they are spawned again when the cell is loaded.
+        /// </summary>
+        public void AbandonSpawn(Entity entity, GameObject gameObject)
+        {
+            RemoveEntityHierarchy(entity);
+            UnityEngine.Object.Destroy(gameObject);
+        }
+
         public void MarkForDeletion(NitroxId id)
         {
             deletedEntitiesIds.Add(id);
