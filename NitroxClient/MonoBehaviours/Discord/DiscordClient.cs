@@ -130,16 +130,16 @@ public class DiscordClient : MonoBehaviour
             return;
         }
 
-        string[] splitSecret = secret.Split(':');
-        string ip = string.Join(":", splitSecret.Take(splitSecret.Length - 1));
-        string port = splitSecret.Last();
-
-        if (int.TryParse(port, out int portInt))
+        if (!DiscordJoinSecret.TryParse(secret, out string ip, out int port))
         {
-            Log.Error($"[Discord] Port from received secret can't be parsed as int: {port}");
+            Log.Error("[Discord] The join secret does not hold an address and port");
             return;
         }
-        MainMenuServerButton.OpenJoinServerMenuAsync(ip, portInt).ContinueWithHandleError(true);
+        if (MainMenuServerListPanel.Main.IsJoining)
+        {
+            return;
+        }
+        MainMenuServerButton.OpenJoinServerMenuAsync(ip, port).ContinueWithHandleError(true);
     }
 
     private void ActivityJoinRequest(ref User user)
@@ -152,7 +152,9 @@ public class DiscordClient : MonoBehaviour
         }
         else
         {
-            Log.Warn("[Discord] Request window is already active.");
+            // Answered at once so the asking friend is not left waiting on a request nobody sees
+            Log.Warn("[Discord] Request window is already active or this game is not in a world: ignoring the request");
+            activityManager?.SendRequestReply(user.Id, ActivityJoinRequestReply.Ignore, _ => { });
         }
     }
 
@@ -163,6 +165,9 @@ public class DiscordClient : MonoBehaviour
             return;
         }
         activity.State = Language.main.Get("Nitrox_DiscordMainMenuState");
+        activity.Details = string.Empty;
+        activity.Party = default;
+        activity.Secrets = default;
         activity.Assets.LargeImage = "icon";
         UpdateActivity();
     }
@@ -189,7 +194,8 @@ public class DiscordClient : MonoBehaviour
         {
             return;
         }
-        activity.Party.Id = $"NitroxPartyID:{ipPort}";
+        // Friends see the party id; only someone this player accepts gets the join secret, so the address goes there alone
+        activity.Party.Id = $"NitroxParty:{Guid.NewGuid():N}";
         activity.Secrets.Join = ipPort;
         UpdateActivity();
     }
@@ -203,6 +209,11 @@ public class DiscordClient : MonoBehaviour
         activity.Party.Size.CurrentSize = size;
         UpdateActivity();
     }
+
+    /// <summary>
+    ///     The request window is gone, whether it was answered or not, so the next request may open one.
+    /// </summary>
+    public static void OnJoinRequestWindowClosed() => showingWindow = false;
 
     public static void RespondJoinRequest(long userID, ActivityJoinRequestReply reply)
     {

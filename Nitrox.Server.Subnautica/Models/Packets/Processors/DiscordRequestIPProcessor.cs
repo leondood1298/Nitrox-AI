@@ -13,6 +13,13 @@ internal sealed class DiscordRequestIPProcessor(IOptions<SubnauticaServerOptions
 
     public async Task Process(AuthProcessorContext context, DiscordRequestIP packet)
     {
+        // The address is handed on to whoever a player accepts on Discord, so the host must opt in
+        if (!options.Value.AllowDiscordInvites)
+        {
+            logger.ZLogDebug($"Not giving {context.Sender.Name} the server address for Discord: Discord invites are off");
+            return;
+        }
+
         if (string.IsNullOrEmpty(ipPort))
         {
             await ProcessPacketAsync(context, packet);

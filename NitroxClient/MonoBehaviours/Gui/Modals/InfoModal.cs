@@ -4,7 +4,7 @@ namespace NitroxClient.MonoBehaviours.Gui.Modals;
 
 public class InfoModal : Modal
 {
-    public InfoModal() : base(yesButtonText: "Ok", isAvoidable: false, transparency: 0.93f, height: 400f)
+    public InfoModal() : base(yesButtonText: "Nitrox_OK", isAvoidable: false, transparency: 0.93f, height: 400f)
     { }
 
     public void Show(string actionText)

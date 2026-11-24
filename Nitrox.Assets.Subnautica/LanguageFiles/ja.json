@@ -56,7 +56,7 @@
     "Nitrox_MutedPlayer": "{PLAYER}ミュート状態",
     "Nitrox_OK": "はい",
     "Nitrox_OutOfDateClient": "現在あなたがインストールしているNitroxバージョンが古いようです。サーバーのバージョン:{serverVersion},あなたがインストールしているバージョン:{localVersion}。",
-    "Nitrox_OutOfDateServer": "サーバーのNitroxバージョンが古いようです。サーバー管理者にサーバーのアップグレードを要求するか、Nitroxのバージョンをダウングレードしてください。サーバーのバージョン:{severVersion},あなたがインストールしているバージョン:{localVersion}",
+    "Nitrox_OutOfDateServer": "サーバーのNitroxバージョンが古いようです。サーバー管理者にサーバーのアップグレードを要求するか、Nitroxのバージョンをダウングレードしてください。サーバーのバージョン:{serverVersion},あなたがインストールしているバージョン:{localVersion}",
     "Nitrox_PlayerDied": "{PLAYER}は死亡した",
     "Nitrox_PlayerDisconnected": "{PLAYER}が退出した",
     "Nitrox_PlayerJoined": "{PLAYER}がゲームに参加した。",

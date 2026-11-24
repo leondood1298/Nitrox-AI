@@ -1,4 +1,5 @@
 using NitroxClient.GameLogic.ChatUI;
+using NitroxClient.GameLogic.Settings;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
@@ -40,6 +41,20 @@ namespace NitroxClient.MonoBehaviours.Gui.Chat
             drag = false;
             PlayerChatInputField.FreezeTime = false;
             PlayerChatInputField.ResetTimer();
+
+            Vector3 position = playerChatManager.PlayerChatTransform.localPosition;
+            NitroxPrefs.ChatPositionX.Value = position.x;
+            NitroxPrefs.ChatPositionY.Value = position.y;
+        }
+
+        /// <summary>
+        ///     Keeps the whole chat window on a canvas of that size (positions are relative to its centre).
+        /// </summary>
+        public static Vector2 ClampToCanvas(Vector2 position, Vector2 canvasSize, Vector2 chatSize)
+        {
+            float halfFreeWidth = Mathf.Max(0f, (canvasSize.x - chatSize.x) / 2f);
+            float halfFreeHeight = Mathf.Max(0f, (canvasSize.y - chatSize.y) / 2f);
+            return new Vector2(Mathf.Clamp(position.x, -halfFreeWidth, halfFreeWidth), Mathf.Clamp(position.y, -halfFreeHeight, halfFreeHeight));
         }
 
         private void Update()

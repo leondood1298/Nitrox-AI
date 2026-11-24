@@ -11,11 +11,19 @@ namespace NitroxClient.GameLogic.ChatUI
         public string Time { get; set; }
         public GameObject EntryObject { get; set; }
 
-        public ChatLogEntry(string playerName, string messageText, Color32 playerColor)
+        /// <summary>
+        ///     Lines from the server, which may carry formatting; a player's lines are always shown as plain text.
+        /// </summary>
+        public bool IsServer { get; }
+
+        public int LineCount { get; set; } = 1;
+
+        public ChatLogEntry(string playerName, string messageText, Color32 playerColor, bool isServer = false)
         {
             PlayerName = playerName;
             MessageText = messageText;
             PlayerColor = playerColor;
+            IsServer = isServer;
             UpdateTime();
         }
 
