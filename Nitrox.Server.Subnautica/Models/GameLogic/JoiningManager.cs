@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.GameLogic;
@@ -232,15 +233,11 @@ internal sealed class JoiningManager(
             await packetSender.SendPacketToOthersAsync(spawnNewEscapePod, sessionId);
         }
 
-        // TODO: Remove this code when security of player login is improved by https://github.com/SubnauticaNitrox/Nitrox/issues/1996
-        // We need to reset permissions on join, otherwise players can impersonate an admin easily.
-        player.Permissions = options.Value.DefaultPlayerPerm;
-
-        // Make players on localhost admin by default.
-        if (options.Value.LocalhostIsAdmin && sessionManager.GetEndPoint(sessionId)?.Address.IsLocalhost() == true)
+        IPAddress? address = sessionManager.GetEndPoint(sessionId)?.Address;
+        player.Permissions = PlayerRanks.OnJoin(player, options.Value.DefaultPlayerPerm, options.Value.LocalhostIsAdmin, address);
+        if (options.Value.LocalhostIsAdmin && PlayerRanks.IsLoopback(address))
         {
-            logger.ZLogInformation($"Granted admin to '{player.Name}' because they're playing on the host machine");
-            player.Permissions = Perms.ADMIN;
+            logger.ZLogInformation($"'{player.Name}' joined from this computer (localhost) and is {player.Permissions}");
         }
 
         List<SimulatedEntity> simulations = entitySimulation.AssignGlobalRootEntitiesAndGetData(player);

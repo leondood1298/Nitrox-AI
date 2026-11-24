@@ -10,16 +10,23 @@ namespace Nitrox.Model.MultiplayerSession
         public Optional<string> ServerPassword { get; }
 
         /// <summary>
-        ///     A secret the player's game keeps for this server. The server ties the name to it on the first join and
-        ///     refuses the name with any other key, so that nobody can join as an offline player.
+        ///     The public half of the key pair the player's game keeps for this world (see <see cref="PlayerIdentityProof" />).
+        ///     The server ties the name to it on the first join and refuses the name with any other key.
         /// </summary>
-        public string PlayerKey { get; }
+        public string PlayerPublicKey { get; }
 
-        public AuthenticationContext(string username, Optional<string> serverPassword, string playerKey)
+        /// <summary>
+        ///     The game's signature over the world identity and the challenge the server sent in its session policy, proving
+        ///     it holds the private half of <see cref="PlayerPublicKey" />.
+        /// </summary>
+        public string PlayerSignature { get; }
+
+        public AuthenticationContext(string username, Optional<string> serverPassword, string playerPublicKey, string playerSignature)
         {
             Username = username;
             ServerPassword = serverPassword;
-            PlayerKey = playerKey;
+            PlayerPublicKey = playerPublicKey;
+            PlayerSignature = playerSignature;
         }
     }
 }

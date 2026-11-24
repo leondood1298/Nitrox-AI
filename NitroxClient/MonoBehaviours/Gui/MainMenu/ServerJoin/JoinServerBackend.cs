@@ -15,6 +15,7 @@ using Nitrox.Model.MultiplayerSession;
 using Nitrox.Model.Networking;
 using Nitrox.Model.Subnautica.DataStructures;
 using Nitrox.Model.Subnautica.MultiplayerSession;
+using Nitrox.Model.Subnautica.Packets;
 using UnityEngine;
 
 namespace NitroxClient.MonoBehaviours.Gui.MainMenu.ServerJoin;
@@ -35,10 +36,24 @@ public static class JoinServerBackend
         preferencesManager.SetPreference(serverIp, new PlayerPreference(playerName, playerColor));
 
         Optional<string> opPassword = MainMenuEnterPasswordPanel.LastEnteredPassword;
-        // Keyed by the world, whatever address it is reached through
-        AuthenticationContext authenticationContext = new(playerName, opPassword, PlayerKeys.GetKeyFor(multiplayerSession.SessionPolicy.WorldIdentity));
-
-        multiplayerSession.RequestSessionReservation(new PlayerSettings(playerColor.ToDto()), authenticationContext);
+        IMultiplayerSession session = multiplayerSession;
+        MultiplayerSessionPolicy policy = session.SessionPolicy;
+        // Keyed by the world, whatever address it is reached through; the first time, the key takes a moment to make
+        UWE.CoroutineHost.StartCoroutine(PlayerKeys.ProveAsync(policy.WorldIdentity, policy.JoinChallenge, proof =>
+        {
+            if (proof == null)
+            {
+                Log.InGame(Language.main.Get("Nitrox_PlayerKeyFailed"));
+                return;
+            }
+            // The player may have left this connection while the key was being made
+            if (session != multiplayerSession || session.CurrentState.CurrentStage != MultiplayerSessionConnectionStage.AWAITING_RESERVATION_CREDENTIALS)
+            {
+                return;
+            }
+            AuthenticationContext authenticationContext = new(playerName, opPassword, proof.PublicKey, proof.Signature);
+            session.RequestSessionReservation(new PlayerSettings(playerColor.ToDto()), authenticationContext);
+        }));
     }
 
     private static void SessionConnectionStateChangedHandler(IMultiplayerSessionConnectionState state)

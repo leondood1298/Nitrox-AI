@@ -29,7 +29,7 @@ public sealed class KickCommandTest
 
         ConvertResult found = await new PlayerNameToReservedSessionArgConverter(players.PlayerManager).ConvertAsync("Queued");
         found.Success.Should().BeTrue();
-        await new KickCommand(kicker, Options.Create(new SubnauticaServerOptions())).Execute(new RecordingCommandContext(), (ReservedSession)found.Value!, "go");
+        await new KickCommand(kicker, players.PlayerManager).Execute(new RecordingCommandContext(), (ReservedSession)found.Value!, "go");
 
         await kicker.Received(1).KickPlayer(queued, "go");
     }
@@ -48,13 +48,30 @@ public sealed class KickCommandTest
     [TestMethod]
     public async Task AModeratorCannotKickAQueuedPlayerWhoWouldJoinAsModerator()
     {
-        ConnectedPlayers players = new();
+        ConnectedPlayers players = new(options: new SubnauticaServerOptions { DefaultPlayerPerm = Perms.MODERATOR, LocalhostIsAdmin = false });
         players.Reserve("Queued", "key", out _);
         IKickPlayer kicker = Substitute.For<IKickPlayer>();
         ConvertResult found = await new PlayerNameToReservedSessionArgConverter(players.PlayerManager).ConvertAsync("Queued");
         RecordingCommandContext moderator = new() { Origin = CommandOrigin.PLAYER, OriginId = (SessionId)50, Permissions = Perms.MODERATOR };
 
-        await new KickCommand(kicker, Options.Create(new SubnauticaServerOptions { DefaultPlayerPerm = Perms.MODERATOR })).Execute(moderator, (ReservedSession)found.Value!, "");
+        await new KickCommand(kicker, players.PlayerManager).Execute(moderator, (ReservedSession)found.Value!, "");
+
+        await kicker.DidNotReceiveWithAnyArgs().KickPlayer(default, default);
+    }
+
+    [TestMethod]
+    public async Task AModeratorCannotKickAQueuedAdminWhoseRankIsKept()
+    {
+        ConnectedPlayers players = new(options: new SubnauticaServerOptions { LocalhostIsAdmin = false });
+        Nitrox.Server.Subnautica.Models.Player admin = players.Connect("Admin", "admins-key");
+        Nitrox.Server.Subnautica.Models.GameLogic.PlayerRanks.Grant(admin, Perms.ADMIN);
+        players.Disconnect(admin.SessionId);
+        players.Reserve("Admin", "admins-key", out _);
+        IKickPlayer kicker = Substitute.For<IKickPlayer>();
+        ConvertResult found = await new PlayerNameToReservedSessionArgConverter(players.PlayerManager).ConvertAsync("Admin");
+        RecordingCommandContext moderator = new() { Origin = CommandOrigin.PLAYER, OriginId = (SessionId)50, Permissions = Perms.MODERATOR };
+
+        await new KickCommand(kicker, players.PlayerManager).Execute(moderator, (ReservedSession)found.Value!, "");
 
         await kicker.DidNotReceiveWithAnyArgs().KickPlayer(default, default);
     }

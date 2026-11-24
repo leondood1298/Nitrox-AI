@@ -48,10 +48,27 @@ namespace Nitrox.Server.Subnautica.Models
         public string Name { get; }
 
         /// <summary>
-        ///     The hash of the key this name first joined with, or null if no key is tied to the name yet. A player who
-        ///     joins with this name and another key is refused.
+        ///     The public key this name first joined with (see <see cref="Nitrox.Model.MultiplayerSession.PlayerIdentityProof" />),
+        ///     or null if no key is tied to the name yet. A player who joins with this name and another key is refused.
         /// </summary>
-        public string? IdentityKeyHash { get; set; }
+        public string? IdentityPublicKey { get; set; }
+
+        /// <summary>
+        ///     True if this session proved it holds the key the name was already tied to, rather than tying a free name to
+        ///     its key. Only then is <see cref="GrantedPermissions" /> trusted (see <see cref="GameLogic.PlayerRanks" />).
+        /// </summary>
+        public bool IdentityVerifiedThisSession { get; set; }
+
+        /// <summary>
+        ///     The rank given to this player by op, deop, promote or /login, kept across joins; null if none was given and
+        ///     the server's default applies. <see cref="Permissions" /> is the rank in effect now.
+        /// </summary>
+        public Perms? GrantedPermissions { get; set; }
+
+        /// <summary>
+        ///     Kept across joins, so that leaving and coming back does not lift a mute.
+        /// </summary>
+        public bool IsMuted { get; set; }
 
         public bool IsPermaDeath { get; set; }
         public NitroxVector3 Position { get; set; }

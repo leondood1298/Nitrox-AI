@@ -3,9 +3,10 @@ using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
-internal sealed class MultiplayerSessionPolicyRequestProcessor(IOptions<SubnauticaServerOptions> configProvider, WorldIdentity worldIdentity, ILogger<MultiplayerSessionPolicyRequestProcessor> logger)
+internal sealed class MultiplayerSessionPolicyRequestProcessor(IOptions<SubnauticaServerOptions> configProvider, WorldIdentity worldIdentity, PlayerManager playerManager, ILogger<MultiplayerSessionPolicyRequestProcessor> logger)
     : IAnonPacketProcessor<MultiplayerSessionPolicyRequest>
 {
+    private readonly PlayerManager playerManager = playerManager;
     private readonly IOptions<SubnauticaServerOptions> configProvider = configProvider;
     private readonly WorldIdentity worldIdentity = worldIdentity;
     private readonly ILogger<MultiplayerSessionPolicyRequestProcessor> logger = logger;
@@ -15,6 +16,7 @@ internal sealed class MultiplayerSessionPolicyRequestProcessor(IOptions<Subnauti
     {
         logger.ZLogInformation($"Providing session policies...");
         SubnauticaServerOptions options = configProvider.Value;
-        await context.ReplyAsync(new MultiplayerSessionPolicy(context.Sender.SessionId, options.DisableConsole, options.MaxConnections, options.IsPasswordRequired(), worldIdentity.Value));
+        await context.ReplyAsync(new MultiplayerSessionPolicy(context.Sender.SessionId, options.DisableConsole, options.MaxConnections, options.IsPasswordRequired(), worldIdentity.Value,
+                                                                playerManager.IssueJoinChallenge(context.Sender.SessionId)));
     }
 }

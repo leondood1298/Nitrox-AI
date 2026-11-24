@@ -64,6 +64,7 @@
     "Nitrox_PlayerDied": "{PLAYER} died",
     "Nitrox_PlayerDisconnected": "{PLAYER} disconnected",
     "Nitrox_PlayerJoined": "{PLAYER} joined the game.",
+    "Nitrox_PlayerKeyFailed": "Could not make or read your player key, so the server cannot know it is you. See the log for details.",
     "Nitrox_PlayerKicked": "You've been kicked from the server",
     "Nitrox_PlayerLeft": "{PLAYER} left the game.",
     "Nitrox_PlayerListTabName": "Player List",

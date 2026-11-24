@@ -15,7 +15,7 @@ namespace NitroxClient.Communication.MultiplayerSession.ConnectionState
         {
             // Arrange
             IMultiplayerSessionConnectionContext connectionContext = Substitute.For<IMultiplayerSessionConnectionContext>();
-            connectionContext.SessionPolicy.Returns(new MultiplayerSessionPolicy(TestConstants.TestSessionId, false, TestConstants.TEST_MAX_PLAYER_CONNECTIONS, false, "TEST_WORLD"));
+            connectionContext.SessionPolicy.Returns(new MultiplayerSessionPolicy(TestConstants.TestSessionId, false, TestConstants.TEST_MAX_PLAYER_CONNECTIONS, false, "TEST_WORLD", "TEST_CHALLENGE"));
 
             EstablishingSessionPolicy connectionState = new();
 
@@ -31,7 +31,7 @@ namespace NitroxClient.Communication.MultiplayerSession.ConnectionState
         {
             // Arrange
             IMultiplayerSessionConnectionContext connectionContext = Substitute.For<IMultiplayerSessionConnectionContext>();
-            connectionContext.SessionPolicy.Returns(new MultiplayerSessionPolicy(TestConstants.TestSessionId, false, TestConstants.TEST_MAX_PLAYER_CONNECTIONS, true, "TEST_WORLD"));
+            connectionContext.SessionPolicy.Returns(new MultiplayerSessionPolicy(TestConstants.TestSessionId, false, TestConstants.TEST_MAX_PLAYER_CONNECTIONS, true, "TEST_WORLD", "TEST_CHALLENGE"));
 
             EstablishingSessionPolicy connectionState = new();
 
