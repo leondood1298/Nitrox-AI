@@ -39,7 +39,7 @@ public class BatteryCharges
     ///     A charge is reported once per whole unit it crosses, and when it becomes empty or full: the stored charge is
     ///     then never more than a unit away, and an empty or full battery is stored as such.
     /// </summary>
-    internal static bool ShouldReport(float previous, float current, float capacity)
+    public static bool ShouldReport(float previous, float current, float capacity)
     {
         if (previous == current)
         {

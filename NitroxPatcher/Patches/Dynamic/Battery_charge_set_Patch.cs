@@ -18,6 +18,11 @@ public sealed partial class Battery_charge_set_Patch : NitroxPatch, IDynamicPatc
 
     public static void Postfix(Battery __instance, float __state)
     {
+        // The setter runs every frame for every battery in use; most changes are not reported, and that is the cheap test
+        if (!BatteryCharges.ShouldReport(__state, __instance.charge, __instance.capacity))
+        {
+            return;
+        }
         // A vehicle's cells are drained and charged in the game simulating the vehicle, which reports them
         if (Resolve<Vehicles>().IsSimulatedElsewhere(__instance))
         {
