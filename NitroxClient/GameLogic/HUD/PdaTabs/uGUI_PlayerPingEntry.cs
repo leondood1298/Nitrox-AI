@@ -145,14 +145,16 @@ public class uGUI_PlayerPingEntry : uGUI_PingEntry
             }
         });
         // Each of those clicks involves a confirmation modal
-        GetToggle(MuteObject).onValueChanged.AddListener(delegate (bool toggled)
+        GetToggle(MuteObject).onValueChanged.AddListener(delegate (bool _)
         {
-            Modal.Get<ConfirmModal>()?.Show(GetLocalizedText(muted ? "Nitrox_Unmute" : "Nitrox_Mute", true), () =>
+            // The toggle only asks; it shows the player's mute state as the server last said it, whatever the answer
+            bool mute = !muted;
+            RefreshMuteButton();
+            Modal.Get<ConfirmModal>()?.Show(GetLocalizedText(mute ? "Nitrox_Mute" : "Nitrox_Unmute", true), () =>
             {
-                GetToggle(MuteObject).SetIsOnWithoutNotify(!toggled);
                 if (player is RemotePlayer remotePlayer)
                 {
-                    packetSender.Send(new ServerCommand($"{(toggled ? "" : "un")}mute {player.PlayerName}"));
+                    packetSender.Send(new ServerCommand($"{(mute ? "" : "un")}mute {player.PlayerName}"));
                 }
             });
         });
