@@ -19,23 +19,26 @@ public sealed partial class WaterParkCreature_ManagedUpdate_Patch : NitroxPatch,
     /*
      * MODIFIED:
      * WaterParkCreature.Born(adultPrefab, this.currentWaterPark, base.transform.position);
-     * base.SetWaterPark(null);
      * WaterParkCreature_ManagedUpdate_Patch.CreatureDestroyedCallback(this); <--- INSERTED
+     * base.SetWaterPark(null);
      * UnityEngine.Object.Destroy(base.gameObject);
+     *
+     * The callback has to come before SetWaterPark(null): it needs the containment to know who decides the growth,
+     * and SetWaterPark(null) forgets it.
      */
     public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
-        return new CodeMatcher(instructions).MatchEndForward([
-                                                new CodeMatch(OpCodes.Ldarg_0),
-                                                new CodeMatch(OpCodes.Ldnull),
-                                                new CodeMatch(OpCodes.Call, Reflect.Method((WaterParkItem t) => t.SetWaterPark(default))),
-                                            ])
-                                            .Advance(1)
-                                            .InsertAndAdvance([
-                                                new CodeInstruction(OpCodes.Ldarg_0),
-                                                new CodeInstruction(OpCodes.Call, Reflect.Method(() => CreatureDestroyedCallback(default)))
-                                            ])
-                                            .InstructionEnumeration();
+        CodeMatcher matcher = new CodeMatcher(instructions).MatchStartForward([
+            new CodeMatch(OpCodes.Ldarg_0),
+            new CodeMatch(OpCodes.Ldnull),
+            new CodeMatch(OpCodes.Call, Reflect.Method((WaterParkItem t) => t.SetWaterPark(default))),
+        ]);
+        List<Label> labels = matcher.Instruction.ExtractLabels();
+        return matcher.Insert([
+                          new CodeInstruction(OpCodes.Ldarg_0).WithLabels(labels),
+                          new CodeInstruction(OpCodes.Call, Reflect.Method(() => CreatureDestroyedCallback(default)))
+                      ])
+                      .InstructionEnumeration();
     }
 
     public static void CreatureDestroyedCallback(WaterParkCreature waterParkCreature)
