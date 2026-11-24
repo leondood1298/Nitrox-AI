@@ -71,7 +71,22 @@ public static class NitroxEnvironment
         }
     }
 
-    public static string GitHash => ExecutingAssembly.GetMetaData("GitHash") ?? "";
+    /// <summary>
+    ///     Newest game build Nitrox was tested against. Newer builds are allowed, with a warning.
+    /// </summary>
+    public static int GameNewestTestedVersion
+    {
+        get
+        {
+            if (!int.TryParse(ExecutingAssembly.GetMetaData(nameof(GameNewestTestedVersion)), out int result))
+            {
+                throw new Exception("Failed to extract newest tested game version number from embedded metadata");
+            }
+            return result;
+        }
+    }
+
+    public static string GitHash =>ExecutingAssembly.GetMetaData("GitHash") ?? "";
 
     public static Types Type { get; private set; } = Types.NORMAL;
     public static bool IsTesting => Type == Types.TESTING;

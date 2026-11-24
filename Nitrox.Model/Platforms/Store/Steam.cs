@@ -99,8 +99,26 @@ public sealed class Steam : IGamePlatform
         return File.Exists(steamExecutable) ? Path.GetFullPath(steamExecutable) : null;
     }
 
+    /// <summary>
+    ///     True if Steam itself starts the game at <paramref name="gameRootPath" /> for the app id. Steam launches by app id,
+    ///     so a copied or second install would otherwise be ignored in favour of the one Steam knows.
+    /// </summary>
+    /// <param name="steamKnownGamePath">The install Steam has registered for the app, or null if Steam knows none.</param>
+    public static bool IsSteamsOwnInstall(string gameRootPath, string? steamKnownGamePath)
+    {
+        if (string.IsNullOrWhiteSpace(steamKnownGamePath))
+        {
+            return false;
+        }
+        StringComparison comparison = RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        return string.Equals(Normalize(gameRootPath), Normalize(steamKnownGamePath), comparison);
+
+        static string Normalize(string path) => Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+    }
+
+    /// <param name="launcherPath">The launcher folder for a multiplayer start, null for a single-player start.</param>
     /// <param name="onWarning">Invoked with a user-facing message if a Proton misconfiguration is detected.</param>
-    public static async Task<ProcessEx?> StartGameAsync(string pathToGameExe, string launchArguments, int steamAppId, bool skipSteam, bool bigPictureMode, Action<string>? onWarning = null)
+    public static async Task<ProcessEx?> StartGameAsync(string pathToGameExe, string launchArguments, int steamAppId, bool skipSteam, bool bigPictureMode, string? launcherPath, Action<string>? onWarning = null)
     {
         bool isPlatformStartingUp = !ProcessEx.ProcessExists(SteamProcessName);
         try
@@ -126,7 +144,7 @@ public sealed class Steam : IGamePlatform
             await LaunchSteamBigPictureModeAsync();
         }
 
-        return ProcessEx.From(CreateSteamGameStartInfo(pathToGameExe, GetExeFile(), launchArguments, steamAppId, skipSteam, bigPictureMode, onWarning));
+        return ProcessEx.From(CreateSteamGameStartInfo(pathToGameExe, GetExeFile(), launchArguments, steamAppId, skipSteam, bigPictureMode, launcherPath, onWarning));
     }
 
     public bool OwnsGame(string gameRootPath)
@@ -252,7 +270,7 @@ public sealed class Steam : IGamePlatform
         await Task.Delay(1000);
     }
 
-    private static ProcessStartInfo CreateSteamGameStartInfo(string gameFilePath, string? steamExe, string args, int steamAppId, bool skipSteam, bool bigPictureMode = false, Action<string>? onWarning = null)
+    internal static ProcessStartInfo CreateSteamGameStartInfo(string gameFilePath, string? steamExe, string args, int steamAppId, bool skipSteam, bool bigPictureMode, string? launcherPath, Action<string>? onWarning = null)
     {
         if (steamExe == null)
         {
@@ -265,7 +283,8 @@ public sealed class Steam : IGamePlatform
             throw new Exception("Steam was not found on your machine.");
         }
         // Game will play inside Proton so it needs launcher path to be a Wine-supported path!
-        string launcherPathWithinGame = NitroxUser.LauncherPath;
+        // A null launcher path is a single-player start: the patched game code then stays inert.
+        string? launcherPathWithinGame = launcherPath;
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) && !string.IsNullOrWhiteSpace(launcherPathWithinGame))
         {
             launcherPathWithinGame = $"Z:{launcherPathWithinGame.Replace("/", "\\")}";
@@ -273,7 +292,10 @@ public sealed class Steam : IGamePlatform
         // Start game through Steam so Steam Overlay loads properly. TODO: HACK - this way should be removed if we add a call SteamAPI_Init before Unity Engine shows graphics, see https://partner.steamgames.com/doc/features/overlay.
         if (!skipSteam)
         {
-            args = $@"-applaunch {steamAppId} --nitrox ""{launcherPathWithinGame}"" --{NitroxConstants.HOST_HOME_ENV_VAR_NAME.ToLower().Replace('_', '-')} ""{NitroxDirectory.HomePath}"" {args}";
+            string nitroxArgs = launcherPathWithinGame == null
+                ? ""
+                : $@"--nitrox ""{launcherPathWithinGame}"" --{NitroxConstants.HOST_HOME_ENV_VAR_NAME.ToLower().Replace('_', '-')} ""{NitroxDirectory.HomePath}"" ";
+            args = $"-applaunch {steamAppId} {nitroxArgs}{args}";
             if (bigPictureMode)
             {
                 // Keep Steam client minimized but active in background to maintain overlay functionality
@@ -296,14 +318,23 @@ public sealed class Steam : IGamePlatform
             Arguments = args,
             EnvironmentVariables =
             {
-                [NitroxUser.LAUNCHER_PATH_ENV_KEY] = launcherPathWithinGame,
-                [NitroxConstants.HOST_HOME_ENV_VAR_NAME] = NitroxDirectory.HomePath,
                 ["SteamGameId"] = steamAppId.ToString(),
                 ["SteamAppId"] = steamAppId.ToString(), // Primary Steam API var
                 ["STEAM_OVERLAY"] = "1", // Force enable Steam overlay
                 ["ENABLE_VKBASALT"] = "0" // VKBasalt prevents Steam overlay from working
             }
         };
+        foreach ((string key, string? value) in GameStartEnvironment.For(launcherPathWithinGame))
+        {
+            if (value == null)
+            {
+                result.EnvironmentVariables.Remove(key);
+            }
+            else
+            {
+                result.EnvironmentVariables[key] = value;
+            }
+        }
         // Start via Proton on Linux.
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
@@ -352,7 +383,7 @@ public sealed class Steam : IGamePlatform
             result.EnvironmentVariables.Add("STEAM_COMPAT_CLIENT_INSTALL_PATH", steamPath);
             result.EnvironmentVariables.Add("STEAM_COMPAT_DATA_PATH", compatdataPath);
             result.EnvironmentVariables.Add("STEAM_OVERLAY_LINUX", "1"); // Enable Steam overlay and API for controller input and OSK support (Proton-specific)
-            result.EnvironmentVariables.Add("PRESSURE_VESSEL_FILESYSTEMS_RW", JoinPaths([..steamLibraries.GetAllLibraryPaths(), NitroxUser.LauncherPath]));
+            result.EnvironmentVariables.Add("PRESSURE_VESSEL_FILESYSTEMS_RW", JoinPaths([..steamLibraries.GetAllLibraryPaths(), launcherPath, NitroxDirectory.UserDataPath]));
         }
 
         return result;

@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Runtime.Versioning;
+using Nitrox.Model.Helper;
 using Nitrox.Test.Model.Platforms;
 
 namespace Nitrox.Model.Platforms.Store;
@@ -23,6 +25,51 @@ public class SteamTest
     {
         Environment.SetEnvironmentVariable("XDG_DATA_DIRS", originalXdgDataDirs);
         Directory.Delete(tempRoot, true);
+    }
+
+    [OSTestMethod(OperatingSystems.Windows)]
+    public void ASinglePlayerStartThroughSteamPassesNoLauncherPath()
+    {
+        ProcessStartInfo startInfo = Steam.CreateSteamGameStartInfo(@"C:\Game\Subnautica.exe", @"C:\Steam\steam.exe", "-vrmode none", 264710, false, false, null);
+
+        startInfo.Arguments.Should().Be("-applaunch 264710 -vrmode none");
+    }
+
+    [OSTestMethod(OperatingSystems.Windows)]
+    public void AMultiplayerStartThroughSteamPassesTheLauncherPath()
+    {
+        ProcessStartInfo startInfo = Steam.CreateSteamGameStartInfo(@"C:\Game\Subnautica.exe", @"C:\Steam\steam.exe", "-vrmode none", 264710, false, false, @"C:\Nitrox Launcher");
+
+        startInfo.Arguments.Should().StartWith(@"-applaunch 264710 --nitrox ""C:\Nitrox Launcher"" ").And.EndWith(" -vrmode none");
+    }
+
+    [OSTestMethod(OperatingSystems.Windows)]
+    public void ASinglePlayerStartOfTheGameExeKeepsTheLauncherPathAwayFromTheGame()
+    {
+        Environment.SetEnvironmentVariable(NitroxUser.LAUNCHER_PATH_ENV_KEY, @"C:\Inherited");
+        try
+        {
+            ProcessStartInfo singlePlayer = Steam.CreateSteamGameStartInfo(@"C:\Game\Subnautica.exe", @"C:\Steam\steam.exe", "", 264710, true, false, null);
+            ProcessStartInfo multiplayer = Steam.CreateSteamGameStartInfo(@"C:\Game\Subnautica.exe", @"C:\Steam\steam.exe", "", 264710, true, false, @"C:\Nitrox");
+
+            singlePlayer.Environment.Should().NotContainKey(NitroxUser.LAUNCHER_PATH_ENV_KEY);
+            multiplayer.Environment[NitroxUser.LAUNCHER_PATH_ENV_KEY].Should().Be(@"C:\Nitrox");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(NitroxUser.LAUNCHER_PATH_ENV_KEY, null);
+        }
+    }
+
+    [TestMethod]
+    public void OnlyTheInstallSteamKnowsCountsAsSteamsOwn()
+    {
+        string steamInstall = Path.Combine(tempRoot, "steamapps", "common", "Subnautica");
+        string copy = Path.Combine(tempRoot, "Subnautica copy");
+
+        Steam.IsSteamsOwnInstall(steamInstall + Path.DirectorySeparatorChar, steamInstall).Should().BeTrue();
+        Steam.IsSteamsOwnInstall(copy, steamInstall).Should().BeFalse();
+        Steam.IsSteamsOwnInstall(copy, null).Should().BeFalse();
     }
 
     [OSTestMethod(OperatingSystems.Linux)]

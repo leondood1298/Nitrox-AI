@@ -51,6 +51,10 @@
                 <_Parameter1>GameMinimumVersion</_Parameter1>
                 <_Parameter2>$(GameMinimumVersion)</_Parameter2>
             </AssemblyAttribute>
+            <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+                <_Parameter1>GameNewestTestedVersion</_Parameter1>
+                <_Parameter2>$(GameNewestTestedVersion)</_Parameter2>
+            </AssemblyAttribute>
         </ItemGroup>
 
         <ItemGroup>

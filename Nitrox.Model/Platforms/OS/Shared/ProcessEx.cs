@@ -87,7 +87,15 @@ public class ProcessEx : IDisposable
         {
             foreach ((string key, string value) in environmentVariables)
             {
-                startInfo.EnvironmentVariables[key] = value;
+                // A null value keeps the variable away from the child even if this process has it.
+                if (value == null)
+                {
+                    startInfo.EnvironmentVariables.Remove(key);
+                }
+                else
+                {
+                    startInfo.EnvironmentVariables[key] = value;
+                }
             }
         }
 

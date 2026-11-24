@@ -18,6 +18,8 @@ using Nitrox.Model.Constants;
 using Nitrox.Model.Core;
 using Nitrox.Model.Helper;
 using Nitrox.Model.Logger;
+using Nitrox.Model.Platforms.Discovery.InstallationFinders;
+using Nitrox.Model.Platforms.Discovery.InstallationFinders.Core;
 using Nitrox.Model.Platforms.Discovery.Models;
 using Nitrox.Model.Platforms.OS.Shared;
 using Nitrox.Model.Platforms.Store;
@@ -82,8 +84,8 @@ internal partial class LaunchGameViewModel(DialogService dialogService, ServerSe
                 return;
             }
 
-            NitroxEntryPatch.Remove(NitroxUser.GamePath);
-            await StartSubnauticaAsync();
+            // The game's code file stays patched: started without the launcher path, Nitrox does not load into it.
+            await StartGameAsync(GameInfo.Subnautica, false);
         }
         catch (Exception ex)
         {
@@ -126,26 +128,24 @@ internal partial class LaunchGameViewModel(DialogService dialogService, ServerSe
                 // TODO: The launcher should override FileRead win32 API for the Subnautica process to give it the modified Assembly-CSharp from memory
                 try
                 {
-                    const string PATCHER_DLL_NAME = "NitroxPatcher.dll";
+                    string patcherDllPath = Path.Combine(NitroxUser.ExecutableRootPath, "lib", "net472", NitroxEntryPatch.NITROX_ASSEMBLY_NAME);
+                    NitroxEntryPatch.InstallPatcher(patcherDllPath, NitroxUser.GamePath);
+                    CopyDebugSymbols(patcherDllPath, Path.Combine(NitroxEntryPatch.GetManagedPath(NitroxUser.GamePath), NitroxEntryPatch.NITROX_ASSEMBLY_NAME));
 
-                    string patcherDllPath = Path.Combine(NitroxUser.ExecutableRootPath, "lib", "net472", PATCHER_DLL_NAME);
-                    if (!File.Exists(patcherDllPath))
-                    {
-                        LauncherNotifier.Error("Launcher files seems corrupted, please contact us");
-                        return false;
-                    }
-
-                    string patcherTargetPath = Path.Combine(NitroxUser.GamePath, GameInfo.Subnautica.DataFolder, "Managed", PATCHER_DLL_NAME);
-                    File.Copy(patcherDllPath, patcherTargetPath, true);
-                    CopyDebugSymbols(patcherDllPath, patcherTargetPath);
+                    // Try inject Nitrox into Subnautica code.
+                    await NitroxEntryPatch.Apply(NitroxUser.GamePath);
                 }
-                catch (IOException ex)
+                catch (EntryPatchException ex)
                 {
-                    Log.Error(ex, "Unable to move initialization dll to Managed folder. Still attempting to launch because it might exist from previous runs");
+                    Log.Error(ex, "Preparing the game's files failed");
+                    await dialogService.ShowAsync<DialogBoxViewModel>(model =>
+                    {
+                        model.Title = "Could not prepare Subnautica for multiplayer";
+                        model.Description = ex.Message;
+                        model.ButtonOptions = ButtonOptions.Ok;
+                    });
+                    return false;
                 }
-
-                // Try inject Nitrox into Subnautica code.
-                await NitroxEntryPatch.Apply(NitroxUser.GamePath);
 
                 if (QModHelper.IsQModInstalled(NitroxUser.GamePath))
                 {
@@ -162,7 +162,9 @@ internal partial class LaunchGameViewModel(DialogService dialogService, ServerSe
                 return;
             }
 
-            await StartSubnauticaAsync(args);
+            DateTime launchedUtc = DateTime.UtcNow;
+            await StartGameAsync(GameInfo.Subnautica, true, args);
+            _ = GameStartCheck.WatchAsync(launchedUtc).ContinueWithHandleError();
         }
         catch (Exception ex)
         {
@@ -241,9 +243,9 @@ internal partial class LaunchGameViewModel(DialogService dialogService, ServerSe
         }).ContinueWithHandleError();
     }
 
-    private async Task StartSubnauticaAsync(string[]? args = null) => await StartGameAsync(GameInfo.Subnautica, args);
-
-    private async Task StartGameAsync(GameInfo gameInfo, string[]? args = null)
+    /// <param name="loadNitrox">False for a single-player start: the game then gets no launcher path and stays vanilla.</param>
+    /// <param name="extraArgs">Arguments for the game besides the player's own (development instant launch).</param>
+    private async Task StartGameAsync(GameInfo gameInfo, bool loadNitrox, string[]? extraArgs = null)
     {
         LauncherNotifier.Info("Starting game");
 
@@ -254,27 +256,28 @@ internal partial class LaunchGameViewModel(DialogService dialogService, ServerSe
             throw new FileNotFoundException($"Unable to find {gameInfo.ExeName}");
         }
 
-        // Start game & gaming platform if needed.
-        string launchArguments = $"{keyValueStore.GetLaunchArguments(gameInfo)} {string.Join(" ", args ?? NitroxEnvironment.CommandLineArgs)}";
+        // Only the data folder is passed on from the launcher's own command line, so the game logs where the launcher does.
+        string launchArguments = GameLaunchArguments.Build(keyValueStore.GetLaunchArguments(gameInfo), NitroxDirectory.UserDataPath, extraArgs);
 
         if (keyValueStore.GetIsDiscordEnabled() && !launchArguments.Contains(DiscordConstants.ENABLE_ARG, StringComparison.OrdinalIgnoreCase))
         {
             launchArguments = $"{launchArguments} {DiscordConstants.ENABLE_ARG}";
         }
 
+        string? launcherPath = loadNitrox ? NitroxUser.LauncherPath : null;
         ProcessEx game = NitroxUser.GamePlatform switch
         {
             // TODO: Pass ILogger instead of "onWarning" Action<string>.
-            Steam => await Steam.StartGameAsync(gameExePath, launchArguments, gameInfo.SteamAppId, ShouldSkipSteam(launchArguments), keyValueStore.GetUseBigPictureMode(), message =>
+            Steam => await Steam.StartGameAsync(gameExePath, launchArguments, gameInfo.SteamAppId, ShouldSkipSteam(gameInfo, launchArguments), keyValueStore.GetUseBigPictureMode(), launcherPath, message =>
             {
                 Log.Warn(message);
                 LauncherNotifier.Warning(message);
             }),
-            EpicGames => await EpicGames.StartGameAsync(gameExePath, launchArguments),
-            HeroicGames => await HeroicGames.StartGameAsync(gameInfo.EgsNamespace, launchArguments),
-            MSStore => await MSStore.StartGameAsync(gameExePath, launchArguments),
-            Discord => await Discord.StartGameAsync(gameExePath, launchArguments),
-            _ => await Standalone.StartGameAsync(gameExePath, launchArguments),
+            EpicGames => await EpicGames.StartGameAsync(gameExePath, launchArguments, launcherPath),
+            HeroicGames => await HeroicGames.StartGameAsync(gameInfo.EgsNamespace, launchArguments, launcherPath),
+            MSStore => await MSStore.StartGameAsync(gameExePath, launchArguments, launcherPath),
+            Discord => await Discord.StartGameAsync(gameExePath, launchArguments, launcherPath),
+            _ => await Standalone.StartGameAsync(gameExePath, launchArguments, launcherPath),
         };
 
         if (game is null)
@@ -283,32 +286,28 @@ internal partial class LaunchGameViewModel(DialogService dialogService, ServerSe
         }
     }
 
-    private bool ShouldSkipSteam(string args)
+    private bool ShouldSkipSteam(GameInfo gameInfo, string launchArguments)
     {
-        // Check if Steam overlay is enabled by user setting
-        if (keyValueStore.GetUseBigPictureMode())
+        bool isSteamsOwnInstall = true;
+        try
         {
-            return false; // Use Steam if overlay is enabled
-        }
-
-        if (App.InstantLaunch != null)
-        {
-            // Running through Steam is fine if single instance.
-            return App.InstantLaunch is { PlayerNames.Length: > 1 };
-        }
-        if (args.Contains("-vrmode none", StringComparison.OrdinalIgnoreCase))
-        {
-            if (keyValueStore.GetIsMultipleGameInstancesAllowed())
+            GameFinderResult steamInstall = new SteamFinder().FindGame(gameInfo);
+            isSteamsOwnInstall = Steam.IsSteamsOwnInstall(NitroxUser.GamePath, steamInstall.IsOk ? steamInstall.Path : null);
+            if (!isSteamsOwnInstall)
             {
-                return true;
+                LauncherNotifier.Warning($"The chosen install is not the one Steam knows ({(steamInstall.IsOk ? steamInstall.Path : "none")}), so it is started directly, without Steam's overlay.");
             }
         }
-        else if (args.Contains("-vrmode", StringComparison.OrdinalIgnoreCase))
+        catch (Exception ex)
         {
-            // VR Mode. Can only work if NOT going through Steam as it will always add '-vrmode none' due to hard coded default Steam "launch option" args. See: https://steamdb.info/app/264710/config/
-            return true;
+            // Steam's records being unreadable is no reason to stop; Steam then starts its own install as before.
+            Log.Warn($"Could not compare the chosen install with Steam's: {ex.Message}");
         }
-
-        return false; // Default: use Steam unless explicitly disabled for special cases
+        return GameLaunchRoute.ShouldSkipSteam(launchArguments,
+                                               keyValueStore.GetUseBigPictureMode(),
+                                               keyValueStore.GetIsMultipleGameInstancesAllowed(),
+                                               ProcessEx.ProcessExists(gameInfo.ExeName),
+                                               App.InstantLaunch?.PlayerNames.Length ?? 0,
+                                               isSteamsOwnInstall);
     }
 }
