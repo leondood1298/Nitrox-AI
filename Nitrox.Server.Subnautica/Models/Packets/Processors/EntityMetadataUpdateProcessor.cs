@@ -273,35 +273,70 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
             case FruitPlantMetadata requested:
             {
                 FruitPlantMetadata? stored = entity.Metadata as FruitPlantMetadata;
-                bool senderDecides = simulationOwnershipData.GetPlayerForLock(entity.Id) == sender;
+                Player? decider = simulationOwnershipData.GetPlayerForLock(entity.Id);
+                bool senderDecides = decider == sender;
                 FruitPlantMetadata? accepted = PlantMetadataAuthority.MergeFruit(stored, requested, senderDecides, index => itemClaims.PickedLately(entity.Id, index));
                 if (accepted == null)
                 {
-                    logger.ZLogWarningOnce($"Player {sender.Name} sent the fruit of {entity.Id} with another number of fruit");
+                    LogFruitReport(sender, entity.Id, entity.Id, decider, stored, requested, null, false);
                     return MetadataUpdateResult.Reject;
                 }
                 NotePicks(entity.Id, stored, accepted);
                 entity.Metadata = accepted;
-                return PlantMetadataAuthority.SenderIsBehind(requested, accepted) ? MetadataUpdateResult.AcceptAndEcho(accepted) : MetadataUpdateResult.Accept(accepted);
+                bool echo = PlantMetadataAuthority.SenderIsBehind(requested, accepted);
+                LogFruitReport(sender, entity.Id, entity.Id, decider, stored, requested, accepted, echo);
+                return echo ? MetadataUpdateResult.AcceptAndEcho(accepted) : MetadataUpdateResult.Accept(accepted);
             }
             // A planted plant: its seed's entity holds its growth, fruit, health and slot
             case PlantableMetadata requested:
             {
                 PlantableMetadata? stored = entity.Metadata as PlantableMetadata;
                 NitroxId? deciderId = FindPlantDecider(entity);
-                bool senderDecides = deciderId != null && simulationOwnershipData.GetPlayerForLock(deciderId) == sender;
+                Player? decider = deciderId != null ? simulationOwnershipData.GetPlayerForLock(deciderId) : null;
+                bool senderDecides = decider != null && decider == sender;
                 PlantableMetadata? accepted = PlantMetadataAuthority.MergePlantable(stored, requested, senderDecides, index => itemClaims.PickedLately(entity.Id, index));
                 if (accepted == null)
                 {
-                    logger.ZLogWarningOnce($"Player {sender.Name} sent the fruit of plant {entity.Id} with another number of fruit");
+                    LogFruitReport(sender, entity.Id, deciderId, decider, stored?.FruitPlantMetadata, requested.FruitPlantMetadata, null, false);
                     return MetadataUpdateResult.Reject;
                 }
                 NotePicks(entity.Id, stored?.FruitPlantMetadata, accepted.FruitPlantMetadata);
                 entity.Metadata = accepted;
-                return stored != null && PlantMetadataAuthority.SenderIsBehind(requested, accepted) ? MetadataUpdateResult.AcceptAndEcho(accepted) : MetadataUpdateResult.Accept(accepted);
+                bool echo = stored != null && PlantMetadataAuthority.SenderIsBehind(requested, accepted);
+                LogFruitReport(sender, entity.Id, deciderId, decider, stored?.FruitPlantMetadata, requested.FruitPlantMetadata, accepted.FruitPlantMetadata, echo);
+                return echo ? MetadataUpdateResult.AcceptAndEcho(accepted) : MetadataUpdateResult.Accept(accepted);
             }
             default:
                 return null;
+        }
+    }
+
+    /// <summary>
+    ///     Plant diagnostics ([PLD1]): every report about a plant's fruit, with who decides the plant and what the merge
+    ///     kept, so that a test can tell a refused growth, a pick that changed nothing and a report from a game whose plant
+    ///     differs from the stored one apart. A refused growth or a refused report is a warning.
+    /// </summary>
+    private void LogFruitReport(Player sender, NitroxId plantId, NitroxId? deciderId, Player? decider, FruitPlantMetadata? stored, FruitPlantMetadata? requested, FruitPlantMetadata? accepted, bool echo)
+    {
+        if (requested == null && stored == null)
+        {
+            return;
+        }
+        string deciderText = deciderId == null ? "-" : $"{deciderId.ToString()[..8]}:{decider?.Name ?? "-"}";
+        if (accepted == null)
+        {
+            logger.ZLogWarning($"[PLD1] plant={plantId} from={sender.Name} decider={deciderText} out=reject reason=fruit_count stored={PlantMetadataAuthority.Describe(stored)} sent={PlantMetadataAuthority.Describe(requested)}");
+            return;
+        }
+        string refused = string.Join(",", PlantMetadataAuthority.RefusedGrowths(requested, accepted));
+        string line = $"[PLD1] plant={plantId} from={sender.Name} decides={decider == sender} decider={deciderText} stored={PlantMetadataAuthority.Describe(stored)} sent={PlantMetadataAuthority.Describe(requested)} kept={PlantMetadataAuthority.Describe(accepted)} refused=[{refused}] echo={echo}";
+        if (refused.Length > 0)
+        {
+            logger.ZLogWarning($"{line}");
+        }
+        else
+        {
+            logger.ZLogInformation($"{line}");
         }
     }
 

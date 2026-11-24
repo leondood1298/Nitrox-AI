@@ -58,8 +58,10 @@ public sealed partial class Welder_Weld_Patch : NitroxPatch, IDynamicPatch
             float newHealth = Math.Min(live.health + addHealth, live.maxHealth);
             result = newHealth - num;
 
-            // Vehicles and Scanner Room cameras are repaired in the game of the player who simulates them
-            if (live.TryGetIdOrWarn(out NitroxId id) && (live.GetComponent<Vehicle>() || live.GetComponent<MapRoomCamera>()))
+            // Vehicles and Scanner Room cameras are repaired in the game of the player who simulates them. Anything else
+            // is repaired here and shared by its own path (a base's leak by LiveMixin_AddHealth_Patch, through the base's
+            // leak list and hull strength), so it needs no id of its own: a base cell has none.
+            if ((live.GetComponent<Vehicle>() || live.GetComponent<MapRoomCamera>()) && live.TryGetIdOrWarn(out NitroxId id))
             {
                 if (Resolve<SimulationOwnership>().HasAnyLockType(id))
                 {

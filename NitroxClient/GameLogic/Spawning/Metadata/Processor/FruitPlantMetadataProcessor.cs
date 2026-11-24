@@ -40,6 +40,7 @@ public class FruitPlantMetadataProcessor : EntityMetadataProcessor<FruitPlantMet
         }
 
         ProcessMetadata(fruitPlant, metadata);
+        PlantFruitDiagnostics.Report("apply", fruitPlant, plantable, -1);
     }
 
     private static void ProcessMetadata(FruitPlant fruitPlant, FruitPlantMetadata metadata)

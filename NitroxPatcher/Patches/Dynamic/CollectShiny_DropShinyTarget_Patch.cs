@@ -11,5 +11,5 @@ public sealed partial class CollectShiny_DropShinyTarget_Patch : NitroxPatch, ID
 {
     private static readonly MethodInfo TARGET_METHOD = Reflect.Method((CollectShiny t) => t.DropShinyTarget(default(GameObject)));
 
-    public static void Prefix(GameObject target) => Resolve<StalkerShinyGrabs>().Dropped(target);
+    public static void Prefix(CollectShiny __instance, GameObject target) => Resolve<StalkerShinyGrabs>().Dropped(__instance, target);
 }

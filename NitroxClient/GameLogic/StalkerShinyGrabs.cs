@@ -72,7 +72,7 @@ public sealed class StalkerShinyGrabs(SimulationOwnership simulationOwnership, S
     /// <summary>
     ///     Called before the game makes a Stalker drop what it carries.
     /// </summary>
-    public void Dropped(GameObject target)
+    public void Dropped(CollectShiny collectShiny, GameObject target)
     {
         if (!target)
         {
@@ -85,8 +85,39 @@ public sealed class StalkerShinyGrabs(SimulationOwnership simulationOwnership, S
         }
         if (target.TryGetNitroxId(out NitroxId itemId))
         {
+            if (carriersByItemId.ContainsKey(itemId))
+            {
+                LogCarry("drop", collectShiny, target);
+            }
             Dropped(itemId);
         }
+    }
+
+    /// <summary>
+    ///     Stalker carry diagnostics ([SSG1]). In the first live test a Stalker of the simulating player carried an item in
+    ///     the middle of its body: the item is put on the Stalker's attach point, which rests there, and the game's late
+    ///     update (CollectShiny.ManagedLateUpdate) moves that point to the mouth each frame while it carries. At the drop,
+    ///     made in the creature's update, the point is still where the last late update put it: far from the mouth means the
+    ///     late update did not run (lateUpdate=-1: not registered) or something moved the point or the item afterwards.
+    /// </summary>
+    private static void LogCarry(string ev, CollectShiny collectShiny, GameObject item)
+    {
+        if (!collectShiny || !item)
+        {
+            return;
+        }
+        Transform attach = collectShiny.shinyTargetAttach;
+        Transform mouth = collectShiny.mouth;
+        Transform parent = item.transform.parent;
+        string parentText = !parent ? "-" : parent == attach ? "attach" : parent.name;
+        float attachToMouth = attach && mouth ? Vector3.Distance(attach.position, mouth.position) : -1f;
+        float itemToAttach = attach ? Vector3.Distance(item.transform.position, attach.position) : -1f;
+        Rigidbody rigidbody = item.GetComponent<Rigidbody>();
+        string body = rigidbody ? $"kinematic={rigidbody.isKinematic} interpolation={rigidbody.interpolation}" : "kinematic=-";
+        item.TryGetNitroxId(out NitroxId itemId);
+        collectShiny.TryGetNitroxId(out NitroxId stalkerId);
+        string remote = $"remote={(bool)item.GetComponent<RemotelyControlled>()} stalkerRemote={(bool)collectShiny.GetComponent<RemotelyControlled>()}";
+        Log.Info($"[SSG1] ev={ev} item={itemId} stalker={stalkerId} pickedUp={collectShiny.targetPickedUp} lateUpdate={collectShiny.managedLateUpdateIndex} parent={parentText} attachToMouth={attachToMouth:0.00} itemToAttach={itemToAttach:0.00} {body} {remote}");
     }
 
     /// <summary>
@@ -201,7 +232,11 @@ public sealed class StalkerShinyGrabs(SimulationOwnership simulationOwnership, S
     {
         public bool StillWantsTarget => collectShiny && item && collectShiny.shinyTarget == item;
 
-        public void PickUp() => collectShiny.TryPickupShinyTarget();
+        public void PickUp()
+        {
+            collectShiny.TryPickupShinyTarget();
+            LogCarry("pickup", collectShiny, item);
+        }
 
         public void Drop()
         {

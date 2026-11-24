@@ -57,6 +57,39 @@ public sealed class PlantMetadataAuthorityTest
     }
 
     [TestMethod]
+    public void GrowthsTheMergeRefusedAreNamedForTheDiagnostics()
+    {
+        // The live test: the deciding player's game grew fruit 2 while the server held fruit 0 and 1
+        FruitPlantMetadata stored = new([false, false, true], 13573f);
+        FruitPlantMetadata grown = new([false, false, false], 13723f);
+
+        FruitPlantMetadata refusedAsNotDeciding = PlantMetadataAuthority.MergeFruit(stored, grown, false, nothingPickedLately);
+        FruitPlantMetadata keptAsDeciding = PlantMetadataAuthority.MergeFruit(stored, grown, true, nothingPickedLately);
+
+        CollectionAssert.AreEqual(new[] { 2 }, PlantMetadataAuthority.RefusedGrowths(grown, refusedAsNotDeciding).ToArray());
+        Assert.AreEqual(13723f, refusedAsNotDeciding.TimeNextFruit, "The timer of a refused growth still moves on, as the live test's server did.");
+        CollectionAssert.AreEqual(Array.Empty<int>(), PlantMetadataAuthority.RefusedGrowths(grown, keptAsDeciding).ToArray());
+    }
+
+    [TestMethod]
+    public void PickOfTheOnlyFruitIsStoredWhoeverSendsIt()
+    {
+        FruitPlantMetadata stored = new([true, false, true], 13573f);
+        FruitPlantMetadata picked = new([true, true, true], 13573f);
+
+        Assert.IsTrue(PlantMetadataAuthority.MergeFruit(stored, picked, false, nothingPickedLately).PickedStates.All(state => state));
+        Assert.IsTrue(PlantMetadataAuthority.MergeFruit(stored, picked, true, nothingPickedLately).PickedStates.All(state => state));
+        CollectionAssert.AreEqual(new[] { 1 }, PlantMetadataAuthority.NewlyPicked(stored, picked).ToArray());
+    }
+
+    [TestMethod]
+    public void DescriptionListsTheFruitOnThePlantAndWhenTheNextGrows()
+    {
+        Assert.AreEqual("[9,19]/20@13573.261", PlantMetadataAuthority.Describe(new FruitPlantMetadata(Enumerable.Range(0, 20).Select(i => i != 9 && i != 19).ToArray(), 13573.261f)));
+        Assert.AreEqual("-", PlantMetadataAuthority.Describe(null));
+    }
+
+    [TestMethod]
     public void HealthOnlyGoesDownUnlessTheDecidingPlayerReportsIt()
     {
         Assert.AreEqual(40f, PlantMetadataAuthority.MergeHealth(40f, 90f, false));
