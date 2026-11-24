@@ -169,6 +169,7 @@ internal static partial class ServiceCollectionExtensions
                     .AddSingleton<SessionManager>()
                     .AddSingleton<SleepManager>()
                     .AddSingleton<BedOccupancy>()
+            .AddSingleton<PlayerPingLimiter>()
                     .AddSingleton<PlayerAnimationStates>()
                     .AddSingleton<PlayerHandAndSeatStates>()
                     .AddSingleton<PlayerDeaths>()
