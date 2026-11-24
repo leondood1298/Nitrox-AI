@@ -93,10 +93,19 @@ public class EscapePodEntitySpawner : SyncEntitySpawner<EscapePodEntity>
     }
 
     /// <summary>
-    /// Start() isn't executed for the EscapePod and children (Why? Idk, maybe because it's a scene...) so we call the components here where we have patches in Start.
+    ///     The pod's Start methods ran while its scene loaded, before Nitrox had set it up, and are not run again: the pod
+    ///     is a lightmapped scene prefab, which LightmappedPrefabs.Update deactivates and ActivateLoadedPrefab activates
+    ///     right after the scene has loaded. That deactivation also stopped the coroutines those Starts began. So the
+    ///     components with patches in Start are called here, and the cells' refill is started again.
     /// </summary>
     private static void FixStartMethods(GameObject escapePod)
     {
+        foreach (RegeneratePowerSource regeneratePowerSource in escapePod.GetComponentsInChildren<RegeneratePowerSource>(true))
+        {
+            EscapePodCellRegeneration.EnsureOn(regeneratePowerSource);
+        }
+
+
         foreach (FMOD_CustomEmitter customEmitter in escapePod.GetComponentsInChildren<FMOD_CustomEmitter>(true))
         {
             customEmitter.Start();
