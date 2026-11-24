@@ -78,6 +78,18 @@ namespace Nitrox.Server.Subnautica.Models
         public Perms Permissions { get; set; }
         public PlayerStatsData Stats { get; set; }
         public SubnauticaGameMode GameMode { get; set; }
+
+        /// <summary>
+        ///     Changes the player's game mode, also in the connection's context that players who join later are sent.
+        /// </summary>
+        public void SetGameMode(SubnauticaGameMode gameMode)
+        {
+            GameMode = gameMode;
+            if (PlayerContext != null)
+            {
+                PlayerContext.GameMode = gameMode;
+            }
+        }
         public NitroxVector3? LastStoredPosition { get; set; }
         public Optional<NitroxId> LastStoredSubRootID { get; set; }
         public ThreadSafeDictionary<string, float> PersonalCompletedGoalsWithTimestamp { get; }

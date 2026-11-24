@@ -25,7 +25,7 @@ internal sealed class GameModeCommand : ICommandHandler<SubnauticaGameMode, Play
                     throw new ArgumentException("Target player must not be null");
                 }
 
-                targetPlayer.GameMode = gameMode;
+                targetPlayer.SetGameMode(gameMode);
                 await context.SendToAllAsync(GameModeChanged.ForPlayer(targetPlayer.SessionId, gameMode));
                 await context.SendAsync(targetPlayer.SessionId, $"GameMode changed to {gameMode}");
                 if (context.Origin == CommandOrigin.SERVER)

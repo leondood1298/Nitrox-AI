@@ -143,7 +143,9 @@ internal sealed class CommandRegistryService(IEnumerable<CommandHandlerEntry> di
                 case not null when type == typeof(double):
                     return double.Parse(value);
                 case { IsEnum: true }:
-                    return Enum.Parse(type, value, true);
+                    // A number is parsed as an enum value even if it names none ("gamemode 5"), which the game cannot use
+                    object parsed = Enum.Parse(type, value, true);
+                    return type.IsDefined(typeof(FlagsAttribute), false) || Enum.IsDefined(type, parsed) ? parsed : null;
                 default:
                     return null;
             }
