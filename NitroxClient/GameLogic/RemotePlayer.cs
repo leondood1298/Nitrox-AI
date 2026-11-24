@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using Nitrox.Model.Core;
+using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.GameLogic;
 using NitroxClient.GameLogic.HUD;
 using NitroxClient.GameLogic.PlayerLogic;
@@ -50,6 +51,8 @@ public class RemotePlayer : INitroxPlayer
     private bool isUnderwater = true;
 
     private bool isWelding;
+
+    private RemotePlayerToolLook? toolLook;
 
     private GameObject pdaModel;
     private int pdaVisibilityChange;
@@ -142,6 +145,8 @@ public class RemotePlayer : INitroxPlayer
         SetupPlayerSounds();
         SetupMixins();
         SetupPda();
+        toolLook = Body.AddComponent<RemotePlayerToolLook>();
+        toolLook.Initialize(this);
 
         PlayerAnimation animation = PlayerContext.Animation;
         UpdateAnimationAndCollider((AnimChangeType)animation.Type, (AnimChangeState)animation.State);
@@ -600,6 +605,30 @@ public class RemotePlayer : INitroxPlayer
         {
             pdaModel.SetActive(false);
             RequestArmsReconfigure();
+        }
+    }
+
+    public bool IsUnderwater => isUnderwater;
+
+    /// <summary>
+    ///     Where the player looks, in the world.
+    /// </summary>
+    public Vector3 AimDirection
+    {
+        get
+        {
+            Vector3 aim = AnimationController ? AnimationController.AimingRotation * Vector3.forward : Body.transform.forward;
+            // Inside a Cyclops the aim is sent relative to it
+            return Pawn != null && SubRoot ? SubRoot.transform.rotation * aim : aim;
+        }
+    }
+
+    /// <param name="grabbedId">What this player's propulsion cannon holds, or null.</param>
+    public void SetPropulsionGrab(NitroxId? grabbedId)
+    {
+        if (toolLook)
+        {
+            toolLook.SetPropulsionGrab(grabbedId);
         }
     }
 
