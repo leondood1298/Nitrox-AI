@@ -34,6 +34,13 @@ public class RemotePlayer : INitroxPlayer
     /// </summary>
     private const float PDA_LOWERING_SECONDS = 0.3f;
 
+    /// <summary>
+    ///     The slot and time of <c>Player.StartHideGlovesFor(12)</c> in <c>Player.TriggerInfectionRevealAsync</c>.
+    /// </summary>
+    private const string GLOVES_SLOT = "Gloves";
+
+    private const float INFECTION_REVEAL_GLOVES_HIDDEN_SECONDS = 12f;
+
     private readonly CyclopsWalkVelocity cyclopsWalk = new();
 
     private GameObject pdaModel;
@@ -451,7 +458,12 @@ public class RemotePlayer : INitroxPlayer
                 AnimationController["is_underwater"] = state != AnimChangeState.OFF;
                 break;
             case AnimChangeType.INFECTION_REVEAL:
-                AnimationController["player_infected"] = state != AnimChangeState.UNSET;
+                // Player.TriggerInfectionRevealAsync sets a trigger, and takes the gloves off for the look at the hand
+                if (state == AnimChangeState.ON)
+                {
+                    AnimationController.SetTrigger("player_infected");
+                    equipment?.HideSlotFor(GLOVES_SLOT, INFECTION_REVEAL_GLOVES_HIDDEN_SECONDS);
+                }
                 break;
             case AnimChangeType.USING_PDA:
                 AnimationController.SetSwitch(PlayerAnimationParameters.Switches[type], state == AnimChangeState.ON);
