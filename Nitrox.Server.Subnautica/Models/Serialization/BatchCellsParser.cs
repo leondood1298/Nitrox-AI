@@ -70,6 +70,7 @@ namespace Nitrox.Server.Subnautica.Models.Serialization
             using Stream stream = new FileStream(fileName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
 
             CellsFileHeader cellsFileHeader = serializer.Deserialize<CellsFileHeader>(stream);
+            Dictionary<string, EntitySpawnPoint> spawnPointsById = [];
 
             for (int cellCounter = 0; cellCounter < cellsFileHeader.NumCells; cellCounter++)
             {
@@ -77,22 +78,22 @@ namespace Nitrox.Server.Subnautica.Models.Serialization
 
                 byte[] serialData = new byte[cellHeader.DataLength];
                 stream.ReadStreamExactly(serialData, serialData.Length);
-                ParseGameObjectsWithHeader(serialData, batchId, cellHeader.CellId, cellHeader.Level, spawnPoints, out bool wasLegacy);
+                ParseGameObjectsWithHeader(serialData, batchId, cellHeader.CellId, cellHeader.Level, spawnPoints, spawnPointsById, out bool wasLegacy);
 
                 if (!wasLegacy)
                 {
                     byte[] legacyData = new byte[cellHeader.LegacyDataLength];
                     stream.ReadStreamExactly(legacyData, legacyData.Length);
-                    ParseGameObjectsWithHeader(legacyData, batchId, cellHeader.CellId, cellHeader.Level, spawnPoints, out _);
+                    ParseGameObjectsWithHeader(legacyData, batchId, cellHeader.CellId, cellHeader.Level, spawnPoints, spawnPointsById, out _);
 
                     byte[] waiterData = new byte[cellHeader.WaiterDataLength];
                     stream.ReadStreamExactly(waiterData, waiterData.Length);
-                    ParseGameObjectsFromStream(new MemoryStream(waiterData), batchId, cellHeader.CellId, cellHeader.Level, spawnPoints);
+                    ParseGameObjectsFromStream(new MemoryStream(waiterData), batchId, cellHeader.CellId, cellHeader.Level, spawnPoints, spawnPointsById);
                 }
             }
         }
 
-        private void ParseGameObjectsWithHeader(byte[] data, NitroxInt3 batchId, NitroxInt3 cellId, int level, List<EntitySpawnPoint> spawnPoints, out bool wasLegacy)
+        private void ParseGameObjectsWithHeader(byte[] data, NitroxInt3 batchId, NitroxInt3 cellId, int level, List<EntitySpawnPoint> spawnPoints, Dictionary<string, EntitySpawnPoint> spawnPointsById, out bool wasLegacy)
         {
             wasLegacy = false;
 
@@ -109,12 +110,12 @@ namespace Nitrox.Server.Subnautica.Models.Serialization
                 return;
             }
 
-            ParseGameObjectsFromStream(stream, batchId, cellId, level, spawnPoints);
+            ParseGameObjectsFromStream(stream, batchId, cellId, level, spawnPoints, spawnPointsById);
 
             wasLegacy = header.Version < 9;
         }
 
-        private void ParseGameObjectsFromStream(Stream stream, NitroxInt3 batchId, NitroxInt3 cellId, int level, List<EntitySpawnPoint> spawnPoints)
+        private void ParseGameObjectsFromStream(Stream stream, NitroxInt3 batchId, NitroxInt3 cellId, int level, List<EntitySpawnPoint> spawnPoints, Dictionary<string, EntitySpawnPoint> spawnPointsById)
         {
             LoopHeader gameObjectCount = serializer.Deserialize<LoopHeader>(stream);
 
@@ -128,7 +129,7 @@ namespace Nitrox.Server.Subnautica.Models.Serialization
                 {
                     AbsoluteEntityCell absoluteEntityCell = new AbsoluteEntityCell(batchId, cellId, level);
                     NitroxTransform transform = gameObject.GetComponent<NitroxTransform>();
-                    spawnPoints.AddRange(entitySpawnPointFactory.From(absoluteEntityCell, transform, gameObject));
+                    spawnPoints.AddRange(entitySpawnPointFactory.From(absoluteEntityCell, transform, gameObject, spawnPointsById));
                 }
             }
         }
