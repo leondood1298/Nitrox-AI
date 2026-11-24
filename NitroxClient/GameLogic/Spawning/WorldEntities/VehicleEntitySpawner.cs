@@ -1,5 +1,4 @@
 using System.Collections;
-using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using NitroxClient.GameLogic.Spawning.Abstract;
 using NitroxClient.MonoBehaviours;
@@ -12,15 +11,14 @@ using UnityEngine;
 
 namespace NitroxClient.GameLogic.Spawning.WorldEntities;
 
-public class VehicleEntitySpawner : EntitySpawner<VehicleEntity>
+public class VehicleEntitySpawner(MobileVehicleBay mobileVehicleBay) : EntitySpawner<VehicleEntity>
 {
+    private readonly MobileVehicleBay bays = mobileVehicleBay;
+
     // The constructor has mixed results when the remote player is a long distance away.  UWE even has a built in distance tracker to ensure
     // that they are within allowed range.  However, this range is a bit restrictive. We will allow constructor spawning up to a specified 
     // distance - anything more will simply use world spawning (no need to play the animation anyways).
     private const float ALLOWED_CONSTRUCTOR_DISTANCE = 100.0f;
-
-    // Not injected: MobileVehicleBay depends on services built after the entity spawners
-    private static MobileVehicleBay Bays => NitroxServiceLocator.LocateService<MobileVehicleBay>();
 
     private float RemainingCraftDuration(VehicleEntity vehicleEntity)
     {
@@ -43,7 +41,7 @@ public class VehicleEntitySpawner : EntitySpawner<VehicleEntity>
             }
             // Too far for the animation; the bay is still busy until the build is done, as in the game
             ConstructorInput crafter = constructor.gameObject.RequireComponentInChildren<ConstructorInput>(true);
-            Bays.MarkBuilding(crafter, vehicleEntity.TechType.ToUnity(), RemainingCraftDuration(vehicleEntity));
+            bays.MarkBuilding(crafter, vehicleEntity.TechType.ToUnity(), RemainingCraftDuration(vehicleEntity));
         }
 
         yield return SpawnInWorld(vehicleEntity, result, parent);
@@ -136,7 +134,7 @@ public class VehicleEntitySpawner : EntitySpawner<VehicleEntity>
 
         // The vehicle the game makes at this bay gets the entity's id there (MobileVehicleBay.BeginCrafting); asking for it
         // by id keeps a build made meanwhile, here or at another bay, from being taken for this one
-        Bays.BeginReplay(crafter, vehicleEntity.Id, techType, craftDuration);
+        bays.BeginReplay(crafter, vehicleEntity.Id, techType, craftDuration);
         GameObject constructedObject;
         try
         {
@@ -144,7 +142,7 @@ public class VehicleEntitySpawner : EntitySpawner<VehicleEntity>
         }
         finally
         {
-            constructedObject = Bays.EndReplay(crafter, vehicleEntity.Id);
+            constructedObject = bays.EndReplay(crafter, vehicleEntity.Id);
         }
         Validate.IsTrue(constructedObject, $"Could not find constructed object from MobileVehicleBay {constructor.gameObject.name}");
 
