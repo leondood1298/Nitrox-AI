@@ -17,6 +17,11 @@ public sealed class HashTree
     }
 
     /// <summary>
+    ///     Removes every branch.
+    /// </summary>
+    public void Clear() => data.Clear();
+
+    /// <summary>
     ///     Returns true if the given tree is entirely within the current tree.
     /// </summary>
     public bool Contains(HashTree tree, HashTree? self = null)
