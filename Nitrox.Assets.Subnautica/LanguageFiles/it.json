@@ -91,7 +91,7 @@
     "Nitrox_ShowPing": "Mostra Ping",
     "Nitrox_SilenceChat": "Disattiva chat",
     "Nitrox_SilencedChatNotif": "La chat è stata disattivata",
-    "Nitrox_SleepingPlayers": "{DORMENDO}/{TOTALE} di giocatori che dormono",
+    "Nitrox_SleepingPlayers": "{SLEEPING}/{TOTAL} di giocatori che dormono",
     "Nitrox_StartServer": "Per entrare nel mondo avvia prima il tuo server",
     "Nitrox_SyncingWorld": "Sincronizzazione del mondo multiplayer…",
     "Nitrox_TeleportTo": "Teletrasportati da {PLAYER}",

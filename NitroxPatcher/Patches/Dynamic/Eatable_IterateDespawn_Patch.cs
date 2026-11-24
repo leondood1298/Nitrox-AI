@@ -16,10 +16,10 @@ public sealed partial class Eatable_IterateDespawn_Patch : NitroxPatch, IDynamic
 {
     internal static readonly MethodInfo TARGET_METHOD = Reflect.Method((Eatable t) => t.IterateDespawn());
 
-    public static bool Prefix(CreatureDeath __instance)
+    public static bool Prefix(Eatable __instance)
     {
-        if (__instance.TryGetNitroxId(out NitroxId creatureId) &&
-            Resolve<SimulationOwnership>().HasAnyLockType(creatureId))
+        if (__instance.TryGetNitroxId(out NitroxId eatableId) &&
+            Resolve<SimulationOwnership>().HasAnyLockType(eatableId))
         {
             return true;
         }

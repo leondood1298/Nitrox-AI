@@ -12,6 +12,13 @@ public sealed class NitroxSaveFormatTest
     }
 
     [TestMethod]
+    public void FormatOfThePreviousBuildIsStillRead()
+    {
+        NitroxSaveFormat.DescribeMismatch("My World", NitroxSaveFormat.OLDEST_READABLE).Should().BeNull();
+        NitroxSaveFormat.OLDEST_READABLE.Should().BeLessThan(NitroxSaveFormat.CURRENT);
+    }
+
+    [TestMethod]
     public void OlderFormatIsRefusedAndTheBackupsAreNamed()
     {
         string? message = NitroxSaveFormat.DescribeMismatch("My World", NitroxSaveFormat.UNKNOWN);

@@ -123,10 +123,14 @@ namespace NitroxClient
             containerBuilder.RegisterType<Items>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<ItemSources>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<ItemClaims>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<Planters>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<Fabricators>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<BatteryCharges>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<OxygenTanks>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<Trashcans>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<PingPreferences>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<Beacons>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<BaseSpotLights>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<Repulsions>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<GravityTraps>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<DiveReels>().InstancePerLifetimeScope();
@@ -135,6 +139,7 @@ namespace NitroxClient
             containerBuilder.RegisterType<Cyclops>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<CyclopsDecoys>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<LavaLarvae>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<CrashHomes>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<Rockets>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<TimeCapsules>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<PrecursorTeleporters>().InstancePerLifetimeScope();
@@ -147,6 +152,7 @@ namespace NitroxClient
             containerBuilder.RegisterType<SeamothModulesEvent>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<Fires>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<FireExtinguishers>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<FireExtinguisherHolders>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<MapRoomCameras>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<MapRoomCameraPreviews>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<MapRoomCameraStates>().InstancePerLifetimeScope();
@@ -157,6 +163,8 @@ namespace NitroxClient
             containerBuilder.Register(_ => FMODWhitelist.Load(GameInfo.Subnautica)).InstancePerLifetimeScope();
             containerBuilder.RegisterType<FMODSystem>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<PlayerPainSounds>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<RemoteSoundLoops>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<RemoteEntitySounds>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<NitroxSettingsManager>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<ThrottledPacketSender>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<PlayerCinematics>().InstancePerLifetimeScope();

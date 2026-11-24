@@ -43,7 +43,8 @@ internal sealed class EntityTransformUpdatesProcessor(PlayerManager playerManage
                 continue;
             }
 
-            if (!worldEntityManager.TryUpdateEntityPosition(update.Id, update.Position, update.Rotation, out AbsoluteEntityCell currentCell, out WorldEntity worldEntity))
+            if (!worldEntityManager.TryUpdateEntityPosition(update.Id, update.Position, update.Rotation, out AbsoluteEntityCell currentCell, out WorldEntity worldEntity,
+                                                            out AbsoluteEntityCell? previousCell))
             {
                 // Normal behaviour if the entity was removed at the same time as someone trying to simulate a postion update.
                 // we log an info inside entityManager.UpdateEntityPosition just in case.
@@ -52,7 +53,7 @@ internal sealed class EntityTransformUpdatesProcessor(PlayerManager playerManage
 
             foreach (KeyValuePair<Player, List<EntityTransformUpdates.EntityTransformUpdate>> playerUpdates in visibleUpdatesByPlayer)
             {
-                if (playerUpdates.Key.CanSee(worldEntity))
+                if (playerUpdates.Key.SeesMove(worldEntity, previousCell))
                 {
                     playerUpdates.Value.Add(update);
                 }
@@ -67,9 +68,10 @@ internal sealed class EntityTransformUpdatesProcessor(PlayerManager playerManage
             Player player = playerUpdates.Key;
             List<EntityTransformUpdates.EntityTransformUpdate> updates = playerUpdates.Value;
 
-            if (updates.Count > 0)
+            // Split, as each piece must fit one datagram whatever the sender put in one packet
+            foreach (EntityTransformUpdates piece in EntityTransformUpdates.Split(updates))
             {
-                await context.SendAsync(new EntityTransformUpdates(updates), player.SessionId);
+                await context.SendAsync(piece, player.SessionId);
             }
         }
     }

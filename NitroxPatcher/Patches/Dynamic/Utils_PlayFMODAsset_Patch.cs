@@ -13,9 +13,9 @@ public sealed partial class Utils_PlayFMODAsset_Patch : NitroxPatch, IDynamicPat
         return !FMODSoundSuppressor.SuppressFMODEvents;
     }
 
-    public static void Postfix(FMODAsset asset)
+    public static void Postfix(FMODAsset asset, bool __runOriginal)
     {
-        if (Resolve<FMODWhitelist>().IsWhitelisted(asset.path))
+        if (__runOriginal && asset && Player.main && Resolve<FMODWhitelist>().IsWhitelisted(asset.path))
         {
             Resolve<FMODSystem>().SendAssetPlay(asset.path, Player.main.transform.position.ToDto(), 1f);
         }

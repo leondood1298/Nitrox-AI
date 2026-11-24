@@ -1,5 +1,6 @@
 using System.IO;
 using System.Reflection;
+using NitroxClient.MonoBehaviours;
 
 namespace NitroxPatcher.Patches.Persistent;
 
@@ -12,6 +13,11 @@ public partial class ScreenshotManager_Combine_Patch : NitroxPatch, IPersistentP
 
     public static bool Prefix(string path1, string path2, ref string? __result)
     {
+        // A single-player game keeps its screenshots in its save, where its picture frames and gallery find them.
+        if (!Multiplayer.Active)
+        {
+            return true;
+        }
         __result = path2 switch
         {
             ScreenshotManager.screenshotsFolderName => NitroxDirectory.ScreenshotsPath,

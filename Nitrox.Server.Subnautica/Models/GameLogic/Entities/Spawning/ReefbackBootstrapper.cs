@@ -10,14 +10,12 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities.Spawning;
 
 internal sealed class ReefbackBootstrapper : IEntityBootstrapper
 {
-    private readonly XorRandom random;
     private readonly SubnauticaUweWorldEntityFactory subnauticaUweWorldEntityFactory;
     private readonly float creatureProbabilitySum = 0;
     private readonly float plantsProbabilitySum = 0;
 
-    public ReefbackBootstrapper(XorRandom random, SubnauticaUweWorldEntityFactory subnauticaUweWorldEntityFactory)
+    public ReefbackBootstrapper(SubnauticaUweWorldEntityFactory subnauticaUweWorldEntityFactory)
     {
-        this.random = random;
         this.subnauticaUweWorldEntityFactory = subnauticaUweWorldEntityFactory;
 
         foreach (ReefbackSlotCreature creature in SpawnableCreatures)
@@ -30,7 +28,7 @@ internal sealed class ReefbackBootstrapper : IEntityBootstrapper
         }
     }
 
-    public async Task<WorldEntity> Prepare(WorldEntity entity, DeterministicGenerator generator)
+    public async Task<WorldEntity> Prepare(WorldEntity entity, DeterministicGenerator generator, XorRandom random)
     {
         // See Creature.InitializeOnce
         entity.Metadata = new StayAtLeashPositionMetadata(entity.Transform.Position, CreatureMetadata.UNDECIDED);

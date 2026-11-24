@@ -51,6 +51,12 @@ public class ReefbackEntitySpawner(ReefbackChildEntitySpawner reefbackChildEntit
             }
         }
 
+        // The cell may have gone to sleep while the creatures and plants were spawned over several frames
+        if (!EntityCells.IsAwake(entity.AbsoluteEntityCell))
+        {
+            entities.AbandonSpawn(entity, reefbackObject);
+            yield break;
+        }
         largeWorldEntity.enabled = true;
         LargeWorldEntity.Register(reefbackObject);
 

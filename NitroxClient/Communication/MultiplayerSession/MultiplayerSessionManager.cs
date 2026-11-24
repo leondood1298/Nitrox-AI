@@ -32,6 +32,7 @@ namespace NitroxClient.Communication.MultiplayerSession
         public AuthenticationContext AuthenticationContext { get; private set; }
         public IMultiplayerSessionConnectionState CurrentState { get; private set; }
         public MultiplayerSessionReservation Reservation { get; private set; }
+        public string DisconnectReason { get; private set; }
 
         public MultiplayerSessionManager(IClient client)
         {
@@ -53,6 +54,7 @@ namespace NitroxClient.Communication.MultiplayerSession
         {
             IpAddress = ipAddress;
             ServerPort = port;
+            DisconnectReason = null;
             await initSerializerTask;
             await CurrentState.NegotiateReservationAsync(this);
         }
@@ -67,16 +69,18 @@ namespace NitroxClient.Communication.MultiplayerSession
             {
                 case -1:
                     Log.Error($"Client is out of date. Server: {SessionPolicy.NitroxVersionAllowed}, Client: {localVersion}");
-                    Log.InGame(Language.main.Get("Nitrox_OutOfDateClient")
-                                           .Replace("{serverVersion}", SessionPolicy.NitroxVersionAllowed.ToString())
-                                           .Replace("{localVersion}", localVersion.ToString()));
+                    DisconnectReason = Language.main.Get("Nitrox_OutOfDateClient")
+                                               .Replace("{serverVersion}", SessionPolicy.NitroxVersionAllowed.ToString())
+                                               .Replace("{localVersion}", localVersion.ToString());
+                    Log.InGame(DisconnectReason);
                     CurrentState.Disconnect(this);
                     return;
                 case 1:
                     Log.Error($"Server is out of date. Server: {SessionPolicy.NitroxVersionAllowed}, Client: {localVersion}");
-                    Log.InGame(Language.main.Get("Nitrox_OutOfDateServer")
-                                           .Replace("{serverVersion}", SessionPolicy.NitroxVersionAllowed.ToString())
-                                           .Replace("{localVersion}", localVersion.ToString()));
+                    DisconnectReason = Language.main.Get("Nitrox_OutOfDateServer")
+                                               .Replace("{serverVersion}", SessionPolicy.NitroxVersionAllowed.ToString())
+                                               .Replace("{localVersion}", localVersion.ToString());
+                    Log.InGame(DisconnectReason);
                     CurrentState.Disconnect(this);
                     return;
             }

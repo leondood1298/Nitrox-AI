@@ -42,11 +42,17 @@ public class ServerList
         {
             lines = File.ReadAllLines(file);
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
             instance = Default;
             instance.Save();
             return instance;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // The file is there but cannot be read now: show the default list without writing over the player's file
+            Log.Error(ex, "The saved server list could not be read");
+            return Default;
         }
 
         ServerList list = new();
@@ -79,14 +85,22 @@ public class ServerList
         }
     }
 
-    public void RemoveAt(int index)
+    public bool Remove(Entry entry)
     {
-        if (index < 0 || index >= entries.Count)
-        {
-            throw new ArgumentOutOfRangeException(nameof(index));
-        }
+        return entries.Remove(entry);
+    }
 
-        entries.RemoveAt(index);
+    /// <summary>
+    ///     A name can be saved and read back: it has text, and no '|', which separates the fields in the file.
+    /// </summary>
+    public static bool IsValidName(string name)
+    {
+        return !string.IsNullOrWhiteSpace(name) && name.IndexOf('|') < 0;
+    }
+
+    public static bool IsValidPort(int port)
+    {
+        return port is >= 1 and <= ushort.MaxValue;
     }
 
     public class Entry
@@ -145,6 +159,17 @@ public class ServerList
             }
 
             string name = parts[0].Trim();
+            // A hand-edited line must not break the whole list: it is left out, the others still load
+            if (!IsValidName(name) || string.IsNullOrWhiteSpace(address))
+            {
+                Log.Warn($"A server list entry has no name or no address and is left out: {line}");
+                return null;
+            }
+            if (!IsValidPort(port))
+            {
+                Log.Warn($"A server list entry has a port outside 1-65535 and is left out: {line}");
+                return null;
+            }
             return new Entry(name, address, port);
         }
 

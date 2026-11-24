@@ -22,7 +22,6 @@ namespace Nitrox.Server.Subnautica.Models.Serialization.World;
 
 internal class WorldService : IHostedService
 {
-    private readonly BatchEntitySpawner batchEntitySpawner;
     private readonly EntityRegistry entityRegistry;
     private readonly EscapePodManager escapePodManager;
     private readonly ILogger<WorldService> logger;
@@ -54,7 +53,6 @@ internal class WorldService : IHostedService
     public WorldService(
         ServerJsonSerializer jsonSerializer,
         IOptions<SubnauticaServerOptions> options,
-        BatchEntitySpawner batchEntitySpawner,
         EntityRegistry entityRegistry,
         PlayerManager playerManager,
         StoryScheduler storyScheduler,
@@ -73,7 +71,6 @@ internal class WorldService : IHostedService
         ILogger<WorldService> logger)
     {
         this.options = options;
-        this.batchEntitySpawner = batchEntitySpawner;
         this.entityRegistry = entityRegistry;
         this.playerManager = playerManager;
         this.storyScheduler = storyScheduler;
@@ -111,16 +108,17 @@ internal class WorldService : IHostedService
         // packet handling never waits for a save.
         List<GlobalRootEntity> globalRootEntities = scannerRoomManager.DetachRooms(worldEntityManager.GetPersistentGlobalRootEntities(),
             out IReadOnlyList<ScannerRoomSnapshot> savedRooms);
+        (List<NitroxInt3> spawnedBatches, List<Entity> entities) = worldEntityManager.SnapshotForSave();
         PersistedWorldData persistedWorld = new()
         {
             WorldData = new()
             {
-                ParsedBatchCells = batchEntitySpawner.SerializableParsedBatches,
+                ParsedBatchCells = spawnedBatches,
                 GameData = GameData.From(pdaManager, storyManager.StoryGoalData, storyScheduler, storyManager, timeService, activeTeleporters, collectedTimeCapsules)
             },
             PlayerData = PlayerData.From(playerManager.GetAllPlayers()),
             GlobalRootData = GlobalRootData.From(globalRootEntities),
-            EntityData = EntityData.From(entityRegistry.GetAllEntities(true))
+            EntityData = EntityData.From(PersistedEntities.SelectForSave(entities))
         };
         // Once files are being written the save must finish, so the stopping token is not passed on. Honoring it here
         // aborted a shutdown save after PlayerData/WorldData were written but before GlobalRootData/EntityData, leaving
@@ -282,9 +280,18 @@ internal class WorldService : IHostedService
 
         void EntityDataPostProcessing(EntityData entityData)
         {
-            // After deserialization, we want to assign all of the
-            // children to their respective parent entities.
-            Dictionary<NitroxId, Entity> entitiesById = entityData.Entities.ToDictionary(entity => entity.Id);
+            // Each entity once, children inside their parents again, whether the file was written this way or by an older
+            // build which also listed every child at the top
+            PersistedEntities.LoadedEntities loadedEntities = PersistedEntities.PrepareLoaded(entityData.Entities, persistedData.GlobalRootData.Entities);
+            entityData.Entities = loadedEntities.Entities;
+            if (loadedEntities.Orphans > 0)
+            {
+                logger.ZLogWarning($"Left out {loadedEntities.Orphans} saved entities whose parent was not saved (such as the contents of a destroyed Cyclops).");
+            }
+            if (loadedEntities.SerializedDuplicates > 0)
+            {
+                logger.ZLogInformation($"Removed {loadedEntities.SerializedDuplicates} copies of the game's lights and other fixed objects, which an older build made twice.");
+            }
 
             bool brokenEntitiesFound = false;
 
@@ -315,28 +322,11 @@ internal class WorldService : IHostedService
                         brokenEntitiesFound = true;
                     }
                 }
-
-                // We will re-build the child hierarchy below and want to avoid duplicates.
-                // TODO: Rework system to no longer persist children entities because they are duplicates.
-                entity.ChildEntities.Clear();
             }
 
             if (brokenEntitiesFound)
             {
                 logger.ZLogWarningOnce($"Please consider reporting the above issues on the Discord server.");
-            }
-
-            foreach (Entity entity in entityData.Entities)
-            {
-                if (entity.ParentId != null && entitiesById.TryGetValue(entity.ParentId, out Entity parentEntity))
-                {
-                    parentEntity.ChildEntities.Add(entity);
-
-                    if (entity is WorldEntity worldEntity && parentEntity is WorldEntity parentWorldEntity)
-                    {
-                        worldEntity.Transform.SetParent(parentWorldEntity.Transform, false);
-                    }
-                }
             }
         }
 
@@ -417,6 +407,11 @@ internal class WorldService : IHostedService
             // Entities
             entityRegistry.AddEntities(pWorldData.EntityData.Entities);
             entityRegistry.AddEntitiesIgnoringDuplicate(pWorldData.GlobalRootData.Entities.OfType<Entity>().ToList());
+            int repairedCrashHomes = CrashHomeRespawns.RepairAfterLoad(entityRegistry.GetAllEntities());
+            if (repairedCrashHomes > 0)
+            {
+                logger.ZLogInformation($"{repairedCrashHomes} crash homes without their crashfish make a new one when next loaded.");
+            }
             // Before loaded entities become available to automatic simulation.
             scannerRoomManager.WorldLoaded();
             LavaLarvaAttachments.DetachFromMissingVehicles(entityRegistry);
@@ -433,7 +428,7 @@ internal class WorldService : IHostedService
             {
                 playerManager.AddSavedPlayer(player);
             }
-            batchEntitySpawner.SerializableParsedBatches = pWorldData.WorldData.ParsedBatchCells;
+            worldEntityManager.LoadSpawnedBatches(pWorldData.WorldData.ParsedBatchCells ?? []);
             // Pda
             pdaManager.PdaState = pWorldData.WorldData.GameData.PDAState;
             // Story progression
@@ -489,7 +484,7 @@ internal class WorldService : IHostedService
         {
             try
             {
-                if (TryReadSaveFormat(candidate.PathOf(versionFileName)) is not NitroxSaveFormat.CURRENT)
+                if (TryReadSaveFormat(candidate.PathOf(versionFileName)) is not { } candidateFormat || !NitroxSaveFormat.CanRead(candidateFormat))
                 {
                     logger.ZLogWarning($"Skipped the {candidate.Description} of world \"{worldName}\": it is of another save format.");
                     continue;

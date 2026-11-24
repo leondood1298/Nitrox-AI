@@ -1,4 +1,5 @@
 using System;
+using NitroxClient.GameLogic.FMOD;
 using NitroxClient.GameLogic.PlayerLogic;
 using UnityEngine;
 
@@ -85,7 +86,11 @@ public class PrecursorProximityTriggers
         {
             if (!IsAnotherPlayerInside(trigger, remotePlayer.Body))
             {
-                open();
+                // That player's own game opens it as well and sends its sounds
+                using (ReplayedSoundScope.Enter())
+                {
+                    open();
+                }
             }
             return false;
         }
@@ -101,7 +106,10 @@ public class PrecursorProximityTriggers
         {
             if (!IsAnotherPlayerInside(trigger, remotePlayer.Body))
             {
-                close();
+                using (ReplayedSoundScope.Enter())
+                {
+                    close();
+                }
             }
             return false;
         }

@@ -80,8 +80,8 @@ internal static partial class LoggerExtensions
     [ZLoggerMessage(Level = LogLevel.Information, Message = "Opening directory {Path}")]
     public static partial void LogOpenDirectory(this ILogger logger, string path);
 
-    [ZLoggerMessage(Level = LogLevel.Information, Message = "Server password changed to '{Password}' by '{PlayerName}' on session #{SessionId}")]
-    public static partial void LogServerPasswordChanged(this ILogger logger, string password, string playerName, SessionId sessionId);
+    [ZLoggerMessage(Level = LogLevel.Information, Message = "Server password changed by '{PlayerName}' on session #{SessionId}")]
+    public static partial void LogServerPasswordChanged(this ILogger logger, string playerName, SessionId sessionId);
 
     [ZLoggerMessage(Level = LogLevel.Debug, Message = "Loaded {Spawned} entities from batch ({X}, {Y}, {Z})")]
     public static partial void LogEntitiesLoadedFromBatch(this ILogger logger, int spawned, int x, int y, int z);

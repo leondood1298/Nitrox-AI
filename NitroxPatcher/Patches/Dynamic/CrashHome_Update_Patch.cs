@@ -3,9 +3,6 @@ using System.Reflection;
 using System.Reflection.Emit;
 using HarmonyLib;
 using NitroxClient.GameLogic;
-using NitroxClient.GameLogic.Spawning.Metadata;
-using Nitrox.Model.DataStructures;
-using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 
 namespace NitroxPatcher.Patches.Dynamic;
 
@@ -17,7 +14,7 @@ public sealed partial class CrashHome_Update_Patch : NitroxPatch, IDynamicPatch
      * if (!this.crash && this.spawnTime < 0f)
      * {
      *     this.spawnTime = (float)(main.timePassed + 1200.0);  [REMOVED LINE]
-     *     UpdateSpawnTimeAndBroadcast(this);                   [INSERTED LINE]
+     *     PairWithItsCrash(this);                              [INSERTED LINE]
      * }
      */
     public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
@@ -30,26 +27,16 @@ public sealed partial class CrashHome_Update_Patch : NitroxPatch, IDynamicPatch
                                             .Advance(1)
                                             .RemoveInstructions(7)
                                             .InsertAndAdvance(new CodeInstruction(OpCodes.Ldarg_0))
-                                            .InsertAndAdvance(new CodeInstruction(OpCodes.Call, Reflect.Method(() => UpdateSpawnTimeAndBroadcast(default))))
+                                            .InsertAndAdvance(new CodeInstruction(OpCodes.Call, Reflect.Method(() => PairWithItsCrash(default))))
                                             .InstructionEnumeration();
     }
 
-    public static void UpdateSpawnTimeAndBroadcast(CrashHome crashHome)
+    /// <remarks>
+    ///     A home without its crashfish here does not start a new one: the fish is a stored entity which may just not be
+    ///     loaded yet. The server says when a home makes a new one, once its fish is gone (CrashHomeRespawns).
+    /// </remarks>
+    public static void PairWithItsCrash(CrashHome crashHome)
     {
-        // We update and broadcast the spawn time only if we're simulating the home
-        if (!crashHome.TryGetNitroxId(out NitroxId crashHomeId) ||
-            !Resolve<SimulationOwnership>().HasAnyLockType(crashHomeId))
-        {
-            return;
-        }
-
-        crashHome.spawnTime = DayNightCycle.main.timePassedAsFloat + (float)CrashHome.respawnDelay;
-
-        // Set spawn time before broadcast the new CrashHome's metadata
-        Optional<EntityMetadata> metadata = Resolve<EntityMetadataManager>().Extract(crashHome);
-        if (metadata.HasValue)
-        {
-            Resolve<Entities>().BroadcastMetadataUpdate(crashHomeId, metadata.Value);
-        }
+        Resolve<CrashHomes>().TryPair(crashHome);
     }
 }

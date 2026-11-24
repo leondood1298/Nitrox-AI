@@ -1,5 +1,4 @@
 using System.Reflection;
-using Nitrox.Model.DataStructures.GameLogic;
 using NitroxClient.Communication.Abstract;
 using NitroxClient.GameLogic;
 using Nitrox.Model.Subnautica.Packets;
@@ -7,7 +6,8 @@ using Nitrox.Model.Subnautica.Packets;
 namespace NitroxPatcher.Patches.Dynamic;
 
 /// <summary>
-/// Disables the DevConsole's submit functionality for players with insufficient permissions.
+/// Disables the DevConsole's submit functionality for players with insufficient permissions, and refuses the commands that
+/// change only this game (see <see cref="ConsoleCommandPolicy" />).
 /// TODO: Implement https://github.com/SubnauticaNitrox/Nitrox/issues/1689
 /// </summary>
 public sealed partial class DevConsole_Submit_Patch : NitroxPatch, IDynamicPatch
@@ -19,13 +19,16 @@ public sealed partial class DevConsole_Submit_Patch : NitroxPatch, IDynamicPatch
         Log.Info($"Used cheat command : '{value}'");
         Resolve<IPacketSender>().Send(new CheatCommand(value));
 
-        // Allow submit if player has sufficient permissions
-        if (Resolve<LocalPlayer>().Permissions >= Perms.MODERATOR)
+        if (!ConsoleCommandPolicy.MaySubmit(Resolve<LocalPlayer>().Permissions))
         {
-            return true; 
+            Log.InGame(Language.main.Get("Nitrox_MissingPermission").Replace("{PERMISSION}", ConsoleCommandPolicy.REQUIRED_PERMS.ToString()));
+            return false;
         }
-
-        Log.InGame(Language.main.Get("Nitrox_MissingPermission").Replace("{PERMISSION}", nameof(Perms.MODERATOR)));
-        return false;
+        if (ConsoleCommandPolicy.IsRefused(value))
+        {
+            Log.InGame(Language.main.Get("Nitrox_CommandNotAvailable"));
+            return false;
+        }
+        return true;
     }
 }

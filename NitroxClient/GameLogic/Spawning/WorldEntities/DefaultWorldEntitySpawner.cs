@@ -68,6 +68,9 @@ public class DefaultWorldEntitySpawner : IWorldEntitySpawner, IWorldEntitySyncSp
                 LargeWorldEntity.Register(gameObject);
             }
         }
+
+        // Before its metadata is applied: its picked parts are kept as FruitPlant state
+        PickablePlants.Track(gameObject);
     }
 
     public static bool TryGetCachedPrefab(out GameObject prefab, TechType techType = TechType.None, string classId = null)

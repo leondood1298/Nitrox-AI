@@ -10,6 +10,7 @@
     <File Path="Nitrox.slnx.DotSettings" />
     <File Path="NuGet.config" />
   </Folder>
+  <Project Path="BinaryPack/BinaryPack.csproj" />
   <Project Path="Nitrox.Launcher/Nitrox.Launcher.csproj" />
   <Project Path="Nitrox.Assets.Subnautica/Nitrox.Assets.Subnautica.shproj" />
   <Project Path="Nitrox.Model.Subnautica/Nitrox.Model.Subnautica.csproj" />

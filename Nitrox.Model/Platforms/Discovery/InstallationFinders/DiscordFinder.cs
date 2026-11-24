@@ -21,10 +21,14 @@ public sealed class DiscordFinder : IGameFinder
             return Ok(path);
         }
 
-        path = Path.Combine("C:", "Games", gameInfo.Name, "content");
-        if (GameInstallationHelper.HasValidGameFolder(path, gameInfo))
+        // The drive root keeps its separator: "C:" alone would mean the current folder of drive C.
+        foreach (string driveRoot in MicrosoftFinder.GetDriveRoots())
         {
-            return Ok(path);
+            path = Path.Combine(driveRoot, "Games", gameInfo.Name, "content");
+            if (GameInstallationHelper.HasValidGameFolder(path, gameInfo))
+            {
+                return Ok(path);
+            }
         }
 
         return NotFound();

@@ -14,7 +14,7 @@ public class MovementBroadcaster : MonoBehaviour
 {
     public const int BROADCAST_FREQUENCY = 30;
     public const float BROADCAST_PERIOD = 1f / BROADCAST_FREQUENCY;
-    internal const int MAX_MOVEMENTS_PER_PACKET = 64;
+    internal const int MAX_MOVEMENTS_PER_PACKET = VehicleMovements.MAX_MOVEMENTS_PER_PACKET;
 
     public static MovementBroadcaster Instance;
 

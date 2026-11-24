@@ -38,6 +38,17 @@ public sealed class PlayerAnimationStatesTest
     }
 
     [TestMethod]
+    public void AJoinerSeesABleederOnAnArmAndACannonFullyCharged()
+    {
+        PlayerAnimationStates states = new();
+        states.Set(1, new PlayerAnimation(AnimChangeType.BLEEDER_ATTACHED, AnimChangeState.ON));
+        states.Set(1, new PlayerAnimation(AnimChangeType.STASIS_RIFLE_CHARGED, AnimChangeState.ON));
+        states.Set(1, new PlayerAnimation(AnimChangeType.DIVE_REEL_RESET, AnimChangeState.ON));
+
+        states.GetAnnouncementsFor(2).Select(told => told.Animation.Type).Should().BeEquivalentTo([AnimChangeType.BLEEDER_ATTACHED, AnimChangeType.STASIS_RIFLE_CHARGED]);
+    }
+
+    [TestMethod]
     public void MomentaryAnimationsAreNotRepeatedToJoiningPlayers()
     {
         // A player who joins seconds after someone jumped or died must not see that happen again.

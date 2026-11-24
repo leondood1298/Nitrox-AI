@@ -1,3 +1,7 @@
+using System.Collections;
+using Nitrox.Model.Core;
+using Nitrox.Model.Helper;
+using NitroxClient.Helpers;
 using NitroxClient.MonoBehaviours.Discord;
 using NitroxClient.MonoBehaviours.Gui.MainMenu.ServerJoin;
 using NitroxClient.MonoBehaviours.Gui.MainMenu.ServersList;
@@ -10,6 +14,8 @@ namespace NitroxClient.MonoBehaviours.Gui.MainMenu;
 
 public class NitroxMainMenuModifications : MonoBehaviour
 {
+    private const string HOME_GROUP = "Home";
+    private static bool startupWarningsShown;
     private MainMenuRightSide rightSide;
 
     private void OnEnable() => SceneManager.sceneLoaded += SceneManager_sceneLoaded;
@@ -23,6 +29,30 @@ public class NitroxMainMenuModifications : MonoBehaviour
             rightSide = MainMenuRightSide.main;
             MultiplayerMenuMods();
             DiscordClient.InitializeRPMenu();
+            if (!startupWarningsShown)
+            {
+                startupWarningsShown = true;
+                StartCoroutine(ShowStartupWarnings());
+            }
+        }
+    }
+
+    /// <summary>
+    ///     Tells the player once per run when Nitrox may misbehave: an untested game build or patches that failed.
+    /// </summary>
+    private static IEnumerator ShowStartupWarnings()
+    {
+        // The menu opens its home panel during its own start; showing the message before that would be covered at once.
+        yield return new WaitForSecondsRealtime(1);
+
+        int? gameBuild = GameBuild.TryRead(Application.dataPath);
+        GameBuildSupport support = GameBuild.Classify(gameBuild);
+        string message = StartupWarnings.BuildMainMenuMessage(StartupWarnings.FailedPatches, gameBuild, support, NitroxEnvironment.GameNewestTestedVersion,
+                                                              Language.main.Get("Nitrox_PatchesFailed"), Language.main.Get("Nitrox_UntestedGameBuild"));
+        if (message != null)
+        {
+            Log.Warn(message);
+            MainMenuNotificationPanel.ShowMessage(message, HOME_GROUP);
         }
     }
 
@@ -72,11 +102,6 @@ public class NitroxMainMenuModifications : MonoBehaviour
 
         GameObject serverCreate = CloneMainMenuLoadPanel(MainMenuCreateServerPanel.NAME, "Nitrox_AddServer");
         serverCreate.AddComponent<MainMenuCreateServerPanel>().Setup(savedGamesRef);
-
-#if RELEASE
-            // Remove singleplayer button because SP is broken when Nitrox is injected.
-            // TODO: Allow SP to work and co-exist with Nitrox MP in the future
-            startButton.SetActive(false);
-#endif
+        // The single-player Play button stays: every patch that changes single-player play acts only during a multiplayer session.
     }
 }

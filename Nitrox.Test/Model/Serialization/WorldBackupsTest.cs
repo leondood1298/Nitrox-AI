@@ -21,6 +21,29 @@ public sealed class WorldBackupsTest
     public void Cleanup() => Directory.Delete(Path.GetDirectoryName(saveDir)!, true);
 
     [TestMethod]
+    public void ABackupIsDueOnlyOnceTheIntervalHasPassedSinceTheNewest()
+    {
+        TimeSpan interval = TimeSpan.FromMinutes(15);
+
+        WorldBackups.IsBackupDue((DateTime?)null, now, interval).Should().BeTrue("a world without a backup gets one");
+        WorldBackups.IsBackupDue(now.AddMinutes(-2), now, interval).Should().BeFalse();
+        WorldBackups.IsBackupDue(now.AddMinutes(-15), now, interval).Should().BeTrue();
+        WorldBackups.IsBackupDue(now.AddMinutes(-2), now, TimeSpan.Zero).Should().BeTrue("0 backs up after every save");
+        WorldBackups.IsBackupDue(now.AddHours(3), now, interval).Should().BeTrue("a backup from the future (the clock moved) must not stop backups");
+    }
+
+    [TestMethod]
+    public void TheNewestBackupIsFoundByTheTimeInItsName()
+    {
+        File.WriteAllText(Path.Combine(saveDir, "EntityData.json"), "world");
+        WorldBackups.Create(saveDir, now.AddMinutes(-40));
+        WorldBackups.Create(saveDir, now.AddMinutes(-10));
+
+        WorldBackups.NewestTime(saveDir).Should().Be(now.AddMinutes(-10));
+        WorldBackups.IsBackupDue(saveDir, now, TimeSpan.FromMinutes(15)).Should().BeFalse();
+    }
+
+    [TestMethod]
     public void BackupHoldsTheWorldButNoPasswordsLockOrLeftovers()
     {
         foreach (string file in new[] { "EntityData.json", "Bans.json", "server.cfg", "server.lock", "PlayerData.tmp", "EntityData_x.json.bak" })

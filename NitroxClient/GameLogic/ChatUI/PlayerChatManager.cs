@@ -104,14 +104,14 @@ public sealed class PlayerChatManager
         }
     }
 
-    public void AddMessage(string playerName, string message, Color color)
+    public void AddMessage(string playerName, string message, Color color, bool isServer = false)
     {
         CoroutineHost.StartCoroutine(AddMessageAsync(playerName, message, color));
 
         IEnumerator AddMessageAsync(string playerName, string message, Color color)
         {
             yield return new WaitUntil(() => PlayerChat.IsReady);
-            yield return playerChat.WriteLogEntry(playerName, message, color);
+            yield return playerChat.WriteLogEntry(playerName, message, color, isServer);
         }
     }
 

@@ -10,7 +10,7 @@ internal sealed class ChangeServerPasswordCommand(ILogger<ChangeServerPasswordCo
     private readonly IOptions<SubnauticaServerOptions> serverConfig = serverConfig;
     private readonly ILogger<ChangeServerPasswordCommand> logger = logger;
 
-    [Description("Changes server password. Clears if without argument")]
+    [Description("Changes server password (any text, the rest of the line); kept from the next save on. Clears if without argument")]
     public async Task Execute(ICommandContext context, [Description("The new server password")] string newPassword) => await SetPasswordAsync(context, newPassword);
 
     [Description("Clears server password")]
@@ -19,7 +19,8 @@ internal sealed class ChangeServerPasswordCommand(ILogger<ChangeServerPasswordCo
     private async Task SetPasswordAsync(ICommandContext context, string password)
     {
         serverConfig.Value.ServerPassword = password;
-        logger.LogServerPasswordChanged(password, context.OriginName, context.OriginId);
-        await context.ReplyAsync("Server password has been updated");
+        // The password itself never goes to the log, which is kept and often shared
+        logger.LogServerPasswordChanged(context.OriginName, context.OriginId);
+        await context.ReplyAsync(password == "" ? "Server password has been cleared" : "Server password has been updated");
     }
 }

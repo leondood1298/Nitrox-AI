@@ -33,8 +33,19 @@ public class MainMenuServerButton : MonoBehaviour
         deleteButtonRef = _loadButtonRef.deleteButton;
     }
 
-    public void Init(string serverName, string ip, int port, bool isReadOnly)
+    /// <summary>
+    ///     The server list entry this button shows; removing the button removes this entry, wherever it now is in the list.
+    /// </summary>
+    public ServerList.Entry Entry { get; private set; }
+
+    public void Init(ServerList.Entry entry)
     {
+        Entry = entry;
+        string serverName = entry.Name;
+        string ip = entry.Address;
+        int port = entry.Port;
+        // Servers found on the network are not saved and come and go with the search; only saved ones can be deleted
+        bool isReadOnly = !entry.Persist;
         joinIp = ip;
         joinPort = port;
         joinServerName = serverName;
@@ -47,14 +58,7 @@ public class MainMenuServerButton : MonoBehaviour
         Destroy(tmp.GetComponent<TranslationLiveUpdate>());
         StringBuilder buttonText = new(Language.main.Get("Nitrox_ConnectTo"));
         buttonText.Append(" <b>").Append(serverName).AppendLine("</b>");
-        if (NitroxPrefs.HideIp.Value)
-        {
-            buttonText.AppendLine("***.***.***.***:*****");
-        }
-        else
-        {
-            buttonText.Append(ip[^Math.Min(ip.Length, 25)..]).Append(':').Append(port);
-        }
+        buttonText.Append(ServerAddressText.Format(ip[^Math.Min(ip.Length, 25)..], port, NitroxPrefs.HideIp.Value));
         tmp.text = buttonText.ToString();
 
         Button multiplayerJoinButton = newGameButtonTransform.GetComponent<Button>();
@@ -145,7 +149,7 @@ public class MainMenuServerButton : MonoBehaviour
         StartCoroutine(loadButtonRef.ShiftPos(deleteCg, MainMenuLoadButton.target.left, MainMenuLoadButton.target.centre, loadButtonRef.animTime, loadButtonRef.posPower));
         StartCoroutine(loadButtonRef.ShiftAlpha(deleteCg, 0.0f, loadButtonRef.animTime, loadButtonRef.alphaPower, false));
 
-        ServerList.Instance.RemoveAt(transform.GetSiblingIndex() - 1);
+        ServerList.Instance.Remove(Entry);
         ServerList.Instance.Save();
 
         Destroy(gameObject);
@@ -172,10 +176,12 @@ public class MainMenuServerButton : MonoBehaviour
             return;
         }
 
-        IPEndPoint endpoint = ResolveIPEndPoint(serverIp, serverPort);
+        IPEndPoint endpoint = ServerList.IsValidPort(serverPort) ? ResolveIPEndPoint(serverIp, serverPort) : null;
         if (endpoint == null)
         {
-            Log.InGame($"{Language.main.Get("Nitrox_UnableToConnect")}: {serverIp}:{serverPort}");
+            string message = $"{Language.main.Get("Nitrox_UnableToConnect")} {ServerAddressText.Format(serverIp, serverPort, NitroxPrefs.HideIp.Value)}";
+            Log.InGame(message);
+            MainMenuNotificationPanel.ShowMessage(message, MainMenuServerListPanel.NAME);
             return;
         }
 
@@ -209,7 +215,7 @@ public class MainMenuServerButton : MonoBehaviour
                 IPHostEntry hostEntry = Dns.GetHostEntry(hostname);
                 return hostEntry.AddressList[0];
             }
-            catch (SocketException ex)
+            catch (Exception ex) when (ex is SocketException or ArgumentException)
             {
                 Log.ErrorSensitive(ex, "Unable to resolve the address {hostname}:{serverPort}", hostname, serverPort);
                 return null;

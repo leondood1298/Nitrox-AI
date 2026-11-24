@@ -116,6 +116,13 @@ internal sealed class PlaceholderGroupWorldEntitySpawner(Entities entities, Worl
 
         if (!parent.HasValue)
         {
+            // The cell may have gone to sleep while the group was spawned over several frames: registered in it, the group
+            // would wait inactive among the cell's waiters with all its ids taken until the cell woke again
+            if (!EntityCells.IsAwake(entity.AbsoluteEntityCell))
+            {
+                entities.AbandonSpawn(entity, groupObject);
+                yield break;
+            }
             largeWorldEntity.enabled = true;
             LargeWorldEntity.Register(groupObject);
         }

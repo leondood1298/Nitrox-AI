@@ -17,6 +17,15 @@ namespace NitroxClient.GameLogic.Settings
         /// </summary>
         public static readonly NitroxPref<bool> ChatAutoOpen = new("Nitrox.chatAutoOpen", true);
         public static readonly NitroxPref<bool> ChatUsed = new("Nitrox.chatUsed");
+        /// <summary>
+        /// Where the player dragged the chat window, relative to the screen's centre; NaN until it was moved once.
+        /// </summary>
+        public static readonly NitroxPref<float> ChatPositionX = new("Nitrox.chatPositionX", float.NaN);
+        public static readonly NitroxPref<float> ChatPositionY = new("Nitrox.chatPositionY", float.NaN);
+        /// <summary>
+        /// Whether the player made the chat background see-through.
+        /// </summary>
+        public static readonly NitroxPref<bool> ChatTransparent = new("Nitrox.chatTransparent");
         public static readonly NitroxPref<bool> SafeBuilding = new("Nitrox.safeBuilding", true);
         public static readonly NitroxPref<bool> SafeBuildingLog = new("Nitrox.safeBuildingLog", true);
         /// <summary>

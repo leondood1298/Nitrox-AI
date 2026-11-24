@@ -3,13 +3,21 @@ using System.Collections.Generic;
 using NitroxClient.Communication;
 using NitroxClient.Communication.Abstract;
 using Nitrox.Model.Packets;
-using Nitrox.Model.Subnautica.Packets;
 
 namespace NitroxClient.Helpers
 {
+    /// <summary>
+    ///     Sends at most one packet per key and throttle time: the first at once, later ones when the time since the last
+    ///     one is up, each replacing (or merging into) the one still waiting.
+    /// </summary>
+    /// <remarks>
+    ///     A key is forgotten once its time is up with nothing waiting. Kept forever, as before, every creature this game
+    ///     ever simulated left an entry that <see cref="Update" /> went through every frame.
+    /// </remarks>
     public class ThrottledPacketSender
     {
         private readonly Dictionary<object, ThrottledPacket> throttledPackets = new();
+        private readonly List<object> expiredKeys = new();
         private readonly IPacketSender packetSender;
 
         public ThrottledPacketSender(IPacketSender packetSender)
@@ -17,20 +25,39 @@ namespace NitroxClient.Helpers
             this.packetSender = packetSender;
         }
 
+        /// <summary>The time now; replaced by tests.</summary>
+        internal Func<DateTime> Clock { get; set; } = () => DateTime.UtcNow;
+
+        /// <summary>How many keys are held, waiting or within their throttle time.</summary>
+        internal int Count => throttledPackets.Count;
+
         public void Update()
         {
-            foreach (ThrottledPacket throttledPacket in throttledPackets.Values)
+            DateTime now = Clock();
+            foreach (KeyValuePair<object, ThrottledPacket> pair in throttledPackets)
             {
-                if (throttledPacket.WasSend || throttledPacket.SendTime > DateTime.UtcNow)
+                ThrottledPacket throttledPacket = pair.Value;
+                if (throttledPacket.SendTime > now)
                 {
+                    continue;
+                }
+                if (throttledPacket.WasSend)
+                {
+                    expiredKeys.Add(pair.Key);
                     continue;
                 }
 
                 if (packetSender.Send(throttledPacket.Packet))
                 {
-                    throttledPacket.WasSend = true;
+                    throttledPacket.MarkSent(now);
                 }
             }
+
+            foreach (object key in expiredKeys)
+            {
+                throttledPackets.Remove(key);
+            }
+            expiredKeys.Clear();
         }
 
         /// <param name="merge">
@@ -45,6 +72,7 @@ namespace NitroxClient.Helpers
             }
 
             object dedupeKey = dedupeMethod.Invoke(packet);
+            DateTime now = Clock();
 
             if (throttledPackets.TryGetValue(dedupeKey, out ThrottledPacket throttledPacket))
             {
@@ -56,7 +84,7 @@ namespace NitroxClient.Helpers
                 return true;
             }
 
-            throttledPacket = new(packet, throttleTime);
+            throttledPacket = new(packet, throttleTime, now);
             throttledPackets.Add(dedupeKey, throttledPacket);
             packetSender.Send(packet);
             // It's very important to set WasSend to true, otherwise the packet will be sent again in Update()
@@ -90,25 +118,35 @@ namespace NitroxClient.Helpers
 
         private class ThrottledPacket
         {
+            /// <summary>When a waiting packet may go, or, once sent, when the next one may go at once again.</summary>
             public DateTime SendTime { get; private set; }
+
             public Packet Packet { get; private set; }
             public bool WasSend { get; set; }
+            private float throttleTime;
 
-            public ThrottledPacket(Packet packet, float throttleTime)
+            public ThrottledPacket(Packet packet, float throttleTime, DateTime now)
             {
-                SendTime = DateTime.UtcNow.AddSeconds(throttleTime);
+                this.throttleTime = throttleTime;
+                SendTime = now.AddSeconds(throttleTime);
                 Packet = packet;
+            }
+
+            /// <summary>
+            ///     The waiting packet went out: the next one waits a whole throttle time from now.
+            /// </summary>
+            public void MarkSent(DateTime now)
+            {
+                WasSend = true;
+                SendTime = now.AddSeconds(throttleTime);
             }
 
             public void ReplacePacket(Packet packet, float throttleTime)
             {
                 Packet = packet;
-
-                if (WasSend)
-                {
-                    SendTime = DateTime.UtcNow.AddSeconds(throttleTime);
-                    WasSend = false;
-                }
+                this.throttleTime = throttleTime;
+                // Within the time of the last packet sent, this one waits until that time is up
+                WasSend = false;
             }
         }
     }

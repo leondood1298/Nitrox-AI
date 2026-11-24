@@ -94,7 +94,8 @@ internal partial class ManageServerViewModel : RoutableViewModelBase, IServerVie
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(UndoCommand), nameof(BackCommand), nameof(RestoreBackupCommand), nameof(StartServerCommand))]
-    [Range(1, 1000)]
+    // The server keeps this in a byte (SubnauticaServerOptions.MaxConnections): a larger value would wrap around
+    [Range(1, byte.MaxValue)]
     [NotifyDataErrorInfo]
     public partial int ServerMaxPlayers { get; set; }
 
@@ -113,12 +114,17 @@ internal partial class ManageServerViewModel : RoutableViewModelBase, IServerVie
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(UndoCommand), nameof(BackCommand), nameof(RestoreBackupCommand), nameof(StartServerCommand))]
+    public partial string? ServerAdminPassword { get; set; }
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(UndoCommand), nameof(BackCommand), nameof(RestoreBackupCommand), nameof(StartServerCommand))]
     public partial int ServerPlayerCount { get; set; }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(UndoCommand), nameof(BackCommand), nameof(RestoreBackupCommand), nameof(StartServerCommand))]
     [NotifyDataErrorInfo]
-    [Range(ushort.MinValue, ushort.MaxValue)]
+    // Port 0 is refused by the server's own check (SubnauticaServerOptions.ServerPort)
+    [Range(1, ushort.MaxValue)]
     public partial int ServerPort { get; set; }
 
     [ObservableProperty]
@@ -187,6 +193,7 @@ internal partial class ManageServerViewModel : RoutableViewModelBase, IServerVie
         ServerName = Server.Name;
         ServerIcon = Server.ServerIcon;
         ServerPassword = Server.Password;
+        ServerAdminPassword = Server.AdminPassword;
         ServerGameMode = Server.GameMode;
         ServerSeed = Server.Seed;
         ServerDefaultPlayerPerm = Server.PlayerPermissions;
@@ -205,6 +212,7 @@ internal partial class ManageServerViewModel : RoutableViewModelBase, IServerVie
                                  (ServerName != Server.Name ||
                                   ServerIcon != Server.ServerIcon ||
                                   ServerPassword != Server.Password ||
+                                  (ServerAdminPassword ?? "") != (Server.AdminPassword ?? "") ||
                                   ServerGameMode != Server.GameMode ||
                                   ServerSeed != Server.Seed ||
                                   ServerDefaultPlayerPerm != Server.PlayerPermissions ||
@@ -263,6 +271,7 @@ internal partial class ManageServerViewModel : RoutableViewModelBase, IServerVie
         Server.Name = ServerName;
         Server.ServerIcon = ServerIcon;
         Server.Password = ServerPassword;
+        Server.AdminPassword = ServerAdminPassword ?? "";
         Server.GameMode = ServerGameMode;
         Server.Seed = ServerSeed;
         Server.PlayerPermissions = ServerDefaultPlayerPerm;
@@ -278,6 +287,7 @@ internal partial class ManageServerViewModel : RoutableViewModelBase, IServerVie
 
         Config config = NitroxConfig.Load<Config>(SaveFolderDirectory);
         config.ServerPassword = Server.Password;
+        config.AdminPassword = Server.AdminPassword;
         if (Server.IsNewServer) { config.Seed = Server.Seed; }
         config.GameMode = Server.GameMode;
         config.DefaultPlayerPerm = Server.PlayerPermissions;
@@ -313,6 +323,7 @@ internal partial class ManageServerViewModel : RoutableViewModelBase, IServerVie
         ServerName = Server.Name;
         ServerIcon = Server.ServerIcon;
         ServerPassword = Server.Password;
+        ServerAdminPassword = Server.AdminPassword;
         ServerGameMode = Server.GameMode;
         ServerSeed = Server.Seed;
         ServerDefaultPlayerPerm = Server.PlayerPermissions;

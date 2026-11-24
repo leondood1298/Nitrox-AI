@@ -12,7 +12,8 @@ public sealed partial class FMOD_CustomEmitter_Start_Patch : NitroxPatch, IDynam
 
     public static void Prefix(FMOD_CustomEmitter __instance)
     {
-        if (!Resolve<FMODWhitelist>().IsWhitelisted(__instance.asset.path, out float radius))
+        // The game allows an emitter without an asset; a crash here would also skip the emitter's own Start
+        if (!__instance.asset || !Resolve<FMODWhitelist>().IsWhitelisted(__instance.asset.path, out float radius))
         {
             return;
         }

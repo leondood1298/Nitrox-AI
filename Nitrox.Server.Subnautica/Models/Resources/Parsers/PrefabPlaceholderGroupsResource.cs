@@ -16,7 +16,7 @@ using ClassIdByRuntimeKeyDictionary = System.Collections.Generic.Dictionary<stri
 
 namespace Nitrox.Server.Subnautica.Models.Resources.Parsers;
 
-internal sealed class PrefabPlaceholderGroupsResource(SubnauticaAssetsManager assetsManager, RandomFactory randomFactory, IOptions<ServerStartOptions> options, ILogger<PrefabPlaceholderGroupsResource> logger) : IGameResource
+internal sealed class PrefabPlaceholderGroupsResource(SubnauticaAssetsManager assetsManager, IOptions<ServerStartOptions> options, ILogger<PrefabPlaceholderGroupsResource> logger) : IGameResource
 {
     /// <summary>
     ///     The version of the cache supported by this parser
@@ -26,12 +26,11 @@ internal sealed class PrefabPlaceholderGroupsResource(SubnauticaAssetsManager as
     ///         the cache is rebuilt
     ///     </para>
     /// </summary>
-    private const int CACHE_VERSION = 5;
+    private const int CACHE_VERSION = 6;
 
     private const string CACHE_FILENAME = "PrefabPlaceholdersGroupAssetsCache.json";
 
     private readonly SubnauticaAssetsManager assetsManager = assetsManager;
-    private readonly XorRandom random = randomFactory.GetUnityLikeRandom();
     private readonly ILogger<PrefabPlaceholderGroupsResource> logger = logger;
     private readonly IOptions<ServerStartOptions> options = options;
     private readonly TaskCompletionSource resourceLoadFinished = new();
@@ -79,7 +78,8 @@ internal sealed class PrefabPlaceholderGroupsResource(SubnauticaAssetsManager as
         return Task.CompletedTask;
     }
 
-    public void PickRandomClassIdIfRequired(ref string classId)
+    /// <param name="random">The random of the batch being filled, so the same seed fills it the same way.</param>
+    public void PickRandomClassIdIfRequired(ref string classId, XorRandom random)
     {
         if (RandomPossibilitiesByClassId.TryGetValue(classId, out string[] choices))
         {
@@ -483,7 +483,11 @@ internal sealed class PrefabPlaceholderGroupsResource(SubnauticaAssetsManager as
                 allowedTypes.Add(((EntitySlot.Type)allowedType.AsInt).ToString());
             }
 
-            nitroxEntitySlot = new NitroxEntitySlot(biomeType, allowedTypes);
+            // The game divides each prefab's probability by the slot's density (CSVEntitySpawner.GetPrefabForSlot)
+            AssetTypeValueField densityField = entitySlot["density"];
+            float density = densityField.IsDummy ? 1f : densityField.AsFloat;
+
+            nitroxEntitySlot = new NitroxEntitySlot(biomeType, allowedTypes, density);
         }
 
         PrefabPlaceholderAsset prefabPlaceholderAsset = new(classId, nitroxEntitySlot);

@@ -17,8 +17,8 @@ public enum Perms : byte
     PLAYER,
 
     /// <summary>
-    ///     Player that can manage other players in game. Can use vanilla cheat commands and some advanced server commands
-    ///     (e.g: mute, kick, broadcast, ...)
+    ///     Player that can manage other players in game. Can use some advanced server commands (e.g: mute, kick, broadcast,
+    ///     ...), but not the game's developer console
     /// </summary>
     MODERATOR,
 

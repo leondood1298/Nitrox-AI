@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.GameLogic;
@@ -11,6 +12,7 @@ using Nitrox.Server.Subnautica.Models.AppEvents;
 using Nitrox.Server.Subnautica.Models.Communication;
 using Nitrox.Server.Subnautica.Models.GameLogic.Bases;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
+using Nitrox.Server.Subnautica.Models.GameLogic.Players;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Models.GameLogic;
@@ -64,7 +66,34 @@ internal sealed class JoiningManager(
     {
         FINISHED,
         DISCONNECTED,
-        TIMED_OUT
+        TIMED_OUT,
+        /// <summary>The snapshot could not be gathered or sent.</summary>
+        FAILED
+    }
+
+    internal const string SYNC_FAILED_REASON = "The server could not send you the world. Its log has the details; try joining again.";
+
+    /// <summary>
+    ///     Sends the snapshot, or kicks the player with a reason if that fails.
+    /// </summary>
+    /// <remarks>
+    ///     A failure used to be logged only: the queue went on to the next player while this one, already made a player
+    ///     and getting every broadcast, waited on the loading screen with no end.
+    /// </remarks>
+    private async Task<bool> TrySendInitialSyncAsync(SessionId sessionId, string name)
+    {
+        try
+        {
+            await SendInitialSyncAsync(sessionId);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            logger.ZLogError(ex, $"Could not send the world to {name}; they are disconnected");
+            // The kicked game disconnects itself (UserKickedProcessor), which cleans up the session
+            await packetSender.SendPacketAsync(new PlayerKicked(SYNC_FAILED_REASON), sessionId);
+            return false;
+        }
     }
 
     /// <summary>
@@ -155,8 +184,14 @@ internal sealed class JoiningManager(
                 SyncOutcome outcome;
                 try
                 {
-                    await SendInitialSyncAsync(sessionId);
-                    outcome = await WaitForSyncAsync(finished.Task, () => sessionManager.IsConnected(sessionId), TimeSpan.FromMilliseconds(options.Value.InitialSyncTimeout), SYNC_POLL_PERIOD);
+                    if (await TrySendInitialSyncAsync(sessionId, name))
+                    {
+                        outcome = await WaitForSyncAsync(finished.Task, () => sessionManager.IsConnected(sessionId), TimeSpan.FromMilliseconds(options.Value.InitialSyncTimeout), SYNC_POLL_PERIOD);
+                    }
+                    else
+                    {
+                        outcome = SyncOutcome.FAILED;
+                    }
                 }
                 finally
                 {
@@ -169,6 +204,9 @@ internal sealed class JoiningManager(
 
                 switch (outcome)
                 {
+                    case SyncOutcome.FAILED:
+                        // Told and kicked in TrySendInitialSyncAsync
+                        break;
                     case SyncOutcome.DISCONNECTED:
                         logger.ZLogInformation($"Player {name} disconnected while syncing");
                         break;
@@ -232,15 +270,11 @@ internal sealed class JoiningManager(
             await packetSender.SendPacketToOthersAsync(spawnNewEscapePod, sessionId);
         }
 
-        // TODO: Remove this code when security of player login is improved by https://github.com/SubnauticaNitrox/Nitrox/issues/1996
-        // We need to reset permissions on join, otherwise players can impersonate an admin easily.
-        player.Permissions = options.Value.DefaultPlayerPerm;
-
-        // Make players on localhost admin by default.
-        if (options.Value.LocalhostIsAdmin && sessionManager.GetEndPoint(sessionId)?.Address.IsLocalhost() == true)
+        IPAddress? address = sessionManager.GetEndPoint(sessionId)?.Address;
+        player.Permissions = PlayerRanks.OnJoin(player, options.Value.DefaultPlayerPerm, options.Value.LocalhostIsAdmin, address);
+        if (options.Value.LocalhostIsAdmin && PlayerRanks.IsLoopback(address))
         {
-            logger.ZLogInformation($"Granted admin to '{player.Name}' because they're playing on the host machine");
-            player.Permissions = Perms.ADMIN;
+            logger.ZLogInformation($"'{player.Name}' joined from this computer (localhost) and is {player.Permissions}");
         }
 
         List<SimulatedEntity> simulations = entitySimulation.AssignGlobalRootEntitiesAndGetData(player);
@@ -249,8 +283,17 @@ internal sealed class JoiningManager(
 
         // With every Scanner Room, and the cameras in its docks, as a copy from one moment: the packet is serialized on
         // this thread while packet processors keep changing the live rooms on theirs.
-        List<GlobalRootEntity> globalRootEntities = scannerRoomManager.DetachRooms(worldEntityManager.GetGlobalRootEntities(true));
+        // And everything else copied whole, as players keep moving items between lockers while it is serialized
+        List<GlobalRootEntity> globalRootEntities = EntityCopies.Copy(scannerRoomManager.DetachRooms(worldEntityManager.GetGlobalRootEntities(true)), out bool torn);
+        if (torn)
+        {
+            logger.ZLogWarning($"The world kept changing while it was copied for {player.Name}; a few items may show only after a resync");
+        }
         bool isFirstPlayer = playerManager.GetConnectedPlayers().Count == 1;
+
+        // Beacons and vehicles that were removed since the player last joined; other players' pings are keyed by their entity
+        PingPreferenceAuthority.RemoveGone(player.PingInstancePreferences,
+                                           id => entityRegistry.TryGetEntityById(id, out Entity _) || playerManager.GetAllPlayers().Any(other => other.GameObjectId == id));
 
         InitialPlayerSync initialPlayerSync = new(
             player.GameObjectId,

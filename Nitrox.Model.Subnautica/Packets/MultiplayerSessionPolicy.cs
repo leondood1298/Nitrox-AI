@@ -23,7 +23,13 @@ public sealed class MultiplayerSessionPolicy : Packet
     /// </summary>
     public string WorldIdentity { get; }
 
-    public MultiplayerSessionPolicy(SessionId sessionId, bool disableConsole, int maxConnections, bool requiresServerPassword, string worldIdentity)
+    /// <summary>
+    ///     A fresh random value for this connection only: the joining game signs it with the world identity to prove it
+    ///     holds the key its name is tied to (see <see cref="Nitrox.Model.MultiplayerSession.PlayerIdentityProof" />).
+    /// </summary>
+    public string JoinChallenge { get; }
+
+    public MultiplayerSessionPolicy(SessionId sessionId, bool disableConsole, int maxConnections, bool requiresServerPassword, string worldIdentity, string joinChallenge)
     {
         SessionId = sessionId;
         RequiresServerPassword = requiresServerPassword;
@@ -31,6 +37,7 @@ public sealed class MultiplayerSessionPolicy : Packet
         DisableConsole = disableConsole;
         MaxConnections = maxConnections;
         WorldIdentity = worldIdentity;
+        JoinChallenge = joinChallenge;
 
         Version ver = NitroxEnvironment.Version;
         // only the major and minor version number is required
@@ -39,7 +46,7 @@ public sealed class MultiplayerSessionPolicy : Packet
 
     /// <remarks>Used for deserialization</remarks>
     public MultiplayerSessionPolicy(SessionId sessionId, bool requiresServerPassword, MultiplayerSessionAuthenticationAuthority authenticationAuthority,
-                                    bool disableConsole, int maxConnections, NitroxVersion nitroxVersionAllowed, string worldIdentity)
+                                    bool disableConsole, int maxConnections, NitroxVersion nitroxVersionAllowed, string worldIdentity, string joinChallenge)
     {
         SessionId = sessionId;
         RequiresServerPassword = requiresServerPassword;
@@ -48,5 +55,6 @@ public sealed class MultiplayerSessionPolicy : Packet
         MaxConnections = maxConnections;
         NitroxVersionAllowed = nitroxVersionAllowed;
         WorldIdentity = worldIdentity;
+        JoinChallenge = joinChallenge;
     }
 }

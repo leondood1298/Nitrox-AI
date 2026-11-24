@@ -1,3 +1,4 @@
+using System;
 using NitroxClient.GameLogic.PlayerLogic;
 using UnityEngine;
 
@@ -13,12 +14,23 @@ public class AnimationController : MonoBehaviour
     /// </summary>
     private const float MINIMUM_SWITCH_ON_SECONDS = 0.1f;
 
+    private static readonly int VIEW_TURN = Animator.StringToHash("view_turn");
+
     private readonly AnimatorPulseHold switchHold = new(MINIMUM_SWITCH_ON_SECONDS);
     private Animator animator;
+    private float previousYaw;
+    private float turnDampTime;
 
     public bool UpdatePlayerAnimations { get; set; } = true;
     public Quaternion AimingRotation { get; set; }
     public Vector3 Velocity { get; set; }
+
+    /// <summary>
+    ///     When set, gives the world velocity each physics step instead of <see cref="Velocity" />: inside a Cyclops the
+    ///     speed is worked out from packets as they arrive and has to fall to zero when they stop.
+    /// </summary>
+    public Func<Vector3>? VelocityProvider { get; set; }
+
     public Quaternion BodyRotation { get; set; }
 
     private Vector3 smoothedVelocity = Vector3.zero;
@@ -27,15 +39,31 @@ public class AnimationController : MonoBehaviour
     public void Awake()
     {
         animator = GetComponent<Animator>();
+        if (TryGetComponent(out ArmsController arms))
+        {
+            turnDampTime = arms.turnAnimationDampTime;
+        }
+        previousYaw = transform.eulerAngles.y;
 
         this["is_underwater"] = true;
+        ApplyCinematicsEnabled();
+    }
+
+    /// <summary>
+    ///     <c>ArmsController.Update</c> keeps <c>cinematics_enabled</c> at "not in VR" for the local player every frame,
+    ///     in and out of cinematics. It does not run for this body, so it is set here, once and after every rebind.
+    /// </summary>
+    public void ApplyCinematicsEnabled()
+    {
+        SafeAnimator.SetBool(animator, "cinematics_enabled", !GameOptions.GetVrAnimationMode());
     }
 
     public void FixedUpdate()
     {
         if (UpdatePlayerAnimations)
         {
-            Vector3 rotationCorrectedVelocity = transform.rotation.GetInverse() * Velocity;
+            Vector3 velocity = VelocityProvider != null ? VelocityProvider() : Velocity;
+            Vector3 rotationCorrectedVelocity = transform.rotation.GetInverse() * velocity;
 
             smoothedVelocity = UWE.Utils.SlerpVector(smoothedVelocity, rotationCorrectedVelocity, Vector3.Normalize(rotationCorrectedVelocity - smoothedVelocity) * (SMOOTHING_SPEED * Time.fixedDeltaTime));
 
@@ -62,6 +90,15 @@ public class AnimationController : MonoBehaviour
 		set => animator.SetBool(name, value);
 	}
 
+    /// <summary>
+    ///     Like the game's <see cref="SafeAnimator" />: a parameter that this animator does not have is left alone instead
+    ///     of logging a warning every time.
+    /// </summary>
+    public void SetBoolIfPresent(string name, bool value)
+    {
+        SafeAnimator.SetBool(animator, name, value);
+    }
+
 	internal void SetFloat(string name, float value)
 	{
 		animator.SetFloat(name, value);
@@ -78,6 +115,23 @@ public class AnimationController : MonoBehaviour
         {
             animator.SetBool(parameter, false);
         }
+        UpdateViewTurn();
+    }
+
+    /// <summary>
+    ///     As <c>ArmsController.SetPlayerSpeedParameters</c> does from the local camera: how fast the player turns, from
+    ///     how fast this body turns.
+    /// </summary>
+    private void UpdateViewTurn()
+    {
+        float deltaTime = Time.deltaTime;
+        float yaw = transform.eulerAngles.y;
+        if (UpdatePlayerAnimations && deltaTime > 0)
+        {
+            float turnSpeed = Mathf.DeltaAngle(previousYaw, yaw) / deltaTime;
+            animator.SetFloat(VIEW_TURN, turnSpeed, turnDampTime, deltaTime);
+        }
+        previousYaw = yaw;
     }
 
     /// <summary>
@@ -102,5 +156,6 @@ public class AnimationController : MonoBehaviour
         switchHold.Clear();
 		animator.Rebind();
 		animator.Update(0f);
+        ApplyCinematicsEnabled();
 	}
 }

@@ -20,7 +20,7 @@
     "Nitrox_DisconnectedSession": "Dícheanglaithe ón bhfreastalaí",
     "Nitrox_DiscordAccept": "Glacadh le",
     "Nitrox_DiscordDecline": "Meath",
-    "Nitrox_DiscordInGame": "Ag imirt mar {IMREOIR}",
+    "Nitrox_DiscordInGame": "Ag imirt mar {PLAYER}",
     "Nitrox_DiscordInGameState": "Ag tumadh isteach san duibheagán",
     "Nitrox_DiscordMainMenuState": "Lurking sa roghchlár",
     "Nitrox_DiscordMultiplayerMenu": "Brúigh ar an gcnaipe Ilimreora sa Phríomh-Roghchlár más mian leat páirt a ghlacadh i seisiún",

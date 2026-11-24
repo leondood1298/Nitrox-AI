@@ -101,6 +101,12 @@ internal sealed partial class ServerEntry : ObservableObject
     [ObservableProperty]
     public partial string? Password { get; set; }
 
+    /// <summary>
+    ///     The password of the /login chat command; empty turns /login off.
+    /// </summary>
+    [ObservableProperty]
+    public partial string? AdminPassword { get; set; }
+
     [ObservableProperty]
     public partial Perms PlayerPermissions { get; set; } = serverDefaults.DefaultPlayerPerm;
 
@@ -270,6 +276,7 @@ internal sealed partial class ServerEntry : ObservableObject
         }
         ServerIcon = icon;
         Password = config.ServerPassword;
+        AdminPassword = config.AdminPassword ?? "";
         Seed = config.Seed;
         GameMode = config.GameMode;
         PlayerPermissions = config.DefaultPlayerPerm;

@@ -1,6 +1,7 @@
 using LiteNetLib.Utils;
 using Nitrox.Model.Packets;
 using Nitrox.Model.Subnautica.Packets;
+using Nitrox.Server.Subnautica.Models.Communication;
 using Nitrox.Server.Subnautica.Services;
 
 namespace Nitrox.Test.Server.Communication;
@@ -54,6 +55,46 @@ public sealed class LiteNetLibServerServiceTest
         Action read = () => LiteNetLibServerService.ReadPacket(Framed(garbage.Length, garbage));
 
         read.Should().Throw<Exception>();
+    }
+
+    [TestMethod]
+    public void TheCheckBeforeReadingIsGivenThePacketsTypeAndSize()
+    {
+        byte[] data = new ServerStopped().Serialize();
+        Type? checkedType = null;
+        int checkedLength = 0;
+
+        LiteNetLibServerService.ReadPacket(Framed(data.Length, data), (type, length) =>
+        {
+            checkedType = type;
+            checkedLength = length;
+            return PacketReadGate.Verdict.READ;
+        });
+
+        checkedType.Should().Be<ServerStopped>();
+        checkedLength.Should().Be(data.Length);
+    }
+
+    [TestMethod]
+    public void APacketLeftUnreadIsSkippedWhole()
+    {
+        byte[] data = new ServerStopped().Serialize();
+        NetDataReader reader = Framed(data.Length, data);
+
+        Packet? packet = LiteNetLibServerService.ReadPacket(reader, (_, _) => PacketReadGate.Verdict.SKIP);
+
+        packet.Should().BeNull();
+        reader.AvailableBytes.Should().Be(0);
+    }
+
+    [TestMethod]
+    public void APacketTheCheckRefusesIsNotRead()
+    {
+        byte[] data = new ServerStopped().Serialize();
+
+        Action read = () => LiteNetLibServerService.ReadPacket(Framed(data.Length, data), (_, _) => PacketReadGate.Verdict.REFUSE);
+
+        read.Should().Throw<InvalidDataException>();
     }
 
     private static NetDataReader Framed(int length, byte[] data)

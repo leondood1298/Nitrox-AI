@@ -13,6 +13,11 @@ internal ref struct DeduplicateInterpolatedStringHandler
     private static readonly HashTree dedupRoot = new();
     private static readonly Lock dedupRootLocker = new();
 
+    /// <summary>How many distinct messages are remembered before all are forgotten.</summary>
+    internal const int MAX_REMEMBERED = 10_000;
+
+    private static int rememberedCount;
+
     public ZLoggerInterpolatedStringHandler InnerHandler;
     private readonly HashTree dedupBranch;
     private HashTree dedupCursor;
@@ -37,6 +42,14 @@ internal ref struct DeduplicateInterpolatedStringHandler
         lock (dedupRootLocker)
         {
             isUnique = dedupRoot.TryAdd(dedupBranch);
+            if (isUnique && ++rememberedCount > MAX_REMEMBERED)
+            {
+                // A message naming an entity is new for every entity; remembered forever, they only ever added up.
+                // Forgetting them all lets a message repeat once in a long while, which a log can bear.
+                dedupRoot.Clear();
+                dedupRoot.TryAdd(dedupBranch);
+                rememberedCount = 1;
+            }
         }
         if (!isUnique)
         {

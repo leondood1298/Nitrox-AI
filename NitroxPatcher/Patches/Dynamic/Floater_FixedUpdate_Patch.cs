@@ -22,7 +22,8 @@ public sealed partial class Floater_FixedUpdate_Patch : NitroxPatch, IDynamicPat
 
         // For now we only check for vehicles which are our main concern but in the future when we properly sync floaters,
         // we'll extend the check to all entities
-        if (!connectedBody.GetComponent<Vehicle>() || !connectedBody.GetComponent<NitroxCyclops>())
+        // A vehicle or a Cyclops; it read "not a vehicle or not a Cyclops", true for everything, so the gate never applied
+        if (!connectedBody.GetComponent<Vehicle>() && !connectedBody.GetComponent<NitroxCyclops>())
         {
             return true;
         }

@@ -60,7 +60,7 @@ internal sealed class StatusService(
         logger.ZLogInformation($"Server is listening on port {o.ServerPort} UDP");
         logger.ZLogInformation($"Server Password: '{(string.IsNullOrWhiteSpace(o.ServerPassword) ? "" : o.ServerPassword):@password}'");
         logger.ZLogInformation($"Admin Password: '{(string.IsNullOrWhiteSpace(o.AdminPassword) ? "" : o.AdminPassword):@password}'");
-        logger.ZLogInformation($"Autobackup: {(o.MaxBackups < 1 ? "DISABLED" : $"ENABLED (Max: {o.MaxBackups})")}");
+        logger.ZLogInformation($"Autobackup: {(o.MaxBackups < 1 ? "DISABLED" : $"ENABLED (Max: {o.MaxBackups}, at most every {o.BackupIntervalMinutes} min)")}");
         logger.ZLogInformation($"Loaded save:");
         await LogServerSummary();
         await LogIpsAsync();

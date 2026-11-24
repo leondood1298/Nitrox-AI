@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using JB::JetBrains.Annotations;
 using Nitrox.Model.Core;
+using Nitrox.Model.Helper;
 using Nitrox.Model.Subnautica.Logger;
 using NitroxPatcher.Helper;
 using UnityEngine;
@@ -65,17 +66,36 @@ public static class Main
         }
         initialized = true;
 
-        AppDomain.CurrentDomain.AssemblyResolve += CurrentDomainOnAssemblyResolve;
-        AppDomain.CurrentDomain.ReflectionOnlyAssemblyResolve += CurrentDomainOnAssemblyResolve;
-
         Console.WriteLine("[Nitrox] [INFO] Checking if it should run...");
         if (!ShouldRun())
         {
+            // The game's code stays patched between runs; without a launcher path this is a vanilla run, which must not
+            // see Nitrox's assembly resolver either.
             return;
         }
 
+        AppDomain.CurrentDomain.AssemblyResolve += CurrentDomainOnAssemblyResolve;
+        AppDomain.CurrentDomain.ReflectionOnlyAssemblyResolve += CurrentDomainOnAssemblyResolve;
+
         Console.WriteLine("[Nitrox] [INFO] Now initializing...");
-        InitWithDependencies();
+        // This runs inside PlatformUtils.Awake: an exception escaping here would stop the game from starting at all,
+        // so a Nitrox that can't start leaves a vanilla game behind instead.
+        try
+        {
+            InitWithDependencies();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Nitrox] [ERROR] Nitrox failed to initialize, the game continues without it: {ex}");
+            try
+            {
+                ReportFailedStart(ex);
+            }
+            catch (Exception reportEx)
+            {
+                Console.WriteLine($"[Nitrox] [ERROR] Could not tell the launcher: {reportEx.Message}");
+            }
+        }
 
         static bool ShouldRun()
         {
@@ -172,11 +192,31 @@ public static class Main
         try
         {
             Patcher.Initialize();
+            WriteStartReport(new GameStartReport(DateTime.UtcNow, true, Patcher.Problems));
         }
         catch (Exception ex)
         {
-            // Placeholder for popup gui
+            // Patcher.Initialize has taken its patches out again, so the game runs vanilla; the launcher tells the player.
             Log.Error(ex, "Unhandled exception occurred while initializing Nitrox:");
+            WriteStartReport(new GameStartReport(DateTime.UtcNow, false, [$"{ex.GetType().Name}: {ex.Message}"]));
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void ReportFailedStart(Exception ex) => WriteStartReport(new GameStartReport(DateTime.UtcNow, false, [$"{ex.GetType().Name}: {ex.Message}"]));
+
+    /// <summary>
+    ///     Tells the launcher, which waits for this file after starting the game, whether Nitrox loaded.
+    /// </summary>
+    private static void WriteStartReport(GameStartReport report)
+    {
+        try
+        {
+            report.Write(GameStartReport.DefaultFilePath);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"Could not write the game start report for the launcher: {ex.Message}");
         }
     }
 
@@ -208,7 +248,9 @@ public static class Main
 
         if (!File.Exists(dllPath))
         {
+            // Returning null lets other resolvers try and makes the caller see an ordinary "file not found".
             Console.WriteLine($"[Nitrox] [WARNING] dll missing: {dllPath}");
+            return null;
         }
 
         return Assembly.LoadFile(dllPath);

@@ -28,13 +28,35 @@ public class PacketReceiver
     /// <summary>
     ///     Applies an operation on each packet waiting to be processed and removes it from the queue.
     /// </summary>
-    public void ConsumePackets<TExtra>(Action<Packet, TExtra> consumer, TExtra extraParameter)
+    public void ConsumePackets<TExtra>(Action<Packet, TExtra> consumer, TExtra extraParameter) => ConsumePackets(consumer, extraParameter, static _ => false);
+
+    /// <summary>
+    ///     Like <see cref="ConsumePackets{TExtra}(Action{Packet, TExtra}, TExtra)" />, but stops once
+    ///     <paramref name="outOfTime" /> says so, leaving the rest queued in order for the next call. At least one packet is
+    ///     handled per call, so that the queue always moves.
+    /// </summary>
+    public void ConsumePackets<TExtra>(Action<Packet, TExtra> consumer, TExtra extraParameter, Func<TExtra, bool> outOfTime)
     {
         Packet? packet = GetNextPacket();
         while (packet != null)
         {
             consumer(packet, extraParameter);
+            if (outOfTime(extraParameter))
+            {
+                return;
+            }
             packet = GetNextPacket();
+        }
+    }
+
+    public int Count
+    {
+        get
+        {
+            lock (receivedPacketsLock)
+            {
+                return receivedPackets.Count;
+            }
         }
     }
 }

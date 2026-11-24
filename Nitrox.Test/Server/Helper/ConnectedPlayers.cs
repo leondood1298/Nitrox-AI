@@ -1,4 +1,6 @@
+using System.Collections.Concurrent;
 using System.Net;
+using NitroxClient.GameLogic.PlayerLogic.PlayerPreferences;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Nitrox.Model.Configuration;
@@ -29,21 +31,44 @@ internal sealed class ConnectedPlayers
     private readonly SessionManager sessionManager = new(new ISessionCleaner.Trigger(() => []), NullLogger<SessionManager>.Instance);
     private int nextPort = 20000;
 
+    /// <summary>
+    ///     The private key each test key name stands for, made once: making RSA keys is slow.
+    /// </summary>
+    private static readonly ConcurrentDictionary<string, string> privateKeysByName = new();
+
+    private readonly WorldIdentity? worldIdentity;
+
     public PlayerManager PlayerManager { get; }
+    public BanService BanService { get; }
+    public SubnauticaServerOptions Options { get; }
 
     /// <param name="worldIdentity">For tests of names tied to keys across a change of the world identity.</param>
-    public ConnectedPlayers(WorldIdentity? worldIdentity = null)
+    public ConnectedPlayers(WorldIdentity? worldIdentity = null, SubnauticaServerOptions? options = null)
     {
+        this.worldIdentity = worldIdentity;
+        Options = options ?? new SubnauticaServerOptions();
         // The ban check a connecting player goes through waits until the ban list has been loaded, which happens when
         // the service starts. No save has this name, so there is no ban file to read.
         ServerStartOptions startOptions = new() { SaveName = $"test-{Guid.NewGuid():N}" };
-        BanService banService = new(new ServerJsonSerializer(NullLogger<ServerJsonSerializer>.Instance), Options.Create(startOptions), NullLogger<BanService>.Instance);
-        banService.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
-        banService.StopAsync(CancellationToken.None).GetAwaiter().GetResult();
-        PlayerManager = new PlayerManager(sessionManager, banService, Options.Create(new SubnauticaServerOptions()), NullLogger<PlayerManager>.Instance, worldIdentity);
+        BanService = new BanService(new ServerJsonSerializer(NullLogger<ServerJsonSerializer>.Instance), Microsoft.Extensions.Options.Options.Create(startOptions), NullLogger<BanService>.Instance);
+        BanService.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
+        BanService.StopAsync(CancellationToken.None).GetAwaiter().GetResult();
+        PlayerManager = new PlayerManager(sessionManager, BanService, Microsoft.Extensions.Options.Options.Create(Options), NullLogger<PlayerManager>.Instance, worldIdentity);
     }
 
     public SessionManager SessionManager => sessionManager;
+
+    /// <summary>
+    ///     The public key a test key name stands for.
+    /// </summary>
+    public static string PublicKeyOf(string key) => PlayerKeys.Prove(PrivateKeyOf(key), "", "challenge").Proof.PublicKey;
+
+    /// <summary>
+    ///     What a game holding the test key <paramref name="key" /> sends to join with this challenge.
+    /// </summary>
+    public PlayerKeys.Proof Prove(string key, string challenge) => PlayerKeys.Prove(PrivateKeyOf(key), worldIdentity?.Value ?? "", challenge).Proof;
+
+    private static string PrivateKeyOf(string key) => privateKeysByName.GetOrAdd(key, _ => PlayerKeys.Prove("", "", "challenge").PrivateKeyXml);
 
     public ServerPlayer Connect(string name, string key = "key")
     {
@@ -55,11 +80,27 @@ internal sealed class ConnectedPlayers
     /// <summary>
     ///     Connects a session and asks for a reservation, the way a joining game does before it waits in the queue.
     /// </summary>
-    public SessionId Reserve(string name, string key, out MultiplayerSessionReservation reservation)
+    /// <param name="key">The test key the game holds; empty for a game that proves no key.</param>
+    public SessionId Reserve(string name, string key, out MultiplayerSessionReservation reservation, IPAddress? address = null, Optional<string> password = default)
+    {
+        IPEndPoint endPoint = new(address ?? IPAddress.Loopback, nextPort++);
+        SessionId sessionId = sessionManager.GetOrCreateSession(endPoint).Id;
+        string challenge = PlayerManager.IssueJoinChallenge(sessionId);
+        PlayerKeys.Proof? proof = string.IsNullOrEmpty(key) ? null : Prove(key, challenge);
+        AuthenticationContext authentication = new(name, password, proof?.PublicKey ?? "", proof?.Signature ?? "");
+        reservation = PlayerManager.ReservePlayerContext(sessionId, endPoint, new PlayerSettings(new NitroxColor(1f, 1f, 1f)), authentication);
+        return sessionId;
+    }
+
+    /// <summary>
+    ///     Asks for a reservation with a ready-made authentication, after the session was sent its challenge.
+    /// </summary>
+    public SessionId Reserve(Func<string, AuthenticationContext> authenticationForChallenge, out MultiplayerSessionReservation reservation)
     {
         IPEndPoint endPoint = new(IPAddress.Loopback, nextPort++);
         SessionId sessionId = sessionManager.GetOrCreateSession(endPoint).Id;
-        reservation = PlayerManager.ReservePlayerContext(sessionId, endPoint, new PlayerSettings(new NitroxColor(1f, 1f, 1f)), new AuthenticationContext(name, Optional.Empty, key));
+        string challenge = PlayerManager.IssueJoinChallenge(sessionId);
+        reservation = PlayerManager.ReservePlayerContext(sessionId, endPoint, new PlayerSettings(new NitroxColor(1f, 1f, 1f)), authenticationForChallenge(challenge));
         return sessionId;
     }
 

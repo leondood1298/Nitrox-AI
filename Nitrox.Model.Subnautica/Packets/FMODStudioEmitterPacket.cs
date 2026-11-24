@@ -12,11 +12,15 @@ public class FMODStudioEmitterPacket : Packet
     public bool Play { get; }
     public bool AllowFadeout { get; }
 
-    public FMODStudioEmitterPacket(NitroxId id, string assetPath, bool play, bool allowFadeout)
+    /// <inheritdoc cref="FMODCustomEmitterPacket.Looping" />
+    public bool Looping { get; }
+
+    public FMODStudioEmitterPacket(NitroxId id, string assetPath, bool play, bool allowFadeout, bool looping)
     {
         Id = id;
         AssetPath = assetPath;
         Play = play;
         AllowFadeout = allowFadeout;
+        Looping = looping;
     }
 }

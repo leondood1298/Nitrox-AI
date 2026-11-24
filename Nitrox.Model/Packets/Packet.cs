@@ -55,23 +55,28 @@ namespace Nitrox.Model.Packets
             {
                 foreach (Type type in FindUnionBaseTypes())
                 {
-                    BinaryConverter.RegisterUnion(type, FindTypesInModelAssemblies()
-                                                        .Where(t => type.IsAssignableFrom(t) && !t.IsAbstract && !t.IsInterface)
-                                                        .OrderByDescending(t =>
-                                                        {
-                                                            Type current = t;
-                                                            int levels = 0;
+                    Type[] unionTypes = FindTypesInModelAssemblies()
+                                        .Where(t => type.IsAssignableFrom(t) && !t.IsAbstract && !t.IsInterface)
+                                        .OrderByDescending(t =>
+                                        {
+                                            Type current = t;
+                                            int levels = 0;
 
-                                                            while (current != type && current != null)
-                                                            {
-                                                                current = current.BaseType;
-                                                                levels++;
-                                                            }
+                                            while (current != type && current != null)
+                                            {
+                                                current = current.BaseType;
+                                                levels++;
+                                            }
 
-                                                            return levels;
-                                                        })
-                                                        .ThenBy(t => t.FullName, StringComparer.Ordinal)
-                                                        .ToArray());
+                                            return levels;
+                                        })
+                                        .ThenBy(t => t.FullName, StringComparer.Ordinal)
+                                        .ToArray();
+                    BinaryConverter.RegisterUnion(type, unionTypes);
+                    if (type == typeof(Packet))
+                    {
+                        packetTypesByUnionIndex = unionTypes;
+                    }
                 }
 
                 // This will initialize the processor for Wrapper which will initialize all the others
@@ -90,6 +95,40 @@ namespace Nitrox.Model.Packets
         }
 
         public static Packet? Deserialize(byte[] data) => BinaryConverter.Deserialize<Wrapper>(data).Packet;
+
+        /// <summary>
+        ///     Reads a packet from the first <paramref name="length" /> bytes of <paramref name="data" />, which may be a
+        ///     larger pooled buffer. Lengths and nesting inside the packet are held to those bytes.
+        /// </summary>
+        /// <exception cref="InvalidDataException">The data is not a packet that fits in it.</exception>
+        public static Packet? Deserialize(byte[] data, int length) => BinaryConverter.Deserialize<Wrapper>(new ReadOnlySpan<byte>(data, 0, length)).Packet;
+
+        /// <summary>
+        ///     The packet types in the order of the index the serializer writes before each packet.
+        /// </summary>
+        private static Type[] packetTypesByUnionIndex = [];
+
+        /// <summary>
+        ///     Which type of packet serialized data holds, read from its first bytes without reading the packet.
+        /// </summary>
+        /// <returns>False if the data is too short or names no packet type.</returns>
+        public static bool TryPeekType(ReadOnlySpan<byte> data, out Type? packetType)
+        {
+            packetType = null;
+            if (data.Length < sizeof(int))
+            {
+                return false;
+            }
+            // The serialized Wrapper starts with its packet: the index of the packet's type in the union
+            int index = data[0] | data[1] << 8 | data[2] << 16 | data[3] << 24;
+            Type[] types = packetTypesByUnionIndex;
+            if (index < 0 || index >= types.Length)
+            {
+                return false;
+            }
+            packetType = types[index];
+            return true;
+        }
 
         public override string ToString()
         {

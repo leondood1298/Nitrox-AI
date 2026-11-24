@@ -4,34 +4,25 @@ using System.Text;
 namespace Nitrox.Server.Subnautica.Models.GameLogic;
 
 /// <summary>
-///     A player's name is tied to the key their game sent the first time the name joined this server. Only a hash of
-///     the key is kept, so that a copy of the save does not let anyone join as that player.
+///     A player's name is tied to the public key their game proved it holds the first time the name joined this server
+///     (see <see cref="Nitrox.Model.MultiplayerSession.PlayerIdentityProof" />). Only the public half is kept, so a copy of
+///     the save does not let anyone join as that player.
 /// </summary>
 internal static class PlayerIdentityKey
 {
-    /// <returns>The hash of <paramref name="key" />, or null when no key was sent.</returns>
-    public static string? Hash(string? key)
-    {
-        if (string.IsNullOrEmpty(key))
-        {
-            return null;
-        }
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)));
-    }
-
-    /// <param name="storedHash">The hash kept with the player, null if no key is tied to the name yet.</param>
-    /// <param name="presentedHash">The hash of the key the joining game sent, null if it sent none.</param>
+    /// <param name="storedPublicKey">The key kept with the player, null if no key is tied to the name yet.</param>
+    /// <param name="presentedPublicKey">The key the joining game proved it holds.</param>
     /// <returns>True if the joining game may use the name.</returns>
-    public static bool Matches(string? storedHash, string? presentedHash)
+    public static bool Matches(string? storedPublicKey, string? presentedPublicKey)
     {
-        if (storedHash == null)
+        if (storedPublicKey == null)
         {
             return true;
         }
-        if (presentedHash == null)
+        if (presentedPublicKey == null)
         {
             return false;
         }
-        return CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(storedHash), Encoding.ASCII.GetBytes(presentedHash));
+        return CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(storedPublicKey), Encoding.ASCII.GetBytes(presentedPublicKey));
     }
 }

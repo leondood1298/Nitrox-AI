@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -44,39 +45,42 @@ public sealed class HeroicGames : IGamePlatform
         static bool PathEquals(string path1, string path2) => string.Equals(PathNormalize(path1), PathNormalize(path2), StringComparison.Ordinal);
     }
 
-    public static async Task<ProcessEx> StartGameAsync(string egsNamespace, string launchArguments)
+    /// <param name="launcherPath">The launcher folder for a multiplayer start, null for a single-player start.</param>
+    public static async Task<ProcessEx> StartGameAsync(string egsNamespace, string launchArguments, string? launcherPath)
+    {
+        string launchUri = BuildLaunchUri(egsNamespace, launchArguments, launcherPath, RuntimeInformation.IsOSPlatform(OSPlatform.Windows));
+
+        // Heroic starts the game itself, so nothing is passed through this process's environment: Windows refuses
+        // environment variables together with UseShellExecute, which the URI needs (upstream issue 2834).
+        ProcessStartInfo startInfo = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            ? new ProcessStartInfo(launchUri) { UseShellExecute = true }
+            : new ProcessStartInfo("xdg-open", $"\"{launchUri}\"");
+
+        Log.Info($"Starting game with heroic uri: {launchUri}");
+        return await Task.FromResult(ProcessEx.From(startInfo));
+    }
+
+    /// <summary>
+    ///     Every argument is its own escaped "arg" parameter, so paths with spaces, '&amp;' or '#' survive.
+    /// </summary>
+    internal static string BuildLaunchUri(string egsNamespace, string launchArguments, string? launcherPath, bool isWindows)
     {
         StringBuilder launchCmd = new("heroic://launch?runner=legendary");
-        launchCmd.Append("&appName=").Append(egsNamespace);
+        launchCmd.Append("&appName=").Append(Uri.EscapeDataString(egsNamespace));
 
-        string launcherPathPrefix = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? string.Empty : "Z:";
-        launchCmd.Append("&arg=--nitrox&arg=").Append(launcherPathPrefix).Append(NitroxUser.LauncherPath);
-
-        foreach (string argumentPart in launchArguments.Split(' '))
+        List<string> arguments = [];
+        if (launcherPath != null)
         {
-            if (!string.IsNullOrWhiteSpace(argumentPart))
-            {
-                launchCmd.Append("&arg=").Append(argumentPart.Trim());
-            }
+            // The game runs inside Wine off Windows, where the host's root is drive Z:
+            arguments.Add("--nitrox");
+            arguments.Add(isWindows ? launcherPath : $"Z:{launcherPath.Replace('/', '\\')}");
         }
+        arguments.AddRange(GameLaunchArguments.Split(launchArguments));
 
-        ProcessStartInfo startInfo;
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        foreach (string argument in arguments)
         {
-            // Need to replace \ with / so it's not eaten as an escape char
-            startInfo = new ProcessStartInfo(launchCmd.ToString().Replace('\\', '/'))
-            {
-                UseShellExecute = true
-            };
+            launchCmd.Append("&arg=").Append(Uri.EscapeDataString(argument));
         }
-        else
-        {
-            startInfo = new ProcessStartInfo("xdg-open", $"\"{launchCmd}\"");
-        }
-        startInfo.Environment.Add(NitroxUser.LAUNCHER_PATH_ENV_KEY, NitroxUser.LauncherPath);
-        startInfo.Environment.Add(NitroxConstants.HOST_HOME_ENV_VAR_NAME, NitroxDirectory.HomePath);
-
-        Log.Info($"Starting game with heroic uri: {startInfo.FileName} {startInfo.Arguments}");
-        return await Task.FromResult(ProcessEx.From(startInfo));
+        return launchCmd.ToString();
     }
 }

@@ -21,16 +21,30 @@ public static class PlayerAnimationParameters
         [AnimChangeType.JUMPING] = "jump",
         [AnimChangeType.BASHING] = "bash",
         [AnimChangeType.DIVING] = "diving",
-        [AnimChangeType.DIVING_LAND] = "diving_land"
+        [AnimChangeType.DIVING_LAND] = "diving_land",
+        // ArmsController.Update
+        [AnimChangeType.GRABBED] = "grab",
+        [AnimChangeType.BLEEDER_ATTACHED] = "bleeder",
+        // The ConditionRules of ArmsController.InstallAnimationRules, which are switched off on other players' bodies
+        [AnimChangeType.ON_SURFACE] = "on_surface",
+        // StasisRifle.Charge
+        [AnimChangeType.STASIS_RIFLE_CHARGED] = "charged_stasisrifle",
+        // DiveReel.SetDiveReelOutOfAmmoAnimator
+        [AnimChangeType.DIVE_REEL_OUT_OF_AMMO] = "divereel_outofammo",
+        // Exosuit.SlotLeftDown/SlotRightDown and their Up
+        [AnimChangeType.EXOSUIT_USE_LEFT] = "exosuit_use_left",
+        [AnimChangeType.EXOSUIT_USE_RIGHT] = "exosuit_use_right"
     };
 
     /// <summary>
-    ///     Parameters that start an animation once. Set by <c>Player.OnKill</c>.
+    ///     Parameters that start an animation once. Set by <c>Player.OnKill</c> and <c>DiveReel.UpdateEquipped</c>, and
+    ///     sent by patches on these.
     /// </summary>
     public static IReadOnlyDictionary<AnimChangeType, string> Triggers { get; } = new Dictionary<AnimChangeType, string>
     {
         [AnimChangeType.DEATH] = "player_death",
         [AnimChangeType.DEATH_FIRE] = "player_death_fire",
-        [AnimChangeType.DEATH_EXPLOSION] = "player_death_explosion"
+        [AnimChangeType.DEATH_EXPLOSION] = "player_death_explosion",
+        [AnimChangeType.DIVE_REEL_RESET] = "divereel_reset"
     };
 }

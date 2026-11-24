@@ -47,7 +47,7 @@ public abstract class Modal
     // Is useful for calling IngameMenu::OnDeselect() from a modal class (in Hide() for example)
     public bool IsAvoidableBypass = false;
 
-    public Modal(string yesButtonText = "YES", bool hideNoButton = true, string noButtonText = "NO", string modalText = "", bool isAvoidable = false, bool freezeGame = false, float transparency = 0.392f, float height = 195f)
+    public Modal(string yesButtonText = "Nitrox_Yes", bool hideNoButton = true, string noButtonText = "Nitrox_No", string modalText = "", bool isAvoidable = false, bool freezeGame = false, float transparency = 0.392f, float height = 195f)
     {
         Type type = GetType();
         if (Modals.ContainsKey(type))
@@ -79,9 +79,24 @@ public abstract class Modal
 
     public IEnumerator ShowAsync()
     {
+        // Without the in-game menu (on the main menu) nothing can be shown, and a modal recorded as current would then block
+        // closing the in-game menu in the next world
+        if (!IngameMenu.main)
+        {
+            Log.Warn($"Not showing {SubWindowName}: the in-game menu does not exist");
+            yield break;
+        }
         CurrentModal?.Hide();
         CurrentModal = this;
         yield return ShowImplementation();
+    }
+
+    /// <summary>
+    ///     Forgets the modal that was on screen, for when the in-game menu it lived in is gone or about to be replaced.
+    /// </summary>
+    public static void ClearCurrent()
+    {
+        CurrentModal = null;
     }
 
     /// <summary>
@@ -148,7 +163,8 @@ public abstract class Modal
     private void UpdateModal()
     {
         text = modalSubWindow.FindChild("Header").GetComponent<TextMeshProUGUI>();
-        text.text = ModalText;
+        // Texts may be language keys, read in the language of the moment; any other text comes back unchanged
+        text.text = Language.main.Get(ModalText);
 
         GameObject buttonYesObject = modalSubWindow.FindChild("ButtonYes");
         GameObject buttonNoObject = modalSubWindow.FindChild("ButtonNo");
@@ -157,7 +173,7 @@ public abstract class Modal
         // We need to reinitialize onClick to avoid keeping Persisted Events (which are set manually inside Unity's Editor)
         yesButton.onClick = new Button.ButtonClickedEvent();
         yesButton.onClick.AddListener(ClickYes);
-        buttonYesObject.GetComponentInChildren<TextMeshProUGUI>().text = YesButtonText;
+        buttonYesObject.GetComponentInChildren<TextMeshProUGUI>().text = Language.main.Get(YesButtonText);
         RectTransform yesButtonTransform = buttonYesObject.GetComponent<RectTransform>();
         yesButtonTransform.anchoredPosition = new Vector2(yesButtonTransform.anchoredPosition.x, 50f - Height);
 
@@ -175,7 +191,7 @@ public abstract class Modal
             Button noButton = buttonNoObject.GetComponent<Button>();
             noButton.onClick = new Button.ButtonClickedEvent();
             noButton.onClick.AddListener(ClickNo);
-            buttonNoObject.GetComponentInChildren<TextMeshProUGUI>().text = NoButtonText;
+            buttonNoObject.GetComponentInChildren<TextMeshProUGUI>().text = Language.main.Get(NoButtonText);
             RectTransform noButtonTransform = buttonNoObject.GetComponent<RectTransform>();
             noButtonTransform.anchoredPosition = new Vector2(noButtonTransform.anchoredPosition.x, 50f - Height);
         }

@@ -1,20 +1,27 @@
-using System;
 using System.Collections.Generic;
 using FMOD.Studio;
 using FMODUnity;
-using NitroxClient.GameLogic.FMOD;
+using STOP_MODE = FMOD.Studio.STOP_MODE;
+using Nitrox.Model.DataStructures;
 using Nitrox.Model.GameLogic.FMOD;
+using NitroxClient.GameLogic.FMOD;
 using UnityEngine;
 
 namespace NitroxClient.MonoBehaviours;
 
+/// <summary>
+///     Plays on this game's copy of an entity the sounds another player's game sends for it. A positional (3D) event is
+///     played by the entity's own emitter, so that it follows the entity and fades as the event is made to. A
+///     non-positional (2D) event is played as an instance of its own and faded every frame by the distance to the entity.
+///     Whatever is started here is stopped when the entity is hidden or destroyed.
+/// </summary>
 [DisallowMultipleComponent]
 public class FMODEmitterController : MonoBehaviour
 {
-    private readonly Dictionary<string, FMOD_CustomEmitter> customEmitters = new();
-    private readonly Dictionary<string, Tuple<FMOD_CustomLoopingEmitter, bool, float>> loopingEmitters = new(); // Tuple<emitter, is3D, radius>
-    private readonly Dictionary<string, FMOD_StudioEventEmitter> studioEmitters = new();
-    private readonly Dictionary<string, Tuple<EventInstance, float>> eventInstances = new(); // 2D Sounds Tuple<evt, radius>
+    private readonly Dictionary<string, Registered> emitters = new();
+    private readonly Dictionary<string, Flat> flatSounds = new();
+    private readonly HashSet<string> startedStudioEmitters = new();
+    private readonly List<string> finished = new();
 
     /// <summary>
     /// When <see cref="GameObject"/>s are copied their Start()/Awake() functions don't get called again.
@@ -23,178 +30,250 @@ public class FMODEmitterController : MonoBehaviour
     /// </summary>
     public void LateRegisterEmitter()
     {
+        FMODWhitelist whitelist = this.Resolve<FMODWhitelist>();
         foreach (MonoBehaviour behaviour in gameObject.GetComponentsInChildren<MonoBehaviour>(true))
         {
             switch (behaviour)
             {
-                case FMOD_CustomEmitter customEmitter when this.Resolve<FMODWhitelist>().IsWhitelisted(customEmitter.asset.path, out float radius):
+                case FMOD_CustomEmitter customEmitter when customEmitter.asset && whitelist.IsWhitelisted(customEmitter.asset.path, out float radius):
                     AddEmitter(customEmitter.asset.path, customEmitter, radius);
                     break;
-                case FMOD_StudioEventEmitter studioEmitter when this.Resolve<FMODWhitelist>().IsWhitelisted(studioEmitter.asset.path, out float radius):
+                case FMOD_StudioEventEmitter studioEmitter when studioEmitter.asset && whitelist.IsWhitelisted(studioEmitter.asset.path, out float radius):
                     AddEmitter(studioEmitter.asset.path, studioEmitter, radius);
                     break;
             }
         }
     }
 
-    public void AddEmitter(string path, FMOD_CustomEmitter customEmitter, float radius)
+    public void AddEmitter(string path, FMOD_CustomEmitter customEmitter, float radius) => Register(path, new Registered(customEmitter, null, radius));
+
+    public void AddEmitter(string path, FMOD_StudioEventEmitter studioEmitter, float radius) => Register(path, new Registered(null, studioEmitter, radius));
+
+    private void Register(string path, Registered registered)
     {
-        if (customEmitters.ContainsKey(path))
+        if (emitters.ContainsKey(path))
+        {
+            return;
+        }
+        emitters.Add(path, registered);
+
+        // The entity loaded while another player's loop on it plays: it is heard from now on, as everyone else hears it
+        if (gameObject.TryGetNitroxId(out NitroxId id) && this.Resolve<RemoteSoundLoops>().TryGetVolume(id, path, out float volume))
+        {
+            Play(path, volume);
+        }
+    }
+
+    public void Play(string path, float volume)
+    {
+        if (!emitters.TryGetValue(path, out Registered registered) || !registered.Alive)
+        {
+            Log.WarnOnce($"[{nameof(FMODEmitterController)}] {gameObject.name} has no emitter for {path}");
+            return;
+        }
+
+        // Sent by another player: this game must not send it back
+        using (FMODSystem.SuppressSendingSounds())
+        {
+            FMODSystem.EventKind kind = FMODSystem.GetEventKind(path);
+            if (!kind.Is3D)
+            {
+                PlayFlat(path, registered, volume);
+                return;
+            }
+
+            EventInstance evt;
+            if (registered.Custom)
+            {
+                registered.Custom.Play();
+                evt = registered.Custom.GetEventInstance();
+            }
+            else
+            {
+                registered.Studio.PlayUI();
+                startedStudioEmitters.Add(path);
+                evt = registered.Studio.evt;
+            }
+            // Only a radius the whitelist widens on purpose (the Cyclops horn) changes the event's own falloff
+            if (registered.Radius > kind.MaxDistance && evt.isValid())
+            {
+                evt.setProperty(EVENT_PROPERTY.MAXIMUM_DISTANCE, registered.Radius);
+            }
+        }
+    }
+
+    public void Stop(string path, bool allowFadeout)
+    {
+        if (!emitters.TryGetValue(path, out Registered registered))
         {
             return;
         }
 
-        customEmitter.CacheEventInstance();
-        EventInstance evt = customEmitter.GetEventInstance();
-        evt.getDescription(out EventDescription description);
-        description.is3D(out bool is3D);
-
-        if (!is3D)
+        using (FMODSystem.SuppressSendingSounds())
         {
-            eventInstances.TryAdd(customEmitter.asset.path, new(evt, radius));
+            if (flatSounds.TryGetValue(path, out Flat flat))
+            {
+                flatSounds.Remove(path);
+                flat.Instance.stop(allowFadeout ? STOP_MODE.ALLOWFADEOUT : STOP_MODE.IMMEDIATE);
+                flat.Instance.release();
+                // The game's looping emitter plays its closing sound when it stops; this instance is not that emitter
+                if (registered.Custom is FMOD_CustomLoopingEmitter looping && looping && looping.assetStop)
+                {
+                    PlayEventOneShot(looping.assetStop.path, registered.Radius, transform.position, flat.Volume);
+                }
+            }
+            else if (registered.Custom)
+            {
+                registered.Custom.Stop();
+            }
+            else if (registered.Studio && startedStudioEmitters.Remove(path))
+            {
+                registered.Studio.Stop(allowFadeout);
+            }
+        }
+    }
+
+    private void PlayFlat(string path, Registered registered, float volume)
+    {
+        if (flatSounds.TryGetValue(path, out Flat previous))
+        {
+            previous.Instance.stop(STOP_MODE.IMMEDIATE);
+            previous.Instance.release();
+        }
+        EventInstance evt = FMODUWE.GetEventImpl(path);
+        if (!evt.isValid())
+        {
+            flatSounds.Remove(path);
             return;
         }
+        Flat flat = new(evt, volume, registered.Radius);
+        evt.setVolume(GetFlatVolume(flat));
+        evt.start();
+        flatSounds[path] = flat;
 
-        evt.setProperty(EVENT_PROPERTY.MINIMUM_DISTANCE, 1f);
-        evt.setProperty(EVENT_PROPERTY.MAXIMUM_DISTANCE, radius);
-
-        customEmitters.Add(path, customEmitter);
-
-        if (customEmitter is FMOD_CustomLoopingEmitter loopingEmitter)
+        if (registered.Custom is FMOD_CustomLoopingEmitter looping && looping && looping.assetStart)
         {
-            if (loopingEmitter.assetStart && this.Resolve<FMODWhitelist>().IsWhitelisted(loopingEmitter.assetStart.path, out float radiusStart))
+            PlayEventOneShot(looping.assetStart.path, registered.Radius, transform.position, volume);
+        }
+    }
+
+    private float GetFlatVolume(Flat flat)
+    {
+        return Player.main ? FMODSystem.CalculateVolume(transform.position, Player.main.transform.position, flat.Radius, flat.Volume) : 0f;
+    }
+
+    public void Update()
+    {
+        if (flatSounds.Count == 0)
+        {
+            return;
+        }
+        finished.Clear();
+        foreach (KeyValuePair<string, Flat> pair in flatSounds)
+        {
+            pair.Value.Instance.getPlaybackState(out PLAYBACK_STATE state);
+            if (state == PLAYBACK_STATE.STOPPED)
             {
-                AddEmitter(loopingEmitter.assetStart.path, loopingEmitter, radiusStart);
+                finished.Add(pair.Key);
+                continue;
             }
+            // A non-positional sound only fades by volume, so it follows the distance while it plays
+            pair.Value.Instance.setVolume(GetFlatVolume(pair.Value));
+        }
+        foreach (string path in finished)
+        {
+            flatSounds[path].Instance.release();
+            flatSounds.Remove(path);
+        }
+    }
 
-            if (loopingEmitter.assetStop && this.Resolve<FMODWhitelist>().IsWhitelisted(loopingEmitter.assetStop.path, out float radiusStop))
+    public void OnDisable() => StopEverythingStarted();
+
+    public void OnDestroy() => StopEverythingStarted();
+
+    /// <summary>
+    ///     The game stops a playing emitter of its own when its object is hidden, but not the instances started here nor a
+    ///     studio emitter, so a loop of an entity that is put away, unloaded or destroyed would play on.
+    /// </summary>
+    private void StopEverythingStarted()
+    {
+        foreach (Flat flat in flatSounds.Values)
+        {
+            flat.Instance.stop(STOP_MODE.IMMEDIATE);
+            flat.Instance.release();
+        }
+        flatSounds.Clear();
+
+        using (FMODSystem.SuppressSendingSounds())
+        {
+            foreach (string path in startedStudioEmitters)
             {
-                AddEmitter(loopingEmitter.assetStop.path, loopingEmitter, radiusStop);
+                if (emitters.TryGetValue(path, out Registered registered) && registered.Studio)
+                {
+                    registered.Studio.Stop(false);
+                }
             }
         }
+        startedStudioEmitters.Clear();
     }
 
-    private void AddEmitter(string path, FMOD_CustomLoopingEmitter loopingEmitter, float radius)
-    {
-        if (!loopingEmitters.ContainsKey(path))
-        {
-            loopingEmitter.CacheEventInstance();
-
-            loopingEmitter.evt.getDescription(out EventDescription description);
-            description.is3D(out bool is3D);
-
-            loopingEmitters.Add(path, new(loopingEmitter, is3D, radius));
-        }
-    }
-
-    public void AddEmitter(string path, FMOD_StudioEventEmitter studioEmitter, float radius)
-    {
-        studioEmitter.CacheEventInstance();
-        studioEmitter.evt.getDescription(out EventDescription description);
-        description.is3D(out bool is3D);
-
-        if (is3D)
-        {
-            studioEmitters.TryAdd(path, studioEmitter);
-        }
-        else
-        {
-            eventInstances.TryAdd(path, new(studioEmitter.evt, radius));
-        }
-    }
-
-    public void PlayCustomEmitter(string path) => customEmitters[path].AliveOrNull()?.Play();
-    public void SetParameterCustomEmitter(string path, string paramString, float value) => customEmitters[path].AliveOrNull()?.SetParameterValue(paramString, value);
-    public void StopCustomEmitter(string path) => customEmitters[path].AliveOrNull()?.Stop();
-
-    public void PlayStudioEmitter(string path, Vector3 position)
-    {
-        if (studioEmitters.TryGetValue(path, out FMOD_StudioEventEmitter studioEmitter) && studioEmitter)
-        {
-            studioEmitter.PlayUI();
-        }
-        else if (eventInstances.TryGetValue(path, out Tuple<EventInstance, float> tuple))
-        {
-            float volume = FMODSystem.CalculateVolume(position, Player.main.transform.position, tuple.Item2, 1f);
-            if (volume > 0)
-            {
-                tuple.Item1.setVolume(volume);
-                tuple.Item1.start();
-            }
-        }
-    }
-
-    public void StopStudioEmitter(string path, bool allowFadeout)
-    {
-        if (studioEmitters.TryGetValue(path, out FMOD_StudioEventEmitter studioEmitter) && studioEmitter)
-        {
-            studioEmitter.Stop(allowFadeout);
-        }
-        else if (eventInstances.TryGetValue(path, out Tuple<EventInstance, float> tuple))
-        {
-            tuple.Item1.stop(allowFadeout ? FMOD.Studio.STOP_MODE.ALLOWFADEOUT : FMOD.Studio.STOP_MODE.IMMEDIATE);
-        }
-    }
-
-    public void PlayCustomLoopingEmitter(string path)
-    {
-        (FMOD_CustomLoopingEmitter loopingEmitter, bool is3D, float radius) = loopingEmitters[path];
-        EventInstance eventInstance = FMODUWE.GetEventImpl(path);
-
-        if (is3D)
-        {
-            eventInstance.set3DAttributes(loopingEmitter.transform.To3DAttributes());
-            eventInstance.setProperty(EVENT_PROPERTY.MINIMUM_DISTANCE, 1f);
-            eventInstance.setProperty(EVENT_PROPERTY.MAXIMUM_DISTANCE, radius);
-        }
-        else
-        {
-            eventInstance.setVolume(FMODSystem.CalculateVolume(loopingEmitter.transform.position, Player.main.transform.position, radius, 1f));
-        }
-
-        eventInstance.start();
-        eventInstance.release();
-        loopingEmitter.timeLastStopSound = Time.time;
-    }
-
-    public void PlayEventInstance(string path, float volume)
-    {
-        if (eventInstances.TryGetValue(path, out Tuple<EventInstance, float> tuple))
-        {
-            tuple.Item1.setVolume(volume);
-            tuple.Item1.start();
-        }
-    }
-
-    public void StopEventInstance(string path)
-    {
-        if (eventInstances.TryGetValue(path, out Tuple<EventInstance, float> tuple))
-        {
-            tuple.Item1.stop(FMOD.Studio.STOP_MODE.IMMEDIATE);
-        }
-    }
-
-    public static void PlayEventOneShot(FMODAsset asset, float radius, Vector3 origin, float volume = 1f) => PlayEventOneShot(asset.path, radius, origin, volume);
-
+    /// <summary>
+    ///     Plays a sound sent without an entity. Its volume is reduced here only: a positional event by its own falloff, a
+    ///     non-positional one by its distance over the whitelist radius.
+    /// </summary>
     public static void PlayEventOneShot(string path, float radius, Vector3 origin, float volume = 1f)
     {
+        FMODSystem.EventKind kind = FMODSystem.GetEventKind(path);
         EventInstance evt = FMODUWE.GetEventImpl(path);
-        evt.getDescription(out EventDescription description);
-        description.is3D(out bool is3D);
-
-        if (is3D)
+        if (!evt.isValid())
         {
-            evt.setProperty(EVENT_PROPERTY.MINIMUM_DISTANCE, 1f);
-            evt.setProperty(EVENT_PROPERTY.MAXIMUM_DISTANCE, radius);
+            return;
+        }
+
+        if (kind.Is3D)
+        {
             evt.setVolume(volume);
+            if (radius > kind.MaxDistance)
+            {
+                evt.setProperty(EVENT_PROPERTY.MAXIMUM_DISTANCE, radius);
+            }
         }
         else
         {
-            evt.setVolume(FMODSystem.CalculateVolume(origin, Player.main.transform.position, radius, volume));
+            evt.setVolume(Player.main ? FMODSystem.CalculateVolume(origin, Player.main.transform.position, radius, volume) : 0f);
         }
 
         evt.set3DAttributes(origin.To3DAttributes());
         evt.start();
         evt.release();
+    }
+
+    private sealed class Registered
+    {
+        public FMOD_CustomEmitter Custom { get; }
+        public FMOD_StudioEventEmitter Studio { get; }
+        public float Radius { get; }
+        public bool Alive => Custom || Studio;
+
+        public Registered(FMOD_CustomEmitter custom, FMOD_StudioEventEmitter studio, float radius)
+        {
+            Custom = custom;
+            Studio = studio;
+            Radius = radius;
+        }
+    }
+
+    private sealed class Flat
+    {
+        public EventInstance Instance { get; }
+        public float Volume { get; }
+        public float Radius { get; }
+
+        public Flat(EventInstance instance, float volume, float radius)
+        {
+            Instance = instance;
+            Volume = volume;
+            Radius = radius;
+        }
     }
 }

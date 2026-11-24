@@ -21,7 +21,9 @@ internal sealed class PlayerAnimationStates : ISessionCleaner
     ///     Whether an animation stays as it is until the player changes it again. Being underwater also does, but joining
     ///     players get that with the rest of the player's details. The others are over within moments.
     /// </summary>
-    public static bool IsLasting(AnimChangeType type) => type is AnimChangeType.USING_PDA or AnimChangeType.USING_TOOL or AnimChangeType.USING_TOOL_ALT;
+    public static bool IsLasting(AnimChangeType type) => type is AnimChangeType.USING_PDA or AnimChangeType.USING_TOOL or AnimChangeType.USING_TOOL_ALT or AnimChangeType.BLEEDER_ATTACHED
+                                                                    or AnimChangeType.ON_SURFACE or AnimChangeType.STASIS_RIFLE_CHARGED or AnimChangeType.DIVE_REEL_OUT_OF_AMMO
+                                                                    or AnimChangeType.EXOSUIT_USE_LEFT or AnimChangeType.EXOSUIT_USE_RIGHT;
 
     public void Set(SessionId sessionId, PlayerAnimation animation)
     {

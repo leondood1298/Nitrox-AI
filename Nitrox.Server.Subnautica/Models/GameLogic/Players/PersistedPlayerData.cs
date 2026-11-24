@@ -13,10 +13,17 @@ internal sealed class PersistedPlayerData
     public string Name { get; set; }
 
     /// <summary>
-    ///     The hash of the key the name is tied to; null for a player saved before keys existed, who keeps the first key
-    ///     they join with.
+    ///     The public key the name is tied to; null for a player saved before such keys existed (including one tied to
+    ///     the older kind of key, whose field is no longer read), who keeps the first key they join with.
     /// </summary>
-    public string? IdentityKeyHash { get; set; }
+    public string? IdentityPublicKey { get; set; }
+
+    /// <summary>
+    ///     The rank given by a command, applied again when the player proves the same key; null for the server's default.
+    /// </summary>
+    public Perms? GrantedPermissions { get; set; }
+
+    public bool IsMuted { get; set; }
 
     public List<NitroxTechType> UsedItems { get; set; } = [];
 
@@ -35,8 +42,6 @@ internal sealed class PersistedPlayerData
     public SubnauticaGameMode GameMode { get; set; }
 
     public NitroxId SubRootId { get; set; }
-
-    public Perms Permissions { get; set; }
 
     public NitroxId NitroxId { get; set; }
 
@@ -71,7 +76,8 @@ internal sealed class PersistedPlayerData
                           SpawnRotation,
                           NitroxId,
                           Optional.OfNullable(SubRootId),
-                          Permissions,
+                          // The rank in effect is set when the player joins (PlayerRanks.OnJoin)
+                          GrantedPermissions ?? Perms.DEFAULT,
                           CurrentStats,
                           GameMode,
                           UsedItems,
@@ -86,7 +92,9 @@ internal sealed class PersistedPlayerData
         {
             player.UnreadPdaNotifications.Add(notification);
         }
-        player.IdentityKeyHash = IdentityKeyHash;
+        player.IdentityPublicKey = IdentityPublicKey;
+        player.GrantedPermissions = GrantedPermissions;
+        player.IsMuted = IsMuted;
         foreach (NitroxVector3 marker in DeathMarkers ?? [])
         {
             player.DeathMarkers.Add(marker);
@@ -99,7 +107,9 @@ internal sealed class PersistedPlayerData
         return new PersistedPlayerData
         {
             Name = player.Name,
-            IdentityKeyHash = player.IdentityKeyHash,
+            IdentityPublicKey = player.IdentityPublicKey,
+            GrantedPermissions = player.GrantedPermissions,
+            IsMuted = player.IsMuted,
             UsedItems = player.UsedItems?.ToList(),
             QuickSlotsBindingIds = player.QuickSlotsBindingIds,
             EquippedItems = new(player.EquippedItems),
@@ -109,7 +119,6 @@ internal sealed class PersistedPlayerData
             CurrentStats = player.Stats,
             GameMode = player.GameMode,
             SubRootId = player.SubRootId.OrNull(),
-            Permissions = player.Permissions,
             NitroxId = player.GameObjectId,
             IsPermaDeath = player.IsPermaDeath,
             PersonalCompletedGoalsWithTimestamp = new(player.PersonalCompletedGoalsWithTimestamp),

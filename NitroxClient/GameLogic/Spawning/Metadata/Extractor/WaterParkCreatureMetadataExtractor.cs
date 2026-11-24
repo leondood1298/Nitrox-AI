@@ -7,12 +7,19 @@ public class WaterParkCreatureMetadataExtractor : EntityMetadataExtractor<WaterP
 {
     public override WaterParkCreatureMetadata Extract(WaterParkCreature entity)
     {
-        // We don't need to save metadata for fishes with default values
-        if (entity.age == -1)
+        bool isAlive = !entity.TryGetComponent(out LiveMixin liveMixin) || liveMixin.IsAlive();
+        if (!HasGrowthToKeep(entity.age, isAlive))
         {
             return null;
         }
         CreatureInfections creatureInfections = Resolve<CreatureInfections>();
         return new(entity.age, entity.matureTime, entity.timeNextBreed, entity.bornInside, creatureInfections.GetDecidedAmount(entity), creatureInfections.GetDecidedEnzymeEndTime(entity));
     }
+
+    /// <summary>
+    ///     A fish with default values has no growth to keep. A dead one neither: the game lists WaterParkCreature before
+    ///     Eatable on every fish, and an entity has one metadata slot, so its decay (EatableMetadata) has to take it, or the
+    ///     dead fish came back alive and fresh for the others and after a restart.
+    /// </summary>
+    public static bool HasGrowthToKeep(float age, bool isAlive) => age != -1 && isAlive;
 }

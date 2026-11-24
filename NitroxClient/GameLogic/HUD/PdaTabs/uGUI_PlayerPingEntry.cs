@@ -7,6 +7,7 @@ using NitroxClient.GameLogic.PlayerLogic.PlayerModel.Abstract;
 using NitroxClient.MonoBehaviours.Gui.Modals;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures.GameLogic;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.Packets;
 using UnityEngine;
 using UnityEngine.UI;
@@ -130,6 +131,7 @@ public class uGUI_PlayerPingEntry : uGUI_PingEntry
         Color playerColor = player.PlayerSettings.PlayerColor.ToUnity();
         icon.SetColors(playerColor, playerColor, playerColor);
         RefreshMuteButton();
+        RefreshShowButton();
 
         // We need to update each button's listener whether or not they have enough perms because they may become OP during playtime
         ClearButtonListeners();
@@ -139,20 +141,26 @@ public class uGUI_PlayerPingEntry : uGUI_PingEntry
             if (player is RemotePlayer remotePlayer)
             {
                 PingInstance pingInstance = remotePlayer.PlayerModel.GetComponentInChildren<PingInstance>();
-                pingInstance.SetVisible(toggled);
+                if (pingInstance)
+                {
+                    pingInstance.SetVisible(toggled);
+                }
+                showPing = toggled;
                 GetTooltip(ShowObject).TooltipText = GetLocalizedText(toggled ? "Nitrox_HidePing" : "Nitrox_ShowPing");
                 visibilityIcon.sprite = toggled ? spriteVisible : spriteHidden;
             }
         });
         // Each of those clicks involves a confirmation modal
-        GetToggle(MuteObject).onValueChanged.AddListener(delegate (bool toggled)
+        GetToggle(MuteObject).onValueChanged.AddListener(delegate (bool _)
         {
-            Modal.Get<ConfirmModal>()?.Show(GetLocalizedText(muted ? "Nitrox_Unmute" : "Nitrox_Mute", true), () =>
+            // The toggle only asks; it shows the player's mute state as the server last said it, whatever the answer
+            bool mute = !muted;
+            RefreshMuteButton();
+            Modal.Get<ConfirmModal>()?.Show(GetLocalizedText(mute ? "Nitrox_Mute" : "Nitrox_Unmute", true), () =>
             {
-                GetToggle(MuteObject).SetIsOnWithoutNotify(!toggled);
                 if (player is RemotePlayer remotePlayer)
                 {
-                    packetSender.Send(new ServerCommand($"{(toggled ? "" : "un")}mute {player.PlayerName}"));
+                    packetSender.Send(new ServerCommand($"{(mute ? "" : "un")}mute \"{player.PlayerName}\""));
                 }
             });
         });
@@ -160,21 +168,21 @@ public class uGUI_PlayerPingEntry : uGUI_PingEntry
         {
             Modal.Get<ConfirmModal>()?.Show(GetLocalizedText("Nitrox_Kick", true), () =>
             {
-                packetSender.Send(new ServerCommand($"kick {player.PlayerName}"));
+                packetSender.Send(new ServerCommand($"kick \"{player.PlayerName}\""));
             });
         });
         GetToggle(TeleportToObject).onValueChanged.AddListener(delegate (bool toggled)
         {
             Modal.Get<ConfirmModal>()?.Show(GetLocalizedText("Nitrox_TeleportTo", true), () =>
             {
-                packetSender.Send(new ServerCommand($"warp {player.PlayerName}"));
+                packetSender.Send(new ServerCommand($"warp \"{player.PlayerName}\""));
             });
         });
         GetToggle(TeleportToMeObject).onValueChanged.AddListener(delegate (bool toggled)
         {
             Modal.Get<ConfirmModal>()?.Show(GetLocalizedText("Nitrox_TeleportToMe", true), () =>
             {
-                packetSender.Send(new ServerCommand($"warp {player.PlayerName} {localPlayer.PlayerName}"));
+                packetSender.Send(new ServerCommand($"warp \"{player.PlayerName}\" \"{localPlayer.PlayerName}\""));
             });
         });
 
@@ -199,8 +207,34 @@ public class uGUI_PlayerPingEntry : uGUI_PingEntry
         }
     }
 
+    /// <summary>
+    ///     The player's signal may be hidden by this player's saved preference: the entry starts from that.
+    /// </summary>
+    private void RefreshShowButton()
+    {
+        bool visible = true;
+        if (player is RemotePlayer remotePlayer)
+        {
+            PingInstance pingInstance = remotePlayer.PlayerModel ? remotePlayer.PlayerModel.GetComponentInChildren<PingInstance>() : null;
+            if (pingInstance)
+            {
+                visible = pingInstance.visible;
+            }
+            // The signal is attached a little after the player appears
+            else if (NitroxServiceLocator.LocateService<PingPreferences>().TryGet(remotePlayer.PlayerContext.PlayerNitroxId.ToString(), out PingInstancePreference preference))
+            {
+                visible = preference.Visible;
+            }
+        }
+        showPing = visible;
+        GetToggle(ShowObject).SetIsOnWithoutNotify(visible);
+        GetTooltip(ShowObject).TooltipText = GetLocalizedText(visible ? "Nitrox_HidePing" : "Nitrox_ShowPing");
+        visibilityIcon.sprite = visible ? spriteVisible : spriteHidden;
+    }
+
     private void ClearButtonListeners()
     {
+        GetToggle(ShowObject).onValueChanged = new Toggle.ToggleEvent();
         GetToggle(MuteObject).onValueChanged = new Toggle.ToggleEvent();
         GetToggle(KickObject).onValueChanged = new Toggle.ToggleEvent();
         GetToggle(TeleportToObject).onValueChanged = new Toggle.ToggleEvent();

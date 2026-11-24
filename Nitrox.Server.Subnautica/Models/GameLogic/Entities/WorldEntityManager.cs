@@ -24,8 +24,22 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 // TODO: Refactor to not use internal dictionaries but instead depend on EntityRegistry for data. Maybe add API to EntityRegistry to set custom filter+indexer on entity type (i.e. WorldEntity) for improved world entity lookups?
 internal sealed class WorldEntityManager
 {
-    private readonly BatchEntitySpawner batchEntitySpawner;
+    private readonly IBatchEntityGenerator batchEntityGenerator;
+
+    /// <summary>
+    ///     Batches being made right now, so two players who load the same batch at once share one generation. A batch
+    ///     leaves this list when it is done (then <see cref="spawnedBatches" /> knows it) or when its generation failed
+    ///     (then the next load tries again).
+    /// </summary>
     private readonly ConcurrentDictionary<NitroxInt3, Lazy<Task<int>>> batchRegistrationTasks = new();
+
+    /// <summary>
+    ///     Held while a made batch is registered and marked done, and while a save takes the entities and the done
+    ///     batches, so a save sees a batch with its entities or neither.
+    /// </summary>
+    private readonly Lock batchCommitLock = new();
+
+    private readonly SpawnedBatches spawnedBatches;
     private readonly EntityRegistry entityRegistry;
 
     private readonly Lock globalRootEntitiesLock = new();
@@ -46,11 +60,13 @@ internal sealed class WorldEntityManager
     /// </summary>
     internal Dictionary<AbsoluteEntityCell, Dictionary<NitroxId, WorldEntity>> worldEntitiesByCell = [];
 
-    public WorldEntityManager(IPacketSender packetSender, EntityRegistry entityRegistry, BatchEntitySpawner batchEntitySpawner, PlayerManager playerManager, IProgressReporter progressReporter, ILogger<WorldEntityManager> logger)
+    public WorldEntityManager(IPacketSender packetSender, EntityRegistry entityRegistry, IBatchEntityGenerator batchEntityGenerator, PlayerManager playerManager, IProgressReporter progressReporter,
+        ILogger<WorldEntityManager> logger, SpawnedBatches? spawnedBatches = null)
     {
         this.packetSender = packetSender;
         this.entityRegistry = entityRegistry;
-        this.batchEntitySpawner = batchEntitySpawner;
+        this.batchEntityGenerator = batchEntityGenerator;
+        this.spawnedBatches = spawnedBatches ?? new SpawnedBatches();
         this.playerManager = playerManager;
         this.logger = logger;
         this.progressReporter = progressReporter;
@@ -133,8 +149,11 @@ internal sealed class WorldEntityManager
         }
     }
 
-    public bool TryUpdateEntityPosition(NitroxId id, NitroxVector3 position, NitroxQuaternion rotation, out AbsoluteEntityCell? newCell, out WorldEntity worldEntity)
+    /// <param name="previousCell">The cell the entity left with this move, or null if it stayed in its cell.</param>
+    public bool TryUpdateEntityPosition(NitroxId id, NitroxVector3 position, NitroxQuaternion rotation, out AbsoluteEntityCell? newCell, out WorldEntity worldEntity,
+        out AbsoluteEntityCell? previousCell)
     {
+        previousCell = null;
         lock (worldEntitiesLock)
         {
             if (!entityRegistry.TryGetEntityById(id, out worldEntity))
@@ -162,6 +181,7 @@ internal sealed class WorldEntityManager
 
             if (oldCell != newCell)
             {
+                previousCell = oldCell;
                 EntitySwitchedCells(worldEntity, oldCell, newCell);
             }
 
@@ -296,12 +316,51 @@ internal sealed class WorldEntityManager
 
     public Task<int> LoadUnspawnedEntitiesAsync(NitroxInt3 batchId, bool suppressLogs)
     {
+        if (spawnedBatches.Contains(batchId))
+        {
+            return Task.FromResult(0);
+        }
         return batchRegistrationTasks.GetOrAdd(batchId, id => new Lazy<Task<int>>(() => LoadAndRegisterBatchInternalAsync(id, suppressLogs))).Value;
+    }
+
+    /// <summary>
+    ///     The batches whose natural content is made and the entities to save, taken together: a batch listed here always
+    ///     has its entities in the list, which a save of a batch still being made would otherwise break (the batch would
+    ///     stay empty for good after a restart).
+    /// </summary>
+    public (List<NitroxInt3> SpawnedBatches, List<Entity> Entities) SnapshotForSave()
+    {
+        lock (batchCommitLock)
+        {
+            return (spawnedBatches.ToSave(), entityRegistry.GetAllEntities(true));
+        }
+    }
+
+    public void LoadSpawnedBatches(IEnumerable<NitroxInt3> batchIds)
+    {
+        lock (batchCommitLock)
+        {
+            spawnedBatches.Load(batchIds);
+        }
     }
 
     private async Task<int> LoadAndRegisterBatchInternalAsync(NitroxInt3 batchId, bool suppressLogs)
     {
-        List<Entity> spawnedEntities = await batchEntitySpawner.LoadUnspawnedEntitiesAsync(batchId, suppressLogs);
+        try
+        {
+            return await GenerateAndRegisterBatchAsync(batchId, suppressLogs);
+        }
+        finally
+        {
+            // Done or failed, the batch no longer needs its task: a done one is known to spawnedBatches, and a failed one
+            // is made again by the next player who loads it instead of failing for good.
+            batchRegistrationTasks.TryRemove(batchId, out _);
+        }
+    }
+
+    private async Task<int> GenerateAndRegisterBatchAsync(NitroxInt3 batchId, bool suppressLogs)
+    {
+        List<Entity> spawnedEntities = await batchEntityGenerator.GenerateAsync(batchId, suppressLogs);
 
         List<WorldEntity> entitiesInCells = [.. spawnedEntities.Where(entity => typeof(WorldEntity).IsAssignableFrom(entity.GetType()) &&
                                                                             entity.GetType() != typeof(CellRootEntity) &&
@@ -325,11 +384,16 @@ internal sealed class WorldEntityManager
         // Specific type of entities which is not parented to a CellRootEntity
         entitiesInCells.AddRange(spawnedEntities.OfType<SerializedWorldEntity>());
 
-        entityRegistry.AddEntitiesIgnoringDuplicate(entitiesInCells.OfType<Entity>());
-
-        foreach (WorldEntity entity in entitiesInCells)
+        lock (batchCommitLock)
         {
-            RegisterWorldEntity(entity);
+            entityRegistry.AddEntitiesIgnoringDuplicate(entitiesInCells.OfType<Entity>());
+
+            foreach (WorldEntity entity in entitiesInCells)
+            {
+                RegisterWorldEntity(entity);
+            }
+
+            spawnedBatches.Add(batchId, entitiesInCells.Count > 0);
         }
 
         return entitiesInCells.Count;

@@ -48,10 +48,27 @@ namespace Nitrox.Server.Subnautica.Models
         public string Name { get; }
 
         /// <summary>
-        ///     The hash of the key this name first joined with, or null if no key is tied to the name yet. A player who
-        ///     joins with this name and another key is refused.
+        ///     The public key this name first joined with (see <see cref="Nitrox.Model.MultiplayerSession.PlayerIdentityProof" />),
+        ///     or null if no key is tied to the name yet. A player who joins with this name and another key is refused.
         /// </summary>
-        public string? IdentityKeyHash { get; set; }
+        public string? IdentityPublicKey { get; set; }
+
+        /// <summary>
+        ///     True if this session proved it holds the key the name was already tied to, rather than tying a free name to
+        ///     its key. Only then is <see cref="GrantedPermissions" /> trusted (see <see cref="GameLogic.PlayerRanks" />).
+        /// </summary>
+        public bool IdentityVerifiedThisSession { get; set; }
+
+        /// <summary>
+        ///     The rank given to this player by op, deop, promote or /login, kept across joins; null if none was given and
+        ///     the server's default applies. <see cref="Permissions" /> is the rank in effect now.
+        /// </summary>
+        public Perms? GrantedPermissions { get; set; }
+
+        /// <summary>
+        ///     Kept across joins, so that leaving and coming back does not lift a mute.
+        /// </summary>
+        public bool IsMuted { get; set; }
 
         public bool IsPermaDeath { get; set; }
         public NitroxVector3 Position { get; set; }
@@ -61,6 +78,18 @@ namespace Nitrox.Server.Subnautica.Models
         public Perms Permissions { get; set; }
         public PlayerStatsData Stats { get; set; }
         public SubnauticaGameMode GameMode { get; set; }
+
+        /// <summary>
+        ///     Changes the player's game mode, also in the connection's context that players who join later are sent.
+        /// </summary>
+        public void SetGameMode(SubnauticaGameMode gameMode)
+        {
+            GameMode = gameMode;
+            if (PlayerContext != null)
+            {
+                PlayerContext.GameMode = gameMode;
+            }
+        }
         public NitroxVector3? LastStoredPosition { get; set; }
         public Optional<NitroxId> LastStoredSubRootID { get; set; }
         public ThreadSafeDictionary<string, float> PersonalCompletedGoalsWithTimestamp { get; }
@@ -186,6 +215,17 @@ namespace Nitrox.Server.Subnautica.Models
             }
 
             return true;
+        }
+
+        /// <summary>
+        ///     True if the player sees the entity now, or had loaded the cell it just left. A player who saw it leave has to
+        ///     hear of the move: their game then puts it where it went (in a cell it does not have, which removes it) instead of
+        ///     keeping it frozen at the edge of the cell, where a later destroy would never reach it.
+        /// </summary>
+        /// <param name="previousCell">The cell the entity left with this move, or null if it stayed in its cell.</param>
+        public bool SeesMove(WorldEntity entity, AbsoluteEntityCell? previousCell)
+        {
+            return CanSee(entity) || (previousCell != null && HasCellLoaded(previousCell));
         }
 
         /// <summary>

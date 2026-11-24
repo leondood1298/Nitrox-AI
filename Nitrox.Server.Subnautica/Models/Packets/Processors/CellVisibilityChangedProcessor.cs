@@ -6,10 +6,12 @@ using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
-sealed class CellVisibilityChangedProcessor(EntitySimulation entitySimulation, WorldEntityManager worldEntityManager) : IAuthPacketProcessor<CellVisibilityChanged>
+sealed class CellVisibilityChangedProcessor(EntitySimulation entitySimulation, WorldEntityManager worldEntityManager, ILogger<CellVisibilityChangedProcessor> logger)
+    : IAuthPacketProcessor<CellVisibilityChanged>
 {
     private readonly EntitySimulation entitySimulation = entitySimulation;
     private readonly WorldEntityManager worldEntityManager = worldEntityManager;
+    private readonly ILogger<CellVisibilityChangedProcessor> logger = logger;
 
     public async Task Process(AuthProcessorContext context, CellVisibilityChanged packet)
     {
@@ -34,7 +36,15 @@ sealed class CellVisibilityChangedProcessor(EntitySimulation entitySimulation, W
         // The following section is only for the sender
         foreach (AbsoluteEntityCell addedCell in packet.Added)
         {
-            await worldEntityManager.LoadUnspawnedEntitiesAsync(addedCell.BatchId, false);
+            try
+            {
+                await worldEntityManager.LoadUnspawnedEntitiesAsync(addedCell.BatchId, false);
+            }
+            catch (Exception ex)
+            {
+                // The game still has to hear about the cell (see Terrain), and the batch is made again the next time it is loaded
+                logger.ZLogError(ex, $"Could not fill batch {addedCell.BatchId}; it will be tried again when it is next loaded");
+            }
 
             simulationChanges.AddRange(entitySimulation.TryAcquireCellEntities(context.Sender, addedCell));
 

@@ -8,15 +8,24 @@ namespace Nitrox.Server.Subnautica.Models.Commands;
 [RequiresPermission(Perms.PLAYER)]
 internal sealed class WhoisCommand : ICommandHandler, ICommandHandler<Player>
 {
-    [Description("Shows information about a player")]
+    /// <summary>
+    ///     The rank from which another player's position is shown: below it, whois would let anyone find (and follow) any
+    ///     player, which the game's own map does not.
+    /// </summary>
+    internal const Perms SEE_POSITION_PERMS = Perms.MODERATOR;
+
+    [Description("Shows information about a player (the position from moderator on, or about yourself)")]
     public async Task Execute(ICommandContext context, Player targetPlayer)
     {
         StringBuilder builder = new($"==== {targetPlayer.Name} ====\n");
-        builder.AppendLine($"Id: {targetPlayer.Entity.Id}");
+        builder.AppendLine($"Id: {targetPlayer.Entity?.Id.ToString() ?? targetPlayer.GameObjectId.ToString()}");
         builder.AppendLine($"SessionId: {targetPlayer.SessionId}");
         builder.AppendLine($"Role: {targetPlayer.Permissions}");
         builder.AppendLine($"Gamemode: {targetPlayer.GameMode}");
-        builder.AppendLine($"Position: {targetPlayer.Position.X}, {targetPlayer.Position.Y}, {targetPlayer.Position.Z}");
+        if (context.Permissions >= SEE_POSITION_PERMS || context.OriginId == targetPlayer.SessionId)
+        {
+            builder.AppendLine($"Position: {targetPlayer.Position.X}, {targetPlayer.Position.Y}, {targetPlayer.Position.Z}");
+        }
         builder.AppendLine($"Oxygen: {targetPlayer.Stats.Oxygen}/{targetPlayer.Stats.MaxOxygen}");
         builder.AppendLine($"Food: {targetPlayer.Stats.Food}");
         builder.AppendLine($"Water: {targetPlayer.Stats.Water}");

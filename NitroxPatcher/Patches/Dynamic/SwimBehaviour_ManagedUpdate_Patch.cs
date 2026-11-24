@@ -12,6 +12,6 @@ public sealed partial class SwimBehaviour_ManagedUpdate_Patch : NitroxPatch, IDy
 
     public static bool Prefix(SwimBehaviour __instance)
     {
-        return !__instance.GetComponent<RemotelyControlled>();
+        return !RemotelyControlled.Controls(__instance);
     }
 }

@@ -104,8 +104,17 @@ public sealed partial class uGUI_MainMenu_Start_Patch : NitroxPatch, IPersistent
                     playerColor = NitroxColor.FromHsb(hue);
                 }
                 PlayerSettings playerSettings = new(playerColor);
-                AuthenticationContext authenticationContext = new(playerName, Optional.Empty, PlayerKeys.GetKeyFor(Resolve<IMultiplayerSession>().SessionPolicy.WorldIdentity));
-                Resolve<IMultiplayerSession>().RequestSessionReservation(playerSettings, authenticationContext);
+                IMultiplayerSession session = Resolve<IMultiplayerSession>();
+                CoroutineHost.StartCoroutine(PlayerKeys.ProveAsync(session.SessionPolicy.WorldIdentity, session.SessionPolicy.JoinChallenge, proof =>
+                {
+                    if (proof == null)
+                    {
+                        Log.Error("Could not make the player key for instant launch.");
+                        return;
+                    }
+                    AuthenticationContext authenticationContext = new(playerName, Optional.Empty, proof.PublicKey, proof.Signature);
+                    session.RequestSessionReservation(playerSettings, authenticationContext);
+                }));
                 break;
 
             case MultiplayerSessionConnectionStage.SESSION_RESERVED:

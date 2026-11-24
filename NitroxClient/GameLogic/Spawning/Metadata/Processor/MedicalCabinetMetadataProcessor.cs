@@ -49,11 +49,14 @@ public class MedicalCabinetMetadataProcessor : EntityMetadataProcessor<MedicalCa
         {
             case DoorChange.CANCEL_PENDING_TOGGLE:
                 cabinet.CancelInvoke(nameof(MedicalCabinet.ToggleDoorState));
+                DelayedSilentReplay.Unmark(cabinet);
                 break;
             case DoorChange.TOGGLE_NOW:
                 cabinet.ToggleDoorState();
                 break;
             case DoorChange.TOGGLE_AFTER_PICKUP:
+                // It runs after this scope has ended; the mark keeps it as silent
+                DelayedSilentReplay.Mark(cabinet);
                 cabinet.Invoke(nameof(MedicalCabinet.ToggleDoorState), DOOR_CLOSE_DELAY_AFTER_PICKUP);
                 break;
         }

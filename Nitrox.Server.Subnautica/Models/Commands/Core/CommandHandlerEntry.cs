@@ -146,6 +146,14 @@ internal sealed record CommandHandlerEntry
                 {
                     return "sessionIdOrName";
                 }
+                if (type == typeof(ArgConverters.KnownPlayer))
+                {
+                    return "sessionIdOrNameAlsoOffline";
+                }
+                if (type == typeof(ArgConverters.ReservedSession))
+                {
+                    return "queuedName";
+                }
                 return type.Name;
             }
         }

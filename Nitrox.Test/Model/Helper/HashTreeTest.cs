@@ -19,4 +19,18 @@ public class HashTreeTest
         test.AddMoveNext("one").AddMoveNext("two").AddMoveNext("3");
         root.Contains(test).Should().BeFalse();
     }
+
+    [TestMethod]
+    public void AClearedTreeTakesWhatItHeldAgain()
+    {
+        HashTree root = new();
+        HashTree branch = new();
+        branch.AddMoveNext("can't update entity position of ").AddMoveNext("some id");
+        root.TryAdd(branch).Should().BeTrue();
+        root.TryAdd(branch).Should().BeFalse();
+
+        root.Clear();
+
+        root.TryAdd(branch).Should().BeTrue();
+    }
 }

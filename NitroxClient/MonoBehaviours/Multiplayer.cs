@@ -7,6 +7,7 @@ using NitroxClient.Communication.MultiplayerSession;
 using NitroxClient.GameLogic;
 using NitroxClient.GameLogic.Bases;
 using NitroxClient.GameLogic.ChatUI;
+using NitroxClient.GameLogic.FMOD;
 using NitroxClient.GameLogic.PlayerLogic.PlayerModel.Abstract;
 using NitroxClient.GameLogic.PlayerLogic.PlayerModel.ColorSwap;
 using NitroxClient.MonoBehaviours.Cyclops;
@@ -21,6 +22,7 @@ using NitroxClient.Communication.Packets.Processors.Core;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UWE;
+using Stopwatch = System.Diagnostics.Stopwatch;
 
 namespace NitroxClient.MonoBehaviours
 {
@@ -97,6 +99,8 @@ namespace NitroxClient.MonoBehaviours
 
         public static void SubnauticaLoadingStarted()
         {
+            // A modal of an earlier attempt would otherwise block closing this world's in-game menu
+            Gui.Modals.Modal.ClearCurrent();
             OnBeforeMultiplayerStart?.Invoke();
         }
 
@@ -107,11 +111,14 @@ namespace NitroxClient.MonoBehaviours
                 Main.InitialSyncCompleted = false;
                 Main.StartCoroutine(LoadAsync());
             }
-            else
+            else if (Main)
             {
+                // A multiplayer start whose connection dropped while loading
                 SetLoadingComplete();
                 OnLoadingComplete?.Invoke();
             }
+            // Otherwise this is a single-player game: the game finishes loading on its own. SetLoadingComplete needs a
+            // session and threw here, which skipped the rest of MainGameController.StartGame, the new game's intro with it.
         }
 
         public static IEnumerator LoadAsync()
@@ -138,29 +145,50 @@ namespace NitroxClient.MonoBehaviours
             OnLoadingComplete?.Invoke();
         }
 
+        /// <summary>
+        ///     How long packets may be handled in one frame. A burst (many players busy, a big base resynced) used to be
+        ///     handled in a single frame however long it took; what is left over now waits for the next frame, in order.
+        /// </summary>
+        private const double PACKET_TIME_PER_FRAME_SECONDS = 0.008;
+
+        private static readonly long packetTicksPerFrame = (long)(PACKET_TIME_PER_FRAME_SECONDS * Stopwatch.Frequency);
+        private long packetTimeEnd;
+
         public void ProcessPackets()
         {
+            packetTimeEnd = Stopwatch.GetTimestamp() + packetTicksPerFrame;
             packetReceiver.ConsumePackets(static (packet, multiplayer) =>
             {
                 if (multiplayer.loadingPacketGate.Admit(packet))
                 {
                     multiplayer.Execute(packet);
                 }
-            }, this);
+            }, this, static multiplayer => Stopwatch.GetTimestamp() >= multiplayer.packetTimeEnd);
         }
 
         /// <summary>
         ///     Processes the packets that arrived while the game loaded, in the order they arrived, now that the snapshot
         ///     is applied. Called before the game reports that it finished joining.
         /// </summary>
-        public void ReplayHeldPackets()
+        /// <remarks>
+        ///     Spread over frames like other packets: with others playing during a long load these can be thousands, and
+        ///     all in one frame they froze the game as the loading screen went. Packets arriving meanwhile are held behind
+        ///     them until none is left.
+        /// </remarks>
+        public IEnumerator ReplayHeldPackets()
         {
-            List<Packet> held = loadingPacketGate.Release();
-            Log.Info($"Replaying {held.Count} packets that arrived while loading");
-            foreach (Packet packet in held)
+            Log.Info($"Replaying {loadingPacketGate.HeldCount} packets that arrived while loading");
+            long timeEnd = Stopwatch.GetTimestamp() + packetTicksPerFrame;
+            while (loadingPacketGate.TryTakeHeld(out Packet packet))
             {
                 Execute(packet);
+                if (Stopwatch.GetTimestamp() >= timeEnd)
+                {
+                    yield return null;
+                    timeEnd = Stopwatch.GetTimestamp() + packetTicksPerFrame;
+                }
             }
+            loadingPacketGate.FinishLoading();
         }
 
         private void Execute(Packet packet)
@@ -172,7 +200,11 @@ namespace NitroxClient.MonoBehaviours
                 {
                     throw new Exception($"Failed to find packet processor for packet {packet.GetType()}");
                 }
-                processor.Execute(packetProcessorContext, packet).ContinueWithHandleError();
+                // What another player did is repeated here: its sounds are that player's to send, not this game's
+                using (ReplayedSoundScope.Enter())
+                {
+                    processor.Execute(packetProcessorContext, packet).ContinueWithHandleError();
+                }
             }
             catch (Exception ex)
             {

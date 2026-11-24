@@ -298,6 +298,19 @@
                     <TextBlock
                         FontSize="10"
                         FontWeight="700"
+                        Opacity=".5"
+                        Text="ADMIN PASSWORD (/login in chat makes a player admin; empty turns it off)" />
+                    <TextBox
+                        Classes="revealPasswordButton"
+                        IsEnabled="{Binding !ServerIsOnline}"
+                        Text="{Binding ServerAdminPassword, Converter={converters:TrimConverter}}"
+                        PlaceholderText="Admin password" />
+                </StackPanel>
+
+                <StackPanel>
+                    <TextBlock
+                        FontSize="10"
+                        FontWeight="700"
                         Margin="0,0,0,15"
                         Opacity=".5"
                         Text="OPTIONS" />

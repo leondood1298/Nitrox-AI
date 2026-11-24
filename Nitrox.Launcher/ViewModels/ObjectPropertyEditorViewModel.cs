@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
@@ -34,6 +36,9 @@ internal partial class ObjectPropertyEditorViewModel(DialogService dialogService
     [RelayCommand(CanExecute = nameof(CanSave))]
     public async Task Save()
     {
+        // All values are checked against the setting's own limits before any is applied: a value out of range would be
+        // written to the file and the server would then refuse to start.
+        List<(EditorField Field, object? Value)> converted = [];
         foreach (EditorField field in EditorFields)
         {
             if (field.Value is null && field.PropertyInfo.PropertyType.IsValueType)
@@ -41,16 +46,41 @@ internal partial class ObjectPropertyEditorViewModel(DialogService dialogService
                 continue;
             }
 
+            object? value;
             try
             {
-                field.PropertyInfo.SetValue(OwnerObject, Convert.ChangeType(field.Value, field.PropertyInfo.PropertyType));
+                value = Convert.ChangeType(field.Value, field.PropertyInfo.PropertyType);
             }
             catch (Exception ex)
             {
                 await dialogService.ShowErrorAsync(ex, description: field.ToString());
+                return;
             }
+            if (OwnerObject != null && GetValidationError(OwnerObject, field.PropertyInfo, value) is { } error)
+            {
+                await dialogService.ShowErrorAsync(new ValidationException(error), description: field.ToString());
+                return;
+            }
+            converted.Add((field, value));
+        }
+        foreach ((EditorField field, object? value) in converted)
+        {
+            field.PropertyInfo.SetValue(OwnerObject, value);
         }
         Close(ButtonOptions.Ok);
+    }
+
+    /// <returns>Why <paramref name="value" /> breaks the limits declared on <paramref name="property" />, or null if it is valid.</returns>
+    internal static string? GetValidationError(object owner, PropertyInfo property, object? value)
+    {
+        List<ValidationResult> results = [];
+        ValidationContext context = new(owner) { MemberName = property.Name, DisplayName = property.Name };
+        ValidationAttribute[] attributes = property.GetCustomAttributes<ValidationAttribute>(true).ToArray();
+        if (Validator.TryValidateValue(value!, context, results, attributes))
+        {
+            return null;
+        }
+        return string.Join(Environment.NewLine, results.Select(r => r.ErrorMessage));
     }
 
     public bool CanSave() => !HasErrors;

@@ -6,7 +6,7 @@ using Nitrox.Server.Subnautica.Services;
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
 internal class PlayerSyncFinishedProcessor(SessionManager sessionManager, JoiningManager joiningManager, HibernateService hibernateService, BedOccupancy bedOccupancy, PlayerAnimationStates animationStates,
-    ScannerRoomManager scannerRoomManager, PlayerHandAndSeatStates handAndSeatStates)
+    ScannerRoomManager scannerRoomManager, PlayerHandAndSeatStates handAndSeatStates, SoundLoops soundLoops)
     : IAuthPacketProcessor<PlayerSyncFinished>
 {
     private readonly SessionManager sessionManager = sessionManager;
@@ -45,5 +45,11 @@ internal class PlayerSyncFinishedProcessor(SessionManager sessionManager, Joinin
         }
         // And who is controlling which Scanner Room camera.
         await scannerRoomManager.SendControlGrantsAsync(context.Sender.SessionId);
+        // And which looping sounds play (a heated knife, a gun terminal): their start was announced before this player came.
+        FMODActiveLoops activeLoops = soundLoops.GetActiveLoops();
+        if (activeLoops.Loops.Count > 0)
+        {
+            await context.ReplyAsync(activeLoops);
+        }
     }
 }

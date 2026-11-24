@@ -1,4 +1,5 @@
 using Nitrox.Server.Subnautica.Models.GameLogic;
+using Nitrox.Test.Server.Helper;
 
 namespace Nitrox.Test.Server.GameLogic;
 
@@ -6,36 +7,19 @@ namespace Nitrox.Test.Server.GameLogic;
 public sealed class PlayerIdentityKeyTest
 {
     [TestMethod]
-    public void TheSaveKeepsAHashNotTheKey()
-    {
-        string hash = PlayerIdentityKey.Hash("secret")!;
-
-        hash.Should().NotContain("secret");
-        PlayerIdentityKey.Hash("secret").Should().Be(hash);
-        PlayerIdentityKey.Hash("other").Should().NotBe(hash);
-    }
-
-    [TestMethod]
-    public void NoKeySentHasNoHash()
-    {
-        PlayerIdentityKey.Hash(null).Should().BeNull();
-        PlayerIdentityKey.Hash("").Should().BeNull();
-    }
-
-    [TestMethod]
     public void ANameWithoutKeyAcceptsAnyGame()
     {
         PlayerIdentityKey.Matches(null, null).Should().BeTrue();
-        PlayerIdentityKey.Matches(null, PlayerIdentityKey.Hash("a")).Should().BeTrue();
+        PlayerIdentityKey.Matches(null, ConnectedPlayers.PublicKeyOf("a")).Should().BeTrue();
     }
 
     [TestMethod]
     public void ANameWithKeyAcceptsOnlyThatKey()
     {
-        string stored = PlayerIdentityKey.Hash("a")!;
+        string stored = ConnectedPlayers.PublicKeyOf("a");
 
-        PlayerIdentityKey.Matches(stored, PlayerIdentityKey.Hash("a")).Should().BeTrue();
-        PlayerIdentityKey.Matches(stored, PlayerIdentityKey.Hash("b")).Should().BeFalse();
+        PlayerIdentityKey.Matches(stored, ConnectedPlayers.PublicKeyOf("a")).Should().BeTrue();
+        PlayerIdentityKey.Matches(stored, ConnectedPlayers.PublicKeyOf("b")).Should().BeFalse();
         PlayerIdentityKey.Matches(stored, null).Should().BeFalse();
     }
 }

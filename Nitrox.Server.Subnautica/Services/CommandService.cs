@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging.Abstractions;
+using Nitrox.Model.DataStructures.GameLogic;
 using Nitrox.Server.Subnautica.Models.Commands.ArgConverters.Core;
 using Nitrox.Server.Subnautica.Models.Commands.Core;
 
@@ -14,7 +15,6 @@ namespace Nitrox.Server.Subnautica.Services;
 /// </summary>
 internal sealed partial class CommandService(CommandRegistryService registry, ILogger<CommandService> logger, ILoggerFactory loggerFactory) : BackgroundService, IHostedLifecycleService, ICommandSubmit
 {
-    private const int MAX_ARGS = 8;
     private readonly ILogger<CommandService> logger = logger;
     private readonly ILoggerFactory loggerFactory = loggerFactory;
 
@@ -43,102 +43,112 @@ internal sealed partial class CommandService(CommandRegistryService registry, IL
 
         if (!registry.TryGetHandlersByCommandName(context, commandName, out List<CommandHandlerEntry> handlers))
         {
-            logger.ZLogInformation($"Unknown command {commandName.ToString():@CommandName}");
+            if (registry.TryGetRequiredPermission(context, commandName, out Perms required))
+            {
+                logger.ZLogInformation($"Command {commandName.ToString():@CommandName} needs the rank {required} or higher (yours is {context.Permissions})");
+            }
+            else
+            {
+                logger.ZLogInformation($"Unknown command {commandName.ToString():@CommandName}");
+            }
             return false;
         }
 
-        ReadOnlySpan<char> commandArgs = inputText[endOfNameIndex ..].Trim();
+        string commandArgs = inputText[endOfNameIndex ..].Trim().ToString();
+        List<Token> tokens = Tokenize(commandArgs);
+        string logText = CommandLogText.Redact(inputText.ToString());
 
-        // Get text ranges within the input that are potentially valid arguments.
-        Span<Range> ranges = stackalloc Range[MAX_ARGS];
-        Regex.ValueMatchEnumerator argsEnumerator = ArgumentsRegex.EnumerateMatches(commandArgs);
-        int rangeIndex = 0;
-        while (argsEnumerator.MoveNext())
+        // Each handler that can take this many words, with its words: exact matches first, then handlers whose last text
+        // parameter takes the rest of the line (a whispered message, a broadcast, a reason)
+        List<(CommandHandlerEntry Handler, List<string> Args)> candidates = [];
+        foreach (CommandHandlerEntry candidate in handlers)
         {
-            ValueMatch match = argsEnumerator.Current;
-            if (rangeIndex >= MAX_ARGS)
+            if (candidate.Parameters.Length == tokens.Count)
             {
-                logger.ZLogError($"Too many arguments passed to command {commandName.ToString():@CommandName}");
-                return false;
+                candidates.Add((candidate, tokens.Select(token => token.Text).ToList()));
             }
-            Range newRange = new(match.Index, match.Index + match.Length);
-
-            // Trim new range if it's a quoted string.
-            newRange = commandArgs[newRange] switch
+        }
+        foreach (CommandHandlerEntry candidate in handlers)
+        {
+            if (GetRestOfLineArguments(candidate.ParameterTypes, tokens, commandArgs) is { } restOfLine)
             {
-                ['"', .., '"'] => new Range(newRange.Start.Value + 1, newRange.End.Value - 1),
-                ['\'', .., '\''] => new Range(newRange.Start.Value + 1, newRange.End.Value - 1),
-                _ => newRange
-            };
-
-            ranges[rangeIndex++] = newRange;
+                candidates.Add((candidate, restOfLine));
+            }
+        }
+        if (candidates.Count == 0)
+        {
+            logger.ZLogInformation($"Command {commandName.ToString():@CommandName} does not support the provided arguments. See below for more information.");
+            ExecuteCommand($"help {commandName}", context, out commandTask);
+            return false;
         }
 
-        // Convert text ranges into object args. First arg is always the context (and should be accounted for in algorithm below).
-        Span<object> args = new(new object[MAX_ARGS]) { [0] = context };
-        CommandHandlerEntry? handler = null;
-        bool inputHasCorrectParameterCount = false;
-        List<CommandHandlerEntry>? almostMatchingHandlers = null;
-        foreach (CommandHandlerEntry currentHandler in handlers)
+        // Plain values (numbers, words, enums) are parsed at once; arguments that need a lookup (a player name) are
+        // converted on a worker below.
+        List<(CommandHandlerEntry Handler, List<string> Args)> needConversion = [];
+        foreach ((CommandHandlerEntry candidate, List<string> args) in candidates)
         {
-            if (currentHandler.Parameters.Length != rangeIndex)
+            object[] parsed = new object[args.Count + 1];
+            parsed[0] = context;
+            bool allParsed = true;
+            for (int i = 0; i < args.Count; i++)
             {
-                continue;
-            }
-            inputHasCorrectParameterCount = true;
-            for (int i = 0; i < currentHandler.ParameterTypes.Length; i++)
-            {
-                ReadOnlySpan<char> part = commandArgs[ranges[i]];
-                object? parsedValue = registry.TryParseToType(part, currentHandler.ParameterTypes[i]);
-                if (parsedValue == null)
+                if (registry.TryParseToType(args[i], candidate.ParameterTypes[i]) is not { } value)
                 {
-                    almostMatchingHandlers ??= [];
-                    almostMatchingHandlers.Add(currentHandler);
-
-                    // Unset args array except for first arg which is the context.
-                    for (int j = i + 1; j >= 0; j--)
-                    {
-                        args[j] = null;
-                    }
-                    goto nextHandler;
+                    allParsed = false;
+                    break;
                 }
-                args[i + 1] = parsedValue;
+                parsed[i + 1] = value;
             }
-            handler = currentHandler;
-            break;
-
-            nextHandler: ;
-        }
-        if (!inputHasCorrectParameterCount)
-        {
-            // Try pass incorrect arguments to first handler with ONLY a string argument as a "catch all".
-            handler = handlers.FirstOrDefault(h => h.ParameterTypes.SequenceEqual([typeof(string)]));
-            if (handler != null)
+            if (allParsed)
             {
-                args[1] = commandArgs.ToString();
+                RunHandler(candidate, parsed, logText);
+                return true;
             }
-
-            // No catch-all handler, return help page...
-            if (handler == null || commandArgs.IsEmpty)
-            {
-                logger.ZLogInformation($"Command {commandName.ToString():@CommandName} does not support the provided arguments. See below for more information.");
-                ExecuteCommand($"help {commandName}", context, out commandTask);
-                return false;
-            }
-        }
-        if (handler == null)
-        {
-            if (almostMatchingHandlers.Count == 0)
-            {
-                logger.ZLogInformation($"Command {commandName.ToString():@CommandName} failed");
-                return false;
-            }
-            commandTask = QueueTryRunFirstArgConvertedHandler(context, almostMatchingHandlers, commandArgs.ToString(), ranges);
-            return true;
+            needConversion.Add((candidate, args));
         }
 
-        RunHandler(handler, args[.. (handler.Parameters.Length + 1)], inputText.ToString());
+        commandTask = QueueTryRunFirstArgConvertedHandler(context, needConversion, commandName.ToString(), logText);
         return true;
+    }
+
+    private readonly record struct Token(string Text, int Start);
+
+    private static List<Token> Tokenize(string commandArgs)
+    {
+        List<Token> tokens = [];
+        foreach (ValueMatch match in ArgumentsRegex.EnumerateMatches(commandArgs))
+        {
+            ReadOnlySpan<char> text = commandArgs.AsSpan(match.Index, match.Length);
+            // Trim the quotes of a quoted argument.
+            text = text switch
+            {
+                ['"', .., '"'] or ['\'', .., '\''] when text.Length >= 2 => text[1..^1],
+                _ => text
+            };
+            tokens.Add(new Token(text.ToString(), match.Index));
+        }
+        return tokens;
+    }
+
+    /// <summary>
+    ///     The arguments for a handler whose last parameter is text, taking everything after the other arguments as that
+    ///     text; null if the handler takes no such text or the line has no more words than it has parameters.
+    /// </summary>
+    internal static List<string>? GetRestOfLineArguments(Type[] parameterTypes, string commandArgs)
+    {
+        return GetRestOfLineArguments(parameterTypes, Tokenize(commandArgs), commandArgs);
+    }
+
+    private static List<string>? GetRestOfLineArguments(Type[] parameterTypes, List<Token> tokens, string commandArgs)
+    {
+        if (parameterTypes.Length == 0 || parameterTypes[^1] != typeof(string) || tokens.Count <= parameterTypes.Length)
+        {
+            return null;
+        }
+        List<string> args = tokens.Take(parameterTypes.Length - 1).Select(token => token.Text).ToList();
+        string rest = commandArgs[tokens[parameterTypes.Length - 1].Start..].Trim();
+        args.Add(rest);
+        return args;
     }
 
     public override async Task StopAsync(CancellationToken cancellationToken)
@@ -176,22 +186,12 @@ internal sealed partial class CommandService(CommandRegistryService registry, IL
         }
     }
 
-    private Task<bool> QueueTryRunFirstArgConvertedHandler(ICommandContext context, List<CommandHandlerEntry> looselyCompatibleHandlers, string argsInput, ReadOnlySpan<Range> argRanges)
+    private Task<bool> QueueTryRunFirstArgConvertedHandler(ICommandContext context, List<(CommandHandlerEntry Handler, List<string> Args)> looselyCompatibleHandlers, string commandName, string logText)
     {
-        List<string> args = [];
-        foreach (Range range in argRanges)
-        {
-            if (range is { Start.Value: 0, End.Value: 0 })
-            {
-                continue;
-            }
-            args.Add(argsInput[range]);
-        }
-
         Task<bool> tryRunHandlerTask = Task.Run(async () =>
         {
             List<(CommandHandlerEntry handler, ConvertResult[][] conversions)> failedHandlers = [];
-            foreach (CommandHandlerEntry handler in looselyCompatibleHandlers)
+            foreach ((CommandHandlerEntry handler, List<string> args) in looselyCompatibleHandlers)
             {
                 ConvertResult[][] values = await TryConvertStringParamsToObjectParams(registry, args, handler.ParameterTypes);
                 if (values.Any(v => !v.LastOrDefault().Success))
@@ -200,11 +200,11 @@ internal sealed partial class CommandService(CommandRegistryService registry, IL
                     continue;
                 }
 
-                RunHandler(handler, [context, ..values.Select(v => v.LastOrDefault().Value).ToArray()], argsInput);
+                RunHandler(handler, [context, ..values.Select(v => v.LastOrDefault().Value).ToArray()], logText);
                 return true;
             }
 
-            logger.ZLogInformation($"Command '{$"{looselyCompatibleHandlers[0].Name} {argsInput}":@Command}' failed to match to any command handlers.{Environment.NewLine}{GetErrorMessagesFromFailedHandlers(failedHandlers)}");
+            logger.ZLogInformation($"Command '{logText:@Command}' failed to match to any command handlers.{Environment.NewLine}{GetErrorMessagesFromFailedHandlers(failedHandlers)}");
             return false;
         });
         runningCommands.Writer.TryWrite(tryRunHandlerTask);

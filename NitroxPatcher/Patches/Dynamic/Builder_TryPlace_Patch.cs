@@ -2,6 +2,8 @@ using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using NitroxClient.Communication.Abstract;
+using NitroxClient.GameLogic.FMOD;
+using Nitrox.Model.GameLogic.FMOD;
 using NitroxClient.GameLogic.Spawning.Bases;
 using NitroxClient.GameLogic.Spawning.Metadata;
 using NitroxClient.MonoBehaviours;
@@ -19,6 +21,8 @@ namespace NitroxPatcher.Patches.Dynamic;
 public sealed partial class Builder_TryPlace_Patch : NitroxPatch, IDynamicPatch
 {
     public static readonly MethodInfo TARGET_METHOD = Reflect.Method(() => Builder.TryPlace());
+
+    private const string PLACE_SOUND_PATH = "event:/tools/builder/place";
 
     public static readonly InstructionsPattern AddInstructionPattern1 = new()
     {
@@ -76,6 +80,12 @@ public sealed partial class Builder_TryPlace_Patch : NitroxPatch, IDynamicPatch
             subRoot.TryGetNitroxId(out NitroxId entityId))
         {
             parentId = entityId;
+        }
+
+        // The game plays its placing sound through FMODUnity's RuntimeManager, which is not sent like its other one-shots
+        if (Resolve<FMODWhitelist>().IsWhitelisted(PLACE_SOUND_PATH))
+        {
+            Resolve<FMODSystem>().SendAssetPlay(PLACE_SOUND_PATH, ghostObject.transform.position.ToDto(), 1f);
         }
 
         // Assign a NitroxId to the ghost now

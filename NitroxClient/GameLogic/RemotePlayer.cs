@@ -1,12 +1,12 @@
 using System.Collections;
 using System.Collections.Generic;
 using Nitrox.Model.Core;
+using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.GameLogic;
 using NitroxClient.GameLogic.HUD;
 using NitroxClient.GameLogic.PlayerLogic;
 using NitroxClient.GameLogic.PlayerLogic.PlayerModel;
 using NitroxClient.GameLogic.PlayerLogic.PlayerModel.Abstract;
-using NitroxClient.GameLogic.PlayerLogic.PlayerModel.Equipment.Abstract;
 using NitroxClient.MonoBehaviours;
 using NitroxClient.MonoBehaviours.Cyclops;
 using NitroxClient.MonoBehaviours.Gui.HUD;
@@ -35,13 +35,32 @@ public class RemotePlayer : INitroxPlayer
     /// </summary>
     private const float PDA_LOWERING_SECONDS = 0.3f;
 
+    /// <summary>
+    ///     The slot and time of <c>Player.StartHideGlovesFor(12)</c> in <c>Player.TriggerInfectionRevealAsync</c>.
+    /// </summary>
+    private const string GLOVES_SLOT = "Gloves";
+
+    private const float INFECTION_REVEAL_GLOVES_HIDDEN_SECONDS = 12f;
+
+    private readonly CyclopsWalkVelocity cyclopsWalk = new();
+    private GameObject? bodyPrototype;
+
+    /// <summary>
+    ///     As last told (the animator starts out underwater, see <see cref="AnimationController" />).
+    /// </summary>
+    private bool isUnderwater = true;
+
+    private bool isWelding;
+
+    private RemotePlayerToolLook? toolLook;
+
     private GameObject pdaModel;
     private int pdaVisibilityChange;
 
     private readonly PlayerModelManager playerModelManager;
     private readonly PlayerVitalsManager playerVitalsManager;
     private readonly FMODWhitelist fmodWhitelist;
-    private List<IEquipmentVisibilityHandler> equipmentVisibilityHandlers = [];
+    private RemotePlayerEquipment? equipment;
 
     public PlayerContext PlayerContext { get; }
     public GameObject? Body { get; private set; }
@@ -67,6 +86,11 @@ public class RemotePlayer : INitroxPlayer
 
     public bool InCinematic { get; set; }
 
+    /// <summary>
+    ///     The tool in this player's hand, or null.
+    /// </summary>
+    public PlayerTool? HeldTool { get; private set; }
+
     public readonly Event<RemotePlayer> PlayerDeathEvent = new();
 
     public readonly Event<RemotePlayer> PlayerDisconnectEvent = new();
@@ -81,9 +105,12 @@ public class RemotePlayer : INitroxPlayer
         this.fmodWhitelist = fmodWhitelist;
     }
 
-    public void InitializeGameObject(GameObject playerBody)
+    /// <param name="playerBody">A copy of <paramref name="bodyPrototype" />.</param>
+    /// <param name="bodyPrototype">What the body was copied from, to tell what was made for this body only.</param>
+    public void InitializeGameObject(GameObject playerBody, GameObject bodyPrototype)
     {
         Body = playerBody;
+        this.bodyPrototype = bodyPrototype;
         Body.name = PlayerName;
 
         RigidBody = Body.AddComponent<Rigidbody>();
@@ -112,12 +139,14 @@ public class RemotePlayer : INitroxPlayer
 
         CoroutineUtils.StartCoroutineSmart(playerModelManager.AttachPing(this));
         playerModelManager.BeginApplyPlayerColor(this);
-        equipmentVisibilityHandlers = playerModelManager.RegisterEquipmentVisibilityHandler(PlayerModel);
+        equipment = new RemotePlayerEquipment(Player.main.transform.Find("body"), Body.transform, PlayerName);
         SetupBody();
         SetupSkyAppliers();
         SetupPlayerSounds();
         SetupMixins();
         SetupPda();
+        toolLook = Body.AddComponent<RemotePlayerToolLook>();
+        toolLook.Initialize(this);
 
         PlayerAnimation animation = PlayerContext.Animation;
         UpdateAnimationAndCollider((AnimChangeType)animation.Type, (AnimChangeState)animation.State);
@@ -177,24 +206,24 @@ public class RemotePlayer : INitroxPlayer
         // When receiving movement packets, a player can not be controlling a vehicle (they can walk through subroots though).
         SetVehicle(null);
         SetPilotingChair(null);
+        StopCyclopsWalk();
 
-        float teleportThreshold = MovementHelper.GetTeleportThreshold(velocity.magnitude);
-        MovementHelper.TeleportIfTooFar(Body.transform, RigidBody, position, bodyRotation, teleportThreshold);
-
-        AnimationController.AimingRotation = aimingRotation;
-        AnimationController.UpdatePlayerAnimations = true;
-        AnimationController.Velocity = MovementHelper.GetCorrectedVelocity(position, velocity, Body.transform.position, Time.fixedDeltaTime);
-
-        // The rotations are sent relative to a base the player is in (the position is sent in world space)
+        // The rotations are sent relative to a base the player is in (the position is sent in world space). They are
+        // turned into the world's first, so that a body moved by a teleport faces the right way at once.
         Vector3 worldPosition = position;
         if (SubRoot && SubRoot.isBase)
         {
-            Quaternion vehicleAngle = SubRoot.transform.rotation;
-            position = vehicleAngle * position;
-            position += SubRoot.transform.position;
-            bodyRotation = vehicleAngle * bodyRotation;
-            aimingRotation = vehicleAngle * aimingRotation;
+            Quaternion baseRotation = SubRoot.transform.rotation;
+            bodyRotation = baseRotation * bodyRotation;
+            aimingRotation = baseRotation * aimingRotation;
         }
+
+        float teleportThreshold = MovementHelper.GetTeleportThreshold(velocity.magnitude);
+        MovementHelper.TeleportIfTooFar(Body.transform, RigidBody, worldPosition, bodyRotation, teleportThreshold);
+
+        AnimationController.AimingRotation = aimingRotation;
+        AnimationController.UpdatePlayerAnimations = true;
+        AnimationController.Velocity = MovementHelper.GetCorrectedVelocity(worldPosition, velocity, Body.transform.position, Time.fixedDeltaTime);
 
         // A player who stopped sends no further packet (PlayerMovementThrottle), so the corrective speed computed
         // above would never be taken back and the body would drift or spin: it is put in place instead
@@ -211,7 +240,7 @@ public class RemotePlayer : INitroxPlayer
         RigidBody.angularVelocity = MovementHelper.GetCorrectedAngularVelocity(bodyRotation, Vector3.zero, Body.transform.rotation, Time.fixedDeltaTime);
     }
 
-    public void UpdatePositionInCyclops(Vector3 localPosition, Quaternion localRotation)
+    public void UpdatePositionInCyclops(Vector3 localPosition, Quaternion localRotation, Quaternion localAimingRotation)
     {
         if (Pawn == null || PilotingChair)
         {
@@ -224,13 +253,33 @@ public class RemotePlayer : INitroxPlayer
         {
             SetVehicle(null);
 
-            AnimationController.AimingRotation = localRotation;
+            // The pitch only matters to the animation (view_pitch), and is relative to the Cyclops like the body
+            AnimationController.AimingRotation = localAimingRotation;
             AnimationController.UpdatePlayerAnimations = true;
         }
-        AnimationController.Velocity = (localPosition - Pawn.Handle.transform.localPosition) / Time.fixedDeltaTime;
+
+        // The walk is measured in the Cyclops' frame from this game's clock, and turned into the world frame the
+        // animation expects, with the Cyclops' heading at the moment it is shown
+        cyclopsWalk.OnPacket(localPosition, Time.time);
+        AnimationController.VelocityProvider = CyclopsWalkWorldVelocity;
 
         Pawn.Handle.transform.localPosition = localPosition;
         Pawn.Handle.transform.localRotation = localRotation;
+    }
+
+    private Vector3 CyclopsWalkWorldVelocity()
+    {
+        Vector3 localVelocity = cyclopsWalk.GetVelocity(Time.time);
+        return SubRoot ? SubRoot.transform.rotation * localVelocity : localVelocity;
+    }
+
+    private void StopCyclopsWalk()
+    {
+        cyclopsWalk.Reset();
+        if (AnimationController)
+        {
+            AnimationController.VelocityProvider = null;
+        }
     }
 
     public void SetPilotingChair(PilotingChair newPilotingChair)
@@ -292,6 +341,7 @@ public class RemotePlayer : INitroxPlayer
             // Unregister from previous cyclops
             Pawn?.Unregister();
             Pawn = null;
+            StopCyclopsWalk();
 
             if (newSubRoot)
             {
@@ -404,6 +454,30 @@ public class RemotePlayer : INitroxPlayer
             pdaVisibilityChange++;
             pdaModel.SetActive(false);
         }
+        equipment?.ShowAllSlots();
+        RestoreLastingPose();
+    }
+
+    /// <summary>
+    ///     The rebind in <see cref="ResetStates" /> puts every animator parameter back to its default, but some of what they
+    ///     showed is still true: the player is still underwater or not, and may still hold their tool (a Cyclops or vehicle
+    ///     that was destroyed around them does not take it).
+    /// </summary>
+    private void RestoreLastingPose()
+    {
+        AnimationController["is_underwater"] = isUnderwater;
+        UpdateCollider();
+
+        if (HeldTool && ItemAttachPoint && HeldTool.transform.IsChildOf(ItemAttachPoint))
+        {
+            AnimationController.SetBoolIfPresent($"holding_{HeldTool.animToolName}", true);
+            AnimationController.SetBoolIfPresent("holding_tool", true);
+            RequestArmsReconfigure();
+        }
+        else
+        {
+            HeldTool = null;
+        }
     }
 
     public void Destroy()
@@ -412,6 +486,7 @@ public class RemotePlayer : INitroxPlayer
         Log.InGame(Language.main.Get("Nitrox_PlayerLeft").Replace("{PLAYER}", PlayerName));
         ResetStates();
         NitroxEntity.RemoveFrom(Body);
+        BodyRenderResources.Release(Body, bodyPrototype);
         Object.DestroyImmediate(Body);
     }
 
@@ -420,10 +495,16 @@ public class RemotePlayer : INitroxPlayer
         switch (type)
         {
             case AnimChangeType.UNDERWATER:
-                AnimationController["is_underwater"] = state != AnimChangeState.OFF;
+                isUnderwater = state != AnimChangeState.OFF;
+                AnimationController["is_underwater"] = isUnderwater;
                 break;
             case AnimChangeType.INFECTION_REVEAL:
-                AnimationController["player_infected"] = state != AnimChangeState.UNSET;
+                // Player.TriggerInfectionRevealAsync sets a trigger, and takes the gloves off for the look at the hand
+                if (state == AnimChangeState.ON)
+                {
+                    AnimationController.SetTrigger("player_infected");
+                    equipment?.HideSlotFor(GLOVES_SLOT, INFECTION_REVEAL_GLOVES_HIDDEN_SECONDS);
+                }
                 break;
             case AnimChangeType.USING_PDA:
                 AnimationController.SetSwitch(PlayerAnimationParameters.Switches[type], state == AnimChangeState.ON);
@@ -442,6 +523,28 @@ public class RemotePlayer : INitroxPlayer
                 break;
         }
 
+        // The Dive Reel animates along with the arm (DiveReel.UpdateEquipped, DiveReel.SetDiveReelOutOfAmmoAnimator)
+        if (HeldTool is DiveReel diveReel && diveReel.animationController)
+        {
+            if (type == AnimChangeType.DIVE_REEL_RESET)
+            {
+                diveReel.animationController.SetTrigger("divereel_reset");
+            }
+            else if (type == AnimChangeType.DIVE_REEL_OUT_OF_AMMO)
+            {
+                diveReel.animationController.SetBool("divereel_outofammo", state == AnimChangeState.ON);
+            }
+        }
+
+        UpdateCollider();
+    }
+
+    private void UpdateCollider()
+    {
+        if (!Collider)
+        {
+            return;
+        }
         // Rough estimation for different collider boxes in different animation stages
         if (AnimationController["is_underwater"])
         {
@@ -471,6 +574,12 @@ public class RemotePlayer : INitroxPlayer
         pdaModel.SetActive(false);
     }
 
+    /// <summary>
+    ///     The PDA model in this body's hand. <c>ArmsController.Start</c> gives the arms the local player's PDA, whose
+    ///     being open would then decide this body's IK (see <c>ArmsController_Start_Patch</c>).
+    /// </summary>
+    public PDA? Pda => pdaModel ? pdaModel.GetComponent<PDA>() : null;
+
     private void SetPdaVisible(bool visible)
     {
         if (!pdaModel)
@@ -482,6 +591,7 @@ public class RemotePlayer : INitroxPlayer
         if (visible)
         {
             pdaModel.SetActive(true);
+            RequestArmsReconfigure();
             return;
         }
         // The game also keeps the PDA in the hand until the arm has gone down (PDA.Close and PDA.Deactivated).
@@ -494,12 +604,124 @@ public class RemotePlayer : INitroxPlayer
         if (change == pdaVisibilityChange && pdaModel)
         {
             pdaModel.SetActive(false);
+            RequestArmsReconfigure();
         }
     }
 
-    public void UpdateEquipmentVisibility(List<TechType> equippedItems)
+    public bool IsUnderwater => isUnderwater;
+
+    /// <summary>
+    ///     Where the player looks, in the world.
+    /// </summary>
+    public Vector3 AimDirection
     {
-        PlayerModelManager.UpdateEquipmentVisibility(equipmentVisibilityHandlers, equippedItems);
+        get
+        {
+            Vector3 aim = AnimationController ? AnimationController.AimingRotation * Vector3.forward : Body.transform.forward;
+            // Inside a Cyclops the aim is sent relative to it
+            return Pawn != null && SubRoot ? SubRoot.transform.rotation * aim : aim;
+        }
+    }
+
+    /// <param name="grabbedId">What this player's propulsion cannon holds, or null.</param>
+    public void SetPropulsionGrab(NitroxId? grabbedId)
+    {
+        if (toolLook)
+        {
+            toolLook.SetPropulsionGrab(grabbedId);
+        }
+    }
+
+    public void SetWelding(bool welding)
+    {
+        isWelding = welding;
+        ShowWelding();
+    }
+
+    /// <summary>
+    ///     The sparks and sound of the welder in this player's hand, as <c>Welder.Update</c> shows them for the local player.
+    /// </summary>
+    private void ShowWelding()
+    {
+        if (!ItemAttachPoint)
+        {
+            return;
+        }
+        Welder welder = ItemAttachPoint.GetComponentInChildren<Welder>(true);
+        if (!welder)
+        {
+            return;
+        }
+        if (welder.weldSound)
+        {
+            if (isWelding)
+            {
+                welder.weldSound.Play();
+            }
+            else
+            {
+                welder.weldSound.Stop();
+            }
+        }
+        if (welder.fxControl)
+        {
+            if (isWelding && MiscSettings.flashes)
+            {
+                welder.fxControl.Play(isUnderwater ? 1 : 0);
+            }
+            else
+            {
+                welder.fxControl.StopAndDestroy(0f);
+            }
+        }
+    }
+
+    public void SetHeldTool(PlayerTool? tool)
+    {
+        if (HeldTool is Welder && HeldTool != tool && isWelding)
+        {
+            // A welder put away stops welding (Welder_OnHolster_Patch tells it too, but may come later)
+            SetWelding(false);
+        }
+        HeldTool = tool;
+        if (tool is Welder && isWelding)
+        {
+            ShowWelding();
+        }
+        // ArmsController.Update sets this for the local player every frame; it does not run for this body
+        AnimationController.SetBoolIfPresent("holding_tool", tool);
+        RequestArmsReconfigure();
+    }
+
+    /// <summary>
+    ///     Has the arms' IK (hands on a two-handed tool, on vehicle controls, on the PDA) worked out again on the next
+    ///     frame, with this player's own tool and PDA (see <c>ArmsController_Update_Patch</c>).
+    /// </summary>
+    public void RequestArmsReconfigure()
+    {
+        if (ArmsController)
+        {
+            ArmsController.reconfigureWorldTarget = true;
+        }
+    }
+
+    /// <summary>
+    ///     The tool-use event of this body's animation, which the game would otherwise send to the local player's tool.
+    ///     Only the look of the tool follows: what the use does is sent by the player's own game.
+    /// </summary>
+    public void OnToolUseAnimation()
+    {
+        // DiveReel.OnToolUseAnim plays this on the reel when it throws a node
+        if (HeldTool is DiveReel diveReel && diveReel.animationController)
+        {
+            diveReel.animationController.SetTrigger("divereel_fire");
+        }
+    }
+
+    /// <param name="equippedItems">The item type in each equipment slot that holds one.</param>
+    public void UpdateEquipmentVisibility(IEnumerable<KeyValuePair<string, TechType>> equippedItems)
+    {
+        equipment?.SetEquipped(equippedItems);
     }
 
     /// <summary>
@@ -560,11 +782,13 @@ public class RemotePlayer : INitroxPlayer
         GameObject remotePlayerSoundsRoot = new("RemotePlayerSounds");
         remotePlayerSoundsRoot.transform.SetParent(Body.transform);
         FMODEmitterController emitterController = Body.AddComponent<FMODEmitterController>();
+        Body.AddComponent<RemotePlayerSounds>().Init(this, fmodWhitelist);
 
         static void CopyEmitter(FMOD_CustomEmitter src, FMOD_CustomEmitter dst)
         {
             dst.asset = src.asset;
-            dst.playOnAwake = src.playOnAwake;
+            // Only a target for what the other player's game sends (FMODEmitterController): it must not start by itself
+            dst.playOnAwake = false;
             dst.stopImmediatelyOnDisable = src.stopImmediatelyOnDisable;
             dst.followParent = src.followParent;
             dst.restartOnPlay = src.restartOnPlay;
@@ -644,9 +868,7 @@ public class RemotePlayer : INitroxPlayer
     {
         if (vitals)
         {
-            // TODO: only show health and oxygen in freedom mode
-            bool visible = PlayerContext.GameMode != SubnauticaGameMode.CREATIVE;
-            vitals.SetStatsVisible(visible);
+            vitals.SetGameMode(PlayerContext.GameMode);
         }
     }
 

@@ -45,7 +45,7 @@ public sealed partial class LiveMixin_Kill_Patch : NitroxPatch, IDynamicPatch
         
         // Some objects don't have destroyOnDeath but we still need to broadcast the death
         // (because the destruction is managed by another script)
-        if (__instance.destroyOnDeath || Resolve<LiveMixinManager>().ShouldBroadcastDeath(__instance))
+        if (__instance.destroyOnDeath || Resolve<LiveMixinManager>().ShouldBroadcastDeath(__instance) || LiveMixinManager.IsHarvestedToDeath(__instance))
         {
             Resolve<IPacketSender>().Send(new EntityDestroyed(objectId));
         }

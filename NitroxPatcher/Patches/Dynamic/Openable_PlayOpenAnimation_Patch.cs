@@ -1,5 +1,6 @@
 using System.Reflection;
 using NitroxClient.GameLogic;
+using NitroxClient.GameLogic.FMOD;
 using NitroxClient.MonoBehaviours.Cyclops;
 using Nitrox.Model.DataStructures;
 
@@ -12,8 +13,9 @@ public sealed partial class Openable_PlayOpenAnimation_Patch : NitroxPatch, IDyn
 {
     private static readonly MethodInfo TARGET_METHOD = Reflect.Method((Openable t) => t.PlayOpenAnimation(default(bool), default(float)));
 
-    public static bool Prefix(Openable __instance, bool openState, float duration)
+    public static bool Prefix(Openable __instance, bool openState, float duration, out ReplayedSoundScope? __state)
     {
+        __state = null;
         if (__instance.TryGetComponentInParent(out NitroxCyclops nitroxCyclops) && nitroxCyclops.Virtual)
         {
             nitroxCyclops.Virtual.ReplicateOpening(__instance, openState, duration);
@@ -28,8 +30,15 @@ public sealed partial class Openable_PlayOpenAnimation_Patch : NitroxPatch, IDyn
         if (__instance.isOpen != openState && __instance.TryGetIdOrWarn(out NitroxId id))
         {
             Resolve<Interior>().OpenableStateChanged(id, openState, duration);
+            // Every game opens the door when it gets this and plays its sound there, so the sound is not sent as well
+            __state = ReplayedSoundScope.Enter();
         }
 
         return true;
+    }
+
+    public static void Finalizer(ReplayedSoundScope? __state)
+    {
+        __state?.Dispose();
     }
 }

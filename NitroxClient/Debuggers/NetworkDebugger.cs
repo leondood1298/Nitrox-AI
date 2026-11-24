@@ -20,7 +20,7 @@ public class NetworkDebugger : AbstractDebugger, INetworkDebugger
     private readonly List<string> filter =
     [
         nameof(PlayerMovement), nameof(EntityTransformUpdates), nameof(PlayerStats), nameof(SpawnEntities), nameof(VehicleMovements), nameof(PlayerCinematicControllerCall),
-        nameof(FMODAssetPacket), nameof(FMODEventInstancePacket), nameof(FMODCustomEmitterPacket), nameof(FMODStudioEmitterPacket), nameof(FMODCustomLoopingEmitterPacket),
+        nameof(FMODAssetPacket), nameof(FMODEventInstancePacket), nameof(FMODCustomEmitterPacket), nameof(FMODStudioEmitterPacket),
         nameof(SimulationOwnershipChange), nameof(CellVisibilityChanged), nameof(PlayerInCyclopsMovement), nameof(CreatureActionChanged), nameof(FootstepPacket), nameof(GrapplingHookMovement)
     ];
     private readonly List<PacketDebugWrapper> packets = new(PACKET_STORED_COUNT);

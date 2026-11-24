@@ -3,11 +3,9 @@ using Nitrox.Server.Subnautica.Models.Helper;
 
 namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities.Spawning;
 
-internal sealed class GeyserBootstrapper(XorRandom random) : IEntityBootstrapper
+internal sealed class GeyserBootstrapper : IEntityBootstrapper
 {
-    private readonly XorRandom random = random;
-
-    public Task<WorldEntity> Prepare(WorldEntity entity, DeterministicGenerator deterministicBatchGenerator)
+    public Task<WorldEntity> Prepare(WorldEntity entity, DeterministicGenerator deterministicBatchGenerator, XorRandom random)
     {
         entity = new GeyserWorldEntity(entity.Transform, entity.Level, entity.ClassId,
                                   entity.SpawnedByServer, entity.Id, entity.TechType,

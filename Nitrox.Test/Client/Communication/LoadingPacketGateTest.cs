@@ -45,6 +45,32 @@ public sealed class LoadingPacketGateTest
     }
 
     [TestMethod]
+    public void PacketsArrivingWhileTheReplayRunsOverFramesComeAfterTheHeldOnes()
+    {
+        LoadingPacketGate gate = new();
+        gate.OnJoinRequested();
+        EntityDestroyed first = new(new NitroxId());
+        EntityDestroyed second = new(new NitroxId());
+        EntityDestroyed arrivedDuringReplay = new(new NitroxId());
+        gate.Admit(first);
+        gate.Admit(second);
+        List<Packet> replayed = [];
+
+        gate.TryTakeHeld(out Packet packet).Should().BeTrue();
+        replayed.Add(packet);
+        // The next frame: a new packet arrives before the replay goes on
+        gate.Admit(arrivedDuringReplay).Should().BeFalse("it must wait behind the packets not replayed yet");
+        while (gate.TryTakeHeld(out packet))
+        {
+            replayed.Add(packet);
+        }
+        gate.FinishLoading();
+
+        replayed.Should().Equal(first, second, arrivedDuringReplay);
+        gate.Admit(new EntityDestroyed(new NitroxId())).Should().BeTrue();
+    }
+
+    [TestMethod]
     public void TheSnapshotItselfPassesWhileLoading()
     {
         LoadingPacketGate gate = new();

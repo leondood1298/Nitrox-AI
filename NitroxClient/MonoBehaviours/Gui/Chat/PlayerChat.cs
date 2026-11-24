@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using Nitrox.Model.Packets;
 using NitroxClient.Communication.Abstract;
 using NitroxClient.GameLogic.ChatUI;
+using NitroxClient.GameLogic.Settings;
 using NitroxClient.Unity.Helper;
 using UnityEngine;
 using UnityEngine.UI;
@@ -14,7 +15,6 @@ namespace NitroxClient.MonoBehaviours.Gui.Chat
 {
     public class PlayerChat : uGUI_InputGroup
     {
-        private const int LINE_CHAR_LIMIT = 255;
         private const int MESSAGES_LIMIT = 64;
         private const float TOGGLED_TRANSPARENCY = 0.4f;
 
@@ -109,6 +109,7 @@ namespace NitroxClient.MonoBehaviours.Gui.Chat
 
             // We pick any image that's inside the chat component to have all of their opacity lowered
             backgroundImages = transform.GetComponentsInChildren<Image>();
+            RestoreSavedLayout();
 
             yield return Yielders.WaitForEndOfFrame; //Needed so Select() works on initialization
             IsReady = true;
@@ -121,7 +122,7 @@ namespace NitroxClient.MonoBehaviours.Gui.Chat
                 _ => addedChar
             };
 
-        public IEnumerator WriteLogEntry(string playerName, string message, Color color)
+        public IEnumerator WriteLogEntry(string playerName, string message, Color color, bool isServer)
         {
             // TODO: in the future, reuse the last message as the new message to avoid the cost of Instantiate
             if (entries.Count == MESSAGES_LIMIT)
@@ -130,18 +131,20 @@ namespace NitroxClient.MonoBehaviours.Gui.Chat
                 yield return null; // Skips one frame to ensure the object is destroyed
             }
 
+            message = ChatLogRules.Sanitize(message);
             ChatLogEntry chatLogEntry;
             GameObject chatLogEntryObject;
-            if (entries.Count != 0 && entries.Last().PlayerName == playerName)
+            if (ChatLogRules.JoinsEntry(entries.Count != 0 ? entries.Last() : null, playerName, isServer))
             {
                 chatLogEntry = entries.Last();
                 chatLogEntry.MessageText += $"{Environment.NewLine}{message}";
+                chatLogEntry.LineCount++;
                 chatLogEntry.UpdateTime();
                 chatLogEntryObject = chatLogEntry.EntryObject;
             }
             else
             {
-                chatLogEntry = new ChatLogEntry(playerName, SanitizeMessage(message), color);
+                chatLogEntry = new ChatLogEntry(playerName, message, color, isServer);
                 chatLogEntryObject = Instantiate(logEntryPrefab, logEntryPrefab.transform.parent, false);
                 chatLogEntry.EntryObject = chatLogEntryObject;
                 entries.Enqueue(chatLogEntry);
@@ -178,21 +181,43 @@ namespace NitroxClient.MonoBehaviours.Gui.Chat
             inputField.ActivateInputField();
         }
 
-        private static string SanitizeMessage(string message)
-        {
-            message = message.Trim().TrimEnd('\n').Trim();
-            return message.Length < LINE_CHAR_LIMIT ? message : message.Substring(0, LINE_CHAR_LIMIT);
-        }
-
         private void ToggleBackgroundTransparency()
         {
-            float alpha = transparent ? 1f : TOGGLED_TRANSPARENCY;
-            transparent = !transparent;
+            SetTransparency(!transparent, 0.5f);
+            NitroxPrefs.ChatTransparent.Value = transparent;
+        }
 
+        private void SetTransparency(bool isTransparent, float fadeDuration)
+        {
+            transparent = isTransparent;
+            float alpha = transparent ? TOGGLED_TRANSPARENCY : 1f;
             foreach (Image backgroundImage in backgroundImages)
             {
-                backgroundImage.CrossFadeAlpha(alpha, 0.5f, false);
+                backgroundImage.CrossFadeAlpha(alpha, fadeDuration, false);
             }
+        }
+
+        /// <summary>
+        ///     Puts the chat where the player last left it, kept inside the screen in case the resolution changed since.
+        /// </summary>
+        private void RestoreSavedLayout()
+        {
+            SetTransparency(NitroxPrefs.ChatTransparent.Value, 0f);
+
+            float x = NitroxPrefs.ChatPositionX.Value;
+            float y = NitroxPrefs.ChatPositionY.Value;
+            if (float.IsNaN(x) || float.IsNaN(y))
+            {
+                return;
+            }
+            Canvas canvas = GetComponentInParent<Canvas>();
+            if (!canvas)
+            {
+                return;
+            }
+            Vector2 canvasSize = canvas.GetComponent<RectTransform>().sizeDelta;
+            Vector2 chatSize = GetComponent<RectTransform>().sizeDelta;
+            transform.localPosition = PlayerChatPinButton.ClampToCanvas(new Vector2(x, y), canvasSize, chatSize);
         }
 
         private IEnumerator ToggleChatFade(bool fadeIn)

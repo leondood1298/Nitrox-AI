@@ -3,20 +3,21 @@ using Nitrox.Model.DataStructures.GameLogic;
 using Nitrox.Server.Subnautica.Models.Administration;
 using Nitrox.Server.Subnautica.Models.Commands.ArgConverters;
 using Nitrox.Server.Subnautica.Models.Commands.Core;
+using Nitrox.Server.Subnautica.Models.GameLogic;
 
 namespace Nitrox.Server.Subnautica.Models.Commands;
 
 [RequiresPermission(Perms.MODERATOR)]
-internal sealed class KickCommand(IKickPlayer playerKicker, IOptions<SubnauticaServerOptions> options) : ICommandHandler<Player, string>, ICommandHandler<ReservedSession, string>
+internal sealed class KickCommand(IKickPlayer playerKicker, PlayerManager playerManager) : ICommandHandler<Player, string>, ICommandHandler<ReservedSession, string>
 {
     private readonly IKickPlayer playerKicker = playerKicker;
-    private readonly IOptions<SubnauticaServerOptions> options = options;
+    private readonly PlayerManager playerManager = playerManager;
 
     [Description("Kicks a player who waits in the join queue")]
     public async Task Execute(ICommandContext context, ReservedSession queuedPlayer, string reason = "")
     {
-        // Not a player yet: they would get the default permissions on joining
-        if (context.Origin == CommandOrigin.PLAYER && options.Value.DefaultPlayerPerm >= context.Permissions)
+        // Not a player yet: judged by the rank they will have on joining
+        if (!PlayerRanks.MayActOn(context.Permissions, playerManager.GetRankOnJoin(queuedPlayer.SessionId)))
         {
             await context.ReplyAsync($"You're not allowed to kick {queuedPlayer.Name}");
             return;
@@ -36,17 +37,14 @@ internal sealed class KickCommand(IKickPlayer playerKicker, IOptions<SubnauticaS
             return;
         }
 
-        switch (context.Origin)
+        if (!PlayerRanks.MayActOn(context.Permissions, playerToKick.Permissions))
         {
-            case CommandOrigin.PLAYER when playerToKick.Permissions >= context.Permissions:
-                await context.ReplyAsync($"You're not allowed to kick {playerToKick.Name}");
-                break;
-            default:
-                if (!await playerKicker.KickPlayer(playerToKick.SessionId, reason))
-                {
-                    await context.ReplyAsync($"Failed to kick '{playerToKick.Name}'");
-                }
-                break;
+            await context.ReplyAsync($"You're not allowed to kick {playerToKick.Name}");
+            return;
+        }
+        if (!await playerKicker.KickPlayer(playerToKick.SessionId, reason))
+        {
+            await context.ReplyAsync($"Failed to kick '{playerToKick.Name}'");
         }
     }
 }

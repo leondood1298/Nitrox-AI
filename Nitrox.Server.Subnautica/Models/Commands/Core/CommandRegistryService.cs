@@ -57,6 +57,33 @@ internal sealed class CommandRegistryService(IEnumerable<CommandHandlerEntry> di
         return validHandlers.Count > 0;
     }
 
+    /// <summary>
+    ///     The lowest rank that can run the command from this origin, if the command exists there at all: lets the reply to
+    ///     someone of too low a rank say so instead of "unknown command".
+    /// </summary>
+    public bool TryGetRequiredPermission(ICommandContext context, ReadOnlySpan<char> commandNameOrAlias, out Perms required)
+    {
+        required = Perms.HOST;
+        if (!SpanHandlerLookup.TryGetValue(commandNameOrAlias, out List<CommandHandlerEntry> knownHandlers))
+        {
+            return false;
+        }
+        bool found = false;
+        foreach (CommandHandlerEntry handler in knownHandlers)
+        {
+            if (!handler.AcceptedOrigin.HasFlag(context.Origin))
+            {
+                continue;
+            }
+            found = true;
+            if (handler.MinimumPermissions < required)
+            {
+                required = handler.MinimumPermissions;
+            }
+        }
+        return found;
+    }
+
     public bool IsValidHandlerForContext(CommandHandlerEntry handler, ICommandContext context) => handler.AcceptedOrigin.HasFlag(context.Origin) && handler.MinimumPermissions <= context.Permissions;
 
     public async ValueTask<List<ConvertResult>> TryConvertToType(string value, Type targetType)
@@ -116,7 +143,9 @@ internal sealed class CommandRegistryService(IEnumerable<CommandHandlerEntry> di
                 case not null when type == typeof(double):
                     return double.Parse(value);
                 case { IsEnum: true }:
-                    return Enum.Parse(type, value, true);
+                    // A number is parsed as an enum value even if it names none ("gamemode 5"), which the game cannot use
+                    object parsed = Enum.Parse(type, value, true);
+                    return type.IsDefined(typeof(FlagsAttribute), false) || Enum.IsDefined(type, parsed) ? parsed : null;
                 default:
                     return null;
             }
