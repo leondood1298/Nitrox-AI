@@ -44,9 +44,18 @@ public class GlobalRootEntitySpawner : SyncEntitySpawner<GlobalRootEntity>
         LargeWorld.main.streamer.cellManager.RegisterEntity(largeWorldEntity);
         largeWorldEntity.Start();
 
-        gameObject.transform.localPosition = entity.Transform.LocalPosition.ToUnity();
-        gameObject.transform.localRotation = entity.Transform.LocalRotation.ToUnity();
-        gameObject.transform.localScale = entity.Transform.LocalScale.ToUnity();
+        // A place that is not a number breaks the object's colliders for good (Unity's transform matrix turns NaN); the
+        // object then keeps the place of its prefab until its simulating player moves it.
+        if (entity.Transform.IsFinite())
+        {
+            gameObject.transform.localPosition = entity.Transform.LocalPosition.ToUnity();
+            gameObject.transform.localRotation = entity.Transform.LocalRotation.ToUnity();
+            gameObject.transform.localScale = entity.Transform.LocalScale.ToUnity();
+        }
+        else
+        {
+            Log.Warn($"[{nameof(GlobalRootEntitySpawner)}] {entity.Id} ({entity.TechType}) came with a transform that is not a finite number and keeps the place of its prefab: {entity.Transform}");
+        }
 
         if (entity.ParentId != null && NitroxEntity.TryGetComponentFrom(entity.ParentId, out Transform parentTransform))
         {

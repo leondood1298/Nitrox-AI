@@ -42,6 +42,7 @@ internal class WorldService : IHostedService
     private readonly WorldEntityManager worldEntityManager;
     private readonly ActiveTeleporters activeTeleporters;
     private readonly CollectedTimeCapsules collectedTimeCapsules;
+    private readonly CrashHomeRespawns crashHomeRespawns;
     public IServerSerializer Serializer { get; private set; }
 
     /// <summary>
@@ -68,8 +69,11 @@ internal class WorldService : IHostedService
         IOptions<ServerStartOptions> startOptions,
         ActiveTeleporters activeTeleporters,
         CollectedTimeCapsules collectedTimeCapsules,
+        CrashHomeRespawns crashHomeRespawns,
         ILogger<WorldService> logger)
     {
+        // Made here, at startup, so that it hears of every crashfish that leaves the registry from the first one on
+        this.crashHomeRespawns = crashHomeRespawns;
         this.options = options;
         this.entityRegistry = entityRegistry;
         this.playerManager = playerManager;
@@ -288,6 +292,10 @@ internal class WorldService : IHostedService
             {
                 logger.ZLogWarning($"Left out {loadedEntities.Orphans} saved entities whose parent was not saved (such as the contents of a destroyed Cyclops).");
             }
+            if (loadedEntities.DuplicateChildren > 0)
+            {
+                logger.ZLogInformation($"Removed {loadedEntities.DuplicateChildren} stale copies of children that had the id of another child under the same parent (such as a dropped tool's battery).");
+            }
             if (loadedEntities.SerializedDuplicates > 0)
             {
                 logger.ZLogInformation($"Removed {loadedEntities.SerializedDuplicates} copies of the game's lights and other fixed objects, which an older build made twice.");
@@ -332,6 +340,10 @@ internal class WorldService : IHostedService
 
         void GlobalRootDataPostProcessing(GlobalRootData globalRootData)
         {
+            foreach ((WorldEntity healed, string place) in HealTransformsThatAreNotFinite(globalRootData.Entities))
+            {
+                logger.ZLogWarning($"{healed.GetType().Name} {healed.Id} ({healed.TechType}) was saved with a position, rotation or scale that is not a finite number and was put {place}");
+            }
             foreach (GlobalRootEntity entity in globalRootData.Entities)
             {
                 EnsureChildrenTransformAreParented(entity);
@@ -375,6 +387,40 @@ internal class WorldService : IHostedService
         }
     }
 
+    /// <summary>
+    ///     Gives every entity of the global root data whose transform holds a NaN or an infinite number a finite one: at
+    ///     its parent if it has one, otherwise at the origin of the world. Sent like that, it would break the object in
+    ///     every game. Scanner Room cameras are left to <see cref="ScannerRoomManager.WorldLoaded" />, which knows
+    ///     better places for them (a free dock, or the base of a room).
+    /// </summary>
+    /// <returns>Each entity changed, with where it was put.</returns>
+    internal static List<(WorldEntity Entity, string Place)> HealTransformsThatAreNotFinite(IEnumerable<GlobalRootEntity> entities)
+    {
+        List<(WorldEntity, string)> healed = [];
+        foreach (GlobalRootEntity entity in entities)
+        {
+            Heal(entity, null);
+        }
+        return healed;
+
+        void Heal(Entity entity, Entity? parent)
+        {
+            if (entity is WorldEntity { Transform: { } transform } worldEntity && !transform.IsFinite() && !ScannerRoomManager.IsCamera(entity))
+            {
+                bool moved = !transform.LocalPosition.IsFinite();
+                transform.LocalPosition = moved ? NitroxVector3.Zero : transform.LocalPosition;
+                transform.LocalRotation = transform.LocalRotation.IsFinite() ? transform.LocalRotation : NitroxQuaternion.Identity;
+                transform.LocalScale = transform.LocalScale.IsFinite() ? transform.LocalScale : NitroxVector3.One;
+                string place = !moved ? "where it was, with its rotation and scale made finite" : parent is WorldEntity ? $"at its parent {parent.Id}" : "at the origin of the world";
+                healed.Add((worldEntity, place));
+            }
+            foreach (Entity child in entity.ChildEntities)
+            {
+                Heal(child, entity);
+            }
+        }
+    }
+
     internal static IReadOnlyList<BuildEntity> RemoveChildlessStructurallyEmptyBuildEntities(GlobalRootData globalRootData)
     {
         List<BuildEntity> removedBuildEntities = [];
@@ -407,7 +453,7 @@ internal class WorldService : IHostedService
             // Entities
             entityRegistry.AddEntities(pWorldData.EntityData.Entities);
             entityRegistry.AddEntitiesIgnoringDuplicate(pWorldData.GlobalRootData.Entities.OfType<Entity>().ToList());
-            int repairedCrashHomes = CrashHomeRespawns.RepairAfterLoad(entityRegistry.GetAllEntities());
+            int repairedCrashHomes = crashHomeRespawns.RepairAfterLoad();
             if (repairedCrashHomes > 0)
             {
                 logger.ZLogInformation($"{repairedCrashHomes} crash homes without their crashfish make a new one when next loaded.");

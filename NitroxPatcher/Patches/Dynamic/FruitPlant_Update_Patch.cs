@@ -70,7 +70,8 @@ public sealed partial class FruitPlant_Update_Patch : NitroxPatch, IDynamicPatch
         {
             // TODO: Refer to the TODO in PlantableMetadata.
             // When TODO is done, change this to only update the FruitPlant metadata (like the above if)
-            PlantableMetadata metadata = Resolve<PlantableMetadataExtractor>().Extract(__state.Item3);
+            PlantFruitDiagnostics.Report("grow", __instance, __state.Item3, -1);
+            PlantableMetadata metadata = Resolve<PlantableMetadataExtractor>().Extract(__state.Item3, __instance);
             Resolve<IPacketSender>().Send(new EntityMetadataUpdate(__state.Item2, metadata));
         }
     }

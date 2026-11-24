@@ -48,22 +48,29 @@ public class Beacons
     }
 
     /// <summary>
-    ///     A beacon hums once thrown (Beacon.Throw plays its loop), in the thrower's game only. A beacon that appears in the
-    ///     world while playing was thrown by another player: it hums here as well. Beacons loaded with the world stay
-    ///     silent, as in the game.
+    ///     A beacon hums once thrown (Beacon.Throw plays its loop), in the thrower's game only; the game never starts the
+    ///     loop of a beacon it loads. A beacon that starts lying in the world was thrown, here or by another player, before
+    ///     or after this player joined: it hums in every game alike. One held or kept in an inventory or locker is silent.
     /// </summary>
+    internal static bool ShouldHum(bool alreadyHumming, bool held, bool inAContainer)
+    {
+        return !alreadyHumming && !held && !inAContainer;
+    }
+
     public void Started(Beacon beacon)
     {
-        if (!IsJoined() || !beacon.beaconOnLoop || beacon.beaconOnLoop.playing)
+        // No check that the join is done: the beacons of the world are spawned, and start, while joining
+        if (!beacon.beaconOnLoop)
         {
             return;
         }
         Pickupable pickupable = beacon.pickupable;
-        if (pickupable && (pickupable.attached || pickupable.inventoryItem != null))
+        bool held = pickupable && pickupable.attached;
+        bool inAContainer = pickupable && pickupable.inventoryItem != null;
+        if (ShouldHum(beacon.beaconOnLoop.playing, held, inAContainer))
         {
-            return;
+            beacon.beaconOnLoop.Play();
         }
-        beacon.beaconOnLoop.Play();
     }
 
     private static bool IsJoined() => Multiplayer.Main && Multiplayer.Main.InitialSyncCompleted;

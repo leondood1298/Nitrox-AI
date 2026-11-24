@@ -138,6 +138,12 @@ public sealed partial class LiveMixin_TakeDamage_Patch : NitroxPatch, IDynamicPa
 
     private static void BroadcastDefaultTookDamage(LiveMixin liveMixin)
     {
+        // A plant grown in a planter has no id of its own: its health goes with its seed (BroadcastPlantHealth)
+        if (liveMixin.GetComponent<GrownPlant>())
+        {
+            return;
+        }
+
         // Let others know if we have a lock on this entity
         if (liveMixin.TryGetIdOrWarn(out NitroxId id) && Resolve<SimulationOwnership>().HasAnyLockType(id))
         {

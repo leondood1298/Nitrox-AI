@@ -1,4 +1,5 @@
 using Nitrox.Model.DataStructures;
+using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 
 namespace Nitrox.Server.Subnautica.Models.GameLogic;
@@ -11,4 +12,5 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic;
 ///     The camera's light, battery, health, number and dock. A camera's state is one object that is replaced as a
 ///     whole and never changed, so it is safe to keep.
 /// </param>
-internal sealed record ScannerCameraSnapshot(NitroxId Id, MapRoomCameraMetadata State);
+/// <param name="Position">Where the camera is in the world, or null if its entity has no transform.</param>
+internal sealed record ScannerCameraSnapshot(NitroxId Id, MapRoomCameraMetadata State, NitroxVector3? Position = null);

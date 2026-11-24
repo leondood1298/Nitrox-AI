@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 
 namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities;
@@ -95,6 +96,37 @@ internal static class PlantMetadataAuthority
                 yield return i;
             }
         }
+    }
+
+    /// <returns>
+    ///     The fruit <paramref name="requested" /> has on the plant that <paramref name="accepted" /> keeps picked: a fruit
+    ///     the sender's game grew (or still showed) that the merge refused.
+    /// </returns>
+    public static IEnumerable<int> RefusedGrowths(FruitPlantMetadata? requested, FruitPlantMetadata? accepted)
+    {
+        if (requested?.PickedStates == null || accepted?.PickedStates == null)
+        {
+            yield break;
+        }
+        for (int i = 0; i < requested.PickedStates.Length && i < accepted.PickedStates.Length; i++)
+        {
+            if (!requested.PickedStates[i] && accepted.PickedStates[i])
+            {
+                yield return i;
+            }
+        }
+    }
+
+    /// <summary>
+    ///     One line for the plant diagnostics: which fruit each state has on the plant, and when the next one grows.
+    /// </summary>
+    public static string Describe(FruitPlantMetadata? fruit)
+    {
+        if (fruit?.PickedStates == null)
+        {
+            return "-";
+        }
+        return $"[{string.Join(",", FruitPlantMetadata.PresentIndices(fruit.PickedStates))}]/{fruit.PickedStates.Length}@{fruit.TimeNextFruit.ToString(CultureInfo.InvariantCulture)}";
     }
 
     /// <returns>True when the sender's copy differs from the merged state, so it must be given the merged one.</returns>

@@ -6,6 +6,7 @@ using System.Text;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.GameLogic;
+using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
@@ -58,8 +59,19 @@ internal sealed class ScannerRoomCommand(ScannerRoomDiagnostics diagnostics, Sim
         }
 
         CameraView[] looseCameras = worldCameras.Where(camera => !dockings.ContainsKey(camera.Id))
-                                                .Select(camera => ReadCamera(camera.Id, camera.State, MapRoomCameraMetadata.NOT_DOCKED))
+                                                .Select(camera => ReadCamera(camera.Id, camera.State, MapRoomCameraMetadata.NOT_DOCKED, camera.Position))
                                                 .ToArray();
+        foreach (ScannerCameraSnapshot camera in worldCameras)
+        {
+            if (camera.Position is not { } position)
+            {
+                anomalies.Add($"camera {ShortCamera(camera.Id)} has no place: its entity has no transform");
+            }
+            else if (!position.IsFinite())
+            {
+                anomalies.Add($"camera {ShortCamera(camera.Id)} is at {FormatPosition(position)}, which is not a place: every game that spawns it there breaks it, and its own position reports cannot be stored");
+            }
+        }
         foreach (KeyValuePair<NitroxId, int> docking in dockings.Where(pair => pair.Value > 1))
         {
             anomalies.Add($"camera {ShortCamera(docking.Key)} is docked in {docking.Value} rooms");
@@ -163,8 +175,12 @@ internal sealed class ScannerRoomCommand(ScannerRoomDiagnostics diagnostics, Sim
         return ReadCamera(camera.Id, state, state.DockingIndex);
     }
 
-    private static CameraView ReadCamera(NitroxId cameraId, MapRoomCameraMetadata state, int slot) =>
-        new(cameraId, state.CameraNumber, slot, state.LightOn, state.Energy, state.Health);
+    /// <param name="position">Where a camera out in the world is; a docked one sits in its dock wherever it is stored.</param>
+    private static CameraView ReadCamera(NitroxId cameraId, MapRoomCameraMetadata state, int slot, NitroxVector3? position = null) =>
+        new(cameraId, state.CameraNumber, slot, state.LightOn, state.Energy, state.Health, position);
+
+    private static string FormatPosition(NitroxVector3 position) =>
+        string.Create(CultureInfo.InvariantCulture, $"({position.X:F1}, {position.Y:F1}, {position.Z:F1})");
 
     /// <param name="inWorld">Whether the camera was in the world, in a dock or not, and not in an inventory.</param>
     private CameraLocks ReadCameraLocks(CameraView camera, bool inWorld, List<string> anomalies)
@@ -193,7 +209,7 @@ internal sealed class ScannerRoomCommand(ScannerRoomDiagnostics diagnostics, Sim
     }
 
     private static string FormatCamera(CameraView camera, CameraLocks locks) => string.Create(CultureInfo.InvariantCulture,
-        $"  cam={ShortCamera(camera.Id)} number={camera.Number} where={locks.Where} camLock={locks.Lock} control={locks.Control} light={(camera.LightOn ? "on" : "off")} energy={camera.Energy:F1} health={camera.Health:F1} id={camera.Id}");
+        $"  cam={ShortCamera(camera.Id)} number={camera.Number} where={locks.Where} camLock={locks.Lock} control={locks.Control} light={(camera.LightOn ? "on" : "off")} energy={camera.Energy:F1} health={camera.Health:F1}{(camera.Position is { } position ? $" pos={FormatPosition(position)}" : "")} id={camera.Id}");
 
     private static bool IsRepeat(ScannerRoomDiagnosticEntry previous, ScannerRoomDiagnosticEntry next) =>
         previous.EventName == next.EventName && previous.Outcome == next.Outcome && previous.SessionId == next.SessionId &&
@@ -205,7 +221,7 @@ internal sealed class ScannerRoomCommand(ScannerRoomDiagnostics diagnostics, Sim
 
     private readonly record struct RoomView(NitroxId Id, ScannerRoomStateSnapshot Snapshot, string? Violation, CameraView[] Cameras, int ScanResultCount, int ScanTypeCount);
 
-    private readonly record struct CameraView(NitroxId Id, int Number, int Slot, bool LightOn, float Energy, float Health);
+    private readonly record struct CameraView(NitroxId Id, int Number, int Slot, bool LightOn, float Energy, float Health, NitroxVector3? Position);
 
     private readonly record struct CameraLocks(string Lock, string Control, string Where);
 }

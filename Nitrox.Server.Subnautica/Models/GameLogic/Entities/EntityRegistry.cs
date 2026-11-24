@@ -73,6 +73,7 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities
         /// </summary>
         public void AddOrUpdate(Entity entity)
         {
+            KeepLastChildPerId(entity);
             if (!entitiesById.TryAdd(entity.Id, entity))
             {
                 Entity current = entitiesById[entity.Id];
@@ -106,6 +107,7 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities
         {
             foreach (Entity entity in entities)
             {
+                KeepLastChildPerId(entity);
                 if (entitiesById.TryGetValue(entity.Id, out Entity currentEntity))
                 {
                     entitiesById.TryUpdate(entity.Id, entity, currentEntity);
@@ -118,6 +120,12 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities
             }
         }
 
+        /// <summary>
+        ///     Raised for every entity that leaves the registry, its children included, whatever removed it. Lasting state
+        ///     that points at an entity can be released here once, instead of in each of the many ways an entity is removed.
+        /// </summary>
+        public event Action<Entity>? EntityRemoved;
+
         public Optional<Entity> RemoveEntity(NitroxId id)
         {
             if (entitiesById.TryRemove(id, out Entity entity))
@@ -128,6 +136,8 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities
                 {
                     RemoveEntity(child.Id);
                 }
+
+                EntityRemoved?.Invoke(entity);
             }
 
             return Optional.OfNullable(entity);
@@ -141,9 +151,44 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities
 
                 if (parent.HasValue)
                 {
-                    parent.Value.ChildEntities.Add(entity);
+                    AddChildReplacingSameId(parent.Value, entity);
                 }
             }
+        }
+
+        /// <summary>
+        ///     Adds <paramref name="child" /> to the children of <paramref name="parent" />, in place of a child with the
+        ///     same id. The id index holds one entity per id, so a second child with that id would no longer get any update
+        ///     and would still be sent to the players and saved (a tool's battery kept its charge at the drop that way).
+        /// </summary>
+        private static void AddChildReplacingSameId(Entity parent, Entity child)
+        {
+            parent.ChildEntities.RemoveAll(existing => existing.Id.Equals(child.Id));
+            parent.ChildEntities.Add(child);
+        }
+
+        /// <summary>
+        ///     Leaves one child per id under <paramref name="entity" /> and each of its descendants: the last one, which is
+        ///     the one the id index points at once the tree is registered.
+        /// </summary>
+        /// <returns>How many children were removed.</returns>
+        public static int KeepLastChildPerId(Entity entity)
+        {
+            int removed = 0;
+            HashSet<NitroxId> seen = [];
+            for (int i = entity.ChildEntities.Count - 1; i >= 0; i--)
+            {
+                if (!seen.Add(entity.ChildEntities[i].Id))
+                {
+                    entity.ChildEntities.RemoveAt(i);
+                    removed++;
+                }
+            }
+            foreach (Entity child in entity.ChildEntities)
+            {
+                removed += KeepLastChildPerId(child);
+            }
+            return removed;
         }
 
         public void RemoveFromParent(Entity? entity)
@@ -215,7 +260,7 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities
                 worldEntity.Transform.SetParent(parentWorldEntity.Transform, true);
             }
             entity.ParentId = newParent.Id;
-            newParent.ChildEntities.Add(entity);
+            AddChildReplacingSameId(newParent, entity);
         }
 
         /// <summary>
@@ -267,7 +312,7 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities
             foreach (Entity childEntity in childrenToMove)
             {
                 childEntity.ParentId = newParent.Id;
-                newParent.ChildEntities.Add(childEntity);
+                AddChildReplacingSameId(newParent, childEntity);
             }
         }
     }

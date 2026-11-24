@@ -47,18 +47,7 @@ public class PlayerMetadataProcessor : EntityMetadataProcessor<PlayerMetadata>
             // It is OK if we don't find the item, this could be a rebroadcast and we've already equipped the item.
             if (inventoryItem != null)
             {
-                Pickupable pickupable = inventoryItem.item;
-                currentItems.RemoveItem(pickupable, true);
-
-                inventoryItem.container = equipment;
-                pickupable.Reparent(equipment.tr);
-                equipment.equipment[equippedItem.Slot] = inventoryItem;
-
-                equipment.UpdateCount(pickupable.GetTechType(), true);
-                Equipment.SendEquipmentEvent(pickupable, 0, equipment.owner, equippedItem.Slot);
-                equipment.NotifyEquip(equippedItem.Slot, inventoryItem);
-
-                currentItems.RemoveItem(inventoryItem.item);
+                EquipmentSlots.PutOnLocalPlayer(equipment, inventoryItem.item, equippedItem.Slot);
             }
         }
     }

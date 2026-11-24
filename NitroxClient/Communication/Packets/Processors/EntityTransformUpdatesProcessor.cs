@@ -22,6 +22,12 @@ internal sealed class EntityTransformUpdatesProcessor(SimulationOwnership simula
                 continue;
             }
 
+            // A place that is not a number breaks the object's colliders for good (Unity's transform matrix turns NaN).
+            if (!update.Position.IsFinite() || !update.Rotation.IsFinite())
+            {
+                continue;
+            }
+
             // Spline updates are only meant for living creatures, but the simulating player can still send some before learning
             // that we killed it or that it turned into something else with the same id (e.g. a cooked fish)
             if (update is SplineTransformUpdate && !CanFollowSpline(gameObject))

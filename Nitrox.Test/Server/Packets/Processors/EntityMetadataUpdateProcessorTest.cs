@@ -922,4 +922,69 @@ public sealed class EntityMetadataUpdateProcessorTest
         Assert.IsTrue(simulationOwnershipData.TryAcquire(source.Id, simulatedBy, SimulationLockType.TRANSIENT));
         return source;
     }
+    [TestMethod]
+    public async Task EquipmentThePlayerChangesInARunningGameIsStoredAsTheirsAndShownToTheOthers()
+    {
+        PlayerEntity body = AddBody(simulator, null);
+        simulator.HasFinishedInitialSync = true;
+        NitroxId tank = new();
+
+        await Send(simulator, body, Worn(tank));
+
+        simulator.EquippedItems.Should().ContainKey("Tank").WhoseValue.Should().Be(tank);
+        ((PlayerMetadata)body.Metadata).EquippedItems.Single().Id.Should().Be(tank);
+        ((PlayerMetadata)ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, otherPlayer).Single().NewValue).EquippedItems.Single().Id.Should().Be(tank);
+    }
+
+    [TestMethod]
+    public async Task EquipmentSentWhileThePlayerIsStillJoiningDoesNotEmptyTheirList()
+    {
+        // Rejoin 1 of the live test: the joining game put the tank on twice and reported the first removal
+        NitroxId tank = new();
+        PlayerEntity body = AddBody(simulator, Worn(tank));
+        simulator.EquippedItems["Tank"] = tank;
+        simulator.HasFinishedInitialSync = false;
+
+        await Send(simulator, body, new PlayerMetadata([]));
+
+        simulator.EquippedItems.Should().ContainKey("Tank");
+        ((PlayerMetadata)body.Metadata).EquippedItems.Should().ContainSingle();
+        ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, otherPlayer).Should().BeEmpty();
+    }
+
+    [TestMethod]
+    public async Task EquipmentOfAnotherPlayersBodyIsNotStored()
+    {
+        PlayerEntity body = AddBody(simulator, null);
+        otherPlayer.HasFinishedInitialSync = true;
+
+        await Send(otherPlayer, body, Worn(new NitroxId()));
+
+        simulator.EquippedItems.Should().BeEmpty();
+        body.Metadata.Should().BeNull();
+    }
+
+    [TestMethod]
+    public async Task LungsOxygenFromADamageReportDoesNotTakeThePlaceOfTheEquipmentList()
+    {
+        NitroxId tank = new();
+        PlayerEntity body = AddBody(simulator, Worn(tank));
+        simulator.HasFinishedInitialSync = true;
+        otherPlayer.HasFinishedInitialSync = true;
+
+        await Send(simulator, body, new OxygenMetadata(39f));
+        await Send(otherPlayer, body, new OxygenMetadata(45f));
+
+        body.Metadata.Should().BeOfType<PlayerMetadata>();
+        ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, thirdPlayer).Should().BeEmpty();
+    }
+
+    private static PlayerMetadata Worn(NitroxId tank) => new([new PlayerMetadata.EquippedItem(tank, "Tank", new NitroxTechType("Tank"))]);
+
+    private PlayerEntity AddBody(Player owner, PlayerMetadata? metadata)
+    {
+        PlayerEntity body = new(new NitroxTransform(), 0, null, false, owner.GameObjectId, NitroxTechType.None, metadata, null, []);
+        entityRegistry.AddOrUpdate(body);
+        return body;
+    }
 }

@@ -1,6 +1,7 @@
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using Nitrox.Model.DataStructures;
+using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Bases;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
@@ -275,6 +276,51 @@ public sealed class ScannerRoomManagerLifecycleTest
         Assert.IsFalse(scenario.EntityRegistry.GetEntityById(fabricatorId).HasValue);
         Assert.IsNull(scenario.Ownership.GetPlayerForLock(fabricatorId), "A lock on something that is gone would never be given back.");
         Assert.IsTrue(sent.OfType<DropSimulationOwnership>().Any(drop => drop.EntityIds.Contains(fabricatorId)));
+    }
+
+    [TestMethod]
+    public void CamerasSavedWithoutAPlaceGoIntoAFreeDockOrToTheirBaseWhenTheWorldIsLoaded()
+    {
+        NitroxId baseId = new("00000000-0000-0000-0000-000000000600");
+        NitroxId roomId = new("00000000-0000-0000-0000-000000000601");
+        NitroxId dockedId = new("00000000-0000-0000-0000-000000000610");
+        NitroxId firstLostId = new("00000000-0000-0000-0000-000000000611");
+        NitroxId secondLostId = new("00000000-0000-0000-0000-000000000612");
+        NitroxVector3 basePosition = new(-152f, -16f, 100f);
+        GlobalRootEntity baseEntity = new(new NitroxTransform(basePosition, NitroxQuaternion.Identity, NitroxVector3.One), GlobalRootEntity.GLOBAL_ROOT_LEVEL, null, true, baseId, null, null, null, []);
+        MapRoomEntity room = new(roomId, baseId, new NitroxInt3(0, 0, 0));
+        baseEntity.ChildEntities.Add(room);
+        room.ChildEntities.Add(ScannerRoomScenarioFixture.CreateCamera(dockedId, roomId, new MapRoomCameraMetadata(cameraNumber: 2, dockingIndex: 1)));
+        // As the test world saved the two cameras Stalkers took out of their docks after a restart.
+        GlobalRootEntity firstLost = LostCamera(firstLostId, 1);
+        GlobalRootEntity secondLost = LostCamera(secondLostId, 6);
+        EntityRegistry entityRegistry = new(NullLogger<EntityRegistry>.Instance);
+        entityRegistry.AddEntitiesIgnoringDuplicate([baseEntity, firstLost, secondLost]);
+        ScannerRoomDiagnostics diagnostics = new(NullLogger<ScannerRoomDiagnostics>.Instance);
+        ScannerRoomManager manager = ScannerRoomScenarioFixture.CreateManager(entityRegistry, new SimulationOwnershipData(), diagnostics);
+
+        manager.WorldLoaded();
+
+        Assert.AreEqual(roomId, firstLost.ParentId, "The free dock takes the first camera.");
+        CollectionAssert.Contains(room.ChildEntities, firstLost);
+        Assert.AreEqual((1, 0), (((MapRoomCameraMetadata)firstLost.Metadata).CameraNumber, ((MapRoomCameraMetadata)firstLost.Metadata).DockingIndex));
+        Assert.IsNull(secondLost.ParentId, "No dock is left for the second.");
+        Assert.AreEqual(MapRoomCameraMetadata.NOT_DOCKED, ((MapRoomCameraMetadata)secondLost.Metadata).DockingIndex);
+        foreach (GlobalRootEntity camera in new[] { firstLost, secondLost })
+        {
+            Assert.IsTrue(camera.Transform.IsFinite(), camera.Transform.ToString());
+            Assert.AreEqual(basePosition, camera.Transform.Position, "A room has no place of its own; its base has.");
+        }
+        Assert.AreEqual(2, diagnostics.GetHistory().Count(entry => entry.EventName == "heal_place"));
+    }
+
+    private static GlobalRootEntity LostCamera(NitroxId cameraId, int cameraNumber)
+    {
+        GlobalRootEntity camera = ScannerRoomScenarioFixture.CreateCamera(cameraId, null, new MapRoomCameraMetadata(energy: 100f, health: 400f, cameraNumber: cameraNumber));
+        camera.Transform.LocalPosition = new NitroxVector3(float.NaN, float.NaN, float.NaN);
+        camera.Transform.LocalRotation = new NitroxQuaternion(float.NaN, float.NaN, float.NaN, float.NaN);
+        camera.Transform.LocalScale = NitroxVector3.One;
+        return camera;
     }
 
     private static GhostEntity CreateGhost(NitroxId ghostId, NitroxId parentId, string techType = "BaseMapRoom")

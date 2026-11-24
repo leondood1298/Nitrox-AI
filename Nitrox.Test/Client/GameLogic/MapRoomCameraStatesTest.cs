@@ -195,6 +195,34 @@ public sealed class MapRoomCameraStatesTest
     }
 
     [TestMethod]
+    [DataRow(50f, 50.4f, 100f, 0.5f, false)]
+    [DataRow(50f, 50.5f, 100f, 0.5f, true)]
+    [DataRow(99.866f, 100f, 100f, 0.5f, true)]
+    [DataRow(100f, 100f, 100f, 0.5f, false)]
+    [DataRow(0.3f, 0f, 100f, 0.5f, true)]
+    [DataRow(0f, 0f, 100f, 0.5f, false)]
+    [DataRow(399.98f, 400f, 400f, 0.05f, true)]
+    [DataRow(0.01f, 0f, 400f, 0.05f, true)]
+    public void ValueIsReportedWhenItMovedEnoughOrReachedAnEnd(float known, float current, float maximum, float threshold, bool expected)
+    {
+        Assert.AreEqual(expected, MapRoomCameraStates.HasChangedEnough(known, current, maximum, threshold));
+    }
+
+    [TestMethod]
+    public void DockedCameraRefilledByLessThanAReportNeedsIsReportedFullOnce()
+    {
+        // As in the test world: a camera came back from a short flight at 99.866, which the server holds.
+        states.Apply(camera, new MapRoomCameraMetadata(false, 99.866f, 400f, 2, 1));
+        simulationOwnership.SimulateEntity(camera.Id, SimulationLockType.TRANSIENT);
+
+        camera.Energy = 100f;
+        states.ReportIfChanged(camera);
+        states.ReportIfChanged(camera);
+
+        Assert.AreEqual(100f, Reports().Single().Energy, "Without it the server keeps 99.866 for good.");
+    }
+
+    [TestMethod]
     public void NothingIsReportedWhileTheBatteryIsBeingPutIn()
     {
         states.Apply(camera, new MapRoomCameraMetadata(false, 60f, 400f, 2, 1));
@@ -220,6 +248,8 @@ public sealed class MapRoomCameraStatesTest
         public bool LightOn { get; set; }
         public float Energy { get; set; }
         public float Health { get; set; }
+        public float EnergyCapacity => MapRoomCameraMetadata.MAX_ENERGY;
+        public float MaxHealth => MapRoomCameraMetadata.MAX_HEALTH;
         public bool CanReport { get; set; } = true;
 
         public void ApplyComponents(float energy, float health)

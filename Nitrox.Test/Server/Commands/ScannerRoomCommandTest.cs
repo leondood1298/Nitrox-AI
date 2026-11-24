@@ -1,6 +1,9 @@
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using Nitrox.Model.DataStructures;
+using Nitrox.Model.DataStructures.Unity;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
+using Nitrox.Model.Subnautica.Helper;
 using Nitrox.Server.Subnautica.Models.Commands;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Test.Server.GameLogic;
@@ -91,6 +94,20 @@ public sealed class ScannerRoomCommandTest
         lines[header].Should().Be("Recent transitions (newest last, 2 of the 7 kept, repeats folded):");
         lines[header + 1].Should().Contain(" n=32 ").And.Contain(" ev=component out=reject ").And.EndWith(" rep=32 reason=non_owner (x6 since n=1)");
         lines[header + 2].Should().Contain(" n=41 ").And.EndWith(" reason=changed");
+    }
+
+    [TestMethod]
+    public async Task ScannerRoomCommandNamesACameraWhosePlaceIsNotANumber()
+    {
+        ScannerRoomScenarioFixture scenario = new();
+        WorldEntity camera = scenario.EntityRegistry.GetEntityById<WorldEntity>(ScannerRoomScenarioFixture.CameraCId).Value;
+        camera.Transform.LocalPosition = new NitroxVector3(float.NaN, float.NaN, float.NaN);
+
+        string output = await RecordingCommandContext.RunAsync(CreateScannerRoomCommand(scenario, scenario.Diagnostics));
+
+        output.Should().Contain($" ! camera {DiagnosticLineFormat.ShortId(ScannerRoomScenarioFixture.CameraCId, true)} is at (NaN, NaN, NaN), which is not a place");
+        output.Should().Contain($" pos=(NaN, NaN, NaN) id={ScannerRoomScenarioFixture.CameraCId}");
+        output.Split(Environment.NewLine).Count(line => line.Contains("which is not a place")).Should().Be(1, "the other cameras are at (0, 0, 0)");
     }
 
     private static ScannerRoomCommand CreateScannerRoomCommand(ScannerRoomScenarioFixture scenario, ScannerRoomDiagnostics diagnostics) =>

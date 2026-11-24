@@ -50,6 +50,7 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
         }
 
         if ((GateEscapePodMetadata(context.Sender, entity, packet.NewValue) ??
+             GatePlayerMetadata(context.Sender, entity, packet.NewValue) ??
              GatePowerMetadata(context.Sender, entity, packet.NewValue) ??
              GateScannerRoomMetadata(context.Sender, entity, packet.NewValue) ??
              GateCreatureMetadata(context.Sender, entity, packet.NewValue) ??
@@ -85,6 +86,41 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
         }
         logger.ZLogWarning($"Player {sender.Name} tried replacing the repair state of escape pod {entity.Id} with {metadata.GetType().Name}");
         return MetadataUpdateResult.Reject;
+    }
+
+    /// <summary>
+    ///     A player's body holds the player's equipment list, which only the player changes, by equipping or unequipping
+    ///     in a running game (see <see cref="PlayerMetadataAuthority" />).
+    /// </summary>
+    /// <returns>Null when the update is neither for a body nor an equipment list.</returns>
+    private MetadataUpdateResult? GatePlayerMetadata(Player sender, Entity entity, EntityMetadata metadata)
+    {
+        PlayerMetadata? equipment = metadata as PlayerMetadata;
+        switch (PlayerMetadataAuthority.Judge(entity is PlayerEntity, equipment != null, sender.GameObjectId == entity.Id, sender.HasFinishedInitialSync))
+        {
+            case PlayerMetadataVerdict.NOT_PLAYER_STATE:
+                return null;
+            case PlayerMetadataVerdict.ACCEPT:
+                sender.EquippedItems.Clear();
+                foreach (PlayerMetadata.EquippedItem item in equipment!.EquippedItems)
+                {
+                    sender.EquippedItems[item.Slot] = item.Id;
+                }
+                entity.Metadata = equipment;
+                return MetadataUpdateResult.Accept(equipment);
+            case PlayerMetadataVerdict.NOT_JOINED_YET:
+                logger.ZLogInformation($"Ignored the equipment of {sender.Name} sent before their join finished: [{string.Join(", ", equipment!.EquippedItems.Select(item => item.Slot))}]");
+                return MetadataUpdateResult.Reject;
+            case PlayerMetadataVerdict.OTHER_PLAYERS_BODY:
+                logger.ZLogWarningOnce($"Player {sender.Name} tried updating the equipment of another player's body {entity.Id}");
+                return MetadataUpdateResult.Reject;
+            case PlayerMetadataVerdict.NOT_ON_A_PLAYER:
+                logger.ZLogWarningOnce($"Player {sender.Name} sent an equipment list for {entity.GetType().Name} {entity.Id}, which is no player");
+                return MetadataUpdateResult.Reject;
+            default:
+                // A damage or heal report of the body's lungs: expected and harmless once it is not stored
+                return MetadataUpdateResult.Reject;
+        }
     }
 
     /// <summary>
@@ -237,35 +273,70 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
             case FruitPlantMetadata requested:
             {
                 FruitPlantMetadata? stored = entity.Metadata as FruitPlantMetadata;
-                bool senderDecides = simulationOwnershipData.GetPlayerForLock(entity.Id) == sender;
+                Player? decider = simulationOwnershipData.GetPlayerForLock(entity.Id);
+                bool senderDecides = decider == sender;
                 FruitPlantMetadata? accepted = PlantMetadataAuthority.MergeFruit(stored, requested, senderDecides, index => itemClaims.PickedLately(entity.Id, index));
                 if (accepted == null)
                 {
-                    logger.ZLogWarningOnce($"Player {sender.Name} sent the fruit of {entity.Id} with another number of fruit");
+                    LogFruitReport(sender, entity.Id, entity.Id, decider, stored, requested, null, false);
                     return MetadataUpdateResult.Reject;
                 }
                 NotePicks(entity.Id, stored, accepted);
                 entity.Metadata = accepted;
-                return PlantMetadataAuthority.SenderIsBehind(requested, accepted) ? MetadataUpdateResult.AcceptAndEcho(accepted) : MetadataUpdateResult.Accept(accepted);
+                bool echo = PlantMetadataAuthority.SenderIsBehind(requested, accepted);
+                LogFruitReport(sender, entity.Id, entity.Id, decider, stored, requested, accepted, echo);
+                return echo ? MetadataUpdateResult.AcceptAndEcho(accepted) : MetadataUpdateResult.Accept(accepted);
             }
             // A planted plant: its seed's entity holds its growth, fruit, health and slot
             case PlantableMetadata requested:
             {
                 PlantableMetadata? stored = entity.Metadata as PlantableMetadata;
                 NitroxId? deciderId = FindPlantDecider(entity);
-                bool senderDecides = deciderId != null && simulationOwnershipData.GetPlayerForLock(deciderId) == sender;
+                Player? decider = deciderId != null ? simulationOwnershipData.GetPlayerForLock(deciderId) : null;
+                bool senderDecides = decider != null && decider == sender;
                 PlantableMetadata? accepted = PlantMetadataAuthority.MergePlantable(stored, requested, senderDecides, index => itemClaims.PickedLately(entity.Id, index));
                 if (accepted == null)
                 {
-                    logger.ZLogWarningOnce($"Player {sender.Name} sent the fruit of plant {entity.Id} with another number of fruit");
+                    LogFruitReport(sender, entity.Id, deciderId, decider, stored?.FruitPlantMetadata, requested.FruitPlantMetadata, null, false);
                     return MetadataUpdateResult.Reject;
                 }
                 NotePicks(entity.Id, stored?.FruitPlantMetadata, accepted.FruitPlantMetadata);
                 entity.Metadata = accepted;
-                return stored != null && PlantMetadataAuthority.SenderIsBehind(requested, accepted) ? MetadataUpdateResult.AcceptAndEcho(accepted) : MetadataUpdateResult.Accept(accepted);
+                bool echo = stored != null && PlantMetadataAuthority.SenderIsBehind(requested, accepted);
+                LogFruitReport(sender, entity.Id, deciderId, decider, stored?.FruitPlantMetadata, requested.FruitPlantMetadata, accepted.FruitPlantMetadata, echo);
+                return echo ? MetadataUpdateResult.AcceptAndEcho(accepted) : MetadataUpdateResult.Accept(accepted);
             }
             default:
                 return null;
+        }
+    }
+
+    /// <summary>
+    ///     Plant diagnostics ([PLD1]): every report about a plant's fruit, with who decides the plant and what the merge
+    ///     kept, so that a test can tell a refused growth, a pick that changed nothing and a report from a game whose plant
+    ///     differs from the stored one apart. A refused growth or a refused report is a warning.
+    /// </summary>
+    private void LogFruitReport(Player sender, NitroxId plantId, NitroxId? deciderId, Player? decider, FruitPlantMetadata? stored, FruitPlantMetadata? requested, FruitPlantMetadata? accepted, bool echo)
+    {
+        if (requested == null && stored == null)
+        {
+            return;
+        }
+        string deciderText = deciderId == null ? "-" : $"{deciderId.ToString()[..8]}:{decider?.Name ?? "-"}";
+        if (accepted == null)
+        {
+            logger.ZLogWarning($"[PLD1] plant={plantId} from={sender.Name} decider={deciderText} out=reject reason=fruit_count stored={PlantMetadataAuthority.Describe(stored)} sent={PlantMetadataAuthority.Describe(requested)}");
+            return;
+        }
+        string refused = string.Join(",", PlantMetadataAuthority.RefusedGrowths(requested, accepted));
+        string line = $"[PLD1] plant={plantId} from={sender.Name} decides={decider == sender} decider={deciderText} stored={PlantMetadataAuthority.Describe(stored)} sent={PlantMetadataAuthority.Describe(requested)} kept={PlantMetadataAuthority.Describe(accepted)} refused=[{refused}] echo={echo}";
+        if (refused.Length > 0)
+        {
+            logger.ZLogWarning($"{line}");
+        }
+        else
+        {
+            logger.ZLogInformation($"{line}");
         }
     }
 
@@ -425,7 +496,6 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
 
         return metadata switch
         {
-            PlayerMetadata playerMetadata => ProcessPlayerMetadata(sendingPlayer, entity, playerMetadata),
             MedicalCabinetMetadata => ProcessMedicalCabinetMetadata(sendingPlayer, entity),
             PlayerTimeCapsuleMetadata => ProcessPlayerTimeCapsuleMetadata(sendingPlayer, entity),
 
@@ -460,23 +530,6 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
             return true;
         }
         logger.ZLogWarningOnce($"Player {sendingPlayer.Name} tried applying time capsule metadata to {entity.GetType().Name} {entity.Id}");
-        return false;
-    }
-
-    private bool ProcessPlayerMetadata(Player sendingPlayer, Entity entity, PlayerMetadata metadata)
-    {
-        if (sendingPlayer.GameObjectId == entity.Id)
-        {
-            sendingPlayer.EquippedItems.Clear();
-            foreach (PlayerMetadata.EquippedItem item in metadata.EquippedItems)
-            {
-                sendingPlayer.EquippedItems.Add(item.Slot, item.Id);
-            }
-
-            return true;
-        }
-
-        logger.ZLogWarningOnce($"Player {sendingPlayer.Name} tried updating metadata of another player's entity {entity.Id}");
         return false;
     }
 }
