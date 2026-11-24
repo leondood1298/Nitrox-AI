@@ -7,8 +7,10 @@ using Nitrox.Server.Subnautica.Models.Packets.Core;
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
 internal sealed class EntityDestroyedPacketProcessor(PlayerManager playerManager, EntitySimulation entitySimulation,
-    WorldEntityManager worldEntityManager, ScannerRoomManager scannerRoomManager, EntityRegistry entityRegistry, ItemClaims itemClaims) : IAuthPacketProcessor<EntityDestroyed>
+    WorldEntityManager worldEntityManager, ScannerRoomManager scannerRoomManager, EntityRegistry entityRegistry, ItemClaims itemClaims, CrashHomeRespawns? crashHomeRespawns = null)
+    : IAuthPacketProcessor<EntityDestroyed>
 {
+    private readonly CrashHomeRespawns? crashHomeRespawns = crashHomeRespawns;
     private readonly PlayerManager playerManager = playerManager;
     private readonly EntitySimulation entitySimulation = entitySimulation;
     private readonly WorldEntityManager worldEntityManager = worldEntityManager;
@@ -42,6 +44,11 @@ internal sealed class EntityDestroyedPacketProcessor(PlayerManager playerManager
                 {
                     await context.SendAsync(packet, player.SessionId);
                 }
+            }
+
+            if (crashHomeRespawns != null)
+            {
+                await crashHomeRespawns.EntityRemovedAsync(entity);
             }
         }
     }

@@ -193,6 +193,7 @@ internal static partial class ServiceCollectionExtensions
                     .AddSingleton<BatchEntitySpawner>()
                     .AddSingleton<IBatchEntityGenerator>(provider => provider.GetRequiredService<BatchEntitySpawner>())
                     .AddSingleton<SpawnedBatches>()
+                    .AddSingleton<CrashHomeRespawns>()
                     .AddSingleton<EntityRegistry>()
                     .AddSingleton<SessionSettings>()
                     .AddSingleton<PictureFrameFiles>()

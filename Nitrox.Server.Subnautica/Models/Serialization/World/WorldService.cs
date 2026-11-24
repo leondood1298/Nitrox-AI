@@ -407,6 +407,11 @@ internal class WorldService : IHostedService
             // Entities
             entityRegistry.AddEntities(pWorldData.EntityData.Entities);
             entityRegistry.AddEntitiesIgnoringDuplicate(pWorldData.GlobalRootData.Entities.OfType<Entity>().ToList());
+            int repairedCrashHomes = CrashHomeRespawns.RepairAfterLoad(entityRegistry.GetAllEntities());
+            if (repairedCrashHomes > 0)
+            {
+                logger.ZLogInformation($"{repairedCrashHomes} crash homes without their crashfish make a new one when next loaded.");
+            }
             // Before loaded entities become available to automatic simulation.
             scannerRoomManager.WorldLoaded();
             LavaLarvaAttachments.DetachFromMissingVehicles(entityRegistry);
