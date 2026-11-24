@@ -25,11 +25,13 @@ internal sealed class LiteNetLibServerService : IHostedService, IPacketSender, I
     private readonly Dictionary<int, PeerContext> contextByPeerId = [];
     private readonly Dictionary<SessionId, PeerContext> contextBySessionId = [];
     private readonly Lock contextLock = new();
-    private readonly NetDataWriter dataWriter = new();
+    private readonly Lock dataWriterLock = new();
+    private NetDataWriter dataWriter = new();
     private readonly LogThrottle receiveErrorThrottle = new(5, TimeSpan.FromMinutes(1));
     private readonly EventBasedNetListener listener;
     private readonly ILogger<LiteNetLibServerService> logger;
     private readonly IOptions<SubnauticaServerOptions> options;
+    private readonly PacketReadGate packetReadGate;
     private readonly PacketRegistryService packetRegistryService;
     private readonly PacketSerializationService packetSerializationService;
     private readonly PlayerManager playerManager;
@@ -47,6 +49,7 @@ internal sealed class LiteNetLibServerService : IHostedService, IPacketSender, I
         this.options = options;
         this.taskQueueService = taskQueueService;
         this.logger = logger;
+        packetReadGate = new PacketReadGate(packetRegistryService, options);
         listener = new EventBasedNetListener();
         // The same framing in Debug and Release builds: a checksum on one side only drops every packet in silence
         server = new NetManager(listener, new Crc32cLayer())
@@ -290,10 +293,21 @@ internal sealed class LiteNetLibServerService : IHostedService, IPacketSender, I
     /// </remarks>
     private void NetworkDataReceived(NetPeer peer, NetDataReader reader, byte channel, DeliveryMethod deliveryMethod)
     {
+        PeerContext? context;
+        lock (contextLock)
+        {
+            contextByPeerId.TryGetValue(peer.Id, out context);
+        }
+        if (context == null)
+        {
+            return;
+        }
+        bool hasJoined = playerManager.TryGetPlayerBySessionId(context.SessionId, out _);
+
         Packet? packet;
         try
         {
-            packet = ReadPacket(reader);
+            packet = ReadPacket(reader, (packetType, length) => CheckBeforeReading(peer, packetType, length, hasJoined));
         }
         catch (Exception ex)
         {
@@ -304,18 +318,13 @@ internal sealed class LiteNetLibServerService : IHostedService, IPacketSender, I
             DisconnectPeerSafely(peer);
             return;
         }
+        if (packet == null)
+        {
+            return;
+        }
 
         try
         {
-            PeerContext? context;
-            lock (contextLock)
-            {
-                contextByPeerId.TryGetValue(peer.Id, out context);
-            }
-            if (context == null)
-            {
-                return;
-            }
 
             if (!taskQueueService.TryQueue(ProcessPacket(context, packet)))
             {
@@ -331,11 +340,32 @@ internal sealed class LiteNetLibServerService : IHostedService, IPacketSender, I
         }
     }
 
+    private PacketReadGate.Verdict CheckBeforeReading(NetPeer peer, Type? packetType, int length, bool hasJoined)
+    {
+        PacketReadGate.Verdict verdict = packetReadGate.Check(packetType, length, hasJoined);
+        if (verdict == PacketReadGate.Verdict.SKIP && hasJoined && receiveErrorThrottle.ShouldLog(DateTimeOffset.UtcNow, out int suppressed))
+        {
+            // Only a player's skip is news: a session that has not joined sending a player's packet was always ignored
+            logger.ZLogError($"Dropped a {packetType?.Name:@TypeName} of {length} bytes from {peer.Address:@Address}:{peer.Port:@Port}: larger than the {packetReadGate.MaxBytesOf(packetType!)} bytes such a packet may have{(suppressed > 0 ? $"; {suppressed} more such errors were not logged" : "")}");
+        }
+        return verdict;
+    }
+
     /// <summary>
     ///     Reads one packet: a length, then that many bytes of a serialized packet.
     /// </summary>
     /// <exception cref="InvalidDataException">The length does not fit the data received, or the data is no known packet.</exception>
-    internal static Packet ReadPacket(NetDataReader reader)
+    internal static Packet ReadPacket(NetDataReader reader) => ReadPacket(reader, static (_, _) => PacketReadGate.Verdict.READ)!;
+
+    /// <summary>
+    ///     Reads one packet if <paramref name="checkBeforeReading" />, given the type named in its first bytes and its
+    ///     size, lets it be read.
+    /// </summary>
+    /// <returns>The packet, or null if it was left unread.</returns>
+    /// <exception cref="InvalidDataException">
+    ///     The length does not fit the data received, the data is no known packet, or the check refused it.
+    /// </exception>
+    internal static Packet? ReadPacket(NetDataReader reader, Func<Type?, int, PacketReadGate.Verdict> checkBeforeReading)
     {
         if (reader.AvailableBytes < sizeof(int))
         {
@@ -347,11 +377,23 @@ internal sealed class LiteNetLibServerService : IHostedService, IPacketSender, I
         {
             throw new InvalidDataException($"Packet length {packetDataLength} does not fit the {reader.AvailableBytes} bytes received");
         }
+        Packet.TryPeekType(new ReadOnlySpan<byte>(reader.RawData, reader.Position, packetDataLength), out Type? packetType);
+        switch (checkBeforeReading(packetType, packetDataLength))
+        {
+            case PacketReadGate.Verdict.SKIP:
+                reader.SkipBytes(packetDataLength);
+                return null;
+            case PacketReadGate.Verdict.REFUSE:
+                throw new InvalidDataException(packetType == null
+                                                   ? "The data names no packet type of this build"
+                                                   : $"A {packetType.Name} of {packetDataLength} bytes is not accepted from this sender");
+        }
         byte[] packetData = ArrayPool<byte>.Shared.Rent(packetDataLength);
         try
         {
             reader.GetBytes(packetData, packetDataLength);
-            return Packet.Deserialize(packetData) ?? throw new InvalidDataException("The data holds no packet");
+            // Only the packet's own bytes: the rest of the pooled buffer is not the peer's data
+            return Packet.Deserialize(packetData, packetDataLength) ?? throw new InvalidDataException("The data holds no packet");
         }
         finally
         {
@@ -445,24 +487,47 @@ internal sealed class LiteNetLibServerService : IHostedService, IPacketSender, I
         ref MemoryStream stream = ref lease.GetRef();
         stream ??= new MemoryStream(ushort.MaxValue);
 
-        int startPos = (int)stream.Position;
-        packetSerializationService.SerializeInto(packet, stream);
-        int bytesWritten = (int)(stream.Position - startPos);
-        Span<byte> packetData = stream.GetBuffer().AsSpan().Slice(startPos, bytesWritten);
-
-        lock (dataWriter)
+        try
         {
-            dataWriter.Reset();
-            dataWriter.Put(packetData.Length);
-            dataWriter.ResizeIfNeed(packetData.Length + 4);
-            packetData.CopyTo(dataWriter.Data.AsSpan().Slice(4));
-            dataWriter.SetPosition(packetData.Length + 4);
-            peer.Send(dataWriter, (byte)packet.UdpChannel, NitroxDeliveryMethod.ToLiteNetLib(packet.DeliveryMethod));
-        }
+            int startPos = (int)stream.Position;
+            packetSerializationService.SerializeInto(packet, stream);
+            int bytesWritten = (int)(stream.Position - startPos);
+            Span<byte> packetData = stream.GetBuffer().AsSpan().Slice(startPos, bytesWritten);
 
-        // Cleanup pooled data.
-        stream.Position = 0;
+            if (packet is InitialPlayerSync && bytesWritten >= InitialSyncTransfer.ANNOUNCED_FROM_BYTES)
+            {
+                // Ahead of it on the same ordered channel, so that the joining game can show how much of it has come
+                SendPacket(new InitialSyncTransfer(bytesWritten), peer);
+            }
+
+            lock (dataWriterLock)
+            {
+                dataWriter.Reset();
+                dataWriter.Put(packetData.Length);
+                dataWriter.ResizeIfNeed(packetData.Length + 4);
+                packetData.CopyTo(dataWriter.Data.AsSpan().Slice(4));
+                dataWriter.SetPosition(packetData.Length + 4);
+                peer.Send(dataWriter, (byte)packet.UdpChannel, NitroxDeliveryMethod.ToLiteNetLib(packet.DeliveryMethod));
+                if (dataWriter.Capacity > MAX_KEPT_BUFFER_BYTES)
+                {
+                    // Grown for one large packet (a first sync); kept, it held that much memory for good
+                    dataWriter = new NetDataWriter();
+                }
+            }
+        }
+        finally
+        {
+            // Cleanup pooled data, also after a failed serialization, which left the position where it stopped
+            stream.Position = 0;
+            if (stream.Capacity > MAX_KEPT_BUFFER_BYTES)
+            {
+                stream = null;
+            }
+        }
     }
+
+    /// <summary>The largest send buffer kept between packets.</summary>
+    private const int MAX_KEPT_BUFFER_BYTES = 1024 * 1024;
 
     private enum ProcessorTarget
     {

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using NitroxClient.GameLogic;
 using NitroxClient.Unity.Smoothing;
 using UnityEngine;
@@ -15,9 +16,22 @@ public class RemotelyControlled : MonoBehaviour
 
     private bool disabledWorldForces;
 
+    /// <summary>
+    ///     The swim behaviours of remotely controlled creatures. Asked every frame for every creature around
+    ///     (SwimBehaviour.ManagedUpdate), where a set is far cheaper than looking for this component each time.
+    /// </summary>
+    private static readonly HashSet<SwimBehaviour> controlledSwimBehaviours = [];
+
+    /// <summary>Whether the creature with <paramref name="swimBehaviour" /> is moved by the game that simulates it.</summary>
+    public static bool Controls(SwimBehaviour swimBehaviour) => controlledSwimBehaviours.Contains(swimBehaviour);
+
     public void Awake()
     {
         swimBehaviour = gameObject.GetComponent<SwimBehaviour>();
+        if (swimBehaviour)
+        {
+            controlledSwimBehaviours.Add(swimBehaviour);
+        }
         rigidbody = gameObject.GetComponent<Rigidbody>();
         worldForces = gameObject.GetComponent<WorldForces>();
 
@@ -75,6 +89,11 @@ public class RemotelyControlled : MonoBehaviour
 
     public void OnDestroy()
     {
+        // By reference: the swim behaviour may be destroyed first, and a destroyed Unity object still hashes the same
+        if (!ReferenceEquals(swimBehaviour, null))
+        {
+            controlledSwimBehaviours.Remove(swimBehaviour);
+        }
         // there might be other instances calling worldForces.enabled = false during its lifetime but we can't really detect those easily
         // so we just hope nothing major breaks
         if (worldForces && disabledWorldForces)

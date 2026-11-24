@@ -2,6 +2,7 @@ using NitroxClient.Communication.Abstract;
 using NitroxClient.GameLogic;
 using NitroxClient.MonoBehaviours.Cyclops;
 using Nitrox.Model.DataStructures;
+using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Packets;
 using Nitrox.Model.Subnautica.DataStructures;
 using Nitrox.Model.Subnautica.Packets;
@@ -13,6 +14,7 @@ public class PlayerMovementBroadcaster : MonoBehaviour
 {
     private LocalPlayer localPlayer;
     private readonly PlayerMovementThrottle movementThrottle = new();
+    private readonly PlayerMovementThrottle inCyclopsThrottle = new();
     private ScannerRoomClientDiagnostics scannerRoomDiagnostics;
     private bool scannerAnchorActive;
     private MapRoomCamera scannerAnchorCamera;
@@ -165,10 +167,18 @@ public class PlayerMovementBroadcaster : MonoBehaviour
         if (!Player.main.isPiloting && Player.main.TryGetComponent(out CyclopsMotor cyclopsMotor) && cyclopsMotor.Pawn != null)
         {
             Transform pawnTransform = cyclopsMotor.Pawn.Handle.transform;
-            PlayerInCyclopsMovement packet = new(this.Resolve<LocalPlayer>().SessionId.Value, pawnTransform.localPosition.ToDto(), pawnTransform.localRotation.ToDto(), (Player.main.transform.parent.rotation.GetInverse() * Player.main.camRoot.GetAimingTransform().rotation).ToDto());
-            this.Resolve<IPacketSender>().Send(packet);
+            movementThrottle.Reset();
+            NitroxQuaternion localAimingRotation = (Player.main.transform.parent.rotation.GetInverse() * Player.main.camRoot.GetAimingTransform().rotation).ToDto();
+            // Throttled like walking outside: it used to go out every frame, standing still included. The packet has no
+            // speed, so a still player is one that stopped moving, turning and looking around.
+            if (inCyclopsThrottle.ShouldSend(pawnTransform.localPosition.ToDto(), pawnTransform.localRotation.ToDto(), localAimingRotation, 0f, Time.unscaledTime))
+            {
+                PlayerInCyclopsMovement packet = new(this.Resolve<LocalPlayer>().SessionId.Value, pawnTransform.localPosition.ToDto(), pawnTransform.localRotation.ToDto(), localAimingRotation);
+                this.Resolve<IPacketSender>().Send(packet);
+            }
             return true;
         }
+        inCyclopsThrottle.Reset();
         return false;
     }
 }

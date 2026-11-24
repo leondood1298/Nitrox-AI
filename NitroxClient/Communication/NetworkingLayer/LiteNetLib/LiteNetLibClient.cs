@@ -1,5 +1,6 @@
 using System;
 using System.Buffers;
+using System.IO;
 using System.Reflection;
 using System.Threading.Tasks;
 using LiteNetLib;
@@ -33,6 +34,8 @@ public class LiteNetLibClient : IClient
     private TaskCompletionSource<MultiplayerProtocolMismatchException> connectionCompletion;
 
     public bool IsConnected { get; private set; }
+
+    public long BytesReceived => client.Statistics.BytesReceived;
     public int PingInterval
     {
         get => client.PingInterval;
@@ -60,6 +63,8 @@ public class LiteNetLibClient : IClient
             UpdateTime = 15,
             ChannelsCount = (byte)typeof(Packet.UdpChannelId).GetEnumValues().Length,
             IPv6Enabled = true,
+            // For the progress of a large first sync (BytesReceived)
+            EnableStatistics = true,
 #if DEBUG
             DisconnectTimeout = 300_000, //Disables Timeout (for 5 min) for debug purpose (like if you jump though the server code)
 #else
@@ -198,14 +203,25 @@ public class LiteNetLibClient : IClient
 
     private void ReceivedNetworkData(NetPeer peer, NetDataReader reader, byte channel, DeliveryMethod deliveryMethod)
     {
-        int packetDataLength = reader.GetInt();
+        // A length that does not fit what arrived would rent an arbitrarily large buffer or read past the data
+        int packetDataLength = reader.AvailableBytes >= sizeof(int) ? reader.GetInt() : -1;
+        if (packetDataLength <= 0 || packetDataLength > reader.AvailableBytes)
+        {
+            Log.Error($"Dropped data from the server whose packet length {packetDataLength} does not fit the {reader.AvailableBytes} bytes received");
+            return;
+        }
         byte[] packetData = ArrayPool<byte>.Shared.Rent(packetDataLength);
         try
         {
             reader.GetBytes(packetData, packetDataLength);
-            Packet packet = Packet.Deserialize(packetData);
+            Packet packet = Packet.Deserialize(packetData, packetDataLength);
             packetReceiver.Add(packet);
             networkDebugger?.PacketReceived(packet, packetDataLength);
+        }
+        catch (InvalidDataException ex)
+        {
+            // Refused by the bounded reader; letting it escape would end this frame's network polling
+            Log.Error(ex, "Dropped data from the server that is not a packet of this build");
         }
         finally
         {

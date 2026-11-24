@@ -12,6 +12,9 @@ namespace NitroxClient.Communication.Abstract
     public interface IClient
     {
         bool IsConnected { get; }
+
+        /// <summary>All bytes received from the server so far, headers included.</summary>
+        long BytesReceived { get; }
         Task StartAsync(string ipAddress, int serverPort);
         void Stop();
         void PollEvents();

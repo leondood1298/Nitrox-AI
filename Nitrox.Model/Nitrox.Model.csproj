@@ -12,7 +12,6 @@
         <PackageReference Include="Microsoft.Win32.Registry" />
         <PackageReference Include="Mono.Nat" />
         <PackageReference Include="Newtonsoft.Json" NoWarn="NU1091;NU1092;NU1903;NU1904" />
-        <PackageReference Include="Nitrox.BinaryPack" />
         <PackageReference Include="Serilog" />
         <PackageReference Include="Serilog.Sinks.Async" />
         <PackageReference Include="Serilog.Sinks.File" />
@@ -24,6 +23,11 @@
         <PackageReference Include="System.Text.Json" />
         <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
         <PackageReference Include="Microsoft.Extensions.Options" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <!-- The packet serializer, kept as source so that its reads are bounded (see BinaryPack/BinaryPack.csproj) -->
+        <ProjectReference Include="..\BinaryPack\BinaryPack.csproj" />
     </ItemGroup>
 
     <ItemGroup>

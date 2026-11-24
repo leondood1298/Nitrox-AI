@@ -68,9 +68,10 @@ internal sealed class EntityTransformUpdatesProcessor(PlayerManager playerManage
             Player player = playerUpdates.Key;
             List<EntityTransformUpdates.EntityTransformUpdate> updates = playerUpdates.Value;
 
-            if (updates.Count > 0)
+            // Split, as each piece must fit one datagram whatever the sender put in one packet
+            foreach (EntityTransformUpdates piece in EntityTransformUpdates.Split(updates))
             {
-                await context.SendAsync(new EntityTransformUpdates(updates), player.SessionId);
+                await context.SendAsync(piece, player.SessionId);
             }
         }
     }

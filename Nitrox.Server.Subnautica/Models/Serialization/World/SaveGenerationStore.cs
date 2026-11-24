@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
@@ -34,6 +35,19 @@ internal sealed class SaveGenerationStore
     private const string TRASH_FOLDER_NAME = ".save-trash";
 
     private readonly Action<string>? stepReached;
+
+    /// <summary>
+    ///     SHA-256 of files this store hashed, by name, size and time of last write. A save checked the generation it
+    ///     replaces twice and hashed what it wrote once, each time reading every file (some 170 MB for an explored world)
+    ///     every two minutes; a file still as it was when hashed is not read again. A move keeps the time of last write,
+    ///     and anything that changes a file changes it.
+    /// </summary>
+    private readonly ConcurrentDictionary<(string Name, long Length, long LastWriteTicks), string> knownHashes = new();
+
+    /// <summary>How many times a file was read to hash it, for tests.</summary>
+    internal int FilesHashed => filesHashed;
+
+    private int filesHashed;
 
     /// <param name="stepReached">
     ///     Called after each step of a save with the step's name. Tests throw from it to cut a save short at that step.
@@ -117,14 +131,14 @@ internal sealed class SaveGenerationStore
     ///     folder and the working folders that the next save clears. It is gathered into the previous folder first, so it
     ///     stays as the fallback until the new save is whole.
     /// </summary>
-    private static void KeepRecoveredGeneration(string saveDir)
+    private void KeepRecoveredGeneration(string saveDir)
     {
         if (TryReadManifest(saveDir) is { } currentManifest && Resolve(currentManifest, [saveDir], GenerationSource.CURRENT) != null)
         {
             // The usual case: the world folder holds a whole generation, which the save moves to the previous folder
             return;
         }
-        IReadOnlyList<ResolvedGeneration> generations = new SaveGenerationStore().FindGenerations(saveDir);
+        IReadOnlyList<ResolvedGeneration> generations = FindGenerations(saveDir);
         if (generations.Count == 0)
         {
             return;
@@ -253,7 +267,7 @@ internal sealed class SaveGenerationStore
         a.Files.All(entry => b.Files.Any(other => string.Equals(other.Name, entry.Name, StringComparison.OrdinalIgnoreCase) &&
                                                  string.Equals(other.Sha256, entry.Sha256, StringComparison.OrdinalIgnoreCase)));
 
-    private static ResolvedGeneration? Resolve(SaveManifest manifest, IReadOnlyList<string> folders, GenerationSource source)
+    private ResolvedGeneration? Resolve(SaveManifest manifest, IReadOnlyList<string> folders, GenerationSource source)
     {
         Dictionary<string, string> paths = new(StringComparer.OrdinalIgnoreCase);
         foreach (SaveManifestEntry entry in manifest.Files)
@@ -276,7 +290,7 @@ internal sealed class SaveGenerationStore
         _ => "backup"
     };
 
-    private static bool Matches(string path, SaveManifestEntry entry)
+    private bool Matches(string path, SaveManifestEntry entry)
     {
         try
         {
@@ -285,8 +299,15 @@ internal sealed class SaveGenerationStore
             {
                 return false;
             }
-            using FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-            return string.Equals(Convert.ToHexString(SHA256.HashData(stream)), entry.Sha256, StringComparison.OrdinalIgnoreCase);
+            (string, long, long) key = KeyOf(info);
+            if (!knownHashes.TryGetValue(key, out string? hash))
+            {
+                using FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+                hash = Convert.ToHexString(SHA256.HashData(stream));
+                Interlocked.Increment(ref filesHashed);
+                knownHashes[key] = hash;
+            }
+            return string.Equals(hash, entry.Sha256, StringComparison.OrdinalIgnoreCase);
         }
         catch (IOException)
         {
@@ -298,13 +319,23 @@ internal sealed class SaveGenerationStore
     ///     Flushes a written file to disk and records what it must look like. A file only renamed into place while its data
     ///     still sits in the cache can come back empty after a power loss.
     /// </summary>
-    private static SaveManifestEntry Describe(string path, string name)
+    private SaveManifestEntry Describe(string path, string name)
     {
-        using FileStream stream = new(path, FileMode.Open, FileAccess.ReadWrite, FileShare.Read);
-        stream.Flush(true);
-        string hash = Convert.ToHexString(SHA256.HashData(stream));
-        return new SaveManifestEntry(name, stream.Length, hash);
+        string hash;
+        long length;
+        using (FileStream stream = new(path, FileMode.Open, FileAccess.ReadWrite, FileShare.Read))
+        {
+            stream.Flush(true);
+            hash = Convert.ToHexString(SHA256.HashData(stream));
+            length = stream.Length;
+        }
+        Interlocked.Increment(ref filesHashed);
+        // Taken after the file is closed, so that it is the time of last write the file keeps
+        knownHashes[KeyOf(new FileInfo(path))] = hash;
+        return new SaveManifestEntry(name, length, hash);
     }
+
+    private static (string Name, long Length, long LastWriteTicks) KeyOf(FileInfo info) => (info.Name.ToUpperInvariant(), info.Length, info.LastWriteTimeUtc.Ticks);
 
     private static void WriteManifest(string path, SaveManifest manifest)
     {

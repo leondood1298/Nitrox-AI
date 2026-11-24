@@ -1,0 +1,31 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The packet serializer. Its source came from https://github.com/SubnauticaNitrox/BinaryPack at tag 2.0.1
+    (commit 9f3de56aaa47c9f244571f467d92d0425f76df00), the source of the NuGet package Nitrox.BinaryPack 2.0.1 that was
+    used before. It is MIT licensed (see LICENSE). Kept as a project here so that its reads can be bounded: lengths and
+    nesting in a packet are checked against the bytes received (see Serialization/Buffers/BinaryReader.cs). Namespaces
+    and the assembly name are unchanged.
+  -->
+  <PropertyGroup>
+    <TargetFrameworks>net472;net10.0</TargetFrameworks>
+    <AssemblyName>BinaryPack</AssemblyName>
+    <RootNamespace>BinaryPack</RootNamespace>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <EnableNETAnalyzers>false</EnableNETAnalyzers>
+    <!-- Kept as it came; its nullability warnings are not this project's to fix -->
+    <NoWarn>$(NoWarn);CS1591;CS8600;CS8601;CS8602;CS8603;CS8604;CS8605;CS8618;CS8625;CS8714;CS9195</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Nitrox.Test" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Buffers" />
+    <PackageReference Include="System.Memory" />
+    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" />
+  </ItemGroup>
+</Project>

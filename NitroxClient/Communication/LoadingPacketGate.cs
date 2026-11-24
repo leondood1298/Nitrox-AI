@@ -55,6 +55,7 @@ public sealed class LoadingPacketGate
         typeof(MultiplayerSessionReservation),
         typeof(JoinQueueInfo),
         typeof(InitialPlayerSync),
+        typeof(InitialSyncTransfer),
         typeof(PlayerKicked),
         typeof(ServerStopped),
         typeof(DiscordRequestIP)
@@ -137,6 +138,29 @@ public sealed class LoadingPacketGate
             default:
                 return false;
         }
+    }
+
+    /// <summary>
+    ///     Takes the oldest held packet to replay. Packets that arrive while the replay runs over several frames are
+    ///     held behind the others, so that they keep their order; <see cref="FinishLoading" /> once none is left.
+    /// </summary>
+    public bool TryTakeHeld(out Packet packet)
+    {
+        if (held.Count == 0)
+        {
+            packet = null;
+            return false;
+        }
+        packet = held.Dequeue();
+        return true;
+    }
+
+    /// <summary>
+    ///     The snapshot is applied and every held packet replayed; from now on every packet passes.
+    /// </summary>
+    public void FinishLoading()
+    {
+        CurrentPhase = Phase.IN_GAME;
     }
 
     /// <summary>

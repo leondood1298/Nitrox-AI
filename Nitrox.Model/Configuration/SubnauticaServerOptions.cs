@@ -35,6 +35,10 @@ public sealed partial class SubnauticaServerOptions
     [Range(0, int.MaxValue)]
     public int MaxBackups { get; set; } = 10;
 
+    [PropertyDescription("Minutes at least between two backups. A save in between is not backed up. 0 backs up after every save that changed the world.")]
+    [Range(0, int.MaxValue)]
+    public int BackupIntervalMinutes { get; set; } = 15;
+
     [Range(30001, int.MaxValue)]
     public int InitialSyncTimeout { get; set; } = 300000;
 

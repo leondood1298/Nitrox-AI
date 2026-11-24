@@ -174,6 +174,37 @@ public static class WorldBackups
     }
 
     /// <summary>
+    ///     Whether a save made at <paramref name="now" /> is to be backed up: once <paramref name="interval" /> has passed
+    ///     since the newest backup. A save every two minutes used to zip the whole world every two minutes, about 32 MB
+    ///     for a well explored one, and kept up to some forty of them.
+    /// </summary>
+    public static bool IsBackupDue(string saveDir, DateTime now, TimeSpan interval) => IsBackupDue(NewestTime(saveDir), now, interval);
+
+    internal static bool IsBackupDue(DateTime? newestBackup, DateTime now, TimeSpan interval) =>
+        newestBackup is not { } newest || interval <= TimeSpan.Zero || now - newest >= interval || newest > now;
+
+    /// <summary>
+    ///     When the newest backup was made, or null if there is none.
+    /// </summary>
+    public static DateTime? NewestTime(string saveDir)
+    {
+        string backupsDir = Path.Combine(saveDir, FOLDER_NAME);
+        if (!Directory.Exists(backupsDir))
+        {
+            return null;
+        }
+        DateTime? newest = null;
+        foreach (string path in Directory.EnumerateFiles(backupsDir, "*.zip"))
+        {
+            if (TryGetTime(path, out DateTime time) && (newest == null || time > newest))
+            {
+                newest = time;
+            }
+        }
+        return newest;
+    }
+
+    /// <summary>
     ///     The time in a backup's name, else when it was written.
     /// </summary>
     public static bool TryGetTime(string path, out DateTime time)

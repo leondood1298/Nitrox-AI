@@ -82,9 +82,9 @@ public sealed class EntityPositionBroadcaster : MonoBehaviour
             ReassignEntitiesToLookups();
             BuildUpdates();
 
-            if (updates.Count > 0)
+            foreach (EntityTransformUpdates piece in EntityTransformUpdates.Split(updates))
             {
-                packetSender.Send(new EntityTransformUpdates(updates));
+                packetSender.Send(piece);
             }
         }
     }

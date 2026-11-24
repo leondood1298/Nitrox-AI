@@ -10,6 +10,13 @@ namespace Nitrox.Model.Subnautica.Packets;
 [Serializable]
 public class VehicleMovements : Packet
 {
+    /// <summary>
+    ///     The most movements that fit in <see cref="NitroxDeliveryMethod.MAX_UNRELIABLE_PACKET_BYTES" />, counting the
+    ///     largest kind (<see cref="ExosuitMovementData" />). The 64 of before made a packet LiteNetLib refused to send
+    ///     once more than about a dozen vehicles moved at once.
+    /// </summary>
+    public const int MAX_MOVEMENTS_PER_PACKET = 12;
+
     public List<MovementData> Data { get; }
     public double RealTime { get; set; }
     

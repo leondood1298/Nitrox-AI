@@ -60,18 +60,17 @@ public sealed class PacketProcessorsInvoker
 #endif
     }
 
+    /// <summary>
+    ///     The processor for <paramref name="packetType" />, else the one for the nearest of its base types that has one.
+    /// </summary>
     public Entry? GetProcessor(Type packetType)
     {
-        Type current = packetType;
-        Type? prior = null;
-        while (current != prior)
+        for (Type? current = packetType; current != null; current = current.BaseType)
         {
-            if (packetTypeToProcessorEntry.TryGetValue(packetType, out Entry processor))
+            if (packetTypeToProcessorEntry.TryGetValue(current, out Entry processor))
             {
                 return processor;
             }
-            prior = current;
-            current = packetType.BaseType;
         }
 
         return null;

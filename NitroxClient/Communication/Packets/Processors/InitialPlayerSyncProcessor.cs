@@ -62,7 +62,7 @@ internal sealed class InitialPlayerSyncProcessor(IEnumerable<IInitialSyncProcess
         // What changed in the world while the snapshot was applied comes on top of it, before the others are told this
         // player is in. Replayed before InitialSyncCompleted is set, so that processors with their own loading-screen
         // handling take the same branch as when these packets used to be applied during loading.
-        Multiplayer.Main.ReplayHeldPackets();
+        yield return Multiplayer.Main.StartCoroutine(Multiplayer.Main.ReplayHeldPackets());
         Multiplayer.Main.InitialSyncCompleted = true;
 
         // When the player finishes loading, we can take back his invincibility
