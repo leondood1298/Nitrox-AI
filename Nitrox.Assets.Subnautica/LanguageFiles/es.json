@@ -50,7 +50,7 @@
     "Nitrox_LoadingScreenWarn": "Espere alguna inestabilidad",
     "Nitrox_LostConnection": "Conexión perdida al servidor",
     "Nitrox_LostConnectionWarn": "Ya no está conectado al servidor",
-    "Nitrox_MissingPermission": "No tienes permiso para ejecutar este comando [{PERMISO}]",
+    "Nitrox_MissingPermission": "No tienes permiso para ejecutar este comando [{PERMISSION}]",
     "Nitrox_Multiplayer": "Multijugador",
     "Nitrox_MultiplayerLoaded": "Cliente multijugador cargado…",
     "Nitrox_Mute": "Silenciar a {PLAYER}",
