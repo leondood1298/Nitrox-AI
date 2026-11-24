@@ -33,6 +33,16 @@ public sealed class FMODWhitelistTest
     }
 
     [TestMethod]
+    public void PathsAreFoundWhateverTheirCaseAsFmodFindsThem()
+    {
+        using FMODWhitelist whitelist = FMODWhitelist.Load(GameInfo.Subnautica);
+        // The banks spell it "Pain_no_tank_light"; the game's emitter plays it in lower case
+        whitelist.TryGetSoundData("event:/player/pain_no_tank_light", out SoundData data).Should().BeTrue();
+        data.Radius.Should().Be(20f);
+        whitelist.TryGetSoundData("EVENT:/SUB/EXO/HOOK_SHOOT", out _).Should().BeTrue();
+    }
+
+    [TestMethod]
     public void TheCyclopsHornCarriesFarOnPurpose()
     {
         using FMODWhitelist whitelist = FMODWhitelist.Load(GameInfo.Subnautica);

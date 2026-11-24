@@ -42,12 +42,26 @@ public sealed class PlayerPainSoundsTest
         Choose(8f, NORMAL, true, true, false).Should().Be(Pain.WITHOUT_TANK_LIGHT);
     }
 
+    /// <summary>
+    ///     Every event <see cref="PlayerPainSounds.BeforePain" /> can send, spelled as the game's PlayerSounds in the Main
+    ///     scene has them: the paths of the four FMODAssets and the Event string of the FMODUnity emitter of the light pain
+    ///     (smoke, surface, with tank, without tank, without tank light).
+    /// </summary>
+    private static readonly string[] gamePainEvents =
+    [
+        "event:/player/coughing",
+        "event:/player/Pain_surface",
+        "event:/player/Pain",
+        "event:/player/Pain_no_tank",
+        "event:/player/pain_no_tank_light"
+    ];
+
     [TestMethod]
     public void ThePainSoundsHaveARadiusButAreNotRelayedByTheGenericPatches()
     {
         using FMODWhitelist whitelist = FMODWhitelist.Load(GameInfo.Subnautica);
 
-        foreach (string path in new[] { "event:/player/Pain", "event:/player/Pain_no_tank", "event:/player/Pain_no_tank_light", "event:/player/Pain_surface", "event:/player/coughing" })
+        foreach (string path in gamePainEvents)
         {
             whitelist.TryGetSoundData(path, out SoundData data).Should().BeTrue(path);
             data.Radius.Should().BeGreaterThan(0f, path);
