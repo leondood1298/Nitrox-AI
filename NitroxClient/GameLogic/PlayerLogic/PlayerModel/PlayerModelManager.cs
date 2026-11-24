@@ -62,6 +62,11 @@ public class PlayerModelManager
     private static void SetInGamePingColor(INitroxPlayer player, PingInstance ping)
     {
         uGUI_Pings pings = Object.FindObjectOfType<uGUI_Pings>();
+        if (!pings)
+        {
+            // Without the HUD's pings there is nothing to colour; the ping keeps the default colour
+            return;
+        }
 
         pings.OnColor(ping.Id, player.PlayerSettings.PlayerColor.ToUnity());
     }
@@ -72,6 +77,11 @@ public class PlayerModelManager
 
         swapOperation.BeginColorSwap();
         yield return new WaitUntil(() => swapOperation.IsColorSwapComplete());
+        // A player who left while the colours were worked out has no body any more
+        if (!player.PlayerModel)
+        {
+            yield break;
+        }
         swapOperation.ApplySwappedColors();
     }
 }
