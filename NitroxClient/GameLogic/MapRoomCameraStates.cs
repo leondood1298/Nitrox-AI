@@ -92,7 +92,8 @@ public sealed partial class MapRoomCameraStates
         bool lightOn = simulationOwnership.HasExclusiveLock(camera.Id) ? camera.LightOn : known.LightOn;
         float energy = camera.Energy;
         float health = camera.Health;
-        if (lightOn == known.LightOn && Math.Abs(known.Energy - energy) < ENERGY_REPORT_THRESHOLD && Math.Abs(known.Health - health) < HEALTH_REPORT_THRESHOLD)
+        if (lightOn == known.LightOn && !HasChangedEnough(known.Energy, energy, camera.EnergyCapacity, ENERGY_REPORT_THRESHOLD) &&
+            !HasChangedEnough(known.Health, health, camera.MaxHealth, HEALTH_REPORT_THRESHOLD))
         {
             return;
         }
@@ -100,6 +101,18 @@ public sealed partial class MapRoomCameraStates
         // The number and the dock are the server's; it ignores what is sent for them.
         packetSender.Send(new EntityMetadataUpdate(camera.Id, new MapRoomCameraMetadata(lightOn, energy, health, known.CameraNumber, known.DockingIndex)));
     }
+
+    /// <summary>
+    ///     Whether a battery or health value moved far enough from what the server was last told to be told again.
+    ///     Reaching empty or full is always told once: the step that gets there is mostly smaller than the threshold
+    ///     (a docked camera back from a short flight is refilled by 0.13), and without it the server would keep the
+    ///     value just short of the end for good, also across a restart.
+    /// </summary>
+    /// <param name="known">What the server was last told, or told this client.</param>
+    /// <param name="current">What the game holds now.</param>
+    /// <param name="maximum">The battery's capacity or the camera's maximum health.</param>
+    internal static bool HasChangedEnough(float known, float current, float maximum, float threshold) =>
+        Math.Abs(known - current) >= threshold || current != known && (current <= 0f || current >= maximum);
 
     /// <summary>
     ///     Whether the game may damage or repair a camera here. A camera's health is the simulating player's to decide,
@@ -117,7 +130,7 @@ public sealed partial class MapRoomCameraStates
     /// </summary>
     /// <param name="reportedHealth">The health as the simulating player last reported it.</param>
     internal static bool WasKilled(float reportedHealth) =>
-        // The last step to zero can stay unreported when it is smaller than a report needs.
+        // Zero is always reported (see HasChangedEnough); the margin covers a report of an older build.
         reportedHealth < HEALTH_REPORT_THRESHOLD;
 
     /// <summary>
@@ -135,6 +148,13 @@ public sealed partial class MapRoomCameraStates
         bool LightOn { get; set; }
         float Energy { get; }
         float Health { get; }
+
+        /// <summary>
+        ///     The energy of a full battery.
+        /// </summary>
+        float EnergyCapacity { get; }
+
+        float MaxHealth { get; }
 
         /// <summary>
         ///     False while the camera's battery is being put in, when the game shows no energy at all.

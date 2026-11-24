@@ -248,6 +248,8 @@ public sealed partial class MapRoomCameraStates
 
         public float Energy => camera.energyMixin.charge;
         public float Health => camera.liveMixin.health;
+        public float EnergyCapacity => camera.energyMixin.capacity;
+        public float MaxHealth => camera.liveMixin.maxHealth;
         public bool CanReport => !states.initializingCameraBatteries.ContainsKey(cameraId);
 
         public void ApplyComponents(float energy, float health)
