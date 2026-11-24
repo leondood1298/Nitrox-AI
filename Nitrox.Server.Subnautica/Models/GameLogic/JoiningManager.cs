@@ -11,6 +11,7 @@ using Nitrox.Server.Subnautica.Models.AppEvents;
 using Nitrox.Server.Subnautica.Models.Communication;
 using Nitrox.Server.Subnautica.Models.GameLogic.Bases;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
+using Nitrox.Server.Subnautica.Models.GameLogic.Players;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Models.GameLogic;
@@ -251,6 +252,10 @@ internal sealed class JoiningManager(
         // this thread while packet processors keep changing the live rooms on theirs.
         List<GlobalRootEntity> globalRootEntities = scannerRoomManager.DetachRooms(worldEntityManager.GetGlobalRootEntities(true));
         bool isFirstPlayer = playerManager.GetConnectedPlayers().Count == 1;
+
+        // Beacons and vehicles that were removed since the player last joined; other players' pings are keyed by their entity
+        PingPreferenceAuthority.RemoveGone(player.PingInstancePreferences,
+                                           id => entityRegistry.TryGetEntityById(id, out Entity _) || playerManager.GetAllPlayers().Any(other => other.GameObjectId == id));
 
         InitialPlayerSync initialPlayerSync = new(
             player.GameObjectId,

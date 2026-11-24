@@ -127,6 +127,7 @@ namespace NitroxClient
             containerBuilder.RegisterType<BatteryCharges>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<OxygenTanks>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<Trashcans>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<PingPreferences>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<Repulsions>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<GravityTraps>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<DiveReels>().InstancePerLifetimeScope();
