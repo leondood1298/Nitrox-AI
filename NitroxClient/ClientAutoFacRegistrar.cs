@@ -148,6 +148,7 @@ namespace NitroxClient
             containerBuilder.RegisterType<SeamothModulesEvent>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<Fires>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<FireExtinguishers>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<FireExtinguisherHolders>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<MapRoomCameras>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<MapRoomCameraPreviews>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<MapRoomCameraStates>().InstancePerLifetimeScope();
