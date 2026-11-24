@@ -47,6 +47,9 @@ public sealed class FMODWhitelistTest
     [DataRow("event:/sub/base/seamoth_dock")]
     [DataRow("event:/sub/exo/dock_exo_moonpool")]
     [DataRow("event:/sub/seamoth/dock")]
+    // BuilderTool.LateUpdate plays it on the copy of the builder in another player's hand (RemotePlayerToolLook feeds
+    // it what is being built), and stops it with the beams
+    [DataRow("event:/tools/builder/loop")]
     public void SoundsEveryGamePlaysForItselfAreNotSent(string path)
     {
         using FMODWhitelist whitelist = FMODWhitelist.Load(GameInfo.Subnautica);
@@ -84,7 +87,6 @@ public sealed class FMODWhitelistTest
     [TestMethod]
     [DataRow("event:/tools/stasis_gun/charge")]
     [DataRow("event:/tools/flare/throw")]
-    [DataRow("event:/tools/builder/loop")]
     [DataRow("event:/tools/builder/place")]
     [DataRow("event:/sub/seamoth/sonar_loop")]
     public void SoundsOnPathsNowRelayedAreSent(string path)
