@@ -1,4 +1,5 @@
 using System.Collections;
+using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using NitroxClient.GameLogic.Spawning.Abstract;
 using NitroxClient.MonoBehaviours;
@@ -18,25 +19,31 @@ public class VehicleEntitySpawner : EntitySpawner<VehicleEntity>
     // distance - anything more will simply use world spawning (no need to play the animation anyways).
     private const float ALLOWED_CONSTRUCTOR_DISTANCE = 100.0f;
 
+    // Not injected: MobileVehicleBay depends on services built after the entity spawners
+    private static MobileVehicleBay Bays => NitroxServiceLocator.LocateService<MobileVehicleBay>();
+
+    private float RemainingCraftDuration(VehicleEntity vehicleEntity)
+    {
+        return GetCraftDuration(vehicleEntity.TechType.ToUnity()) - (DayNightCycle.main.timePassedAsFloat - vehicleEntity.ConstructionTime);
+    }
+
     protected override IEnumerator SpawnAsync(VehicleEntity vehicleEntity, TaskResult<Optional<GameObject>> result)
     {
         bool withinConstructorSpawnWindow = (DayNightCycle.main.timePassedAsFloat - vehicleEntity.ConstructionTime) < GetCraftDuration(vehicleEntity.TechType.ToUnity());
         Optional<GameObject> spawnerObj = NitroxEntity.GetObjectFrom(vehicleEntity.SpawnerId);
         Optional<GameObject> parent = vehicleEntity.ParentId != null ? NitroxEntity.GetObjectFrom(vehicleEntity.ParentId) : Optional.Empty;
 
-        if (withinConstructorSpawnWindow && spawnerObj.HasValue)
+        if (withinConstructorSpawnWindow && spawnerObj.HasValue && spawnerObj.Value.TryGetComponent(out Constructor constructor))
         {
-            Constructor constructor = spawnerObj.Value.GetComponent<Constructor>();
             float distance = (constructor.transform.position - Player.main.transform.position).magnitude;
-            bool withinDistance = distance <= ALLOWED_CONSTRUCTOR_DISTANCE;
-
-            if (constructor && withinDistance)
+            if (distance <= ALLOWED_CONSTRUCTOR_DISTANCE)
             {
-                MobileVehicleBay.TransmitLocalSpawns = false;
                 yield return SpawnViaConstructor(vehicleEntity, constructor, result);
-                MobileVehicleBay.TransmitLocalSpawns = true;
                 yield break;
             }
+            // Too far for the animation; the bay is still busy until the build is done, as in the game
+            ConstructorInput crafter = constructor.gameObject.RequireComponentInChildren<ConstructorInput>(true);
+            Bays.MarkBuilding(crafter, vehicleEntity.TechType.ToUnity(), RemainingCraftDuration(vehicleEntity));
         }
 
         yield return SpawnInWorld(vehicleEntity, result, parent);
@@ -123,16 +130,23 @@ public class VehicleEntitySpawner : EntitySpawner<VehicleEntity>
             constructor.Deploy(true);
         }
 
-        float craftDuration = GetCraftDuration(vehicleEntity.TechType.ToUnity()) - (DayNightCycle.main.timePassedAsFloat - vehicleEntity.ConstructionTime);
-
+        float craftDuration = RemainingCraftDuration(vehicleEntity);
+        TechType techType = vehicleEntity.TechType.ToUnity();
         ConstructorInput crafter = constructor.gameObject.RequireComponentInChildren<ConstructorInput>(true);
 
-        yield return crafter.OnCraftingBeginAsync(vehicleEntity.TechType.ToUnity(), craftDuration);
-
-        GameObject constructedObject = MobileVehicleBay.MostRecentlyCrafted;
+        // The vehicle the game makes at this bay gets the entity's id there (MobileVehicleBay.BeginCrafting); asking for it
+        // by id keeps a build made meanwhile, here or at another bay, from being taken for this one
+        Bays.BeginReplay(crafter, vehicleEntity.Id, techType, craftDuration);
+        GameObject constructedObject;
+        try
+        {
+            yield return crafter.OnCraftingBeginAsync(techType, craftDuration);
+        }
+        finally
+        {
+            constructedObject = Bays.EndReplay(crafter, vehicleEntity.Id);
+        }
         Validate.IsTrue(constructedObject, $"Could not find constructed object from MobileVehicleBay {constructor.gameObject.name}");
-
-        NitroxEntity.SetNewId(constructedObject, vehicleEntity.Id);
 
         AddCinematicControllers(constructedObject);
 
