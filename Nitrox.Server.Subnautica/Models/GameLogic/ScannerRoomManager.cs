@@ -135,6 +135,7 @@ internal sealed partial class ScannerRoomManager(IPacketSender packetSender, Ent
         {
             SetState(camera, EnsureCameraNumber(ReadState(camera)));
         }
+        PlaceCamerasWithoutPlace();
         foreach (MapRoomEntity room in GetRooms())
         {
             diagnostics.RecordCheckpoint("load", room);
@@ -166,7 +167,7 @@ internal sealed partial class ScannerRoomManager(IPacketSender packetSender, Ent
         worldCameras = [.. entityRegistry.GetEntities<WorldEntity>()
                                          .Where(IsCamera)
                                          .OrderBy(camera => camera.Id.ToString(), StringComparer.Ordinal)
-                                         .Select(camera => new ScannerCameraSnapshot(camera.Id, ReadState(camera)))];
+                                         .Select(camera => new ScannerCameraSnapshot(camera.Id, ReadState(camera), camera.Transform?.Position))];
         return [.. GetRooms().OrderBy(room => room.Id.ToString(), StringComparer.Ordinal).Select(Capture)];
     }
 

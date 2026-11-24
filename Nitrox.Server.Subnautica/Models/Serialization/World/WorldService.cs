@@ -332,6 +332,10 @@ internal class WorldService : IHostedService
 
         void GlobalRootDataPostProcessing(GlobalRootData globalRootData)
         {
+            foreach ((WorldEntity healed, string place) in HealTransformsThatAreNotFinite(globalRootData.Entities))
+            {
+                logger.ZLogWarning($"{healed.GetType().Name} {healed.Id} ({healed.TechType}) was saved with a position, rotation or scale that is not a finite number and was put {place}");
+            }
             foreach (GlobalRootEntity entity in globalRootData.Entities)
             {
                 EnsureChildrenTransformAreParented(entity);
@@ -371,6 +375,40 @@ internal class WorldService : IHostedService
                 {
                     logger.ZLogWarningOnce($"Please consider reporting the above issues on the Discord server.");
                 }
+            }
+        }
+    }
+
+    /// <summary>
+    ///     Gives every entity of the global root data whose transform holds a NaN or an infinite number a finite one: at
+    ///     its parent if it has one, otherwise at the origin of the world. Sent like that, it would break the object in
+    ///     every game. Scanner Room cameras are left to <see cref="ScannerRoomManager.WorldLoaded" />, which knows
+    ///     better places for them (a free dock, or the base of a room).
+    /// </summary>
+    /// <returns>Each entity changed, with where it was put.</returns>
+    internal static List<(WorldEntity Entity, string Place)> HealTransformsThatAreNotFinite(IEnumerable<GlobalRootEntity> entities)
+    {
+        List<(WorldEntity, string)> healed = [];
+        foreach (GlobalRootEntity entity in entities)
+        {
+            Heal(entity, null);
+        }
+        return healed;
+
+        void Heal(Entity entity, Entity? parent)
+        {
+            if (entity is WorldEntity { Transform: { } transform } worldEntity && !transform.IsFinite() && !ScannerRoomManager.IsCamera(entity))
+            {
+                bool moved = !transform.LocalPosition.IsFinite();
+                transform.LocalPosition = moved ? NitroxVector3.Zero : transform.LocalPosition;
+                transform.LocalRotation = transform.LocalRotation.IsFinite() ? transform.LocalRotation : NitroxQuaternion.Identity;
+                transform.LocalScale = transform.LocalScale.IsFinite() ? transform.LocalScale : NitroxVector3.One;
+                string place = !moved ? "where it was, with its rotation and scale made finite" : parent is WorldEntity ? $"at its parent {parent.Id}" : "at the origin of the world";
+                healed.Add((worldEntity, place));
+            }
+            foreach (Entity child in entity.ChildEntities)
+            {
+                Heal(child, entity);
             }
         }
     }

@@ -4,6 +4,7 @@ using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Bases;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities.Spawning;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
@@ -99,6 +100,48 @@ public sealed class WorldEntityManagerTest
         manager.SnapshotForSave().SpawnedBatches.Should().BeEmpty();
         (await manager.LoadUnspawnedEntitiesAsync(batchId, true)).Should().Be(0);
         generator.Calls.Should().Be(1);
+    }
+
+    [TestMethod]
+    public void CameraLoadedInItsDockTakesThePositionsItsPlayerReportsAfterLeavingTheDock()
+    {
+        // The hierarchy of the test world after a restart: base, Scanner Room with an empty transform, docked camera
+        // holding a place in the world, each transform linked to its parent's as the world loader does.
+        GlobalRootEntity baseEntity = new(new NitroxTransform(new NitroxVector3(-152.28033f, -15.6695175f, 99.544716f), new NitroxQuaternion(0f, -0.8469493f, 0f, 0.53167367f), NitroxVector3.One),
+            GlobalRootEntity.GLOBAL_ROOT_LEVEL, null, true, new NitroxId(), null, null, null, []);
+        MapRoomEntity room = new(new NitroxId(), baseEntity.Id, new NitroxInt3(0, 0, 0));
+        GlobalRootEntity camera = new(new NitroxTransform(new NitroxVector3(-142.92966f, -14.782113f, 105.73807f), new NitroxQuaternion(0f, 0.97483367f, 0f, 0.22293334f), NitroxVector3.One),
+            GlobalRootEntity.GLOBAL_ROOT_LEVEL, "733fd479-0760-4bc2-a03e-281cbf02bfa4", true, new NitroxId(), new NitroxTechType("MapRoomCamera"), null, room.Id, []);
+        baseEntity.ChildEntities.Add(room);
+        room.ChildEntities.Add(camera);
+        room.Transform.SetParent(baseEntity.Transform, false);
+        camera.Transform.SetParent(room.Transform, false);
+        registry.AddEntitiesIgnoringDuplicate([baseEntity]);
+        // The undock changes only the entity tree, as ScannerRoomManager does.
+        room.ChildEntities.Remove(camera);
+        camera.ParentId = null;
+
+        bool stored = manager.TryUpdateEntityPosition(camera.Id, new NitroxVector3(-215f, -65f, 127f), NitroxQuaternion.Identity, out _, out _, out _);
+
+        stored.Should().BeTrue();
+        camera.Transform.IsFinite().Should().BeTrue($"the transform was {camera.Transform}");
+        camera.Transform.Position.Equals(new NitroxVector3(-215f, -65f, 127f), 0.001f).Should().BeTrue($"the transform was {camera.Transform}");
+    }
+
+    [TestMethod]
+    public void PositionThatIsNotANumberIsNeitherStoredNorPassedOn()
+    {
+        WorldEntity fish = NewFish();
+        registry.AddEntity(fish);
+        NitroxVector3 before = fish.Transform.Position;
+
+        bool stored = manager.TryUpdateEntityPosition(fish.Id, new NitroxVector3(float.NaN, 0f, 0f), NitroxQuaternion.Identity, out _, out _, out _);
+        bool storedRotation = manager.TryUpdateEntityPosition(fish.Id, before, new NitroxQuaternion(float.PositiveInfinity, 0f, 0f, 1f), out _, out _, out _);
+
+        stored.Should().BeFalse("the processors pass on only what was stored");
+        storedRotation.Should().BeFalse();
+        fish.Transform.IsFinite().Should().BeTrue();
+        fish.Transform.Position.Should().Be(before);
     }
 
     private static WorldEntity NewFish()
