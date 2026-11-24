@@ -9,8 +9,10 @@ public sealed partial class FireExtinguisher_Update_Patch : NitroxPatch, IDynami
 {
     public static readonly MethodInfo TARGET_METHOD = Reflect.Method((FireExtinguisher t) => t.Update());
 
-    public static bool Prefix(FireExtinguisher __instance)
+    public static bool Prefix(FireExtinguisher __instance, out float __state)
     {
+        // The fuel before this frame, to report what the frame spent (see FireExtinguishers.FuelChanged)
+        __state = __instance.fuel;
         if (__instance.transform.TryGetComponentInAscendance(12, out RemotePlayerIdentifier identifier))
         {
             Resolve<FireExtinguishers>().RemoteUpdate(__instance, identifier);
@@ -20,11 +22,13 @@ public sealed partial class FireExtinguisher_Update_Patch : NitroxPatch, IDynami
         return true;
     }
 
-    public static void Postfix(FireExtinguisher __instance, bool __runOriginal)
+    public static void Postfix(FireExtinguisher __instance, bool __runOriginal, float __state)
     {
         if (__runOriginal && __instance.TryGetNitroxId(out NitroxId id))
         {
-            Resolve<FireExtinguishers>().BroadcastLocalState(id, __instance);
+            FireExtinguishers fireExtinguishers = Resolve<FireExtinguishers>();
+            fireExtinguishers.BroadcastLocalState(id, __instance);
+            fireExtinguishers.FuelChanged(__instance, id, __state);
         }
     }
 }

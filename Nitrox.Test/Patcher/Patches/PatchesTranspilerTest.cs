@@ -56,7 +56,7 @@ public class PatchesTranspilerTest
         [typeof(ErrorMessage_OnLateUpdate_Patch), 0],
         [typeof(EscapePod_Start_Patch), 43],
         [typeof(FiltrationMachine_UpdateFiltering_Patch), 1],
-        [typeof(FireExtinguisherHolder_TakeTankAsync_Patch), 2],
+        [typeof(FireExtinguisherHolder_TakeTankAsync_Patch), 4],
         [typeof(FireExtinguisherHolder_TryStoreTank_Patch), 3],
         [typeof(Flare_Update_Patch), 0],
         [typeof(FootstepSounds_OnStep_Patch), 6],

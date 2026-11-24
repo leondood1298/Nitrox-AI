@@ -211,6 +211,8 @@ public class Items
         int level = gameObject.TryGetComponent(out LargeWorldEntity largeWorldEntity) ? (int)largeWorldEntity.cellLevel : 0;
 
         List<Entity> childrenEntities = GetPrefabChildren(gameObject, id, entityMetadataManager).ToList();
+        // A placed object with a battery keeps it as its installed battery, as a dropped one does
+        BatteryChildEntityHelper.TryPopulateInstalledBattery(gameObject, childrenEntities, id, entityMetadataManager, allowDefaultBattery: false);
         WorldEntity placedItem;
 
         // If the object is dropped in the water, it'll be parented to a CellRoot so we let it as WorldEntity (see Items.Dropped)
@@ -237,12 +239,15 @@ public class Items
     }
 
     // This function will record any notable children of the dropped item as a PrefabChildEntity.  In this case, a 'notable'
-    // child is one that UWE has tagged with a PrefabIdentifier (class id) and has entity metadata that can be extracted. An
-    // example would be recording a Battery PrefabChild inside of a Flashlight WorldEntity.
+    // child is one that UWE has tagged with a PrefabIdentifier (class id) and has entity metadata that can be extracted.
+    // A battery in a tool's battery slot is not one of them: it is the tool's InstalledBatteryEntity (BatteryChildEntityHelper).
+    // Recorded here too, the server kept two children with the battery's id, one of which no longer received the charge
+    // and gave the tool a stale charge after a rejoin.
     public static IEnumerable<Entity> GetPrefabChildren(GameObject gameObject, NitroxId parentId, EntityMetadataManager entityMetadataManager)
     {
+        HashSet<GameObject> installedBatteries = GetInstalledBatteries(gameObject);
         foreach (IGrouping<string, PrefabIdentifier> prefabGroup in gameObject.GetAllComponentsInChildren<PrefabIdentifier>()
-                                                                              .Where(prefab => prefab.gameObject != gameObject)
+                                                                              .Where(prefab => prefab.gameObject != gameObject && !installedBatteries.Contains(prefab.gameObject))
                                                                               .GroupBy(prefab => prefab.classId))
         {
             int indexInGroup = 0;
@@ -267,6 +272,23 @@ public class Items
                 }
             }
         }
+    }
+
+    /// <summary>
+    ///     The batteries sitting in the battery slots of <paramref name="gameObject" /> and its children.
+    /// </summary>
+    private static HashSet<GameObject> GetInstalledBatteries(GameObject gameObject)
+    {
+        HashSet<GameObject> batteries = [];
+        foreach (EnergyMixin energyMixin in gameObject.GetAllComponentsInChildren<EnergyMixin>())
+        {
+            InventoryItem storedItem = energyMixin.batterySlot != null ? energyMixin.batterySlot.storedItem : null;
+            if (storedItem != null && storedItem.item)
+            {
+                batteries.Add(storedItem.item.gameObject);
+            }
+        }
+        return batteries;
     }
 
     /// <summary>

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using FMOD.Studio;
 using Nitrox.Model.DataStructures;
@@ -7,21 +8,30 @@ using NitroxClient.Communication.Abstract;
 using NitroxClient.Communication.Packets.Processors;
 using NitroxClient.GameLogic.FMOD;
 using NitroxClient.GameLogic.PlayerLogic;
+using NitroxClient.MonoBehaviours;
 using UnityEngine;
 
 namespace NitroxClient.GameLogic;
 
 public class FireExtinguishers
 {
+    /// <summary>
+    ///     The fuel is reported each time it crosses a multiple of this while the extinguisher sprays, and exactly once
+    ///     the spraying stops. A report per unit would be several packets a second.
+    /// </summary>
+    private const float FUEL_REPORT_STEP = 5f;
+
     private readonly IPacketSender packetSender;
+    private readonly Entities entities;
     private readonly float loopSoundRadius;
 
     private readonly Dictionary<NitroxId, FireExtinguisher> remotelyUsedExtinguishers = [];
     private readonly Dictionary<NitroxId, bool> localUsingState = [];
 
-    public FireExtinguishers(IPacketSender packetSender, FMODWhitelist whitelist)
+    public FireExtinguishers(IPacketSender packetSender, Entities entities, FMODWhitelist whitelist)
     {
         this.packetSender = packetSender;
+        this.entities = entities;
 
         whitelist.TryGetSoundData("event:/tools/extinguisher/use_loop", out SoundData soundData);
         loopSoundRadius = soundData.Radius;
@@ -56,9 +66,58 @@ public class FireExtinguishers
         {
             FireExtinguisherUsed packet = new(id, fireExtinguisher.fxIsPlaying);
             packetSender.Send(packet);
+            if (!fireExtinguisher.fxIsPlaying)
+            {
+                // The spraying stopped: the fuel left is stored exactly
+                ReportFuel(fireExtinguisher, id);
+            }
         }
 
         localUsingState[id] = fireExtinguisher.fxIsPlaying;
+    }
+
+    /// <summary>
+    ///     Called after the local player's extinguisher ran a frame, in which it may have spent fuel.
+    /// </summary>
+    public void FuelChanged(FireExtinguisher fireExtinguisher, NitroxId id, float previousFuel)
+    {
+        if (ShouldReportFuel(previousFuel, fireExtinguisher.fuel, fireExtinguisher.maxFuel))
+        {
+            ReportFuel(fireExtinguisher, id);
+        }
+    }
+
+    /// <summary>
+    ///     Called after the game gave an extinguisher taken from a wall holder the holder's fuel. That happens after it was
+    ///     picked up, so the server got the fuel of a new extinguisher with it.
+    /// </summary>
+    public void FuelTakenFromHolder(GameObject tank)
+    {
+        if (tank && tank.TryGetComponent(out FireExtinguisher fireExtinguisher) && tank.TryGetNitroxId(out NitroxId id))
+        {
+            ReportFuel(fireExtinguisher, id);
+        }
+    }
+
+    /// <summary>
+    ///     The fuel is reported each time it crosses a multiple of <see cref="FUEL_REPORT_STEP" />, and when it runs out
+    ///     or is full.
+    /// </summary>
+    public static bool ShouldReportFuel(float previous, float current, float maxFuel)
+    {
+        if (previous == current)
+        {
+            return false;
+        }
+        return Math.Floor(previous / FUEL_REPORT_STEP) != Math.Floor(current / FUEL_REPORT_STEP) || current <= 0f || current >= maxFuel;
+    }
+
+    private void ReportFuel(FireExtinguisher fireExtinguisher, NitroxId id)
+    {
+        if (!entities.SpawningEntities && entities.IsKnownEntity(id))
+        {
+            entities.EntityMetadataChanged(fireExtinguisher, id);
+        }
     }
 
     // Replacement for FireExtinguisher.Update() for extinguishers held by remote players
