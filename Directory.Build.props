@@ -39,6 +39,8 @@
         <UnityModLibrary>false</UnityModLibrary>
         <GameName>Subnautica</GameName>
         <GameMinimumVersion>82304</GameMinimumVersion>
+        <!-- Newest game build Nitrox was tested against: newer builds start with a warning -->
+        <GameNewestTestedVersion>83031</GameNewestTestedVersion>
     </PropertyGroup>
 
     <PropertyGroup Condition="$([System.Text.RegularExpressions.Regex]::IsMatch($(MSBuildProjectName), '^Nitrox.*$'))">

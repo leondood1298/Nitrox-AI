@@ -109,11 +109,14 @@ namespace NitroxClient.MonoBehaviours
                 Main.InitialSyncCompleted = false;
                 Main.StartCoroutine(LoadAsync());
             }
-            else
+            else if (Main)
             {
+                // A multiplayer start whose connection dropped while loading
                 SetLoadingComplete();
                 OnLoadingComplete?.Invoke();
             }
+            // Otherwise this is a single-player game: the game finishes loading on its own. SetLoadingComplete needs a
+            // session and threw here, which skipped the rest of MainGameController.StartGame, the new game's intro with it.
         }
 
         public static IEnumerator LoadAsync()

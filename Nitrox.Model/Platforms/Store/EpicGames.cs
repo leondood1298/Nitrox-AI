@@ -30,13 +30,14 @@ public sealed class EpicGames : IGamePlatform
         }
     }
 
-    public static async Task<ProcessEx> StartGameAsync(string pathToGameExe, string launchArguments)
+    /// <param name="launcherPath">The launcher folder for a multiplayer start, null for a single-player start.</param>
+    public static async Task<ProcessEx> StartGameAsync(string pathToGameExe, string launchArguments, string? launcherPath)
     {
         // Normally should call StartPlatformAsync first. But Subnautica will start without EGS.
         return await Task.FromResult(
             ProcessEx.Start(
                 pathToGameExe,
-                [(NitroxUser.LAUNCHER_PATH_ENV_KEY, NitroxUser.LauncherPath), (NitroxConstants.HOST_HOME_ENV_VAR_NAME, NitroxDirectory.HomePath)],
+                GameStartEnvironment.For(launcherPath),
                 Path.GetDirectoryName(pathToGameExe),
                 $"-EpicPortal -epicuserid=0 {launchArguments}")
         );

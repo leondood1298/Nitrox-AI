@@ -74,15 +74,23 @@
                                 Opacity="0.75"
                                 Text="{Binding SelectedGame.PathToGame, FallbackValue='Unknown path'}" />
                         </StackPanel>
-                        <Button
-                            Classes="primary"
-                            Command="{Binding SetGamePathCommand}"
-                            Content="Change"
+                        <StackPanel
                             Grid.Column="2"
                             HorizontalAlignment="Right"
                             Margin="22,0,0,0"
-                            ToolTip.Tip="Direct the launcher to your game's install location"
-                            Width="120" />
+                            Spacing="8">
+                            <Button
+                                Classes="primary"
+                                Command="{Binding SetGamePathCommand}"
+                                Content="Change"
+                                ToolTip.Tip="Direct the launcher to your game's install location"
+                                Width="120" />
+                            <Button
+                                Command="{Binding RestoreGameFilesCommand}"
+                                Content="Restore files"
+                                ToolTip.Tip="Put the game's original code back and remove Nitrox's files from the game folder. Multiplayer patches it again on its next start."
+                                Width="120" />
+                        </StackPanel>
                     </Grid>
                 </Border>
             </StackPanel>

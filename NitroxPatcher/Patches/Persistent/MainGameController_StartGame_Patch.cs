@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Reflection.Emit;
@@ -33,6 +34,13 @@ public partial class MainGameController_StartGame_Patch : NitroxPatch, IPersiste
                     yield return new CodeInstruction(OpCodes.Call, Reflect.Method(() => Multiplayer.SubnauticaLoadingCompleted()));
                 }
             }
+        }
+
+        // Without the call a multiplayer join waits on the loading screen forever; failing the patch makes it a reported
+        // problem instead (a game update that changed StartGame).
+        if (injectSeenCounter < 3)
+        {
+            throw new InvalidOperationException($"{nameof(MainGameController)}.{nameof(MainGameController.StartGame)} has {injectSeenCounter} calls to {nameof(WaitScreen)}.{nameof(WaitScreen.Remove)}, expected at least 3");
         }
     }
 }

@@ -19,14 +19,16 @@ public sealed class MSStore : IGamePlatform
         return isLocalAppData || File.Exists(Path.Combine(gameDirectory, "appxmanifest.xml"));
     }
 
-    public static async Task<ProcessEx> StartGameAsync(string pathToGameExe, string launchArguments)
+    /// <param name="launcherPath">The launcher folder for a multiplayer start, null for a single-player start.</param>
+    public static async Task<ProcessEx> StartGameAsync(string pathToGameExe, string launchArguments, string? launcherPath)
     {
+        string nitroxArgument = launcherPath == null ? "" : $"--nitrox \"{launcherPath}\" ";
         return await Task.FromResult(
             ProcessEx.Start(
                 @"C:\Windows\System32\cmd.exe",
-                [(NitroxUser.LAUNCHER_PATH_ENV_KEY, NitroxUser.LauncherPath)],
+                GameStartEnvironment.For(launcherPath),
                 Path.GetDirectoryName(pathToGameExe),
-                $"""/C start /b "" "{pathToGameExe}" --nitrox "{NitroxUser.LauncherPath}" {launchArguments}""",
+                $"""/C start /b "" "{pathToGameExe}" {nitroxArgument}{launchArguments}""",
                 createWindow: false)
         );
     }

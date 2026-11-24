@@ -15,6 +15,7 @@ using Nitrox.Launcher.Models.Utils;
 using Nitrox.Launcher.ViewModels.Abstract;
 using Nitrox.Model.Core;
 using Nitrox.Model.Helper;
+using Nitrox.Model.Logger;
 using Nitrox.Model.Platforms.Discovery;
 using Nitrox.Model.Platforms.Discovery.Models;
 using Nitrox.Model.Platforms.OS.Shared;
@@ -131,6 +132,36 @@ internal partial class OptionsViewModel(IKeyValueStore keyValueStore, StorageSer
             await Task.Run(() => SetTargetedSubnauticaPath(selectedDirectory));
             SelectedGame = new() { PathToGame = NitroxUser.GamePath, Platform = NitroxUser.GamePlatform?.Platform ?? Platform.NONE };
             LauncherNotifier.Success("Applied changes");
+        }
+    }
+
+    /// <summary>
+    ///     Puts the game's original code back and takes the Nitrox files out of the game folder. The next multiplayer start
+    ///     patches the game again.
+    /// </summary>
+    [RelayCommand]
+    private async Task RestoreGameFiles()
+    {
+        string gamePath = NitroxUser.GamePath;
+        if (string.IsNullOrWhiteSpace(gamePath) || !Directory.Exists(gamePath))
+        {
+            LauncherNotifier.Error("Location of Subnautica is unknown. Set the path to it first");
+            return;
+        }
+        if (ProcessEx.ProcessExists(GameInfo.Subnautica.ExeName))
+        {
+            LauncherNotifier.Warning("Close Subnautica before restoring its files");
+            return;
+        }
+        try
+        {
+            string result = await NitroxEntryPatch.RestoreGameFiles(gamePath);
+            LauncherNotifier.Success(result);
+        }
+        catch (EntryPatchException ex)
+        {
+            Log.Error(ex, "Restoring the game files failed");
+            LauncherNotifier.Error(ex.Message);
         }
     }
 
