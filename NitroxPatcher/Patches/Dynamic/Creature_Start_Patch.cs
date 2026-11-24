@@ -15,5 +15,7 @@ public sealed partial class Creature_Start_Patch : NitroxPatch, IDynamicPatch
     public static void Postfix(Creature __instance)
     {
         Resolve<CreatureInfections>().RollIfUndecided(__instance);
+        // Creature.InitializeOnce put the leash where the creature is: the one it was given replaces it
+        Resolve<CreatureLeashes>().OnStarted(__instance);
     }
 }

@@ -19,6 +19,6 @@ internal sealed class DeathMarkerCommand(IOptions<SubnauticaServerOptions> optio
         }
         options.Value.MarkDeathPointsWithBeacon = newState;
         await context.SendToAllAsync(new DeathMarkersChanged(newState));
-        await context.SendToAllAsync($"{nameof(options.Value.MarkDeathPointsWithBeacon)} changed to \"{newState}\" by {context}");
+        await context.SendToAllAsync($"{nameof(options.Value.MarkDeathPointsWithBeacon)} changed to \"{newState}\" by {context.OriginName}");
     }
 }

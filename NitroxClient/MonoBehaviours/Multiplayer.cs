@@ -14,6 +14,7 @@ using NitroxClient.MonoBehaviours.Discord;
 using NitroxClient.MonoBehaviours.Gui.InGame;
 using NitroxClient.MonoBehaviours.Gui.MainMenu.ServerJoin;
 using Nitrox.Model.Core;
+using Nitrox.Model.Packets;
 using Nitrox.Model.Packets.Core;
 using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication.Packets.Processors.Core;
@@ -36,6 +37,7 @@ namespace NitroxClient.MonoBehaviours
         private BasePowerConsumptionForwarder basePowerConsumptionForwarder;
         private CreatureHealthManager creatureHealthManager;
         private GameLogic.Terrain terrain;
+        private readonly LoadingPacketGate loadingPacketGate = new();
 
         public bool InitialSyncCompleted { get; set; }
 
@@ -138,27 +140,50 @@ namespace NitroxClient.MonoBehaviours
 
         public void ProcessPackets()
         {
-            packetReceiver.ConsumePackets(static (packet, context) =>
+            packetReceiver.ConsumePackets(static (packet, multiplayer) =>
             {
-                try
+                if (multiplayer.loadingPacketGate.Admit(packet))
                 {
-                    PacketProcessorsInvoker.Entry processor = context.processorInvoker.GetProcessor(packet.GetType());
-                    if (processor == null)
-                    {
-                        throw new Exception($"Failed to find packet processor for packet {packet.GetType()}");
-                    }
-                    processor.Execute(context.packetProcessorContext, packet).ContinueWithHandleError();
+                    multiplayer.Execute(packet);
                 }
-                catch (Exception ex)
+            }, this);
+        }
+
+        /// <summary>
+        ///     Processes the packets that arrived while the game loaded, in the order they arrived, now that the snapshot
+        ///     is applied. Called before the game reports that it finished joining.
+        /// </summary>
+        public void ReplayHeldPackets()
+        {
+            List<Packet> held = loadingPacketGate.Release();
+            Log.Info($"Replaying {held.Count} packets that arrived while loading");
+            foreach (Packet packet in held)
+            {
+                Execute(packet);
+            }
+        }
+
+        private void Execute(Packet packet)
+        {
+            try
+            {
+                PacketProcessorsInvoker.Entry processor = processorInvoker.GetProcessor(packet.GetType());
+                if (processor == null)
                 {
-                    Log.Error(ex, $"Error trying to process packet {packet}");
+                    throw new Exception($"Failed to find packet processor for packet {packet.GetType()}");
                 }
-            }, (processorInvoker, packetSender, packetProcessorContext));
+                processor.Execute(packetProcessorContext, packet).ContinueWithHandleError();
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, $"Error trying to process packet {packet}");
+            }
         }
 
         public IEnumerator StartSession()
         {
             yield return StartCoroutine(InitializeLocalPlayerState());
+            loadingPacketGate.OnJoinRequested();
             multiplayerSession.JoinSession();
             InitMonoBehaviours();
             Utils.SetContinueMode(true);

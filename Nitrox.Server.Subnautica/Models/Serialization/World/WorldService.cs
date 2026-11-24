@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Newtonsoft.Json.Linq;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.DataStructures.Unity;
@@ -14,7 +15,6 @@ using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities.Spawning;
 using Nitrox.Server.Subnautica.Models.GameLogic.Players;
 using Nitrox.Server.Subnautica.Models.GameLogic.Unlockables;
-using Nitrox.Server.Subnautica.Models.Serialization.SaveDataUpgrades;
 using Nitrox.Server.Subnautica.Services;
 using Nitrox.Server.Subnautica.Services.Core;
 
@@ -39,17 +39,21 @@ internal class WorldService : IHostedService
     private readonly StoryManager storyManager;
     private readonly StoryScheduler storyScheduler;
     private readonly TimeService timeService;
-    private readonly SaveDataUpgrade[] upgrades;
+    private readonly SaveGenerationStore generationStore = new();
     private readonly WorldEntityManager worldEntityManager;
     private readonly ActiveTeleporters activeTeleporters;
     private readonly CollectedTimeCapsules collectedTimeCapsules;
     public IServerSerializer Serializer { get; private set; }
+
+    /// <summary>
+    ///     False when the last save wrote exactly what was saved before, so there is nothing new to back up.
+    /// </summary>
+    public bool LastSaveChangedWorld { get; private set; } = true;
     private string FileEnding => Serializer?.FileEnding ?? "";
 
     public WorldService(
         ServerJsonSerializer jsonSerializer,
         IOptions<SubnauticaServerOptions> options,
-        IEnumerable<SaveDataUpgrade> upgrades,
         BatchEntitySpawner batchEntitySpawner,
         EntityRegistry entityRegistry,
         PlayerManager playerManager,
@@ -69,7 +73,6 @@ internal class WorldService : IHostedService
         ILogger<WorldService> logger)
     {
         this.options = options;
-        this.upgrades = upgrades.ToArray();
         this.batchEntitySpawner = batchEntitySpawner;
         this.entityRegistry = entityRegistry;
         this.playerManager = playerManager;
@@ -187,74 +190,95 @@ internal class WorldService : IHostedService
     {
         try
         {
-            Directory.CreateDirectory(saveDir);
+            SaveManifest manifest = generationStore.Write(saveDir,
+            [
+                new GenerationFile($"Version{FileEnding}", path => SerializeSnapshot(path, new SaveFileVersion())),
+                new GenerationFile($"PlayerData{FileEnding}", path => SerializeSnapshot(path, persistedData.PlayerData)),
+                new GenerationFile($"WorldData{FileEnding}", path => SerializeSnapshot(path, persistedData.WorldData)),
+                new GenerationFile($"GlobalRootData{FileEnding}", path => SerializeSnapshot(path, persistedData.GlobalRootData)),
+                new GenerationFile($"EntityData{FileEnding}", path => SerializeSnapshot(path, persistedData.EntityData))
+            ], out bool changed);
+            LastSaveChangedWorld = changed;
 
-            Serializer.Serialize(Path.Combine(saveDir, $"Version{FileEnding}"), new SaveFileVersion());
-            Serializer.Serialize(Path.Combine(saveDir, $"PlayerData{FileEnding}"), persistedData.PlayerData);
-            Serializer.Serialize(Path.Combine(saveDir, $"WorldData{FileEnding}"), persistedData.WorldData);
-            Serializer.Serialize(Path.Combine(saveDir, $"GlobalRootData{FileEnding}"), persistedData.GlobalRootData);
-            Serializer.Serialize(Path.Combine(saveDir, $"EntityData{FileEnding}"), persistedData.EntityData);
-
-            logger.ZLogInformation($"World state saved");
+            logger.ZLogInformation($"World state saved (generation {manifest.Generation}{(changed ? "" : ", unchanged")})");
             return true;
         }
         catch (Exception ex)
         {
-            logger.ZLogError(ex, $"Could not save world :");
+            logger.ZLogError(ex, $"Could not save world; the last complete save stays in place:");
             return false;
         }
     }
 
-    internal PersistedWorldData? LoadPersistedWorld(string saveDir)
+    /// <summary>
+    ///     Writes one file of the save from the live game state.
+    /// </summary>
+    /// <remarks>
+    ///     Packet processors keep changing entities on other threads while this runs, so a list can change under the
+    ///     serializer and throw. The file is written into the unfinished generation only, so a throw cannot damage the
+    ///     saved world; writing it again a moment later normally succeeds.
+    /// </remarks>
+    private void SerializeSnapshot(string path, object? data)
     {
-        try
+        const int ATTEMPTS = 3;
+        for (int attempt = 1; ; attempt++)
         {
-            PersistedWorldData persistedData = new()
+            try
             {
-                PlayerData = Serializer.Deserialize<PlayerData>(Path.Combine(saveDir, $"PlayerData{FileEnding}")),
-                WorldData = Serializer.Deserialize<WorldData>(Path.Combine(saveDir, $"WorldData{FileEnding}")),
-                GlobalRootData = Serializer.Deserialize<GlobalRootData>(Path.Combine(saveDir, $"GlobalRootData{FileEnding}")),
-                EntityData = Serializer.Deserialize<EntityData>(Path.Combine(saveDir, $"EntityData{FileEnding}"))
-            };
-            EntityDataPostProcessing(persistedData.EntityData);
-            GlobalRootDataPostProcessing(persistedData.GlobalRootData);
-            IReadOnlyList<BuildEntity> removedEmptyBuildEntities = RemoveChildlessStructurallyEmptyBuildEntities(persistedData.GlobalRootData);
-            foreach (BuildEntity buildEntity in removedEmptyBuildEntities)
-            {
-                logger.ZLogWarning($"Removed childless structurally empty base {buildEntity.Id} while loading the save.");
+                Serializer.Serialize(path, data);
+                return;
             }
-            foreach (BuildEntity buildEntity in persistedData.GlobalRootData.Entities.OfType<BuildEntity>())
+            catch (Exception ex) when (attempt < ATTEMPTS && IsConcurrentChange(ex))
             {
-                if (!buildEntity.TryIsStructurallyEmpty(out bool isStructurallyEmpty))
-                {
-                    logger.ZLogError($"Base {buildEntity.Id} has malformed cell data and was retained for manual recovery.");
-                }
-                else if (isStructurallyEmpty)
-                {
-                    logger.ZLogError($"Base {buildEntity.Id} is structurally empty but has {buildEntity.ChildEntities.Count} child entities, so the server retained and clients will quarantine it for manual recovery.");
-                }
-            }
-
-            if (!persistedData.IsValid())
-            {
-                throw new InvalidDataException("Save files are not valid");
-            }
-
-            return persistedData;
-        }
-        catch (Exception ex)
-        {
-            // Check if the world was newly created using the world manager
-            if (new FileInfo(Path.Combine(saveDir, $"Version{FileEnding}")).Length > 0)
-            {
-                // Give error saying that world could not be used, and to restore a backup
-                logger.ZLogError($"Could not load world, please restore one of your backups to continue using this world. : {ex.GetType()} {ex.Message}");
-
-                throw;
+                logger.ZLogWarning($"{Path.GetFileName(path)} changed while being saved, writing it again (attempt {attempt + 1} of {ATTEMPTS})");
             }
         }
 
-        return null;
+        static bool IsConcurrentChange(Exception? ex)
+        {
+            for (; ex != null; ex = ex.InnerException)
+            {
+                if (ex is InvalidOperationException)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    internal PersistedWorldData LoadPersistedWorld(ResolvedGeneration generation)
+    {
+        PersistedWorldData persistedData = new()
+        {
+            PlayerData = Serializer.Deserialize<PlayerData>(generation.PathOf($"PlayerData{FileEnding}")),
+            WorldData = Serializer.Deserialize<WorldData>(generation.PathOf($"WorldData{FileEnding}")),
+            GlobalRootData = Serializer.Deserialize<GlobalRootData>(generation.PathOf($"GlobalRootData{FileEnding}")),
+            EntityData = Serializer.Deserialize<EntityData>(generation.PathOf($"EntityData{FileEnding}"))
+        };
+        if (!persistedData.IsValid())
+        {
+            throw new InvalidDataException("Save files are not valid");
+        }
+        EntityDataPostProcessing(persistedData.EntityData);
+        GlobalRootDataPostProcessing(persistedData.GlobalRootData);
+        IReadOnlyList<BuildEntity> removedEmptyBuildEntities = RemoveChildlessStructurallyEmptyBuildEntities(persistedData.GlobalRootData);
+        foreach (BuildEntity buildEntity in removedEmptyBuildEntities)
+        {
+            logger.ZLogWarning($"Removed childless structurally empty base {buildEntity.Id} while loading the save.");
+        }
+        foreach (BuildEntity buildEntity in persistedData.GlobalRootData.Entities.OfType<BuildEntity>())
+        {
+            if (!buildEntity.TryIsStructurallyEmpty(out bool isStructurallyEmpty))
+            {
+                logger.ZLogError($"Base {buildEntity.Id} has malformed cell data and was retained for manual recovery.");
+            }
+            else if (isStructurallyEmpty)
+            {
+                logger.ZLogError($"Base {buildEntity.Id} is structurally empty but has {buildEntity.ChildEntities.Count} child entities, so the server retained and clients will quarantine it for manual recovery.");
+            }
+        }
+        return persistedData;
 
         void EntityDataPostProcessing(EntityData entityData)
         {
@@ -395,6 +419,7 @@ internal class WorldService : IHostedService
             entityRegistry.AddEntitiesIgnoringDuplicate(pWorldData.GlobalRootData.Entities.OfType<Entity>().ToList());
             // Before loaded entities become available to automatic simulation.
             scannerRoomManager.WorldLoaded();
+            LavaLarvaAttachments.DetachFromMissingVehicles(entityRegistry);
             await escapePodManager.AddKnownPodsAsync(entityRegistry.GetEntities<EscapePodEntity>());
 
             // TODO: hacky code - see WorldEntityManager for more information.
@@ -432,23 +457,94 @@ internal class WorldService : IHostedService
         logger.ZLogInformation($"World finished loading");
     }
 
+    /// <summary>
+    ///     Loads the newest whole save of the world: the last save, else the one before it, else the newest backup.
+    /// </summary>
+    /// <returns>False if the world has never been saved, so a new one is to be made.</returns>
+    /// <exception cref="WorldLoadException">The world is of another save format, or none of its saves can be loaded.</exception>
     private async Task<bool> LoadWorldFromSavePathAsync(string saveDir)
     {
-        if (!Directory.Exists(saveDir) || !File.Exists(Path.Combine(saveDir, $"Version{FileEnding}")))
+        string worldName = Path.GetFileName(saveDir);
+        string versionFileName = $"Version{FileEnding}";
+        IReadOnlyList<ResolvedGeneration> generations = Directory.Exists(saveDir) ? generationStore.FindGenerations(saveDir) : [];
+
+        // The newest files decide whether this build can read the world at all; falling back to an older save of a world
+        // from another build would only find that build's format again.
+        string newestVersionPath = generations.Count > 0 ? generations[0].PathOf(versionFileName) : Path.Combine(saveDir, versionFileName);
+        if (generations.Count == 0 && (!File.Exists(newestVersionPath) || new FileInfo(newestVersionPath).Length == 0))
         {
+            // The launcher makes a new world with an empty Version file
             logger.ZLogWarning($"No previous save file found, creating a new one");
             return false;
         }
-
-        UpgradeSave(saveDir);
-
-        PersistedWorldData persistedData = LoadPersistedWorld(saveDir);
-        if (persistedData == null)
+        if (TryReadSaveFormat(newestVersionPath) is { } newestFormat && NitroxSaveFormat.DescribeMismatch(worldName, newestFormat) is { } mismatch)
         {
-            return false;
+            throw new WorldLoadException(mismatch);
         }
-        await LoadPersistedWorldIntoServicesAsync(persistedData);
+
+        HashSet<string> triedBackups = new(StringComparer.OrdinalIgnoreCase);
+        string backupsDir = startOptions.Value.GetServerSaveBackupsPath();
+        PersistedWorldData? loaded = null;
+        foreach (ResolvedGeneration candidate in Candidates())
+        {
+            try
+            {
+                if (TryReadSaveFormat(candidate.PathOf(versionFileName)) is not NitroxSaveFormat.CURRENT)
+                {
+                    logger.ZLogWarning($"Skipped the {candidate.Description} of world \"{worldName}\": it is of another save format.");
+                    continue;
+                }
+                loaded = LoadPersistedWorld(candidate);
+                ReportFallback(candidate);
+                break;
+            }
+            catch (Exception ex)
+            {
+                logger.ZLogError(ex, $"Could not load the {candidate.Description} of world \"{worldName}\" (generation {candidate.Manifest.Generation}):");
+            }
+            finally
+            {
+                if (candidate.Source == GenerationSource.BACKUP)
+                {
+                    SaveGenerationStore.RemoveRestoreFolder(saveDir);
+                }
+            }
+        }
+        if (loaded == null)
+        {
+            throw new WorldLoadException($"No save of world \"{worldName}\" could be loaded: not the last save, not the one before it and no backup. The files were left as they are; the log above says what was wrong with each.");
+        }
+
+        await LoadPersistedWorldIntoServicesAsync(loaded);
         return true;
+
+        IEnumerable<ResolvedGeneration> Candidates()
+        {
+            foreach (ResolvedGeneration generation in generations)
+            {
+                yield return generation;
+            }
+            while (generationStore.ExtractNewestBackup(saveDir, backupsDir, triedBackups) is { } backup)
+            {
+                yield return backup;
+            }
+        }
+
+        void ReportFallback(ResolvedGeneration used)
+        {
+            switch (used.Source)
+            {
+                case GenerationSource.UNFINISHED_SAVE:
+                    logger.ZLogWarning($"The last save of world \"{worldName}\" stopped while its files were being put in place. All of them had been written, so that save (generation {used.Manifest.Generation}) was loaded and nothing is lost.");
+                    break;
+                case GenerationSource.PREVIOUS:
+                    logger.ZLogWarning($"The last save of world \"{worldName}\" is incomplete or damaged. Loaded the save before it (generation {used.Manifest.Generation}) instead; what happened after that save is lost.");
+                    break;
+                case GenerationSource.BACKUP:
+                    logger.ZLogWarning($"Neither the last save of world \"{worldName}\" nor the one before it could be loaded. Loaded the {used.Description} (generation {used.Manifest.Generation}) instead; what happened after that backup is lost.");
+                    break;
+            }
+        }
     }
 
     private async Task CreateAndLoadWorldAsync()
@@ -484,42 +580,23 @@ internal class WorldService : IHostedService
         }
     }
 
-    private void UpgradeSave(string saveDir)
+    /// <summary>
+    ///     Reads the <see cref="NitroxSaveFormat" /> number from a Version file, or null when the file cannot be read.
+    /// </summary>
+    /// <remarks>
+    ///     Read by hand because <see cref="SaveFileVersion" /> has get-only properties, which the server's serializer
+    ///     leaves at this build's values instead of filling from the file.
+    /// </remarks>
+    internal static int? TryReadSaveFormat(string versionPath)
     {
-        SaveFileVersion saveFileVersion;
-
         try
         {
-            saveFileVersion = Serializer.Deserialize<SaveFileVersion>(Path.Combine(saveDir, $"Version{FileEnding}"));
+            JObject version = JObject.Parse(File.ReadAllText(versionPath));
+            return version.Value<int?>(nameof(SaveFileVersion.SaveFormat)) ?? NitroxSaveFormat.UNKNOWN;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            logger.ZLogError(ex, $"Error while upgrading save file. \"Version{FileEnding}\" couldn't be read.");
-            return;
+            return null;
         }
-
-        if (saveFileVersion == null || saveFileVersion.Version == NitroxEnvironment.Version)
-        {
-            return;
-        }
-
-        try
-        {
-            foreach (SaveDataUpgrade upgrade in upgrades)
-            {
-                if (upgrade.TargetVersion > saveFileVersion.Version)
-                {
-                    upgrade.UpgradeSaveFiles(saveDir, FileEnding);
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            logger.ZLogError(ex, $"Error while upgrading save file.");
-            return;
-        }
-
-        Serializer.Serialize(Path.Combine(saveDir, $"Version{FileEnding}"), new SaveFileVersion());
-        logger.ZLogInformation($"Save file was upgraded to {NitroxEnvironment.Version:@Version}");
     }
 }

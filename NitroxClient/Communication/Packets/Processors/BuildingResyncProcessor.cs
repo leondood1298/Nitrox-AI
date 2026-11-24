@@ -31,7 +31,7 @@ internal sealed class BuildingResyncProcessor(Entities entities, EntityMetadataM
             return Task.CompletedTask;
         }
 
-        BuildingHandler.Main.StartCoroutine(ResyncBuildingEntities(packet.BuildEntities, packet.ModuleEntities));
+        BuildingHandler.Main.StartCoroutine(ResyncBuildingEntities(packet.BuildEntities, packet.ModuleEntities, packet.Partial));
         return Task.CompletedTask;
     }
 
@@ -63,15 +63,23 @@ internal sealed class BuildingResyncProcessor(Entities entities, EntityMetadataM
         }
     }
 
-    private IEnumerator ResyncBuildingEntities(Dictionary<BuildEntity, int> buildEntities, Dictionary<ModuleEntity, int> moduleEntities)
+    /// <param name="partial">Only the given entities are rebuilt; the player's other bases and modules are left alone.</param>
+    private IEnumerator ResyncBuildingEntities(Dictionary<BuildEntity, int> buildEntities, Dictionary<ModuleEntity, int> moduleEntities, bool partial)
     {
         Stopwatch stopwatch = Stopwatch.StartNew();
-        BuildingHandler.Main.StartResync(buildEntities);
-        yield return UpdateEntities<Base, BuildEntity>(buildEntities.Keys.ToList(), OverwriteBase, IsInCloseProximity).OnYieldError(exception => Log.Error(exception, "Encountered an exception while resyncing BuildEntities"));
+        BuildingHandler.Main.StartResync(buildEntities, partial);
+        yield return UpdateEntities<Base, BuildEntity>(buildEntities.Keys.ToList(), OverwriteBase, IsInCloseProximity, partial).OnYieldError(exception => Log.Error(exception, "Encountered an exception while resyncing BuildEntities"));
 
-        BuildingHandler.Main.StartResync(moduleEntities);
-        yield return UpdateEntities<Constructable, ModuleEntity>(moduleEntities.Keys.ToList(), OverwriteModule, IsInCloseProximity).OnYieldError(exception => Log.Error(exception, "Encountered an exception while resyncing ModuleEntities"));
+        if (!partial || moduleEntities.Count > 0)
+        {
+            BuildingHandler.Main.StartResync(moduleEntities, partial);
+            yield return UpdateEntities<Constructable, ModuleEntity>(moduleEntities.Keys.ToList(), OverwriteModule, IsInCloseProximity, partial).OnYieldError(exception => Log.Error(exception, "Encountered an exception while resyncing ModuleEntities"));
+        }
         BuildingHandler.Main.StopResync();
+        foreach (BuildEntity buildEntity in buildEntities.Keys)
+        {
+            BuildingHandler.Main.BaseResynced(buildEntity.Id);
+        }
         // Updates received during the resync were kept for the pieces being rebuilt; none of them may outlive it
         entityMetadataManager.ClearNewerMetadata();
 
@@ -101,7 +109,7 @@ internal sealed class BuildingResyncProcessor(Entities entities, EntityMetadataM
     /// <param name="correspondingPredicate">
     ///     Predicate to determine if an entity can overwrite the GameObject of the provided component.
     /// </param>
-    private IEnumerator UpdateEntities<C, E>(List<E> entitiesToUpdate, Func<C, E, IEnumerator> overwrite, Func<E, C, bool> correspondingPredicate) where C : Component where E : GlobalRootEntity
+    private IEnumerator UpdateEntities<C, E>(List<E> entitiesToUpdate, Func<C, E, IEnumerator> overwrite, Func<E, C, bool> correspondingPredicate, bool partial) where C : Component where E : GlobalRootEntity
     {
         List<C> unmarkedComponents = new();
         Dictionary<NitroxId, E> entitiesToUpdateById = entitiesToUpdate.ToDictionary(e => e.Id);
@@ -120,11 +128,22 @@ internal sealed class BuildingResyncProcessor(Entities entities, EntityMetadataM
             }
         }
 
+        if (partial)
+        {
+            // Only the named entities are concerned; the player's others are not wrong, just not part of this resync
+            unmarkedComponents.Clear();
+        }
+
         for (int i = entitiesToUpdate.Count - 1; i >= 0; i--)
         {
             E entity = entitiesToUpdate[i];
             C associatedComponent = unmarkedComponents.Find(c =>
                                                                 correspondingPredicate(entity, c));
+            if (!associatedComponent)
+            {
+                // Nothing of ours stands for it: it is spawned below
+                continue;
+            }
             yield return overwrite(associatedComponent, entity).OnYieldError(Log.Error);
 
             unmarkedComponents.Remove(associatedComponent);
@@ -135,6 +154,22 @@ internal sealed class BuildingResyncProcessor(Entities entities, EntityMetadataM
         {
             Log.Info($"[{typeof(E)} RESYNC] Destroyed GameObject {unmarkedComponents[i].gameObject}");
             GameObject.Destroy(unmarkedComponents[i].gameObject);
+        }
+        // What we have under the id is something else (a base that became a ghost here only, say): it makes way
+        bool destroyedStandIns = false;
+        foreach (E entity in entitiesToUpdate)
+        {
+            if (NitroxEntity.TryGetObjectFrom(entity.Id, out GameObject standIn))
+            {
+                Log.Info($"[{typeof(E)} RESYNC] Destroyed {standIn} standing in for entity {entity.Id}");
+                NitroxEntity.RemoveFrom(standIn);
+                GameObject.Destroy(standIn);
+                destroyedStandIns = true;
+            }
+        }
+        if (destroyedStandIns)
+        {
+            yield return Yielders.WaitForEndOfFrame;
         }
         foreach (E entity in entitiesToUpdate)
         {
@@ -167,7 +202,13 @@ internal sealed class BuildingResyncProcessor(Entities entities, EntityMetadataM
             Log.Warn($"[Base RESYNC] Base {buildEntity.Id} was destroyed while it was being restored");
             yield break;
         }
+        // SetupBase doesn't apply the base's own metadata (its flood state), unlike the regular entity spawn path.
+        entityMetadataManager.ApplyMetadata(@base.gameObject, buildEntity.Metadata);
         yield return MoonpoolManager.RestoreMoonpools(buildEntity.ChildEntities.OfType<MoonpoolEntity>(), @base);
+        if (@base)
+        {
+            BulkheadDoorManager.RestoreDoors(buildEntity.ChildEntities.OfType<BulkheadDoorEntity>(), @base);
+        }
         if (!@base)
         {
             Log.Warn($"[Base RESYNC] Base {buildEntity.Id} was destroyed before player restoration");

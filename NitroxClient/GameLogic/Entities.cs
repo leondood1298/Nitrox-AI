@@ -45,7 +45,8 @@ namespace NitroxClient.GameLogic
         private float timeUntilNextYieldSeconds;
         public bool ShouldSkipFrame => Time.realtimeSinceStartup >= timeUntilNextYieldSeconds;
 
-        public Entities(IPacketSender packetSender, ThrottledPacketSender throttledPacketSender, EntityMetadataManager entityMetadataManager, PlayerManager playerManager, LocalPlayer localPlayer, LiveMixinManager liveMixinManager, TimeManager timeManager, SimulationOwnership simulationOwnership, Terrain terrain)
+        public Entities(IPacketSender packetSender, ThrottledPacketSender throttledPacketSender, EntityMetadataManager entityMetadataManager, PlayerManager playerManager, LocalPlayer localPlayer, LiveMixinManager liveMixinManager, TimeManager timeManager, SimulationOwnership simulationOwnership, Terrain terrain,
+                        MobileVehicleBay mobileVehicleBay, LavaLarvae lavaLarvae)
         {
             this.packetSender = packetSender;
             this.throttledPacketSender = throttledPacketSender;
@@ -68,14 +69,14 @@ namespace NitroxClient.GameLogic
             entitySpawnersByType[typeof(EscapePodEntity)] = new EscapePodEntitySpawner(localPlayer);
             entitySpawnersByType[typeof(EscapePodPowerCellEntity)] = new EscapePodPowerCellEntitySpawner(entityMetadataManager);
             entitySpawnersByType[typeof(PlayerEntity)] = new PlayerEntitySpawner(playerManager, localPlayer, this);
-            entitySpawnersByType[typeof(VehicleEntity)] = new VehicleEntitySpawner();
+            entitySpawnersByType[typeof(VehicleEntity)] = new VehicleEntitySpawner(mobileVehicleBay, lavaLarvae);
             entitySpawnersByType[typeof(SerializedWorldEntity)] = entitySpawnersByType[typeof(WorldEntity)];
             entitySpawnersByType[typeof(GlobalRootEntity)] = new GlobalRootEntitySpawner();
             entitySpawnersByType[typeof(BaseLeakEntity)] = new BaseLeakEntitySpawner(liveMixinManager);
             entitySpawnersByType[typeof(BuildEntity)] = new BuildEntitySpawner(this, (BaseLeakEntitySpawner)entitySpawnersByType[typeof(BaseLeakEntity)], entityMetadataManager);
             entitySpawnersByType[typeof(RadiationLeakEntity)] = new RadiationLeakEntitySpawner(timeManager);
             entitySpawnersByType[typeof(ModuleEntity)] = new ModuleEntitySpawner(this, entityMetadataManager);
-            entitySpawnersByType[typeof(GhostEntity)] = new GhostEntitySpawner();
+            entitySpawnersByType[typeof(GhostEntity)] = new GhostEntitySpawner(this);
             entitySpawnersByType[typeof(OxygenPipeEntity)] = new OxygenPipeEntitySpawner((WorldEntitySpawner)entitySpawnersByType[typeof(WorldEntity)]);
             entitySpawnersByType[typeof(PlacedWorldEntity)] = new PlacedWorldEntitySpawner((WorldEntitySpawner)entitySpawnersByType[typeof(WorldEntity)]);
             entitySpawnersByType[typeof(InteriorPieceEntity)] = new InteriorPieceEntitySpawner(this, entityMetadataManager);
@@ -126,12 +127,31 @@ namespace NitroxClient.GameLogic
 
         public void BroadcastMetadataUpdateThrottled(NitroxId id, EntityMetadata metadata, float throttleTime = 0.2f)
         {
-            throttledPacketSender.SendThrottled(new EntityMetadataUpdate(id, metadata), packet => packet.Id, throttleTime);
+            // A creature's infection, leash and size updates share this slot: they are merged, not replaced
+            throttledPacketSender.SendThrottled(new EntityMetadataUpdate(id, metadata), packet => packet.Id, throttleTime, CreatureMetadataUpdates.Merge);
         }
 
-        public void BroadcastEntitySpawnedByClient(Entity entity, bool requireRespawn = false)
+        /// <summary>
+        ///     Sends an update at once, in place of one still waiting to be throttled for the same entity, which would
+        ///     otherwise come after it and undo it. What only the waiting one carried is kept (see <see cref="CreatureMetadataUpdates" />).
+        /// </summary>
+        public void BroadcastMetadataUpdateNow(NitroxId id, EntityMetadata metadata)
         {
-            packetSender.Send(new EntitySpawnedByClient(entity, requireRespawn));
+            EntityMetadataUpdate update = new(id, metadata);
+            if (throttledPacketSender.TryTakePendingPacket(id, out EntityMetadataUpdate pending))
+            {
+                update = CreatureMetadataUpdates.Merge(pending, update);
+            }
+            packetSender.Send(update);
+        }
+
+        /// <param name="requireSimulation">
+        ///     False for an entity nobody needs to simulate. The server then gives it to nobody; otherwise it gives it to
+        ///     this player and tells it so.
+        /// </param>
+        public void BroadcastEntitySpawnedByClient(Entity entity, bool requireRespawn = false, bool requireSimulation = true)
+        {
+            packetSender.Send(new EntitySpawnedByClient(entity, requireRespawn, requireSimulation));
         }
 
         private IEnumerator SpawnNewEntities(bool coldStart = false)
@@ -299,8 +319,17 @@ namespace NitroxClient.GameLogic
             }
             if (gameObject.TryGetComponent(out Pickupable pickupable))
             {
-                // Running this now means it won't get ran in OnDestroy() at the end of the frame, so no packets get sent
-                pickupable.SetInventoryItem(null);
+                // Running this now means it won't get ran in OnDestroy() at the end of the frame, so no packets get sent.
+                // Taking the item out of its container tells the game's own listeners (an equipment's patch, a tool's
+                // battery slot), which would report the item as unequipped, moved or destroyed: what is destroyed here
+                // was already decided elsewhere.
+                using (PacketSuppressor<EntityDestroyed>.Suppress())
+                using (PacketSuppressor<EntityReparented>.Suppress())
+                using (PacketSuppressor<EntitySpawnedByClient>.Suppress())
+                using (PacketSuppressor<PickupItem>.Suppress())
+                {
+                    pickupable.SetInventoryItem(null);
+                }
             }
 
             UnityEngine.Object.Destroy(gameObject);

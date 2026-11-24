@@ -4,6 +4,7 @@ using Nitrox.Server.Subnautica.Models.Commands.Core;
 
 namespace Nitrox.Server.Subnautica.Models.Commands;
 
+[RequiresPermission(Perms.MODERATOR)]
 internal sealed class PromoteCommand : ICommandHandler<Player, Perms>
 {
     [Description("Sets specific permissions to a user")]
@@ -16,10 +17,11 @@ internal sealed class PromoteCommand : ICommandHandler<Player, Perms>
         }
         if (context.Permissions < newPerms)
         {
-            await context.ReplyAsync($"Your permissions ({context.Permissions}) must be higher than the perms you want to assign ({newPerms})");
+            await context.ReplyAsync($"Your permissions ({context.Permissions}) must be at least the perms you want to assign ({newPerms})");
             return;
         }
-        if (context.Permissions < targetPlayer.Permissions)
+        // Like deop: a player of the same rank is out of reach, so moderators cannot strip each other.
+        if (context.Permissions <= targetPlayer.Permissions)
         {
             await context.ReplyAsync($"You're not allowed to update {targetPlayer.Name}\'s permissions");
             return;

@@ -1,3 +1,4 @@
+using System.Linq;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
@@ -8,10 +9,14 @@ using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
-internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager, EntityRegistry entityRegistry, SimulationOwnershipData simulationOwnershipData, ScannerRoomManager scannerRoomManager, BasePowerManager basePowerManager, ILogger<EntityMetadataUpdateProcessor> logger) : IAuthPacketProcessor<EntityMetadataUpdate>
+internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager, EntityRegistry entityRegistry, SimulationOwnershipData simulationOwnershipData, ScannerRoomManager scannerRoomManager, BasePowerManager basePowerManager,
+    WorldEntityManager worldEntityManager, EntitySimulation entitySimulation, ItemClaims itemClaims, ILogger<EntityMetadataUpdateProcessor> logger) : IAuthPacketProcessor<EntityMetadataUpdate>
 {
+    private readonly WorldEntityManager worldEntityManager = worldEntityManager;
+    private readonly EntitySimulation entitySimulation = entitySimulation;
     private readonly PlayerManager playerManager = playerManager;
     private readonly EntityRegistry entityRegistry = entityRegistry;
+    private readonly ItemClaims itemClaims = itemClaims;
     private readonly ILogger<EntityMetadataUpdateProcessor> logger = logger;
 
     public async Task Process(AuthProcessorContext context, EntityMetadataUpdate packet)
@@ -36,12 +41,21 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
             return;
         }
 
+        if (packet.NewValue is CyclopsMetadata requestedCyclops)
+        {
+            await ProcessCyclopsMetadataAsync(context, entity, requestedCyclops);
+            return;
+        }
+
         if ((GateEscapePodMetadata(context.Sender, entity, packet.NewValue) ??
              GatePowerMetadata(context.Sender, entity, packet.NewValue) ??
              GateScannerRoomMetadata(context.Sender, entity, packet.NewValue) ??
              GateCreatureMetadata(context.Sender, entity, packet.NewValue) ??
              GateFiltrationMachineMetadata(context.Sender, entity, packet.NewValue) ??
-             GateTimeCapsuleMetadata(context.Sender, entity, packet.NewValue)) is { } result)
+             GateTimeCapsuleMetadata(context.Sender, entity, packet.NewValue) ??
+             GatePictureFrameMetadata(context.Sender, entity, packet.NewValue) ??
+             GateDrillableMetadata(context.Sender, entity, packet.NewValue) ??
+             GateCrafterMetadata(context.Sender, entity, packet.NewValue)) is { } result)
         {
             await SendResultAsync(context, entity, result);
             return;
@@ -171,6 +185,112 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
     }
 
     /// <summary>
+    ///     A frame's picture is set by the server when it keeps an upload (see <see cref="PictureFrameUploadProcessor" />),
+    ///     never by a player's update: that could name a picture the world does not hold, or one beyond its room.
+    /// </summary>
+    /// <returns>Null when the update has nothing to do with a picture frame.</returns>
+    private MetadataUpdateResult? GatePictureFrameMetadata(Player sender, Entity entity, EntityMetadata metadata)
+    {
+        if (metadata is not PictureFrameMetadata && entity.Metadata is not PictureFrameMetadata)
+        {
+            return null;
+        }
+        logger.ZLogWarningOnce($"Player {sender.Name} tried setting the picture of {entity.Id} with {metadata.GetType().Name}");
+        return MetadataUpdateResult.Reject;
+    }
+
+    /// <summary>
+    ///     A deposit's chunks only lose health, whoever drills them (see <see cref="DrillableMetadataAuthority" />). A sender
+    ///     whose copy still had a chunk another player broke gets the merged state.
+    /// </summary>
+    /// <returns>Null when the update is no drilling report.</returns>
+    private MetadataUpdateResult? GateDrillableMetadata(Player sender, Entity entity, EntityMetadata metadata)
+    {
+        if (metadata is not DrillableMetadata requested)
+        {
+            return null;
+        }
+        // Only the ion cube deposit of the Primary Containment Facility is restored by the game; it is a child of the facility
+        if (DrillableMetadataAuthority.Merge(entity.Metadata as DrillableMetadata, requested, entity is PathBasedChildEntity) is not { } accepted)
+        {
+            logger.ZLogWarningOnce($"Player {sender.Name} sent drilling state with another number of chunks for {entity.Id}");
+            return MetadataUpdateResult.Reject;
+        }
+        entity.Metadata = accepted;
+        return DrillableMetadataAuthority.SenderIsBehind(requested, accepted) ? MetadataUpdateResult.AcceptAndEcho(accepted) : MetadataUpdateResult.Accept(accepted);
+    }
+
+    /// <summary>
+    ///     A Cyclops' helm controls belong to its pilot, its hull to its simulating player (see
+    ///     <see cref="CyclopsMetadataAuthority" />). A sender whose helm controls were not taken gets the kept ones back.
+    ///     When the Cyclops is destroyed, the vehicles docked in it go with it, as in the game, also in the saved world.
+    /// </summary>
+    private async Task ProcessCyclopsMetadataAsync(AuthProcessorContext context, Entity cyclops, CyclopsMetadata requested)
+    {
+        if (cyclops is not VehicleEntity)
+        {
+            logger.ZLogWarningOnce($"Player {context.Sender.Name} tried applying Cyclops metadata to {cyclops.GetType().Name} {cyclops.Id}");
+            return;
+        }
+
+        CyclopsMetadata? stored = cyclops.Metadata as CyclopsMetadata;
+        Player? simulator = simulationOwnershipData.GetPlayerForLock(cyclops.Id);
+        bool senderSimulates = simulator == null || simulator == context.Sender;
+        Player? pilot = playerManager.GetConnectedPlayers().FirstOrDefault(player => player.PlayerContext?.DrivingVehicle == cyclops.Id);
+        bool senderControlsHelm = pilot == null ? senderSimulates : pilot == context.Sender;
+
+        CyclopsMetadata accepted = CyclopsMetadataAuthority.Merge(stored, requested, senderSimulates, senderControlsHelm);
+        cyclops.Metadata = accepted;
+        await SendUpdateToVisiblePlayersAsync(context, new EntityMetadataUpdate(cyclops.Id, accepted), cyclops, CyclopsMetadataAuthority.HelmWasRefused(requested, accepted));
+
+        if (CyclopsMetadataAuthority.IsNewlyDestroyed(stored, accepted))
+        {
+            await DestroyDockedVehiclesAsync(context, cyclops);
+        }
+    }
+
+    private async Task DestroyDockedVehiclesAsync(AuthProcessorContext context, Entity cyclops)
+    {
+        foreach (VehicleEntity docked in CyclopsMetadataAuthority.FindDockedVehicles(cyclops))
+        {
+            entitySimulation.EntityDestroyed(docked.Id);
+            worldEntityManager.MovePlayerChildrenToRoot(docked);
+            if (!worldEntityManager.TryDestroyEntity(docked.Id, out _))
+            {
+                continue;
+            }
+            logger.ZLogInformation($"Vehicle {docked.Id} was destroyed with the Cyclops {cyclops.Id} it was docked in");
+            // Every game already lost it to the Cyclops' "OnKill"; this keeps a copy from staying anywhere
+            foreach (Player player in playerManager.GetConnectedPlayers())
+            {
+                await context.SendAsync(new EntityDestroyed(docked.Id), player.SessionId);
+            }
+        }
+    }
+
+    /// <summary>
+    ///     A fabricator runs one craft at a time, and its result is taken by one player (see <see cref="ItemClaims" />): a
+    ///     game that started a second craft, or took a result that was not its player's, is given the fabricator's state
+    ///     back.
+    /// </summary>
+    /// <returns>Null when the update is no fabricator state.</returns>
+    private MetadataUpdateResult? GateCrafterMetadata(Player sender, Entity entity, EntityMetadata metadata)
+    {
+        if (metadata is not CrafterMetadata update)
+        {
+            return null;
+        }
+        CrafterMetadata? stored = entity.Metadata as CrafterMetadata;
+        if (itemClaims.AcceptCrafterUpdate(entity.Id, stored, update, sender))
+        {
+            entity.Metadata = update;
+            return MetadataUpdateResult.Accept(update);
+        }
+        logger.ZLogInformation($"Player {sender.Name} changed fabricator {entity.Id} while it was not theirs to change: {update}");
+        return stored != null ? MetadataUpdateResult.RejectAndCorrect(stored) : MetadataUpdateResult.Reject;
+    }
+
+    /// <summary>
     ///     Sends what a manager decided about an update. The manager has already stored what it accepted.
     /// </summary>
     private async Task SendResultAsync(AuthProcessorContext context, Entity entity, MetadataUpdateResult result)
@@ -214,10 +334,10 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
             return true;
         }
 
-        if (metadata is CyclopsMetadata requestedCyclops)
+        if (metadata is VehicleMetadata requestedVehicle)
         {
             Player? simulator = simulationOwnershipData.GetPlayerForLock(entity.Id);
-            metadata = CyclopsMetadataAuthority.Merge(entity.Metadata as CyclopsMetadata, requestedCyclops, simulator == null || simulator == sendingPlayer);
+            metadata = VehicleMetadataAuthority.Merge(entity.Metadata as VehicleMetadata, requestedVehicle, simulator == null || simulator == sendingPlayer);
             return true;
         }
 
@@ -233,8 +353,8 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
     }
 
     /// <summary>
-    ///     Any player may click a cabinet or see its medkit appear. Two players who take the medkit at the same moment may
-    ///     both get one; the server does not decide between them.
+    ///     Any player may click a cabinet or see its medkit appear. Of two players who take the medkit at the same moment,
+    ///     the first keeps it (see <see cref="ItemClaims" />); the state they both send is the same.
     /// </summary>
     private bool ProcessMedicalCabinetMetadata(Player sendingPlayer, Entity entity)
     {

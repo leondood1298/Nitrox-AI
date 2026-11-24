@@ -77,7 +77,7 @@ public sealed class NitroxNetworkProtocolIntegrationTest
         ushort port = GetAvailableUdpPort();
         string otherEpochKey = $"nitrox-ai/{NitroxNetworkProtocol.EPOCH + 1}";
         EventBasedNetListener listener = new();
-        NetManager server = new(listener, NitroxEnvironment.IsReleaseMode ? new Crc32cLayer() : null)
+        NetManager server = new(listener, new Crc32cLayer())
         {
             UnsyncedEvents = true
         };
@@ -122,7 +122,7 @@ public sealed class NitroxNetworkProtocolIntegrationTest
     {
         TaskCompletionSource<RawConnectionResult> completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
         EventBasedNetListener listener = new();
-        NetManager client = new(listener, NitroxEnvironment.IsReleaseMode ? new Crc32cLayer() : null)
+        NetManager client = new(listener, new Crc32cLayer())
         {
             IPv6Enabled = true,
             UnsyncedEvents = true

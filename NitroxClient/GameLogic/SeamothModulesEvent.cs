@@ -23,8 +23,8 @@ namespace NitroxClient.GameLogic
 
             if (techType == TechType.SeamothElectricalDefense)
             {
-                Transform aimingTransform = Player.main.camRoot.GetAimingTransform();
-                SeamothModulesAction changed = new SeamothModulesAction(techType.ToDto(), slotID, id, aimingTransform.forward.ToDto(), aimingTransform.rotation.ToDto());
+                // Read before SeaMoth.OnUpgradeModuleUse runs: the game resets the slot's charge once the module is used
+                SeamothModulesAction changed = new(techType.ToDto(), slotID, id, instance.quickSlotCharge[slotID], instance.GetSlotCharge(slotID));
                 packetSender.Send(changed);
             }
         }

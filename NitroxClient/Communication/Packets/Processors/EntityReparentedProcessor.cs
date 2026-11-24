@@ -26,7 +26,11 @@ internal sealed class EntityReparentedProcessor(Entities entities) : IClientPack
             return Task.CompletedTask;
         }
 
-        GameObject newParent = NitroxEntity.RequireObjectFrom(packet.NewParentId);
+        if (!NitroxEntity.TryGetObjectFrom(packet.NewParentId, out GameObject newParent))
+        {
+            Log.Warn($"[{nameof(EntityReparentedProcessor)}] New parent {packet.NewParentId} of {packet.Id} is not loaded here");
+            return Task.CompletedTask;
+        }
 
         if (entity.Value.TryGetComponent(out Pickupable pickupable))
         {
@@ -84,8 +88,15 @@ internal sealed class EntityReparentedProcessor(Entities entities) : IClientPack
         Pickupable pickupable = entity.RequireComponent<Pickupable>();
 
         ItemsContainer container = opContainer.Value;
+        // A packet replayed after the loading screen may describe a move the snapshot already has
+        if (IsAlreadyIn(pickupable.inventoryItem?.container, container))
+        {
+            return;
+        }
         container.UnsafeAdd(new InventoryItem(pickupable));
     }
+
+    internal static bool IsAlreadyIn(IItemsContainer? currentContainer, IItemsContainer newContainer) => currentContainer != null && ReferenceEquals(currentContainer, newContainer);
 
     private void PerformDefaultReparenting(GameObject entity, GameObject newParent)
     {

@@ -7,8 +7,8 @@ using Nitrox.Model.Subnautica.Packets;
 namespace NitroxPatcher.Patches.Dynamic;
 
 /// <summary>
-/// Prevents non simulating players from running locally <see cref="RangedAttackLastTarget.StartCharging"/>.
-/// Broadcasts this event on the simulating player.
+/// Broadcasts <see cref="RangedAttackLastTarget.StartCharging"/> from the simulating player. Copies only charge when told:
+/// they never perform the attack themselves (Creature_UpdateBehaviour_Patch).
 /// </summary>
 public sealed partial class RangedAttackLastTarget_StartCharging_Patch : NitroxPatch, IDynamicPatch
 {
@@ -20,19 +20,13 @@ public sealed partial class RangedAttackLastTarget_StartCharging_Patch : NitroxP
     }
 
     /// <summary>
-    /// Broadcasts a range attack CHARGING or CASTING state if the attacking creature is whitelisted, valid and if the target is valid.
+    /// Broadcasts a range attack CHARGING or CASTING state if the attacking creature is simulated here and the target is valid.
     /// </summary>
     /// <returns>
     /// true if the broadcast was done (all conditions met)
     /// </returns>
     public static void BroadcastRangedAttack(RangedAttackLastTarget attackBehaviour, RangedAttackLastTargetUpdate.ActionState actionState)
     {
-        // should action be broadcasted
-        if (!Resolve<AI>().IsCreatureWhitelisted(attackBehaviour.creature))
-        {
-            return;
-        }
-
         // Attacker object validity
         if (!attackBehaviour.TryGetNitroxId(out NitroxId creatureId) || !Resolve<SimulationOwnership>().HasAnyLockType(creatureId))
         {

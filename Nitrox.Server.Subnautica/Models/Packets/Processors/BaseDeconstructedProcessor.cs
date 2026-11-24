@@ -8,7 +8,7 @@ internal sealed class BaseDeconstructedProcessor(BuildingManager buildingManager
 {
     public override async Task Process(AuthProcessorContext context, BaseDeconstructed packet)
     {
-        if (BuildingManager.ReplaceBaseByGhost(packet))
+        if (BuildingManager.ReplaceBaseByGhost(context.Sender, packet))
         {
             await scannerRoomManager.BaseDeconstructedAsync(context.Sender, packet.FormerBaseId);
             await context.SendToOthersAsync(packet);

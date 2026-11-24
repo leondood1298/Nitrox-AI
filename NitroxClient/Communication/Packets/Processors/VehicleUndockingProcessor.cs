@@ -15,11 +15,13 @@ internal sealed class VehicleUndockingProcessor(Vehicles vehicles, PlayerManager
 
     public Task Process(ClientProcessorContext context, VehicleUndocking packet)
     {
-        GameObject vehicleGo = NitroxEntity.RequireObjectFrom(packet.VehicleId);
-        GameObject vehicleDockingBayGo = NitroxEntity.RequireObjectFrom(packet.DockId);
-
-        Vehicle vehicle = vehicleGo.RequireComponent<Vehicle>();
-        VehicleDockingBay vehicleDockingBay = vehicleDockingBayGo.RequireComponent<VehicleDockingBay>();
+        // The vehicle or its base may not be loaded here (out of range, or no longer there when replayed after loading)
+        if (!NitroxEntity.TryGetComponentFrom(packet.VehicleId, out Vehicle vehicle) || !NitroxEntity.TryGetComponentFrom(packet.DockId, out VehicleDockingBay vehicleDockingBay))
+        {
+            Log.Warn($"[{nameof(VehicleUndockingProcessor)}] Vehicle {packet.VehicleId} or dock {packet.DockId} is not loaded here");
+            return Task.CompletedTask;
+        }
+        GameObject vehicleGo = vehicle.gameObject;
 
         using (PacketSuppressor<VehicleUndocking>.Suppress())
         {
@@ -43,6 +45,12 @@ internal sealed class VehicleUndockingProcessor(Vehicles vehicles, PlayerManager
 
     private void StartVehicleUndocking(VehicleUndocking packet, GameObject vehicleGo, Vehicle vehicle, VehicleDockingBay vehicleDockingBay)
     {
+        // A docking still played here is cancelled: the vehicle is leaving
+        if (vehicles.EndRemoteDocking(vehicle) || vehicleDockingBay.GetDockedVehicle() != vehicle)
+        {
+            // Not docked in this game (e.g. replayed after loading a snapshot that shows it free): nothing to open
+            return;
+        }
         vehicleDockingBay.subRoot.BroadcastMessage("OnLaunchBayOpening", SendMessageOptions.DontRequireReceiver);
         SkyEnvironmentChanged.Broadcast(vehicleGo, (GameObject)null);
 
@@ -63,13 +71,22 @@ internal sealed class VehicleUndockingProcessor(Vehicles vehicles, PlayerManager
 
     private void FinishVehicleUndocking(VehicleUndocking packet, Vehicle vehicle, VehicleDockingBay vehicleDockingBay)
     {
-        if (vehicleDockingBay.GetSubRoot().isCyclops)
+        vehicles.EndRemoteDocking(vehicle);
+        // The bay may hold another vehicle here: when two vehicles docked into one bay at once, the server sends the
+        // later one out (also to its own player) while the first one keeps the bay
+        if (vehicleDockingBay.GetDockedVehicle() == vehicle)
         {
-            vehicleDockingBay.SetVehicleUndocked();
+            if (vehicleDockingBay.GetSubRoot().isCyclops)
+            {
+                vehicleDockingBay.SetVehicleUndocked();
+            }
+            vehicleDockingBay.dockedVehicle = null;
+            vehicleDockingBay.CancelInvoke(nameof(VehicleDockingBay.RepairVehicle));
         }
-        vehicleDockingBay.dockedVehicle = null;
-        vehicleDockingBay.CancelInvoke(nameof(VehicleDockingBay.RepairVehicle));
-        vehicle.docked = false;
+        if (vehicle.docked)
+        {
+            vehicle.docked = false;
+        }
         if (remotePlayerManager.TryFind(packet.SessionId, out RemotePlayer player))
         {
             // Sometimes the player is not set accordingly which stretches the player's model instead of putting them in place

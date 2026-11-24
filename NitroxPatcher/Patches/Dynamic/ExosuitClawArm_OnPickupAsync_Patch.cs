@@ -1,6 +1,5 @@
 using System.Collections;
 using System.Reflection;
-using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
 using NitroxClient.GameLogic;
 
@@ -15,15 +14,11 @@ public sealed partial class ExosuitClawArm_OnPickupAsync_Patch : NitroxPatch, ID
         if (__instance.exosuit.TryGetIdOrWarn(out NitroxId id))
         {
             Pickupable pickupable = __instance.exosuit.GetActiveTarget().GetComponent<Pickupable>();
-            PickPrefab pickPrefab = __instance.exosuit.GetActiveTarget().GetComponent<PickPrefab>();
 
+            // A fruit or sample (PickPrefab) is no item itself: the item the game makes for it is reported by PickPrefab_AddToContainerAsync_Patch
             if (pickupable != null && pickupable.isPickupable && __instance.exosuit.storageContainer.container.HasRoomFor(pickupable))
             {
-                NitroxServiceLocator.LocateService<Items>().PickedUp(pickupable.gameObject, pickupable.GetTechType(), id);
-            }
-            else if (pickPrefab != null)
-            {
-                NitroxServiceLocator.LocateService<Items>().PickedUp(pickPrefab.gameObject, pickPrefab.pickTech, id);
+                Resolve<Items>().PickedUp(pickupable.gameObject, pickupable.GetTechType(), id);
             }
         }
 

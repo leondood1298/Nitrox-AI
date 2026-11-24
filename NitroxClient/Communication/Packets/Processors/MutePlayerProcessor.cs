@@ -21,7 +21,8 @@ internal sealed class MutePlayerProcessor(PlayerManager playerManager) : IClient
         {
             player.Value.PlayerContext.IsMuted = packet.Muted;
         }
-        OnPlayerMuted(packet.SessionId, packet.Muted);
+        // Only the player list's entries listen, and there are none while the player is alone
+        OnPlayerMuted?.Invoke(packet.SessionId, packet.Muted);
         return Task.CompletedTask;
     }
 }

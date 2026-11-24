@@ -24,26 +24,42 @@ internal sealed class SessionManager(ISessionCleaner.Trigger sessionCleanTrigger
     /// <summary>
     ///     The next session id. Returns a prior id if <see cref="returnedSessionIds" /> are available.
     /// </summary>
+    /// <exception cref="InvalidOperationException">Every id is in use or waiting to be reused.</exception>
     private SessionId NextSessionId
     {
         get
         {
-            SessionId id = 0;
             lock (sessionLock)
             {
                 if (returnedSessionIds.Count > 0 && returnedSessionIds.TryPeek(out (TimeSpan ReturnedTimeStamp, SessionId Id) entry) && (time.Elapsed - entry.ReturnedTimeStamp).TotalMinutes >= SessionId.DELAY_REUSE_MINUTES)
                 {
-                    id = returnedSessionIds.Dequeue().Id;
+                    SessionId reused = returnedSessionIds.Dequeue().Id;
+                    waitingSessionIds.Remove(reused);
+                    return reused;
                 }
-                if (id == 0)
+                // The counter wraps after 65535 connections, which a script can open within the reuse delay. Wrapping
+                // must neither hand out 0 (the server's own id) nor an id still in use or still waiting out its delay.
+                for (int tries = 0; tries < ushort.MaxValue; tries++)
                 {
-                    id = ++field;
+                    ushort next = (ushort)(nextFreshId % ushort.MaxValue + 1);
+                    nextFreshId = next;
+                    SessionId candidate = next;
+                    if (!sessions.ContainsKey(candidate) && !waitingSessionIds.Contains(candidate))
+                    {
+                        return candidate;
+                    }
                 }
             }
-            Debug.Assert(id > 0);
-            return id;
+            throw new InvalidOperationException("No session id is free");
         }
     }
+
+    private ushort nextFreshId;
+
+    /// <summary>
+    ///     The ids in <see cref="returnedSessionIds" />, to look them up without walking the queue.
+    /// </summary>
+    private readonly HashSet<SessionId> waitingSessionIds = [];
 
     public Session GetOrCreateSession(IPEndPoint endPoint)
     {
@@ -102,6 +118,7 @@ internal sealed class SessionManager(ISessionCleaner.Trigger sessionCleanTrigger
             sessionCountAfter = sessions.Count;
             sessionIdByEndpoint.Remove(ToKey(session.EndPoint));
             returnedSessionIds.Enqueue((time.Elapsed, session.Id));
+            waitingSessionIds.Add(session.Id);
         }
         logger.ZLogTrace($"Removing session #{sessionId}");
         await sessionCleanTrigger.InvokeAsync(new ISessionCleaner.Args(session, sessionCountAfter));

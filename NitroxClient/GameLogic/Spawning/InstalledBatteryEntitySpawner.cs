@@ -84,12 +84,23 @@ public class InstalledBatteryEntitySpawner : SyncEntitySpawner<InstalledBatteryE
 
     private void SetupObject(GameObject gameObject, EnergyMixin energyMixin)
     {
-        energyMixin.Initialize();
-        energyMixin.RestoreBattery();
-
+        // Nothing done here is this player's doing: a battery leaving the slot is not taken by them (ItemContainers.BatteryRemoved)
         using (PacketSuppressor<EntityReparented>.Suppress())
         using (PacketSuppressor<EntitySpawnedByClient>.Suppress())
         {
+            energyMixin.Initialize();
+            energyMixin.RestoreBattery();
+
+            // The server gives a slot to one battery. Another one still in it here is this game's own that lost the slot
+            // (its way back is on its way from the server) or one whose removal this game has not heard of: it is
+            // removed, else the slot would refuse the new one and leave it lying under the tool, out of reach.
+            InventoryItem occupant = energyMixin.batterySlot.storedItem;
+            if (occupant != null && occupant.item && occupant.item.gameObject != gameObject)
+            {
+                Log.Info($"Battery slot of {energyMixin.gameObject.GetFullHierarchyPath()} still held {occupant.item.GetTechType()}, removed for {gameObject.name}");
+                Entities.DestroyObject(occupant.item.gameObject);
+            }
+
             energyMixin.batterySlot.AddItem(new InventoryItem(gameObject.GetComponent<Pickupable>()));
         }
     }

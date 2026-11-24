@@ -16,6 +16,7 @@ using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.GameLogic.Bases;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.GameLogic.Entities.Spawning;
+using Nitrox.Server.Subnautica.Models.GameLogic.PictureFrames;
 using Nitrox.Server.Subnautica.Models.Logging.Redaction.Core;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
 using Nitrox.Server.Subnautica.Models.Packets.Processors;
@@ -169,6 +170,9 @@ internal static partial class ServiceCollectionExtensions
                     .AddSingleton<SleepManager>()
                     .AddSingleton<BedOccupancy>()
                     .AddSingleton<PlayerAnimationStates>()
+                    .AddSingleton<PlayerHandAndSeatStates>()
+                    .AddSingleton<PlayerDeaths>()
+                    .AddSingleton<WorldIdentity>()
                     .AddSingleton<StoryManager>()
                     .AddSingleton<StoryScheduler>()
                     .AddSingleton<SimulationOwnershipData>()
@@ -185,9 +189,12 @@ internal static partial class ServiceCollectionExtensions
                     .AddSingleton<ActiveTeleporters>()
                     .AddSingleton<RocketLaunchManager>()
                     .AddSingleton<CollectedTimeCapsules>()
+                    .AddSingleton<ItemClaims>()
                     .AddSingleton<BatchEntitySpawner>()
                     .AddSingleton<EntityRegistry>()
                     .AddSingleton<SessionSettings>()
+                    .AddSingleton<PictureFrameFiles>()
+                    .AddSingleton<PictureFrameStore>()
                     .AddSingleton<SubnauticaUweWorldEntityFactory>()
                     .AddSingleton<IEntityBootstrapperManager, SubnauticaEntityBootstrapperManager>()
                     .AddSingleton<EntitySpawnPointFactory, SubnauticaEntitySpawnPointFactory>();

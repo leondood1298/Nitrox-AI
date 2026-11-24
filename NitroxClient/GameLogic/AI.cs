@@ -14,6 +14,7 @@ namespace NitroxClient.GameLogic;
 public sealed class AI
 {
     private readonly IPacketSender packetSender;
+    private readonly SimulationOwnership simulationOwnership;
     private readonly Dictionary<Creature, CreatureAction> actions = [];
     private readonly Dictionary<string, Type> cachedCreatureActionTypeByFullName;
 
@@ -29,31 +30,6 @@ public sealed class AI
     ];
 
     /// <summary>
-    /// In the future, ensure all creatures are synced. We want each of them to be individually
-    /// checked (that all their actions are synced) before marking them as synced.
-    /// </summary>
-    private readonly HashSet<Type> syncedCreatureWhitelist =
-    [
-        typeof(ReaperLeviathan), typeof(SeaDragon), typeof(SeaTreader), typeof(GhostLeviathan),
-        // Predators whose only behaviour beyond swimming is to attack what they see. Judged from their classes, not yet
-        // confirmed in game: without this they can never bite a player who is not simulating them.
-        typeof(BoneShark), typeof(Biter), typeof(SpineEel), typeof(Shocker),
-        // Their other behaviour has its own sync: what a Stalker carries (StalkerShinyGrabs), a Sand Shark's burrow (SandSharkBurrows)
-        typeof(Stalker), typeof(SandShark)
-    ];
-
-    /// <summary>
-    ///     Synced creatures whose bites stay with their simulating player's game, which passes a bite on another player's
-    ///     body on to that player (<see cref="CreatureAttacksOnPlayers" />) and shows the bite on every game
-    ///     (<see cref="CreatureBites" />). Every game sees what they aim at and how they attack, but a bite happens where
-    ///     the simulating player saw it land.
-    /// </summary>
-    private readonly HashSet<Type> reportedBiteCreatures =
-    [
-        typeof(Stalker), typeof(SandShark)
-    ];
-
-    /// <summary>
     ///     A creature's action is repeated this often even if it did not change, for players who loaded the creature
     ///     after it was last sent.
     /// </summary>
@@ -61,24 +37,24 @@ public sealed class AI
 
     private readonly CreatureActionBroadcastFilter actionBroadcastFilter = new(ACTION_RESEND_SECONDS);
 
-    public AI(IPacketSender packetSender)
+    public AI(IPacketSender packetSender, SimulationOwnership simulationOwnership)
     {
         this.packetSender = packetSender;
+        this.simulationOwnership = simulationOwnership;
         Assembly assembly = Assembly.GetAssembly(typeof(CreatureAction));
         cachedCreatureActionTypeByFullName = assembly.GetTypes()
                                                      .Where(type => typeof(CreatureAction).IsAssignableFrom(type))
                                                      .ToDictionary(t => t.FullName, t => t);
     }
 
+    /// <summary>
+    ///     Tells the others which of the actions they replay (<see cref="IsReplayedAction" />) the creature does now, for
+    ///     every creature: only those show on another game, so any other action, or none (ChooseBestAction returns nothing
+    ///     while none of the creature's actions wants to run), is sent as none.
+    /// </summary>
     public void BroadcastNewAction(NitroxId creatureId, Creature creature, CreatureAction newAction)
     {
-        // ChooseBestAction returns nothing while none of the creature's actions wants to run.
-        if (!newAction || !syncedCreatureWhitelist.Contains(creature.GetType()))
-        {
-            return;
-        }
-
-        string actionTypeName = newAction.GetType().FullName;
+        string actionTypeName = newAction && IsReplayedAction(newAction.GetType()) ? newAction.GetType().FullName : CreatureActionBroadcastFilter.NO_ACTION;
         if (actionBroadcastFilter.ShouldSend(creatureId, actionTypeName, Time.realtimeSinceStartup))
         {
             packetSender.Send(new CreatureActionChanged(creatureId, actionTypeName));
@@ -91,11 +67,56 @@ public sealed class AI
         {
             return;
         }
-        if (cachedCreatureActionTypeByFullName.TryGetValue(creatureActionTypeName, out Type creatureActionType) &&
+        // Only the actions this game replays are kept; any other one means the creature does none of them now
+        if (cachedCreatureActionTypeByFullName.TryGetValue(creatureActionTypeName, out Type creatureActionType) && IsReplayedAction(creatureActionType) &&
             creature.TryGetComponent(creatureActionType, out Component component) && component is CreatureAction creatureAction)
         {
             actions[creature] = creatureAction;
         }
+        else
+        {
+            actions.Remove(creature);
+        }
+    }
+
+    /// <summary>
+    ///     Called where Creature.UpdateBehaviour starts, stops or performs an action.
+    /// </summary>
+    public bool MayRunAction(Creature creature, CreatureAction action, bool isPerform)
+    {
+        bool hasId = creature.TryGetNitroxId(out NitroxId creatureId);
+        return MayRunActionHere(hasId, hasId && simulationOwnership.HasAnyLockType(creatureId), IsReplayedAction(action.GetType()), isPerform);
+    }
+
+    /// <summary>
+    ///     A creature that is not shared (it has no id) and one this player simulates run every action. A copy of a creature
+    ///     another player simulates only starts and stops the actions it replays, which show the creature's pose; it never
+    ///     performs one, which would steer it away from where its simulating player moves it, or attack on its own.
+    /// </summary>
+    public static bool MayRunActionHere(bool hasId, bool simulatedLocally, bool actionReplayed, bool isPerform)
+    {
+        return !hasId || simulatedLocally || (actionReplayed && !isPerform);
+    }
+
+    /// <summary>
+    ///     Called before Creature.TryStartAction, by which the game starts an action out of turn (a fright, a hit, landing
+    ///     on the ground). Only a creature nobody shares and one this player simulates choose their actions; a copy of
+    ///     another player's creature is told which one it shows.
+    /// </summary>
+    public bool MayChooseAction(Creature creature)
+    {
+        bool hasId = creature.TryGetNitroxId(out NitroxId creatureId);
+        return MayChooseActionHere(hasId, hasId && simulationOwnership.HasAnyLockType(creatureId));
+    }
+
+    public static bool MayChooseActionHere(bool hasId, bool simulatedLocally)
+    {
+        return !hasId || simulatedLocally;
+    }
+
+    internal bool IsReplayedAction(Type actionType)
+    {
+        return creatureActionWhitelist.Contains(actionType);
     }
 
     public static void AggressiveWhenSeeTargetChanged(NitroxId creatureId, NitroxId targetId, bool locked, float aggressionAmount)
@@ -192,44 +213,6 @@ public sealed class AI
             return false;
         }
         return true;
-    }
-
-    public bool IsCreatureActionWhitelisted(CreatureAction creatureAction)
-    {
-        return creatureActionWhitelist.Contains(creatureAction.GetType());
-    }
-
-    public bool IsCreatureWhitelisted(Creature creature)
-    {
-        return syncedCreatureWhitelist.Contains(creature.GetType());
-    }
-
-    /// <summary>
-    ///     True if the bitten player's own copy of this creature does the biting, which its synced target and actions
-    ///     make it do. False for the creatures whose bites the simulating player reports.
-    /// </summary>
-    public bool IsAttackReplayedByVictim(Creature creature)
-    {
-        return IsAttackReplayedByVictim(creature.GetType());
-    }
-
-    internal bool IsAttackReplayedByVictim(Type creatureType)
-    {
-        return syncedCreatureWhitelist.Contains(creatureType) && !reportedBiteCreatures.Contains(creatureType);
-    }
-
-    /// <summary>
-    ///     True if this creature's bites are shown on every game when its simulating player's game bites
-    ///     (<see cref="CreatureBites" />), instead of by each game's copy on its own.
-    /// </summary>
-    public bool AreBitesShownFromSimulatingPlayer(Creature creature)
-    {
-        return AreBitesShownFromSimulatingPlayer(creature.GetType());
-    }
-
-    internal bool AreBitesShownFromSimulatingPlayer(Type creatureType)
-    {
-        return syncedCreatureWhitelist.Contains(creatureType) && reportedBiteCreatures.Contains(creatureType);
     }
 
     /// <summary>

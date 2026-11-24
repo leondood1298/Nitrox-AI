@@ -101,11 +101,21 @@ internal sealed class BuildingManager
         return true;
     }
 
-    public bool ModifyConstructedAmount(ModifyConstructedAmount modifyConstructedAmount)
+    public bool ModifyConstructedAmount(Player player, ModifyConstructedAmount modifyConstructedAmount)
     {
         if (!entityRegistry.TryGetEntityById(modifyConstructedAmount.GhostId, out Entity entity))
         {
             logger.ZLogError($"Trying to modify the constructed amount of a non-registered object (GhostId: {modifyConstructedAmount.GhostId})");
+            return false;
+        }
+
+        // A built piece of a base keeps the id of the ghost it came from. A player whose deconstruction of that piece was
+        // refused (late operation) still has a ghost with this id and goes on unbuilding it; the server's piece is not a
+        // ghost and must not be removed by it, nor would the other players' games remove it.
+        if (IsBuiltBasePart(entity))
+        {
+            logger.ZLogWarning($"Ignoring a constructed amount from [{player.Name}] for {entity.GetType().Name} {entity.Id}, which is no ghost on the server");
+            NotifyPlayerDesync(player, entity is BuildEntity ? entity.Id : entity.ParentId);
             return false;
         }
 
@@ -147,6 +157,11 @@ internal sealed class BuildingManager
         return true;
     }
 
+    /// <summary>
+    ///     Whether the entity is a finished part of a base (or the base itself), which only the ordered building packets change.
+    /// </summary>
+    internal static bool IsBuiltBasePart(Entity entity) => entity is BuildEntity or InteriorPieceEntity or MapRoomEntity or MoonpoolEntity;
+
     public bool CreateBase(PlaceBase placeBase)
     {
         if (!entityRegistry.TryGetEntityById(placeBase.FormerGhostId, out Entity entity))
@@ -178,17 +193,17 @@ internal sealed class BuildingManager
 
     public bool UpdateBase(Player player, UpdateBase updateBase, out int operationId)
     {
-        if (!entityRegistry.TryGetEntityById<GhostEntity>(updateBase.FormerGhostId, out _))
+        if (!entityRegistry.TryGetEntityById(updateBase.FormerGhostId, out GhostEntity formerGhost))
         {
             logger.ZLogError($"Trying to place a base from a non-registered ghost (GhostId: {updateBase.FormerGhostId})");
-            NotifyPlayerDesync(player);
+            NotifyPlayerDesync(player, updateBase.BaseId);
             operationId = -1;
             return false;
         }
         if (!entityRegistry.TryGetEntityById(updateBase.BaseId, out BuildEntity buildEntity))
         {
             logger.ZLogError($"Trying to update a non-registered build (BaseId: {updateBase.BaseId})");
-            NotifyPlayerDesync(player);
+            NotifyPlayerDesync(player, updateBase.BaseId);
             operationId = -1;
             return false;
         }
@@ -196,7 +211,7 @@ internal sealed class BuildingManager
         if (deltaOperations != 0 && options.Value.SafeBuilding)
         {
             logger.ZLogWarning($"Ignoring an {nameof(UpdateBase)} packet from [{player.Name}] which is {Math.Abs(deltaOperations) + (deltaOperations > 0 ? " operations ahead" : " operations late")}");
-            NotifyPlayerDesync(player);
+            NotifyPlayerDesync(player, updateBase.BaseId);
             operationId = -1;
             return false;
         }
@@ -204,11 +219,12 @@ internal sealed class BuildingManager
         if (!ScannerRoomManager.IsValidRoomTopology(entityRegistry, updateBase))
         {
             logger.ZLogWarning($"Rejected invalid Scanner Room topology update for base {updateBase.BaseId} from [{player.Name}]");
-            NotifyPlayerDesync(player);
+            NotifyPlayerDesync(player, updateBase.BaseId);
             operationId = -1;
             return false;
         }
 
+        GiveBackModuleContents(formerGhost, updateBase.BuiltPieceEntity);
         worldEntityManager.RemoveGlobalRootEntity(updateBase.FormerGhostId);
         buildEntity.BaseData = updateBase.BaseData;
 
@@ -239,7 +255,8 @@ internal sealed class BuildingManager
 
         NitroxId transferFromId = updateBase.ChildrenTransfer.Item1;
         NitroxId transferToId = updateBase.ChildrenTransfer.Item2;
-        if (transferFromId != null && transferToId != null)
+        // A transfer is between water parks of the updated base; one naming another base's pieces is stale
+        if (transferFromId != null && transferToId != null && IsChildOf(transferFromId, updateBase.BaseId) && IsChildOf(transferToId, updateBase.BaseId))
         {
             // NB: we don't want certain entities to be transferred (e.g. planters)
             entityRegistry.TransferChildren(transferFromId, transferToId, entity => entity is not PlanterEntity);
@@ -260,15 +277,28 @@ internal sealed class BuildingManager
 
         foreach (NitroxId removedChildId in removedChildIds)
         {
-            if (entityRegistry.GetEntityById(removedChildId).HasValue)
+            if (!entityRegistry.TryGetEntityById(removedChildId, out InteriorPieceEntity removedWaterPark))
             {
-                worldEntityManager.RemoveGlobalRootEntity(removedChildId);
+                continue;
             }
+            // The merged one gave its fish to the other above. Another missing from the builder's list may only be
+            // missing from the builder's game (one that failed to spawn it): it is not removed with what lives in it.
+            if (removedChildId != transferFromId && !IsEmptyWaterPark(removedWaterPark))
+            {
+                logger.ZLogWarning($"[{player.Name}] did not list water park {removedChildId} of base {updateBase.BaseId}, which still holds {removedWaterPark.ChildEntities.Count} entities; keeping it");
+                continue;
+            }
+            worldEntityManager.RemoveGlobalRootEntity(removedChildId);
         }
         buildEntity.OperationId++;
         operationId = buildEntity.OperationId;
         return true;
     }
+
+    private static bool IsEmptyWaterPark(InteriorPieceEntity waterPark) =>
+        waterPark.ChildEntities.All(child => child is PlanterEntity && child.ChildEntities.Count == 0);
+
+    private bool IsChildOf(NitroxId entityId, NitroxId parentId) => entityRegistry.TryGetEntityById(entityId, out Entity entity) && entity.ParentId == parentId;
 
     /// <summary>
     /// Removes all children from the planter(s) of the param water park (<paramref name="interiorPieceEntity"/>)
@@ -290,11 +320,19 @@ internal sealed class BuildingManager
         }
     }
 
-    public bool ReplaceBaseByGhost(BaseDeconstructed baseDeconstructed)
+    public bool ReplaceBaseByGhost(Player player, BaseDeconstructed baseDeconstructed)
     {
-        if (!entityRegistry.TryGetEntityById(baseDeconstructed.FormerBaseId, out BuildEntity _))
+        if (!entityRegistry.TryGetEntityById(baseDeconstructed.FormerBaseId, out BuildEntity buildEntity))
         {
             logger.ZLogError($"Trying to replace a non-registered build (BaseId: {baseDeconstructed.FormerBaseId})");
+            return false;
+        }
+        // The player removed what was, for them, the last piece. Another player may have finished a piece on it meanwhile.
+        int deltaOperations = buildEntity.OperationId + 1 - baseDeconstructed.OperationId;
+        if (deltaOperations != 0 && options.Value.SafeBuilding)
+        {
+            logger.ZLogWarning($"Ignoring a {nameof(BaseDeconstructed)} packet from [{player.Name}] which is {Math.Abs(deltaOperations) + (deltaOperations > 0 ? " operations ahead" : " operations late")}");
+            NotifyPlayerDesync(player, baseDeconstructed.FormerBaseId);
             return false;
         }
 
@@ -315,6 +353,7 @@ internal sealed class BuildingManager
         if (entityRegistry.TryGetEntityById(pieceDeconstructed.PieceId, out GhostEntity _))
         {
             logger.ZLogError($"Trying to add a ghost to a building but another ghost child with the same id already exists (GhostId: {pieceDeconstructed.PieceId})");
+            NotifyPlayerDesync(player, pieceDeconstructed.BaseId);
             removedEntity = null;
             operationId = -1;
             return false;
@@ -324,7 +363,7 @@ internal sealed class BuildingManager
         if (deltaOperations != 0 && options.Value.SafeBuilding)
         {
             logger.ZLogWarning($"Ignoring a {nameof(PieceDeconstructed)} packet from [{player.Name}] which is {Math.Abs(deltaOperations) + (deltaOperations > 0 ? " operations ahead" : " operations late")}");
-            NotifyPlayerDesync(player);
+            NotifyPlayerDesync(player, pieceDeconstructed.BaseId);
             removedEntity = null;
             operationId = -1;
             return false;
@@ -332,12 +371,58 @@ internal sealed class BuildingManager
 
         removedEntity = worldEntityManager.RemoveGlobalRootEntity(pieceDeconstructed.PieceId).Value;
         GhostEntity ghostEntity = pieceDeconstructed.ReplacerGhost;
+        KeepModuleContents(removedEntity, ghostEntity);
 
         worldEntityManager.AddOrUpdateGlobalRootEntity(ghostEntity);
         buildEntity.BaseData = pieceDeconstructed.BaseData;
         buildEntity.OperationId++;
         operationId = buildEntity.OperationId;
         return true;
+    }
+
+    /// <summary>
+    ///     What a module holds (a reactor's rods or organic matter) stays in it while it is partly deconstructed, as in the
+    ///     game. The server keeps it as children of the ghost until the piece is finished again or fully removed.
+    /// </summary>
+    private static void KeepModuleContents(Entity? removedEntity, GhostEntity ghostEntity)
+    {
+        if (removedEntity is not InteriorPieceEntity { IsWaterPark: false } piece)
+        {
+            return;
+        }
+        List<Entity> contents = [.. piece.ChildEntities.Where(IsModuleContent)];
+        foreach (Entity content in contents)
+        {
+            piece.ChildEntities.Remove(content);
+            content.ParentId = ghostEntity.Id;
+            ghostEntity.ChildEntities.Add(content);
+        }
+    }
+
+    private static bool IsModuleContent(Entity entity) => entity is InventoryItemEntity or InstalledModuleEntity;
+
+    /// <summary>
+    ///     A module finished from a ghost gets back what the ghost kept for it. The server's copy is used: a player who
+    ///     joined while it was a ghost had it from the server as well.
+    /// </summary>
+    private static void GiveBackModuleContents(GhostEntity ghost, Entity? builtPiece)
+    {
+        if (builtPiece is not InteriorPieceEntity piece || piece.Id != ghost.Id)
+        {
+            return;
+        }
+        List<Entity> kept = [.. ghost.ChildEntities.Where(IsModuleContent)];
+        if (kept.Count == 0)
+        {
+            return;
+        }
+        piece.ChildEntities.RemoveAll(IsModuleContent);
+        foreach (Entity content in kept)
+        {
+            ghost.ChildEntities.Remove(content);
+            content.ParentId = piece.Id;
+            piece.ChildEntities.Add(content);
+        }
     }
 
     public bool CreateWaterParkPiece(WaterParkDeconstructed waterParkDeconstructed, Entity removedEntity)
@@ -414,10 +499,11 @@ internal sealed class BuildingManager
         return true;
     }
 
-    private void NotifyPlayerDesync(Player player)
+    /// <param name="baseId">The base the refused operation was on: the player's game resyncs it at once.</param>
+    private void NotifyPlayerDesync(Player player, NitroxId? baseId)
     {
         Dictionary<NitroxId, int> operations = GetEntitiesOperations(worldEntityManager.GetGlobalRootEntities(true));
-        packetSender.SendPacketAsync(new BuildingDesyncWarning(operations), player.SessionId);
+        packetSender.SendPacketAsync(new BuildingDesyncWarning(operations, baseId), player.SessionId);
     }
 
     public static Dictionary<NitroxId, int> GetEntitiesOperations(List<GlobalRootEntity> entities)

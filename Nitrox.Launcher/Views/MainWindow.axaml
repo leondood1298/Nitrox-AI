@@ -105,10 +105,6 @@
                     </ControlTemplate>
                 </Setter>
 
-                <Style Selector="^.updates /template/ Border.update-badge">
-                    <Setter Property="IsVisible" Value="{Binding UpdateAvailableOrUnofficial}" />
-                </Style>
-
                 <Style Selector="^.notifications /template/ Border.notification-badge">
                     <Setter Property="IsVisible" Value="{Binding Notifications.Count}" />
                 </Style>

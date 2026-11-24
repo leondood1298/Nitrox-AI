@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.Hosting;
 using Nitrox.Model.Constants;
+using Nitrox.Model.Helper;
 using Nitrox.Model.Logger;
 
 namespace Nitrox.Launcher.Models.Services;
@@ -16,7 +17,7 @@ namespace Nitrox.Launcher.Models.Services;
 /// </summary>
 internal class WriteGrpcPortFileService(IServer server) : IHostedLifecycleService
 {
-    private readonly string filePath = Path.Combine(Path.GetTempPath(), LauncherConstants.GRPC_LISTEN_PORT_TEMP_FILE_NAME);
+    private readonly string filePath = Path.Combine(Path.GetTempPath(), LauncherConstants.GetConnectionFileName(NitroxUser.ExecutableRootPath));
     private readonly IServer server = server;
 
     public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
@@ -31,7 +32,7 @@ internal class WriteGrpcPortFileService(IServer server) : IHostedLifecycleServic
         if (OperatingSystem.IsWindows())
         {
             // On Windows, write the named pipe name
-            connectionInfo = LauncherConstants.GRPC_NAMED_PIPE_NAME;
+            connectionInfo = LauncherConstants.GetNamedPipeName(NitroxUser.ExecutableRootPath);
         }
         else
         {

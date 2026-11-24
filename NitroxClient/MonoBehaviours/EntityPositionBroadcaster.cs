@@ -39,6 +39,11 @@ public sealed class EntityPositionBroadcaster : MonoBehaviour
     private readonly Dictionary<NitroxId, SplineTransformUpdate> splineUpdatesById = [];
 
     /// <summary>
+    ///     Where and when each spline entity was last sent.
+    /// </summary>
+    private readonly Dictionary<NitroxId, LastSent> lastSplineSentById = [];
+
+    /// <summary>
     ///     Reusable list of <see cref="EntityTransformUpdate" />s to avoid reallocating a new list at each broadcast.
     /// </summary>
     /// <remarks>
@@ -104,11 +109,56 @@ public sealed class EntityPositionBroadcaster : MonoBehaviour
                 splineUpdate.Position = entityTransform.position.ToDto();
                 splineUpdate.Rotation = entityTransform.rotation.ToDto();
                 updates.Add(splineUpdate);
+                lastSplineSentById[splineUpdate.Id] = new LastSent(entityTransform.position, Time.time);
             }
         }
 
+        AddSplineRefreshes();
         splineUpdatesById.Clear();
     }
+
+    /// <summary>
+    ///     A creature's spline movement is otherwise sent only when its game gives it a new destination (SwimBehaviour.GoTo).
+    ///     Anything else that moves it, a crashfish lunging, a hit pushing it, a creature carrying it, never reached the
+    ///     others. A creature that moved since it was last sent is sent again, with the destination it has.
+    /// </summary>
+    private void AddSplineRefreshes()
+    {
+        float now = Time.time;
+        foreach (KeyValuePair<NitroxId, SwimBehaviour> splineEntity in splineEntities)
+        {
+            NitroxId id = splineEntity.Key;
+            SwimBehaviour swimBehaviour = splineEntity.Value;
+            if (!swimBehaviour || splineUpdatesById.ContainsKey(id) || !simulationOwnership.HasAnyLockType(id) ||
+                !swimBehaviour.TryGetComponent(out SplineFollowing splineFollowing))
+            {
+                continue;
+            }
+            Vector3 position = swimBehaviour.transform.position;
+            if (lastSplineSentById.TryGetValue(id, out LastSent lastSent) &&
+                !ShouldRefreshSpline(now - lastSent.Time, Vector3.Distance(position, lastSent.Position)))
+            {
+                continue;
+            }
+            updates.Add(new SplineTransformUpdate(id, position.ToDto(), swimBehaviour.transform.rotation.ToDto(), splineFollowing.targetPosition.ToDto(),
+                                                  splineFollowing.targetDirection.ToDto(), splineFollowing.medianSpeed));
+            lastSplineSentById[id] = new LastSent(position, now);
+        }
+    }
+
+    /// <summary>
+    ///     How long after it was last sent, and how far it must have moved, for a creature to be sent again without a new destination.
+    /// </summary>
+    public const float SPLINE_REFRESH_SECONDS = 1f;
+
+    public const float SPLINE_REFRESH_DISTANCE = 1f;
+
+    public static bool ShouldRefreshSpline(float secondsSinceLastSent, float distanceMoved)
+    {
+        return secondsSinceLastSent >= SPLINE_REFRESH_SECONDS && distanceMoved >= SPLINE_REFRESH_DISTANCE;
+    }
+
+    private readonly record struct LastSent(Vector3 Position, float Time);
 
     public void WatchEntity(NitroxId id)
     {
@@ -196,6 +246,7 @@ public sealed class EntityPositionBroadcaster : MonoBehaviour
         splineEntities.Remove(id);
         regularEntities.Remove(id);
         notSpawnedEntityIds.Remove(id);
+        lastSplineSentById.Remove(id);
     }
 
     public void ClearNotSpawnedEntities()

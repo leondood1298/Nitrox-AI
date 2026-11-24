@@ -14,7 +14,8 @@ public sealed partial class Creature_ChooseBestAction_Patch : NitroxPatch, IDyna
 
     public static bool Prefix(Creature __instance, out NitroxId __state, ref CreatureAction __result)
     {
-        if (!__instance.TryGetIdOrWarn(out __state) || Resolve<SimulationOwnership>().HasAnyLockType(__state))
+        // A creature without an id is not shared (a fish in an aquarium, a creature not yet announced): it runs as in the game
+        if (!__instance.TryGetNitroxId(out __state) ||Resolve<SimulationOwnership>().HasAnyLockType(__state))
         {
             return true;
         }

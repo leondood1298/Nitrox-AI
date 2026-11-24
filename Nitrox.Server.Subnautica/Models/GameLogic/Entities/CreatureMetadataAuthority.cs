@@ -32,6 +32,15 @@ internal static class CreatureMetadataAuthority
                         storedCreature.InfectedAmount = infection.InfectedAmount;
                     }
                     storedCreature.EnzymeEndTime = Math.Max(storedCreature.EnzymeEndTime, infection.EnzymeEndTime);
+                    // The leash and size of a creature are sent the same way, by its simulating player
+                    if (infection.HasLeash)
+                    {
+                        storedCreature.WithLeash(infection.LeashPosition);
+                    }
+                    if (infection.HasSize)
+                    {
+                        storedCreature.WithSize(infection.Size);
+                    }
                     return storedCreature;
                 case null:
                     return infection;
@@ -56,6 +65,8 @@ internal static class CreatureMetadataAuthority
                 requested.InfectedAmount = storedMetadata.InfectedAmount;
             }
             requested.EnzymeEndTime = Math.Max(requested.EnzymeEndTime, storedMetadata.EnzymeEndTime);
+            // Metadata of the creature's own kind (a Stalker's friend, a Sand Shark's burrow) does not carry these
+            requested.KeepKnownBodyFrom(storedMetadata);
         }
         return requested;
     }

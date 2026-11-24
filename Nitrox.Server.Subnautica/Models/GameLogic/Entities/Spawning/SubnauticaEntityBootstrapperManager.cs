@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
 using Nitrox.Server.Subnautica.Models.Factories;
@@ -23,12 +24,36 @@ internal sealed class SubnauticaEntityBootstrapperManager(RandomFactory randomFa
         [TechType.GhostLeviathan.ToDto()] = new StayAtLeashPositionBootstrapper(),
     };
 
+    /// <summary>
+    ///     Creatures whose home is where they spawn: Creature.InitializeOnce takes the spawn position as their leash, which the
+    ///     game then saves. Not the Sea Treader, whose leash is a point of its path, nor the Reefback, bootstrapped by class.
+    /// </summary>
+    private static readonly HashSet<NitroxTechType> creaturesLeashedWhereTheySpawn =
+    [
+        .. new[]
+        {
+            TechType.Bladderfish, TechType.Bleeder, TechType.Biter, TechType.Blighter, TechType.BoneShark, TechType.Boomerang, TechType.CaveCrawler,
+            TechType.Crabsnake, TechType.CrabSquid, TechType.Crash, TechType.Cutefish, TechType.Eyeye, TechType.GarryFish, TechType.Gasopod,
+            TechType.GhostLeviathanJuvenile, TechType.GhostRayBlue, TechType.GhostRayRed, TechType.HoleFish, TechType.Hoopfish, TechType.Hoverfish,
+            TechType.Jellyray, TechType.Jumper, TechType.LavaBoomerang, TechType.LavaEyeye, TechType.LavaLarva, TechType.LavaLizard, TechType.Mesmer,
+            TechType.Oculus, TechType.Peeper, TechType.RabbitRay, TechType.Reginald, TechType.Rockgrub, TechType.Sandshark, TechType.Shocker,
+            TechType.Shuttlebug, TechType.Skyray, TechType.SkyrayNonRoosting, TechType.Spadefish, TechType.SpineEel, TechType.Spinefish, TechType.Stalker,
+            TechType.Warper
+        }.Select(techType => techType.ToDto())
+    ];
+
+    private static readonly IEntityBootstrapper leashBootstrapper = new StayAtLeashPositionBootstrapper();
+
     public Task<WorldEntity> PrepareEntityIfRequired(WorldEntity spawnedEntity, DeterministicGenerator generator)
     {
         if (entityBootstrappersByTechType.TryGetValue(spawnedEntity.TechType, out IEntityBootstrapper bootstrapper) ||
             (!string.IsNullOrEmpty(spawnedEntity.ClassId) && entityBootstrappersByClassId.TryGetValue(spawnedEntity.ClassId, out bootstrapper)))
         {
             return bootstrapper.Prepare(spawnedEntity, generator);
+        }
+        if (spawnedEntity.Metadata == null && creaturesLeashedWhereTheySpawn.Contains(spawnedEntity.TechType))
+        {
+            return leashBootstrapper.Prepare(spawnedEntity, generator);
         }
         return Task.FromResult(spawnedEntity);
     }

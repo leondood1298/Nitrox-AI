@@ -8,6 +8,7 @@ using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.MultiplayerSession;
 using Nitrox.Model.Packets;
 using Nitrox.Model.Subnautica.MultiplayerSession;
+using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Server.Subnautica.Models.AppEvents;
 using Nitrox.Server.Subnautica.Models.Communication;
 using Nitrox.Server.Subnautica.Models.GameLogic;
@@ -30,7 +31,8 @@ internal sealed class ConnectedPlayers
 
     public PlayerManager PlayerManager { get; }
 
-    public ConnectedPlayers()
+    /// <param name="worldIdentity">For tests of names tied to keys across a change of the world identity.</param>
+    public ConnectedPlayers(WorldIdentity? worldIdentity = null)
     {
         // The ban check a connecting player goes through waits until the ban list has been loaded, which happens when
         // the service starts. No save has this name, so there is no ban file to read.
@@ -38,15 +40,35 @@ internal sealed class ConnectedPlayers
         BanService banService = new(new ServerJsonSerializer(NullLogger<ServerJsonSerializer>.Instance), Options.Create(startOptions), NullLogger<BanService>.Instance);
         banService.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
         banService.StopAsync(CancellationToken.None).GetAwaiter().GetResult();
-        PlayerManager = new PlayerManager(sessionManager, banService, Options.Create(new SubnauticaServerOptions()), NullLogger<PlayerManager>.Instance);
+        PlayerManager = new PlayerManager(sessionManager, banService, Options.Create(new SubnauticaServerOptions()), NullLogger<PlayerManager>.Instance, worldIdentity);
     }
 
-    public ServerPlayer Connect(string name)
+    public SessionManager SessionManager => sessionManager;
+
+    public ServerPlayer Connect(string name, string key = "key")
+    {
+        SessionId sessionId = Reserve(name, key, out MultiplayerSessionReservation reservation);
+        reservation.ReservationState.Should().Be(MultiplayerSessionReservationState.RESERVED);
+        return PlayerManager.CreatePlayerData(sessionId, out _);
+    }
+
+    /// <summary>
+    ///     Connects a session and asks for a reservation, the way a joining game does before it waits in the queue.
+    /// </summary>
+    public SessionId Reserve(string name, string key, out MultiplayerSessionReservation reservation)
     {
         IPEndPoint endPoint = new(IPAddress.Loopback, nextPort++);
         SessionId sessionId = sessionManager.GetOrCreateSession(endPoint).Id;
-        PlayerManager.ReservePlayerContext(sessionId, endPoint, new PlayerSettings(new NitroxColor(1f, 1f, 1f)), new AuthenticationContext(name, Optional.Empty));
-        return PlayerManager.CreatePlayerData(sessionId, out _);
+        reservation = PlayerManager.ReservePlayerContext(sessionId, endPoint, new PlayerSettings(new NitroxColor(1f, 1f, 1f)), new AuthenticationContext(name, Optional.Empty, key));
+        return sessionId;
+    }
+
+    /// <summary>
+    ///     Ends a session the way a lost connection does, as far as the player manager is concerned.
+    /// </summary>
+    public void Disconnect(SessionId sessionId)
+    {
+        PlayerManager.OnEventAsync(new ISessionCleaner.Args(new SessionManager.Session(sessionId, new IPEndPoint(IPAddress.Loopback, 1)), 0)).GetAwaiter().GetResult();
     }
 
     /// <summary>

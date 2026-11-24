@@ -14,24 +14,23 @@ namespace NitroxClient.GameLogic;
 ///     their own game.
 /// </summary>
 /// <remarks>
-///     Creatures whose attacks are synced through <see cref="AI" /> are left out: for those, the attacked player's own
-///     copy of the creature does the attacking. Stalkers and Sand Sharks are synced through <see cref="AI" /> too, but
-///     their bites are still reported (<see cref="AI.IsAttackReplayedByVictim(Creature)" />).
+///     This holds for every creature: the bitten player's own copy never bites (<see cref="CreatureBites" />). What only
+///     the bitten player's game can do, a grab cinematic for example, it does when the hit arrives (<see cref="CreatureAttackEffects" />).
 /// </remarks>
-public sealed class CreatureAttacksOnPlayers(IPacketSender packetSender, SimulationOwnership simulationOwnership, AI ai)
+public sealed class CreatureAttacksOnPlayers(IPacketSender packetSender, SimulationOwnership simulationOwnership, CreatureAttackEffects attackEffects)
 {
     private readonly IPacketSender packetSender = packetSender;
     private readonly SimulationOwnership simulationOwnership = simulationOwnership;
-    private readonly AI ai = ai;
+    private readonly CreatureAttackEffects attackEffects = attackEffects;
 
     private int reportedAttacksBeingApplied;
 
     /// <summary>
     ///     Whether a hit seen by this game has to be reported to the player who was hit.
     /// </summary>
-    public static bool ShouldReport(bool victimIsRemotePlayer, bool localPlayerSimulatesCreature, bool attackSyncedThroughBehaviour)
+    public static bool ShouldReport(bool victimIsRemotePlayer, bool localPlayerSimulatesCreature)
     {
-        return victimIsRemotePlayer && localPlayerSimulatesCreature && !attackSyncedThroughBehaviour;
+        return victimIsRemotePlayer && localPlayerSimulatesCreature;
     }
 
     /// <summary>
@@ -42,10 +41,9 @@ public sealed class CreatureAttacksOnPlayers(IPacketSender packetSender, Simulat
     /// <param name="movedByAnotherPlayer">
     ///     False for a creature nobody simulates: nobody would report its hits, so the local copy keeps biting as before.
     /// </param>
-    public static bool ShouldLeaveToSimulatingPlayer(bool victimIsLocalPlayer, bool localPlayerSimulatesCreature, bool movedByAnotherPlayer,
-                                                     bool attackSyncedThroughBehaviour, bool applyingReportedAttack)
+    public static bool ShouldLeaveToSimulatingPlayer(bool victimIsLocalPlayer, bool localPlayerSimulatesCreature, bool movedByAnotherPlayer, bool applyingReportedAttack)
     {
-        return victimIsLocalPlayer && !localPlayerSimulatesCreature && movedByAnotherPlayer && !attackSyncedThroughBehaviour && !applyingReportedAttack;
+        return victimIsLocalPlayer && !localPlayerSimulatesCreature && movedByAnotherPlayer && !applyingReportedAttack;
     }
 
     /// <summary>
@@ -58,7 +56,7 @@ public sealed class CreatureAttacksOnPlayers(IPacketSender packetSender, Simulat
         {
             return false;
         }
-        if (!ShouldReport(true, simulationOwnership.HasAnyLockType(creatureId), ai.IsAttackReplayedByVictim(creature)))
+        if (!ShouldReport(true, simulationOwnership.HasAnyLockType(creatureId)))
         {
             return false;
         }
@@ -78,10 +76,41 @@ public sealed class CreatureAttacksOnPlayers(IPacketSender packetSender, Simulat
             return;
         }
 
-        if (ShouldReport(true, simulationOwnership.HasAnyLockType(creatureId), ai.IsAttackReplayedByVictim(creature)))
+        if (ShouldReport(true, simulationOwnership.HasAnyLockType(creatureId)))
         {
             packetSender.Send(new CreatureAttackedPlayer(creatureId, remotePlayerIdentifier.RemotePlayer.SessionId, originalDamage, type));
         }
+    }
+
+    /// <summary>
+    ///     Called before ShockerMeleeAttack.OnTouch on the game of the Ampeel's simulating player. The game shocks whatever
+    ///     has a <see cref="LiveMixin" /> without naming the Ampeel, so a shock on another player's body hurt nobody; it is
+    ///     reported to that player instead, with the checks the game makes for its own player.
+    /// </summary>
+    /// <returns>True if the touch was a shock on another player, which the game must then not handle.</returns>
+    public bool TryShockRemotePlayer(ShockerMeleeAttack attack, Collider collider) => TryShockRemotePlayer(attack, collider ? attack.GetTarget(collider) : null);
+
+    private bool TryShockRemotePlayer(ShockerMeleeAttack attack, GameObject target)
+    {
+        Creature creature = attack.creature;
+        if (!target || !target.TryGetComponent(out RemotePlayerIdentifier remotePlayerIdentifier) || !CanBiteRemotePlayer(creature, remotePlayerIdentifier.RemotePlayer) ||
+            !creature.TryGetNitroxId(out NitroxId creatureId))
+        {
+            return false;
+        }
+        if (attack.frozen || Time.time < attack.timeLastElectricalDamage + attack.electricalDamageInterval || !attack.liveMixin.IsAlive())
+        {
+            return true;
+        }
+
+        attack.timeLastElectricalDamage = Time.time;
+        packetSender.Send(new CreatureAttackedPlayer(creatureId, remotePlayerIdentifier.RemotePlayer.SessionId, attack.electricalDamage, DamageType.Electrical));
+        packetSender.Send(new CreatureBitePlayed(creatureId));
+        if (attack.electricalAttackSound)
+        {
+            Utils.PlayEnvSound(attack.electricalAttackSound, target.transform.position, 20f);
+        }
+        return true;
     }
 
     /// <summary>
@@ -96,7 +125,7 @@ public sealed class CreatureAttacksOnPlayers(IPacketSender packetSender, Simulat
         }
 
         return ShouldLeaveToSimulatingPlayer(true, simulationOwnership.HasAnyLockType(creatureId), creature.GetComponent<RemotelyControlled>(),
-                                             ai.IsAttackReplayedByVictim(creature), reportedAttacksBeingApplied > 0);
+                                             reportedAttacksBeingApplied > 0);
     }
 
     public void ApplyReported(CreatureAttackedPlayer attack)
@@ -119,8 +148,10 @@ public sealed class CreatureAttacksOnPlayers(IPacketSender packetSender, Simulat
         reportedAttacksBeingApplied++;
         try
         {
+            // What the creature's game cannot do on another player's body: a grab cinematic, for example
+            float extraDamage = attackEffects.ApplyOnLocalPlayer(creatureObject, attack.OriginalDamage, attack.Type);
             // Same arguments as MeleeAttack.OnTouch gives; the creature may not be loaded on this game.
-            localPlayer.liveMixin.TakeDamage(attack.OriginalDamage, default, attack.Type, creatureObject);
+            localPlayer.liveMixin.TakeDamage(attack.OriginalDamage + extraDamage, default, attack.Type, creatureObject);
         }
         finally
         {

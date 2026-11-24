@@ -1,36 +1,28 @@
-using System;
 using System.Reflection;
 using NitroxClient.GameLogic;
-using Nitrox.Model.DataStructures;
 
 namespace NitroxPatcher.Patches.Dynamic;
 
+/// <summary>
+///     Reports a battery's new charge (see <see cref="BatteryCharges" />). It is read after it was set: read before, the
+///     server would always keep the charge from one step earlier, and a full battery would be stored short of full.
+/// </summary>
 public sealed partial class Battery_charge_set_Patch : NitroxPatch, IDynamicPatch
 {
     public static readonly MethodInfo TARGET_METHOD = Reflect.Property((Battery t) => t.charge).SetMethod;
 
-    public static void Prefix(Battery __instance, float value)
+    public static void Prefix(Battery __instance, out float __state)
     {
-        // Scanner Room camera batteries are local implementation details. Their energy
-        // is synchronized and persisted by MapRoomCameraStates using the camera entity id;
-        // their temporary InstalledBatteryEntity ids do not exist on the server.
-        if (__instance.GetComponentInParent<MapRoomCamera>())
+        __state = __instance.charge;
+    }
+
+    public static void Postfix(Battery __instance, float __state)
+    {
+        // A vehicle's cells are drained and charged in the game simulating the vehicle, which reports them
+        if (Resolve<Vehicles>().IsSimulatedElsewhere(__instance))
         {
             return;
         }
-
-        // Broadcast update only once per integer change
-        if (Math.Abs(Math.Floor(__instance.charge) - Math.Floor(value)) > 0.0 &&
-            __instance.TryGetIdOrWarn(out NitroxId id))
-        {
-            Entities entities = Resolve<Entities>();
-            // Battery setters run while join-time entities are still being constructed.
-            // Those objects may already have a Nitrox id locally but are not ready for
-            // client-originated metadata updates yet.
-            if (!entities.SpawningEntities && entities.IsKnownEntity(id))
-            {
-                entities.EntityMetadataChanged(__instance, id);
-            }
-        }
+        Resolve<BatteryCharges>().Changed(__instance, __state);
     }
 }

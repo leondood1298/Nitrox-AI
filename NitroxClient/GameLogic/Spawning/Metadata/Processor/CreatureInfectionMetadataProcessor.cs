@@ -9,5 +9,6 @@ public class CreatureInfectionMetadataProcessor : EntityMetadataProcessor<Creatu
     public override void ProcessMetadata(GameObject gameObject, CreatureInfectionMetadata metadata)
     {
         Resolve<CreatureInfections>().ApplyReceived(gameObject, metadata);
+        Resolve<CreatureLeashes>().ApplyReceived(gameObject, metadata);
     }
 }

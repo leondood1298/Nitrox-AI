@@ -5,13 +5,17 @@ using Nitrox.Model.Subnautica.Packets;
 using NitroxClient.Communication.Abstract;
 using NitroxClient.Communication.Packets.Processors.Core;
 using NitroxClient.GameLogic.InitialSync.Abstract;
+using NitroxClient.Extensions;
 using NitroxClient.MonoBehaviours;
+using NitroxClient.MonoBehaviours.Gui.Modals;
 
 namespace NitroxClient.Communication.Packets.Processors;
 
-internal sealed class InitialPlayerSyncProcessor(IEnumerable<IInitialSyncProcessor> processors) : IClientPacketProcessor<InitialPlayerSync>
+internal sealed class InitialPlayerSyncProcessor(IEnumerable<IInitialSyncProcessor> processors, IMultiplayerSession session) : IClientPacketProcessor<InitialPlayerSync>
 {
+    private readonly IMultiplayerSession session = session;
     private readonly HashSet<Type> alreadyRan = [];
+    private Exception? failure;
     private readonly HashSet<IInitialSyncProcessor> processors = processors.ToSet();
 
     private int cumulativeProcessorsRan;
@@ -39,15 +43,26 @@ internal sealed class InitialPlayerSyncProcessor(IEnumerable<IInitialSyncProcess
         do
         {
             yield return Multiplayer.Main.StartCoroutine(RunPendingProcessors());
+            if (failure != null)
+            {
+                FailJoin(failure);
+                yield break;
+            }
 
             moreProcessorsToRun = alreadyRan.Count < processors.Count;
             if (moreProcessorsToRun && processorsRanLastCycle == 0)
             {
-                throw new Exception($"Detected circular dependencies in initial packet sync between: {GetRemainingProcessorsText()}");
+                FailJoin(new InitialSyncStepException(GetRemainingProcessorsText(), 0, new Exception("Detected circular dependencies in initial packet sync")));
+                yield break;
             }
         } while (moreProcessorsToRun);
 
         WaitScreen.Remove(loadingMultiplayerWaitItem);
+
+        // What changed in the world while the snapshot was applied comes on top of it, before the others are told this
+        // player is in. Replayed before InitialSyncCompleted is set, so that processors with their own loading-screen
+        // handling take the same branch as when these packets used to be applied during loading.
+        Multiplayer.Main.ReplayHeldPackets();
         Multiplayer.Main.InitialSyncCompleted = true;
 
         // When the player finishes loading, we can take back his invincibility
@@ -73,10 +88,26 @@ internal sealed class InitialPlayerSyncProcessor(IEnumerable<IInitialSyncProcess
 
                 Log.Info($"Running {processor.GetType()}");
                 subWaitScreenItem = WaitScreen.Add($"Running {processor.GetType().Name}");
-                yield return Multiplayer.Main.StartCoroutine(processor.Process(packet, subWaitScreenItem));
+                yield return Multiplayer.Main.StartCoroutine(processor.Process(packet, subWaitScreenItem).OnYieldError(exception => failure = exception));
                 WaitScreen.Remove(subWaitScreenItem);
+                if (failure != null)
+                {
+                    yield break;
+                }
             }
         }
+    }
+
+    /// <summary>
+    ///     The world could not be set up from the snapshot. Rather than leave the player on the loading screen for good,
+    ///     tell them and disconnect; the server then drops them from the join queue.
+    /// </summary>
+    private void FailJoin(Exception exception)
+    {
+        Log.Error(exception, "Joining failed while applying the initial sync");
+        string step = exception is InitialSyncStepException stepException ? stepException.Step : exception.GetType().Name;
+        session.Disconnect();
+        Modal.Get<KickedModal>().Show(Language.main.Get("Nitrox_JoinFailed").Replace("{STEP}", step));
     }
 
     private bool HasDependenciesSatisfied(IInitialSyncProcessor processor)

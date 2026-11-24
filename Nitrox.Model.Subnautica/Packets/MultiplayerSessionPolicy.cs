@@ -16,13 +16,21 @@ public sealed class MultiplayerSessionPolicy : Packet
     public int MaxConnections { get; }
     public NitroxVersion NitroxVersionAllowed { get; }
 
-    public MultiplayerSessionPolicy(SessionId sessionId, bool disableConsole, int maxConnections, bool requiresServerPassword)
+    /// <summary>
+    ///     An identifier the world was given once and keeps in its save. Not a secret: the joining game derives the key
+    ///     it ties its player name to from its own secret and this, so the key does not depend on the address used to
+    ///     reach the server, and no server learns the key used on another world.
+    /// </summary>
+    public string WorldIdentity { get; }
+
+    public MultiplayerSessionPolicy(SessionId sessionId, bool disableConsole, int maxConnections, bool requiresServerPassword, string worldIdentity)
     {
         SessionId = sessionId;
         RequiresServerPassword = requiresServerPassword;
         AuthenticationAuthority = MultiplayerSessionAuthenticationAuthority.SERVER;
         DisableConsole = disableConsole;
         MaxConnections = maxConnections;
+        WorldIdentity = worldIdentity;
 
         Version ver = NitroxEnvironment.Version;
         // only the major and minor version number is required
@@ -31,7 +39,7 @@ public sealed class MultiplayerSessionPolicy : Packet
 
     /// <remarks>Used for deserialization</remarks>
     public MultiplayerSessionPolicy(SessionId sessionId, bool requiresServerPassword, MultiplayerSessionAuthenticationAuthority authenticationAuthority,
-                                    bool disableConsole, int maxConnections, NitroxVersion nitroxVersionAllowed)
+                                    bool disableConsole, int maxConnections, NitroxVersion nitroxVersionAllowed, string worldIdentity)
     {
         SessionId = sessionId;
         RequiresServerPassword = requiresServerPassword;
@@ -39,5 +47,6 @@ public sealed class MultiplayerSessionPolicy : Packet
         DisableConsole = disableConsole;
         MaxConnections = maxConnections;
         NitroxVersionAllowed = nitroxVersionAllowed;
+        WorldIdentity = worldIdentity;
     }
 }

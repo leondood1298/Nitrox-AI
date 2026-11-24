@@ -1,11 +1,13 @@
-﻿using Nitrox.Server.Subnautica.Models.Packets.Core;
+﻿using Nitrox.Server.Subnautica.Models.GameLogic;
+using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
-internal sealed class MultiplayerSessionPolicyRequestProcessor(IOptions<SubnauticaServerOptions> configProvider, ILogger<MultiplayerSessionPolicyRequestProcessor> logger)
+internal sealed class MultiplayerSessionPolicyRequestProcessor(IOptions<SubnauticaServerOptions> configProvider, WorldIdentity worldIdentity, ILogger<MultiplayerSessionPolicyRequestProcessor> logger)
     : IAnonPacketProcessor<MultiplayerSessionPolicyRequest>
 {
     private readonly IOptions<SubnauticaServerOptions> configProvider = configProvider;
+    private readonly WorldIdentity worldIdentity = worldIdentity;
     private readonly ILogger<MultiplayerSessionPolicyRequestProcessor> logger = logger;
 
     // This will extend in the future when we look into different options for auth
@@ -13,6 +15,6 @@ internal sealed class MultiplayerSessionPolicyRequestProcessor(IOptions<Subnauti
     {
         logger.ZLogInformation($"Providing session policies...");
         SubnauticaServerOptions options = configProvider.Value;
-        await context.ReplyAsync(new MultiplayerSessionPolicy(context.Sender.SessionId, options.DisableConsole, options.MaxConnections, options.IsPasswordRequired()));
+        await context.ReplyAsync(new MultiplayerSessionPolicy(context.Sender.SessionId, options.DisableConsole, options.MaxConnections, options.IsPasswordRequired(), worldIdentity.Value));
     }
 }

@@ -36,9 +36,9 @@ public class LauncherJsonSerializerContextTests
     public void SaveFileVersion()
     {
         // Arrange
-        SaveFileVersion version = new(new Version(1, 2, 3, 4));
+        SaveFileVersion version = new(new Version(1, 2, 3, 4), 7);
 
-        const string JSON = """{"Major":1,"Minor":2,"Build":3,"Revision":4}""";
+        const string JSON = """{"Major":1,"Minor":2,"Build":3,"Revision":4,"SaveFormat":7}""";
 
         // Act
         SaveFileVersion? result = JsonSerializer.Deserialize(JSON, LauncherJsonSerializerContext.Default.SaveFileVersion);
@@ -47,6 +47,14 @@ public class LauncherJsonSerializerContextTests
         // Assert
         result.Should().BeEquivalentTo(version);
         serializedJson.Should().Be(JSON);
+    }
+
+    [TestMethod]
+    public void SaveFileVersionFromBeforeTheSaveFormatHasFormatZero()
+    {
+        SaveFileVersion? result = JsonSerializer.Deserialize("""{"Major":1,"Minor":9,"Build":0,"Revision":0}""", LauncherJsonSerializerContext.Default.SaveFileVersion);
+
+        result!.SaveFormat.Should().Be(NitroxSaveFormat.UNKNOWN);
     }
 
     [TestMethod]
@@ -72,67 +80,6 @@ public class LauncherJsonSerializerContextTests
 
         // Assert
         result.Should().BeEquivalentTo(posts);
-        serializedJson.Should().Be(JSON);
-    }
-
-    [TestMethod]
-    public void ChangeLogArray()
-    {
-        // Arrange
-        NitroxWebsiteApiService.ChangeLog[] changeLogs =
-        [
-            new()
-            {
-                Released = new DateTimeOffset(2026, 11, 14, 12, 0, 0, TimeSpan.Zero),
-                PatchNotes = ["Added generated JSON serialization"],
-                Version = "1.2.3"
-            }
-        ];
-
-        const string JSON = """[{"released":"2026-11-14T12:00:00+00:00","patchnotes":["Added generated JSON serialization"],"version":"1.2.3"}]""";
-
-        // Act
-        NitroxWebsiteApiService.ChangeLog[]? result = JsonSerializer.Deserialize(JSON, LauncherJsonSerializerContext.Default.ChangeLogArray);
-        string serializedJson = JsonSerializer.Serialize(result, LauncherJsonSerializerContext.Default.ChangeLogArray);
-
-        // Assert
-        result.Should().BeEquivalentTo(changeLogs);
-        serializedJson.Should().Be(JSON);
-    }
-
-    [TestMethod]
-    public void NitroxRelease()
-    {
-        // Arrange
-        NitroxWebsiteApiService.NitroxRelease release = new()
-        {
-            Version = new Version(1, 2, 3),
-            Platforms = new Dictionary<string, NitroxWebsiteApiService.PlatformInfo>
-            {
-                ["test-platform"] = new()
-                {
-                    FileSize = "1024",
-                    Architectures = new Dictionary<string, NitroxWebsiteApiService.ArchitectureInfo>
-                    {
-                        ["test-architecture"] = new()
-                        {
-                            DownloadUrl = "https://example.test/nitrox.zip",
-                            Md5Hash = "0123456789abcdef",
-                            FileSize = "1024"
-                        }
-                    }
-                }
-            }
-        };
-
-        const string JSON = """{"version":"1.2.3","platforms":{"test-platform":{"filesize":"1024","architectures":{"test-architecture":{"url":"https://example.test/nitrox.zip","md5":"0123456789abcdef","filesize":"1024"}}}}}""";
-
-        // Act
-        NitroxWebsiteApiService.NitroxRelease? result = JsonSerializer.Deserialize(JSON, LauncherJsonSerializerContext.Default.NitroxRelease);
-        string serializedJson = JsonSerializer.Serialize(result, LauncherJsonSerializerContext.Default.NitroxRelease);
-
-        // Assert
-        result.Should().BeEquivalentTo(release, options => options.Excluding(x => x.CurrentPlatformInfo));
         serializedJson.Should().Be(JSON);
     }
 }

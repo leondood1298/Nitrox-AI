@@ -2,10 +2,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using System.Reflection.Emit;
 using HarmonyLib;
-using NitroxClient.Communication.Abstract;
 using NitroxClient.GameLogic;
-using Nitrox.Model.DataStructures;
-using Nitrox.Model.Subnautica.Packets;
 using UnityEngine;
 
 namespace NitroxPatcher.Patches.Dynamic;
@@ -36,33 +33,11 @@ public sealed partial class Trashcan_Update_Patch : NitroxPatch, IDynamicPatch
                                             .InstructionEnumeration();
     }
 
-    /// <remarks>
-    /// Players only get simulation ownership on the base and on some objects, trashcan is not one of them
-    /// So we are left with two cases:<br/>
-    /// - if the trashcan is under a SubRoot we check simulation ownership onto it<br/>
-    /// - else, we check simulation ownership on the trashcan and we hope at least someone has it
-    /// </remarks>
+    /// <summary>
+    ///     See <see cref="Trashcans" /> for which game reports the deletion.
+    /// </summary>
     public static void BroadcastDeletion(Trashcan trashcan, GameObject gameObject)
     {
-        if (!trashcan.TryGetNitroxId(out NitroxId trashcanId) ||
-            !gameObject.TryGetNitroxId(out NitroxId objectId))
-        {
-            return;
-        }
-
-        if (trashcan.transform.parent && trashcan.transform.parent.GetComponent<SubRoot>())
-        {
-            if (trashcan.transform.parent.TryGetNitroxId(out NitroxId subRootId) &&
-                Resolve<SimulationOwnership>().HasAnyLockType(subRootId))
-            {
-                Resolve<IPacketSender>().Send(new EntityDestroyed(objectId));
-            }
-            return;
-        }
-
-        if (Resolve<SimulationOwnership>().HasAnyLockType(trashcanId))
-        {
-            Resolve<IPacketSender>().Send(new EntityDestroyed(objectId));
-        }
+        Resolve<Trashcans>().Destroyed(trashcan, gameObject);
     }
 }

@@ -74,7 +74,19 @@ public static class NatHelper
         }, (port, protocol), ct).ConfigureAwait(false);
     }
 
-    public static async Task<ResultCodes> AddPortMappingAsync(ushort port, Protocol protocol, string description, CancellationToken ct = default)
+    /// <summary>
+    ///     How long the router keeps a mapping unless it is renewed. A permanent mapping outlived a crashed or killed server
+    ///     and left the port open on the router for good.
+    /// </summary>
+    public const int LEASE_SECONDS = 2 * 60 * 60;
+
+    /// <summary>
+    ///     Lifetime UPnP reads as "until removed", for routers that refuse a lease.
+    /// </summary>
+    public const int PERMANENT = 0;
+
+    /// <param name="lifetimeSeconds">How long the router keeps the mapping; adding it again renews it.</param>
+    public static async Task<ResultCodes> AddPortMappingAsync(ushort port, Protocol protocol, string description, CancellationToken ct = default, int lifetimeSeconds = LEASE_SECONDS)
     {
         return await MonoNatHelper.GetFirstAsync(static async (device, mapping) =>
         {
@@ -86,7 +98,7 @@ public static class NatHelper
             {
                 return ExceptionToCode(ex);
             }
-        }, CreateMapping(port, port, protocol, description), ct).ConfigureAwait(false);
+        }, CreateMapping(port, port, protocol, description, lifetimeSeconds), ct).ConfigureAwait(false);
     }
 
     private static ResultCodes ExceptionToCode(MappingException exception) => exception.ErrorCode switch
@@ -95,7 +107,7 @@ public static class NatHelper
         _ => ResultCodes.UNKNOWN_ERROR
     };
 
-    private static Mapping CreateMapping(int privatePort, int publicPort, Protocol protocol, string description) => new(protocol, privatePort, publicPort, int.MaxValue, description);
+    internal static Mapping CreateMapping(int privatePort, int publicPort, Protocol protocol, string description, int lifetimeSeconds = PERMANENT) => new(protocol, privatePort, publicPort, lifetimeSeconds, description);
 
     public enum ResultCodes
     {

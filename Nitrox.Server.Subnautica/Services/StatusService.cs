@@ -5,6 +5,7 @@ using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures.GameLogic;
 using Nitrox.Server.Subnautica.Models.AppEvents;
 using Nitrox.Server.Subnautica.Models.AppEvents.Core;
+using Nitrox.Server.Subnautica.Models.Logging;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Services;
@@ -34,6 +35,17 @@ internal sealed class StatusService(
 
     public Task StartingAsync(CancellationToken cancellationToken)
     {
+        try
+        {
+            if (ServerLogRetention.Prune(startOptions.Value.GetServerLogsPath(), DateTime.Now) is > 0 and int deleted)
+            {
+                logger.ZLogInformation($"Deleted {deleted} old server log file(s)");
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.ZLogWarning(ex, $"Could not delete old server log files");
+        }
         logger.LogServerStarting(NitroxEnvironment.ReleasePhase, NitroxEnvironment.Version, gameInfo.FullName);
         logger.LogGamePath(startOptions.Value.GamePath ?? "unknown");
         logger.LogSaveUsage(startOptions.Value.SaveName);

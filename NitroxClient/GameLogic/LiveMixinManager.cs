@@ -157,7 +157,19 @@ public class LiveMixinManager
         {
             if (difference < 0)
             {
-                liveMixin.TakeDamage(difference, position, damageType);
+                // LiveMixin.TakeDamage does health = Max(0, health - damage) and plays its effects only for a positive
+                // damage. A vehicle's or Cyclops' loss is passed as such so that its copies show the hit, but never
+                // down to zero: the death comes from the simulating player (EntityDestroyed, Cyclops metadata).
+                // Other objects keep the former call, which only moves the health (e.g. base cells, whose damage
+                // receivers would open leaks here).
+                if (IsWhitelistedUpdateType(liveMixin) && remoteHealth > 0f)
+                {
+                    liveMixin.TakeDamage(-difference, position, damageType);
+                }
+                else
+                {
+                    liveMixin.TakeDamage(difference, position, damageType);
+                }
             }
             else
             {

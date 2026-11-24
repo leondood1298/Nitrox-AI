@@ -77,9 +77,8 @@ public class CreatureInfections
         CreatureInfectionMetadata metadata = new(amount, GetEnzymeEndTime(creatureId));
         if (CreatureInfectionRules.IsImmediateChange(previousAmount, amount))
         {
-            // A pending throttled value would come after this one and undo it
-            throttledPacketSender.RemovePendingPackets(creatureId);
-            entities.BroadcastMetadataUpdate(creatureId, metadata);
+            // A pending throttled value would come after this one and undo it; a leash or size it carried is kept
+            entities.BroadcastMetadataUpdateNow(creatureId, metadata);
         }
         else
         {
@@ -175,8 +174,7 @@ public class CreatureInfections
         float enzymeEndTime = CreatureInfectionRules.GetEnzymeEndTime(DayNightCycle.main.timePassedAsFloat, peeper.enzymeAmount, peeper._inPrisonAquarium);
         enzymeEndTimes[peeperId] = enzymeEndTime;
         // Carries the infection as it is now (BecomeHero cures it), so a pending throttled value is outdated
-        throttledPacketSender.RemovePendingPackets(peeperId);
-        entities.BroadcastMetadataUpdate(peeperId, new CreatureInfectionMetadata(GetDecidedAmount(peeper), enzymeEndTime));
+        entities.BroadcastMetadataUpdateNow(peeperId, new CreatureInfectionMetadata(GetDecidedAmount(peeper), enzymeEndTime));
     }
 
     /// <summary>

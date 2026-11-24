@@ -7,17 +7,13 @@ using UnityEngine;
 namespace NitroxClient.GameLogic;
 
 /// <summary>
-///     Shows the bites of Stalkers and Sand Sharks once on every game, wherever they land. Their bites are decided by the
-///     simulating player's game, which reports a bite on another player to that player (<see cref="CreatureAttacksOnPlayers" />).
-///     Every other game's copy bit only what touched it there, so a third player never saw a bite on another player, and
-///     the bitten player saw their own copy's bite, which need not be the one that hurt them. Now the simulating game
-///     sends each bite (<see cref="CreatureBitePlayed" />) and the other copies show it instead of biting on their own.
+///     Every creature's bites are decided by the game of the player simulating it and shown once on every game, wherever
+///     they land. The simulating game reports a bite on another player to that player (<see cref="CreatureAttacksOnPlayers" />)
+///     and sends each bite (<see cref="CreatureBitePlayed" />); the copies on the other games show it and never bite on
+///     their own. Before, the bitten player's own copy of a Reaper bit them where it touched them there, which need not
+///     be where the simulating player's game had it, and a third player saw no bite at all.
 /// </summary>
-/// <remarks>
-///     Other creatures whose bites are reported (those AI does not sync) still bite only on the simulating game: their
-///     copies elsewhere are not aggressive, so they show no bite at all.
-/// </remarks>
-public sealed class CreatureBites(IPacketSender packetSender, SimulationOwnership simulationOwnership, AI ai)
+public sealed class CreatureBites(IPacketSender packetSender, SimulationOwnership simulationOwnership)
 {
     /// <summary>
     ///     Same as MeleeAttack.OnTouch gives Utils.PlayEnvSound.
@@ -26,54 +22,46 @@ public sealed class CreatureBites(IPacketSender packetSender, SimulationOwnershi
 
     private readonly IPacketSender packetSender = packetSender;
     private readonly SimulationOwnership simulationOwnership = simulationOwnership;
-    private readonly AI ai = ai;
 
     /// <summary>
     ///     Whether this game's copy of a creature may bite on its own.
     /// </summary>
     /// <param name="movedByAnotherPlayer">False for a creature nobody simulates: nobody would send its bites.</param>
-    public static bool MayBiteHere(bool bitesShownFromSimulatingPlayer, bool localPlayerSimulatesCreature, bool movedByAnotherPlayer)
+    public static bool MayBiteHere(bool localPlayerSimulatesCreature, bool movedByAnotherPlayer)
     {
-        return !bitesShownFromSimulatingPlayer || localPlayerSimulatesCreature || !movedByAnotherPlayer;
+        return localPlayerSimulatesCreature || !movedByAnotherPlayer;
     }
 
     /// <summary>
-    ///     Whether a bite of this game's copy is sent to the other games.
+    ///     Called before MeleeAttack.CanBite, and before the attacks of a creature that bites in its own way.
     /// </summary>
-    public static bool ShouldSend(bool bitesShownFromSimulatingPlayer, bool localPlayerSimulatesCreature)
+    public bool MayBite(Creature creature)
     {
-        return bitesShownFromSimulatingPlayer && localPlayerSimulatesCreature;
-    }
-
-    /// <summary>
-    ///     Called before MeleeAttack.CanBite.
-    /// </summary>
-    public bool MayBite(MeleeAttack meleeAttack)
-    {
-        Creature creature = meleeAttack.creature;
         if (!creature || !creature.TryGetNitroxId(out NitroxId creatureId))
         {
             return true;
         }
-        return MayBiteHere(ai.AreBitesShownFromSimulatingPlayer(creature), simulationOwnership.HasAnyLockType(creatureId), creature.GetComponent<RemotelyControlled>());
+        return MayBiteHere(simulationOwnership.HasAnyLockType(creatureId), creature.GetComponent<RemotelyControlled>());
     }
 
+    public bool MayBite(MeleeAttack meleeAttack) => MayBite(meleeAttack.creature);
+
     /// <summary>
-    ///     Called when MeleeAttack.OnTouch bites.
+    ///     Called when a creature of this game bites.
     /// </summary>
-    public void Bit(MeleeAttack meleeAttack)
+    public void Bit(Creature creature)
     {
-        Creature creature = meleeAttack.creature;
-        if (creature && creature.TryGetNitroxId(out NitroxId creatureId) &&
-            ShouldSend(ai.AreBitesShownFromSimulatingPlayer(creature), simulationOwnership.HasAnyLockType(creatureId)))
+        if (creature && creature.TryGetNitroxId(out NitroxId creatureId) && simulationOwnership.HasAnyLockType(creatureId))
         {
             packetSender.Send(new CreatureBitePlayed(creatureId));
         }
     }
 
+    public void Bit(MeleeAttack meleeAttack) => Bit(meleeAttack.creature);
+
     /// <summary>
     ///     What MeleeAttack.OnTouch shows of a bite: the biting pose (MeleeAttack.ManagedUpdate, from timeLastBite), the
-    ///     blood and the bite sound.
+    ///     blood and the bite sound. An Ampeel's shock shows its own sound.
     /// </summary>
     public void Apply(CreatureBitePlayed bite)
     {
@@ -94,6 +82,11 @@ public sealed class CreatureBites(IPacketSender packetSender, SimulationOwnershi
 
         meleeAttack.timeLastBite = Time.time;
         Vector3 mouthPosition = meleeAttack.mouth ? meleeAttack.mouth.transform.position : creature.transform.position;
+        if (meleeAttack is ShockerMeleeAttack shockerMeleeAttack && shockerMeleeAttack.electricalAttackSound)
+        {
+            Utils.PlayEnvSound(shockerMeleeAttack.electricalAttackSound, mouthPosition, BITE_SOUND_DISTANCE);
+            return;
+        }
         if (meleeAttack.damageFX)
         {
             Object.Instantiate(meleeAttack.damageFX, mouthPosition, meleeAttack.damageFX.transform.rotation);

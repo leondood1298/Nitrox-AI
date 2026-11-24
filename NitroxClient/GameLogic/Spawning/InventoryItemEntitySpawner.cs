@@ -94,9 +94,9 @@ public class InventoryItemEntitySpawner(EntityMetadataManager entityMetadataMana
 
         InventoryItem inventoryItem = new(pickupable);
 
-        // Items eventually get "secured" once a player gets into a SubRoot (or for other reasons) so we need to force this state by default
-        // so that player don't risk their whole inventory if they reconnect in the water.
-        pickupable.destroyOnDeath = false;
+        // Whether the item is lost when its player dies is the item's own state, as in single player: an item picked up in
+        // the open stays at risk after a rejoin until the player enters a base or vehicle (see Items.InventorySecured)
+        pickupable.destroyOnDeath = entity.DestroyOnDeath;
 
         bool isPlanter = parentObject.TryGetComponent(out Planter planter);
         bool subscribedValue = false;

@@ -39,9 +39,6 @@ internal partial class MainWindowViewModel : ViewModelBase, IRoutingScreen
     [ObservableProperty]
     public partial object? ActiveViewModel { get; set; }
 
-    [ObservableProperty]
-    public partial bool UpdateAvailableOrUnofficial { get; set; }
-
     public AvaloniaList<NotificationItem> Notifications { get; init; } = [];
 
     public MainWindowViewModel(
@@ -131,14 +128,14 @@ internal partial class MainWindowViewModel : ViewModelBase, IRoutingScreen
                     }
                 });
             }
-            Task.Run(async () =>
+            // This fork never asks upstream for updates: an "update" from there would replace it with upstream Nitrox
+            Task.Run(() =>
             {
                 if (!NetHelper.HasInternetConnectivity())
                 {
                     Log.Warn("Launcher may not be connected to internet");
                     LauncherNotifier.Warning("Launcher may not be connected to internet");
                 }
-                UpdateAvailableOrUnofficial = await updatesViewModel.IsNitroxUpdateAvailableAsync();
             });
 
             _ = this.ShowAsync(launchGameViewModel).ContinueWithHandleError(ex => LauncherNotifier.Error(ex.Message));

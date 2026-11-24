@@ -31,6 +31,7 @@ public sealed partial class SubnauticaServerOptions
     [PropertyDescription("Measured in milliseconds. Values less than 1 second will disable auto saving.")]
     public int SaveInterval { get; set; } = (int)TimeSpan.FromMinutes(2).TotalMilliseconds;
 
+    [PropertyDescription("Backups kept as they are after each save. Older ones are thinned to one per hour for a day, then one per day for a week. 0 turns backups off.")]
     [Range(0, int.MaxValue)]
     public int MaxBackups { get; set; } = 10;
 
@@ -80,6 +81,14 @@ public sealed partial class SubnauticaServerOptions
 
     [PropertyDescription("Command to run following a successful world save (e.g. .exe, .bat, or PowerShell script). ")]
     public string PostSaveCommandPath { get; set; } = "";
+
+    [PropertyDescription("Largest picture, in kilobytes, a player may put into a picture frame. 0 turns shared pictures off.")]
+    [Range(0, 16384)]
+    public int PictureFrameMaxKilobytes { get; set; } = 2048;
+
+    [PropertyDescription("Room, in megabytes, all the pictures in this world's picture frames may take together")]
+    [Range(0, 4096)]
+    public int PictureFramesMaxTotalMegabytes { get; set; } = 64;
 
     [OptionsValidator]
     public partial class Validator : IValidateOptions<SubnauticaServerOptions>;

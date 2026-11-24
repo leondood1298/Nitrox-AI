@@ -16,9 +16,20 @@ public sealed class CreatureActionBroadcastFilter(float resendAfterSeconds, int 
     ///     True when the action differs from the last one sent for this creature, or when that was long enough ago that
     ///     players who loaded the creature in the meantime should be told.
     /// </summary>
+    /// <summary>
+    ///     Stands for "none of the actions the others replay". It is sent when a creature stops doing one of them, and
+    ///     never on its own: most creatures do nothing else, and the others assume it of a creature they hear nothing about.
+    /// </summary>
+    public const string NO_ACTION = "";
+
     public bool ShouldSend(NitroxId creatureId, string actionTypeName, float now)
     {
-        if (lastSentByCreature.TryGetValue(creatureId, out LastSent last) && last.ActionTypeName == actionTypeName && now - last.Time < resendAfterSeconds)
+        bool known = lastSentByCreature.TryGetValue(creatureId, out LastSent last);
+        if (actionTypeName == NO_ACTION && (!known || last.ActionTypeName == NO_ACTION))
+        {
+            return false;
+        }
+        if (known && last.ActionTypeName == actionTypeName && now - last.Time < resendAfterSeconds)
         {
             return false;
         }

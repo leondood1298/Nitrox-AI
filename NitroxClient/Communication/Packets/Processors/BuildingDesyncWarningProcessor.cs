@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.Packets;
@@ -16,12 +17,11 @@ internal sealed class BuildingDesyncWarningProcessor : IClientPacketProcessor<Bu
             return Task.CompletedTask;
         }
 
-        foreach (KeyValuePair<NitroxId, int> operation in packet.Operations)
+        MarkDesynced(packet, BuildingHandler.Main.EnsureTracker);
+        if (packet.BaseId != null)
         {
-            OperationTracker tracker = BuildingHandler.Main.EnsureTracker(operation.Key);
-            tracker.LastOperationId = operation.Value;
-            tracker.LocalOperations = 0;  // discard locally-queued ops, server's value is now authoritative
-            tracker.FailedOperations++;
+            // The refused operation was on one base: that base is fetched again at once, the menu's Resync stays for the rest
+            BuildingHandler.Main.AskForBaseResync(packet.BaseId);
         }
 
         if (NitroxPrefs.SafeBuildingLog.Value)
@@ -29,5 +29,24 @@ internal sealed class BuildingDesyncWarningProcessor : IClientPacketProcessor<Bu
             Log.InGame(Language.main.Get("Nitrox_BuildingDesyncDetected"));
         }
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    ///     Marks the base of the refused operation as desynced, with the server's operation for it. Without a base, every
+    ///     base is marked.
+    /// </summary>
+    internal static void MarkDesynced(BuildingDesyncWarning packet, Func<NitroxId, OperationTracker> ensureTracker)
+    {
+        foreach (KeyValuePair<NitroxId, int> operation in packet.Operations)
+        {
+            if (packet.BaseId != null && operation.Key != packet.BaseId)
+            {
+                continue;
+            }
+            OperationTracker tracker = ensureTracker(operation.Key);
+            tracker.LastOperationId = operation.Value;
+            tracker.LocalOperations = 0;  // discard locally-queued ops, server's value is now authoritative
+            tracker.FailedOperations++;
+        }
     }
 }

@@ -208,6 +208,12 @@ internal sealed partial class ScannerRoomManager(IPacketSender packetSender, Ent
                     detached.Add(new BuildEntity(build.BaseData, build.Transform, build.Level, build.ClassId, build.SpawnedByServer, build.Id, build.TechType,
                         build.Metadata, build.ParentId, children) { OperationId = build.OperationId });
                     break;
+                case BuildEntity build:
+                    // A base is copied shallowly as well, with its operation: the reply is serialized on another thread while
+                    // building packets keep replacing its data and changing its list of pieces
+                    detached.Add(new BuildEntity(build.BaseData, build.Transform, build.Level, build.ClassId, build.SpawnedByServer, build.Id, build.TechType,
+                        build.Metadata, build.ParentId, [.. build.ChildEntities]) { OperationId = build.OperationId });
+                    break;
                 default:
                     detached.Add(entity);
                     break;

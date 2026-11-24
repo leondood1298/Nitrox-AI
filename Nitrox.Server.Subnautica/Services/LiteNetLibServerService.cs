@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using LiteNetLib;
 using LiteNetLib.Layers;
@@ -8,6 +9,7 @@ using LiteNetLib.Utils;
 using Nitrox.Model.Core;
 using Nitrox.Model.Networking;
 using Nitrox.Model.Packets.Core;
+using Nitrox.Server.Subnautica.Models;
 using Nitrox.Server.Subnautica.Models.Administration;
 using Nitrox.Server.Subnautica.Models.AppEvents;
 using Nitrox.Server.Subnautica.Models.AppEvents.Core;
@@ -24,6 +26,7 @@ internal sealed class LiteNetLibServerService : IHostedService, IPacketSender, I
     private readonly Dictionary<SessionId, PeerContext> contextBySessionId = [];
     private readonly Lock contextLock = new();
     private readonly NetDataWriter dataWriter = new();
+    private readonly LogThrottle receiveErrorThrottle = new(5, TimeSpan.FromMinutes(1));
     private readonly EventBasedNetListener listener;
     private readonly ILogger<LiteNetLibServerService> logger;
     private readonly IOptions<SubnauticaServerOptions> options;
@@ -45,7 +48,8 @@ internal sealed class LiteNetLibServerService : IHostedService, IPacketSender, I
         this.taskQueueService = taskQueueService;
         this.logger = logger;
         listener = new EventBasedNetListener();
-        server = new NetManager(listener, NitroxEnvironment.IsReleaseMode ? new Crc32cLayer() : null)
+        // The same framing in Debug and Release builds: a checksum on one side only drops every packet in silence
+        server = new NetManager(listener, new Crc32cLayer())
         {
             UseNativeSockets = true,
             IPv6Enabled = true
@@ -68,7 +72,14 @@ internal sealed class LiteNetLibServerService : IHostedService, IPacketSender, I
 #else
         server.DisconnectTimeout = 30_000; // 30 seconds; prevents false disconnects when post-sync game-loading stalls LiteNetLib briefly
 #endif
-        server.Start(options.Value.ServerPort);
+        if (!server.Start(options.Value.ServerPort))
+        {
+            // Running on without the port served nobody while still saving the world, possibly next to the server
+            // that holds the port
+            string message = $"Port {options.Value.ServerPort} UDP is in use by another program, often another Nitrox server. Close it or choose another port in the server settings.";
+            logger.ZLogCritical($"{message}");
+            throw new StartupFailureException(message, StartupFailureException.PORT_UNAVAILABLE);
+        }
         return Task.CompletedTask;
     }
 
@@ -123,6 +134,10 @@ internal sealed class LiteNetLibServerService : IHostedService, IPacketSender, I
             }
             for (int j = 0; j < i; j++)
             {
+                if (!ReceivesBroadcast(packet, contexts[j].SessionId))
+                {
+                    continue;
+                }
                 SendPacket(packet, contexts[j].Peer);
             }
         }
@@ -132,6 +147,16 @@ internal sealed class LiteNetLibServerService : IHostedService, IPacketSender, I
         }
         return ValueTask.CompletedTask;
     }
+
+    /// <summary>
+    ///     A broadcast is about the world, which a session only has once it is a player: from right before its
+    ///     snapshot is gathered (<see cref="PlayerManager.CreatePlayerData" />). Before that, while on the main menu or
+    ///     in the join queue, its game would apply it to a world that is not the multiplayer one. That the server
+    ///     stops is still everyone's business.
+    /// </summary>
+    internal static bool ReceivesBroadcast(Packet packet, bool isPlayer) => isPlayer || packet is ServerStopped;
+
+    private bool ReceivesBroadcast(Packet packet, SessionId sessionId) => ReceivesBroadcast(packet, playerManager.TryGetPlayerBySessionId(sessionId, out _));
 
     public ValueTask SendPacketToOthersAsync<T>(T packet, SessionId excludedSessionId) where T : Packet
     {
@@ -150,7 +175,7 @@ internal sealed class LiteNetLibServerService : IHostedService, IPacketSender, I
             }
             for (int j = 0; j < i; j++)
             {
-                if (contexts[j].SessionId == excludedSessionId)
+                if (contexts[j].SessionId == excludedSessionId || !ReceivesBroadcast(packet, contexts[j].SessionId))
                 {
                     continue;
                 }
@@ -199,14 +224,40 @@ internal sealed class LiteNetLibServerService : IHostedService, IPacketSender, I
         }
         // TODO: Check max connection limit here instead of in PlayerManager.ReservePlayerContext. Once join process is simplified.
 
-        SessionManager.Session session = sessionManager.GetOrCreateSession(request.RemoteEndPoint);
-        NetPeer peer = request.Accept();
-        PeerContext context = new(session.Id, peer);
-        lock (contextLock)
+        try
         {
-            contextBySessionId.TryAdd(session.Id, context);
-            contextByPeerId.TryAdd(peer.Id, context);
+            // Every accepted peer holds a session and buffers before it ever joins; anyone who knows the key could
+            // otherwise open them without end
+            lock (contextLock)
+            {
+                if (!PendingConnectionLimit.Allows(contextBySessionId.Values.Where(IsPending).Select(pending => pending.Peer.Address), request.RemoteEndPoint.Address))
+                {
+                    if (receiveErrorThrottle.ShouldLog(DateTimeOffset.UtcNow, out int suppressed))
+                    {
+                        logger.ZLogWarning($"Refused a connection from {request.RemoteEndPoint.Address:@Address}: too many connections that have not joined yet{(suppressed > 0 ? $"; {suppressed} more such messages were not logged" : "")}");
+                    }
+                    request.Reject();
+                    return;
+                }
+            }
+
+            SessionManager.Session session = sessionManager.GetOrCreateSession(request.RemoteEndPoint);
+            NetPeer peer = request.Accept();
+            PeerContext context = new(session.Id, peer);
+            lock (contextLock)
+            {
+                contextBySessionId.TryAdd(session.Id, context);
+                contextByPeerId.TryAdd(peer.Id, context);
+            }
         }
+        catch (Exception ex)
+        {
+            // Out of session ids, for one: refuse this peer rather than leave LiteNetLib's thread to swallow it
+            logger.ZLogError(ex, $"Refused a connection from {request.RemoteEndPoint.Address:@Address}");
+            request.Reject();
+        }
+
+        bool IsPending(PeerContext context) => !playerManager.TryGetPlayerBySessionId(context.SessionId, out _);
     }
 
     private void PeerDisconnected(NetPeer peer, DisconnectInfo disconnectInfo)
@@ -231,19 +282,32 @@ internal sealed class LiteNetLibServerService : IHostedService, IPacketSender, I
         }
     }
 
+    /// <remarks>
+    ///     Everything here runs on LiteNetLib's receive thread, whose own catch-all swallows exceptions without a log line
+    ///     and can leave the peer's ordered channel stuck. So nothing may escape: data that cannot be read is logged (rate
+    ///     limited, as a hostile peer can send it endlessly) and its sender is dropped, as nothing it sends after a broken
+    ///     packet on an ordered channel can be trusted to line up.
+    /// </remarks>
     private void NetworkDataReceived(NetPeer peer, NetDataReader reader, byte channel, DeliveryMethod deliveryMethod)
     {
-        int packetDataLength = reader.GetInt();
-        byte[] packetData = ArrayPool<byte>.Shared.Rent(packetDataLength);
+        Packet? packet;
         try
         {
-            reader.GetBytes(packetData, packetDataLength);
-            Packet? packet = Packet.Deserialize(packetData);
-            if (packet == null)
+            packet = ReadPacket(reader);
+        }
+        catch (Exception ex)
+        {
+            if (receiveErrorThrottle.ShouldLog(DateTimeOffset.UtcNow, out int suppressed))
             {
-                return;
+                logger.ZLogError($"Dropped peer {peer.Address:@Address}:{peer.Port:@Port}: it sent data that is not a packet of this build ({ex.GetType().Name}: {ex.Message}){(suppressed > 0 ? $"; {suppressed} more such errors were not logged" : "")}");
             }
-            PeerContext context;
+            DisconnectPeerSafely(peer);
+            return;
+        }
+
+        try
+        {
+            PeerContext? context;
             lock (contextLock)
             {
                 contextByPeerId.TryGetValue(peer.Id, out context);
@@ -258,9 +322,52 @@ internal sealed class LiteNetLibServerService : IHostedService, IPacketSender, I
                 logger.ZLogError($"Failed to queue packet processor task for packet type {packet.GetType().Name:@TypeName} from {peer.Address:@Address}:{peer.Port:@Port}");
             }
         }
+        catch (Exception ex)
+        {
+            if (receiveErrorThrottle.ShouldLog(DateTimeOffset.UtcNow, out int suppressed))
+            {
+                logger.ZLogError(ex, $"Error while handing packet {packet.GetType().Name:@TypeName} to its processor{(suppressed > 0 ? $"; {suppressed} more such errors were not logged" : "")}");
+            }
+        }
+    }
+
+    /// <summary>
+    ///     Reads one packet: a length, then that many bytes of a serialized packet.
+    /// </summary>
+    /// <exception cref="InvalidDataException">The length does not fit the data received, or the data is no known packet.</exception>
+    internal static Packet ReadPacket(NetDataReader reader)
+    {
+        if (reader.AvailableBytes < sizeof(int))
+        {
+            throw new InvalidDataException($"{reader.AvailableBytes} bytes are too few for a packet length");
+        }
+        int packetDataLength = reader.GetInt();
+        // The length comes from the peer: unchecked, it could ask for a 2 GB buffer per packet or read past the data
+        if (packetDataLength <= 0 || packetDataLength > reader.AvailableBytes)
+        {
+            throw new InvalidDataException($"Packet length {packetDataLength} does not fit the {reader.AvailableBytes} bytes received");
+        }
+        byte[] packetData = ArrayPool<byte>.Shared.Rent(packetDataLength);
+        try
+        {
+            reader.GetBytes(packetData, packetDataLength);
+            return Packet.Deserialize(packetData) ?? throw new InvalidDataException("The data holds no packet");
+        }
         finally
         {
             ArrayPool<byte>.Shared.Return(packetData, true);
+        }
+    }
+
+    private void DisconnectPeerSafely(NetPeer peer)
+    {
+        try
+        {
+            server.DisconnectPeer(peer);
+        }
+        catch (Exception)
+        {
+            // Already gone
         }
     }
 

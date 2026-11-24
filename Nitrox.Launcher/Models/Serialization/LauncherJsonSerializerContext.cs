@@ -15,8 +15,6 @@ namespace Nitrox.Launcher.Models.Serialization;
 [JsonSerializable(typeof(BackupMetadata))]
 [JsonSerializable(typeof(SaveFileVersion))]
 [JsonSerializable(typeof(NitroxBlogService.BlogPost[]))]
-[JsonSerializable(typeof(NitroxWebsiteApiService.ChangeLog[]))]
-[JsonSerializable(typeof(NitroxWebsiteApiService.NitroxRelease))]
 internal sealed partial class LauncherJsonSerializerContext : JsonSerializerContext
 {
 

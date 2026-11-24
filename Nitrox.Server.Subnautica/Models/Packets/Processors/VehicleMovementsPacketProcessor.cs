@@ -90,7 +90,9 @@ internal sealed class VehicleMovementsPacketProcessor(EntityRegistry entityRegis
                         }
                         else
                         {
-                            context.Sender.Position = movementData.Position;
+                            // Not the vehicle's position, which is inside the hull: the player would come back there after
+                            // leaving or a server stop, without being seated
+                            context.Sender.Position = VehiclePilotPosition.BesideVehicle(movementData.Position);
                             context.Sender.Rotation = movementData.Rotation;
                         }
                     }

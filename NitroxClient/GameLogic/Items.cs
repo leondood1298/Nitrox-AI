@@ -24,6 +24,7 @@ public class Items
     private readonly EntityMetadataManager entityMetadataManager;
     private readonly SimulationOwnership simulationOwnership;
     private readonly MapRoomScans mapRoomScans;
+    private readonly ItemSources itemSources;
 
     /// <summary>
     /// Whether or not <see cref="Inventory.Pickup"/> or a similar method is running (if greater than 0).
@@ -33,9 +34,10 @@ public class Items
     public int PickingUpCount;
 
     public Items(IPacketSender packetSender, Entities entities, EntityMetadataManager entityMetadataManager, SimulationOwnership simulationOwnership,
-        MapRoomScans mapRoomScans)
+        MapRoomScans mapRoomScans, ItemSources itemSources)
     {
         this.mapRoomScans = mapRoomScans;
+        this.itemSources = itemSources;
         this.packetSender = packetSender;
         this.entities = entities;
         this.entityMetadataManager = entityMetadataManager;
@@ -65,14 +67,20 @@ public class Items
         // Try catch to avoid blocking PickingUpObject with a non-null value outside the current context
         try
         {
+            ItemSource? source = IsNewItem(gameObject) ? itemSources.Take(techType, ItemSourceUse.PICKUP) : null;
             InventoryItemEntity inventoryItemEntity = ConvertToInventoryEntityUntracked(gameObject, containerId);
 
             if (inventoryItemEntity.TechType.ToUnity() != techType)
             {
                 Log.Warn($"Provided TechType: {techType} is different than the one automatically attributed to the item {inventoryItemEntity.TechType}");
             }
+            // Inventory.Pickup secures an item picked up in a base or vehicle right after this
+            if (PickingUpCount > 0 && Utils.GetSubRoot())
+            {
+                inventoryItemEntity.DestroyOnDeath = false;
+            }
 
-            PickupItem pickupItem = new(inventoryItemEntity);
+            PickupItem pickupItem = new(inventoryItemEntity, source);
 
             if (packetSender.Send(pickupItem))
             {
@@ -89,9 +97,10 @@ public class Items
 
     public void MovedIntoInventory(GameObject gameObject, NitroxId parentId)
     {
+        ItemSource? source = IsNewItem(gameObject) ? itemSources.Take(CraftData.GetTechType(gameObject), ItemSourceUse.PICKUP) : null;
         InventoryItemEntity inventoryItemEntity = ConvertToInventoryEntityUntracked(gameObject, parentId);
 
-        if (packetSender.Send(new EntitySpawnedByClient(inventoryItemEntity, true)))
+        if (packetSender.Send(new EntitySpawnedByClient(inventoryItemEntity, true, source: source)))
         {
             Log.Debug($"Recreated item {inventoryItemEntity} (planted or moved out of equipment)");
         }
@@ -112,6 +121,7 @@ public class Items
             waterParkCreature.ManagedUpdate();
         }
 
+        bool isNewItem = IsNewItem(gameObject);
         NitroxId id = NitroxEntity.GetIdOrGenerateNew(gameObject);
         Optional<EntityMetadata> metadata = entityMetadataManager.Extract(gameObject);
         PrefabIdentifier prefabIdentifier = gameObject.GetComponent<PrefabIdentifier>();
@@ -120,11 +130,12 @@ public class Items
             Log.Error($"[{nameof(Items)}] Cannot sync dropped object '{gameObject.name}': missing PrefabIdentifier");
             return;
         }
+        ItemSource? source = isNewItem ? itemSources.Take(techType.Value, ItemSourceUse.DROP) : null;
         string classId = prefabIdentifier.ClassId;
         int level = gameObject.TryGetComponent(out LargeWorldEntity largeWorldEntity) ? (int)largeWorldEntity.cellLevel : 0;
 
         WorldEntity droppedItem;
-        List<Entity> childrenEntities = GetPrefabChildren(gameObject, id, entityMetadataManager).ToList();
+        List<Entity> childrenEntities = GetPrefabChildren(gameObject, id, entityMetadataManager).Concat(GetStoredItems(gameObject, id, entityMetadataManager)).ToList();
         // Reflects the tool's actual current battery state (if any); never assumes a default one, since a dropped item always already exists.
         // A Scanner Room camera's battery is not an entity of its own: its energy is synced with the camera itself
         // (see Battery_charge_set_Patch), so it must not be announced as a child here.
@@ -175,7 +186,7 @@ public class Items
 
         bool changesPosition = SimulationWhitelist.ShouldSimulateEntityMovement(droppedItem);
         simulationOwnership.TakeOwnership(id, SimulationLockType.TRANSIENT, changesPosition);
-        if (packetSender.Send(new EntitySpawnedByClient(droppedItem, true, true)))
+        if (packetSender.Send(new EntitySpawnedByClient(droppedItem, true, true, source)))
         {
             Log.Debug($"Dropping item: {droppedItem}");
         }
@@ -259,6 +270,40 @@ public class Items
     }
 
     /// <summary>
+    ///     Called after the game set an item aside for its player until the inventory has room (Inventory.AddPending). The
+    ///     server keeps it in the player's inventory meanwhile, so it is not lost if the player leaves first; the game
+    ///     picks it up for real once there is room.
+    /// </summary>
+    public void Pending(Pickupable pickupable)
+    {
+        if (pickupable && Multiplayer.Main && Multiplayer.Main.InitialSyncCompleted)
+        {
+            PickedUpByPlayer(pickupable.gameObject, pickupable.GetTechType());
+        }
+    }
+
+    /// <summary>
+    ///     Called after the game secured everything the player carries (entering a base or vehicle): the server keeps it, so
+    ///     that the items are safe on death after a rejoin too.
+    /// </summary>
+    public void InventorySecured()
+    {
+        if (Multiplayer.Main && Multiplayer.Main.InitialSyncCompleted)
+        {
+            packetSender.Send(new PlayerItemsSecured());
+        }
+    }
+
+    /// <summary>
+    ///     An item this game just made, which the server does not know yet (a crafted item, a picked fruit, a resource
+    ///     of a broken outcrop).
+    /// </summary>
+    private bool IsNewItem(GameObject gameObject)
+    {
+        return !gameObject.TryGetNitroxId(out NitroxId id) || !entities.IsKnownEntity(id);
+    }
+
+    /// <summary>
     /// Overloads <see cref="ConvertToInventoryItemEntity"/> and removes any tracking on <paramref name="gameObject"/>
     /// </summary>
     private InventoryItemEntity ConvertToInventoryEntityUntracked(GameObject gameObject, NitroxId parentId)
@@ -289,10 +334,31 @@ public class Items
         Optional<EntityMetadata> metadata = entityMetadataManager.Extract(gameObject);
         List<Entity> children = GetPrefabChildren(gameObject, itemId, entityMetadataManager).ToList();
 
-        InventoryItemEntity inventoryItemEntity = new(itemId, classId, techType.ToDto(), metadata.OrNull(), parentId, children);
+        children.AddRange(GetStoredItems(gameObject, itemId, entityMetadataManager));
+        InventoryItemEntity inventoryItemEntity = new(itemId, classId, techType.ToDto(), metadata.OrNull(), parentId, children, gameObject.GetComponent<Pickupable>().destroyOnDeath);
         BatteryChildEntityHelper.TryPopulateInstalledBattery(gameObject, inventoryItemEntity.ChildEntities, itemId, entityMetadataManager, allowDefaultBattery);
 
         return inventoryItemEntity;
+    }
+
+    /// <summary>
+    ///     The items stored in an item: the torpedoes in a torpedo module or a Prawn Suit torpedo arm (which come with two
+    ///     when crafted). They go wherever the item goes; without them, a module put into a vehicle or taken out of it would
+    ///     arrive empty on the server, for the other players and after a restart.
+    /// </summary>
+    public static IEnumerable<Entity> GetStoredItems(GameObject gameObject, NitroxId parentId, EntityMetadataManager entityMetadataManager)
+    {
+        if (!gameObject.TryGetComponent(out SeamothStorageContainer storage) || storage.container == null)
+        {
+            yield break;
+        }
+        foreach (InventoryItem stored in storage.container)
+        {
+            if (stored?.item && stored.item.GetComponent<PrefabIdentifier>())
+            {
+                yield return ConvertToInventoryItemEntity(stored.item.gameObject, parentId, entityMetadataManager, false);
+            }
+        }
     }
 
     /// <summary>
@@ -343,7 +409,7 @@ public class Items
                 string classId = pickupable.RequireComponent<PrefabIdentifier>().ClassId;
                 NitroxId itemId = NitroxEntity.GetIdOrGenerateNew(pickupable.gameObject);
                 Optional<EntityMetadata> metadata = entityMetadataManager.Extract(pickupable.gameObject);
-                List<Entity> children = GetPrefabChildren(pickupable.gameObject, itemId, entityMetadataManager).ToList();
+                List<Entity> children = GetPrefabChildren(pickupable.gameObject, itemId, entityMetadataManager).Concat(GetStoredItems(pickupable.gameObject, itemId, entityMetadataManager)).ToList();
 
                 entities.Add(new(itemEntry.Key, classId, itemId, pickupable.GetTechType().ToDto(), metadata.OrNull(), equipmentId, children));
             }

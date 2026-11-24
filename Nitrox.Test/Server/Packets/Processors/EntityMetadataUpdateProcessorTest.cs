@@ -54,8 +54,11 @@ public sealed class EntityMetadataUpdateProcessorTest
         packetSender = Substitute.For<IPacketSender>();
         scannerDiagnostics = new ScannerRoomDiagnostics(NullLogger<ScannerRoomDiagnostics>.Instance);
         ScannerRoomManager scannerRoomManager = ScannerRoomScenarioFixture.CreateManager(entityRegistry, simulationOwnershipData, scannerDiagnostics, packetSender, players.PlayerManager);
+        WorldEntityManager worldEntityManager = new(packetSender, entityRegistry, null!, players.PlayerManager, null!, NullLogger<WorldEntityManager>.Instance);
+        EntitySimulation entitySimulation = new(packetSender, entityRegistry, worldEntityManager, simulationOwnershipData, players.PlayerManager, scannerRoomManager,
+            NullLogger<EntitySimulation>.Instance);
         processor = new EntityMetadataUpdateProcessor(players.PlayerManager, entityRegistry, simulationOwnershipData, scannerRoomManager, basePowerManager,
-            NullLogger<EntityMetadataUpdateProcessor>.Instance);
+            worldEntityManager, entitySimulation, new ItemClaims(entityRegistry, players.PlayerManager), NullLogger<EntityMetadataUpdateProcessor>.Instance);
         simulator = players.Connect("Simulator");
         otherPlayer = players.Connect("Other");
         thirdPlayer = players.Connect("Third");
@@ -363,6 +366,22 @@ public sealed class EntityMetadataUpdateProcessorTest
         Assert.AreSame(crafting, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, simulator).Single().NewValue);
         Assert.AreSame(crafting, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, thirdPlayer).Single().NewValue);
         Assert.AreEqual(0, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, otherPlayer).Count);
+    }
+
+    [TestMethod]
+    public async Task ASecondCraftOnABusyFabricatorIsAnsweredWithTheRunningOne()
+    {
+        PathBasedChildEntity fabricator = new("fabricator", new NitroxId(), null, null, null, []);
+        entityRegistry.AddEntity(fabricator);
+        CrafterMetadata first = new(titanium, 12.5f, 4f, 1, -1);
+        await Send(simulator, fabricator, first);
+        packetSender.ClearReceivedCalls();
+
+        await Send(otherPlayer, fabricator, new CrafterMetadata(quartz, 13f, 4f, 1, -1));
+
+        Assert.AreSame(first, fabricator.Metadata);
+        Assert.AreSame(first, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, otherPlayer).Single().NewValue);
+        Assert.AreEqual(0, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, thirdPlayer).Count);
     }
 
     [TestMethod]
@@ -692,6 +711,23 @@ public sealed class EntityMetadataUpdateProcessorTest
         Assert.AreEqual(0, packetSender.ReceivedCalls().Count());
     }
 
+    /// <summary>
+    ///     A frame's picture is the server's to set when it keeps an upload; a player naming one would skip its limits.
+    /// </summary>
+    [TestMethod]
+    public async Task PictureIsNotSetByAMetadataUpdate()
+    {
+        ModuleEntity frame = ModuleEntity.MakeEmpty();
+        frame.Id = new NitroxId();
+        frame.TechType = new NitroxTechType("PictureFrame");
+        entityRegistry.AddEntity(frame);
+
+        await Send(otherPlayer, frame, new PictureFrameMetadata(new string('a', 64)));
+
+        Assert.IsNull(frame.Metadata);
+        Assert.AreEqual(0, packetSender.ReceivedCalls().Count());
+    }
+
     private WorldEntity AddWorldTimeCapsule()
     {
         WorldEntity capsule = new(NitroxVector3.Zero, NitroxQuaternion.Identity, NitroxVector3.One, NitroxTechType.None, 0, "time-capsule", true, new NitroxId(), null);
@@ -711,6 +747,92 @@ public sealed class EntityMetadataUpdateProcessorTest
         rocket.ChildEntities.Add(capsule);
         entityRegistry.AddOrUpdate(rocket);
         return rocket;
+    }
+
+    [TestMethod]
+    public async Task PilotsPressIsNotUndoneByAHullReportOfTheSimulatingPlayer()
+    {
+        // The simulating player still simulates the Cyclops (the lock moves a moment later) while the pilot switches the shield on
+        VehicleEntity cyclops = AddCyclops(new CyclopsMetadata(false, false, false, true, 1, 1500f, false), simulator);
+        otherPlayer.PlayerContext.DrivingVehicle = cyclops.Id;
+
+        await Send(otherPlayer, cyclops, new CyclopsMetadata(false, true, false, true, 1, 1500f, false));
+        await Send(simulator, cyclops, new CyclopsMetadata(false, false, false, true, 1, 1200f, false));
+
+        CyclopsMetadata stored = (CyclopsMetadata)cyclops.Metadata;
+        Assert.IsTrue(stored.ShieldOn, "The report carried the shield as the simulating player's copy had it before the press.");
+        Assert.AreEqual(1200f, stored.Health);
+    }
+
+    [TestMethod]
+    public async Task HelmControlsOfAPlayerWhoIsNotAtTheHelmAreRefusedAndCorrected()
+    {
+        VehicleEntity cyclops = AddCyclops(new CyclopsMetadata(false, false, false, true, 1, 1500f, false), simulator);
+        simulator.PlayerContext.DrivingVehicle = cyclops.Id;
+
+        await Send(otherPlayer, cyclops, new CyclopsMetadata(true, false, false, false, 2, 1500f, false));
+
+        CyclopsMetadata stored = (CyclopsMetadata)cyclops.Metadata;
+        Assert.IsFalse(stored.SilentRunningOn);
+        Assert.IsTrue(stored.EngineOn);
+        Assert.AreEqual(1, stored.EngineMode);
+        CyclopsMetadata correction = (CyclopsMetadata)ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, otherPlayer).Single().NewValue;
+        Assert.IsFalse(correction.SilentRunningOn, "The sender shows the press it made until it gets the kept state back.");
+    }
+
+    [TestMethod]
+    public async Task WithoutPilotTheSimulatingPlayerSetsTheHelmControls()
+    {
+        // e.g. the game turns the sonar off when nobody pilots
+        VehicleEntity cyclops = AddCyclops(new CyclopsMetadata(false, false, true, true, 1, 1500f, false), simulator);
+
+        await Send(simulator, cyclops, new CyclopsMetadata(false, false, false, true, 1, 1500f, false));
+
+        Assert.IsFalse(((CyclopsMetadata)cyclops.Metadata).SonarOn);
+        Assert.AreEqual(0, ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, simulator).Count);
+    }
+
+    [TestMethod]
+    public async Task VehiclesDockedInADestroyedCyclopsAreDestroyedWithIt()
+    {
+        VehicleEntity cyclops = AddCyclops(new CyclopsMetadata(false, false, false, true, 1, 100f, false), simulator);
+        PathBasedChildEntity dock = new("DockingBay", new NitroxId(), null, null, cyclops.Id, []);
+        entityRegistry.AddEntity(dock);
+        entityRegistry.ReparentEntity(dock, cyclops);
+        VehicleEntity seamoth = new(null, 0f, new NitroxTransform(), "", false, new NitroxId(), new NitroxTechType("Seamoth"), null);
+        entityRegistry.AddEntity(seamoth);
+        entityRegistry.ReparentEntity(seamoth, dock);
+
+        await Send(simulator, cyclops, new CyclopsMetadata(false, false, false, false, 1, 0f, true));
+
+        Assert.IsFalse(entityRegistry.TryGetEntityById(seamoth.Id, out Entity _), "The saved world must not bring it back docked in the wreck.");
+        Assert.IsTrue(entityRegistry.TryGetEntityById(dock.Id, out Entity _));
+        foreach (Player player in new[] { simulator, otherPlayer, thirdPlayer })
+        {
+            Assert.AreEqual(seamoth.Id, ConnectedPlayers.SentTo<EntityDestroyed>(packetSender, player).Single().Id);
+        }
+    }
+
+    [TestMethod]
+    public async Task AnotherPlayersCopyCannotDestroyTheCyclopsNorItsDockedVehicles()
+    {
+        VehicleEntity cyclops = AddCyclops(new CyclopsMetadata(false, false, false, true, 1, 100f, false), simulator);
+        VehicleEntity seamoth = new(null, 0f, new NitroxTransform(), "", false, new NitroxId(), new NitroxTechType("Seamoth"), null);
+        entityRegistry.AddEntity(seamoth);
+        entityRegistry.ReparentEntity(seamoth, cyclops);
+
+        await Send(otherPlayer, cyclops, new CyclopsMetadata(false, false, false, false, 1, 0f, true));
+
+        Assert.IsFalse(((CyclopsMetadata)cyclops.Metadata).IsDestroyed);
+        Assert.IsTrue(entityRegistry.TryGetEntityById(seamoth.Id, out Entity _));
+    }
+
+    private VehicleEntity AddCyclops(CyclopsMetadata metadata, Player simulatedBy)
+    {
+        VehicleEntity cyclops = new(null, 0f, new NitroxTransform(), "", false, new NitroxId(), new NitroxTechType("Cyclops"), metadata);
+        entityRegistry.AddOrUpdate(cyclops);
+        Assert.IsTrue(simulationOwnershipData.TryAcquire(cyclops.Id, simulatedBy, SimulationLockType.EXCLUSIVE));
+        return cyclops;
     }
 
     private Task Send(Player sender, Entity entity, EntityMetadata metadata)

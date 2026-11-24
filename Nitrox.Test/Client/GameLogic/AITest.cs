@@ -7,42 +7,58 @@ namespace Nitrox.Test.Client.GameLogic;
 [TestClass]
 public sealed class AITest
 {
-    private readonly AI ai = new(Substitute.For<IPacketSender>());
+    private readonly AI ai = new(Substitute.For<IPacketSender>(), new SimulationOwnership(Substitute.For<IMultiplayerSession>(), Substitute.For<IPacketSender>()));
 
     [TestMethod]
-    public void BittenPlayersOwnCopyOfASyncedLeviathanDoesTheBiting()
+    public void ACreatureNobodySharesRunsEverything()
     {
-        Assert.IsTrue(ai.IsAttackReplayedByVictim(typeof(ReaperLeviathan)));
+        Assert.IsTrue(AI.MayRunActionHere(false, false, false, true));
+        Assert.IsTrue(AI.MayRunActionHere(false, false, false, false));
     }
 
     [TestMethod]
-    [DataRow(typeof(Stalker))]
-    [DataRow(typeof(SandShark))]
-    public void StalkerAndSandSharkBitesStayReportedByTheirSimulatingPlayer(Type creatureType)
+    public void TheSimulatingPlayerRunsEverything()
     {
-        // Their aim and attack are replayed everywhere, but a bite counts where the simulating player saw it land
-        Assert.IsFalse(ai.IsAttackReplayedByVictim(creatureType));
+        Assert.IsTrue(AI.MayRunActionHere(true, true, false, true));
+        Assert.IsTrue(AI.MayRunActionHere(true, true, false, false));
     }
 
     [TestMethod]
-    [DataRow(typeof(Stalker))]
-    [DataRow(typeof(SandShark))]
-    public void StalkerAndSandSharkBitesAreShownFromTheirSimulatingPlayer(Type creatureType)
+    public void OnlyTheSimulatingPlayerOrAnUnsharedCreatureStartsAnActionOutOfTurn()
     {
-        Assert.IsTrue(ai.AreBitesShownFromSimulatingPlayer(creatureType));
+        Assert.IsTrue(AI.MayChooseActionHere(false, false));
+        Assert.IsTrue(AI.MayChooseActionHere(true, true));
+        Assert.IsFalse(AI.MayChooseActionHere(true, false));
     }
 
     [TestMethod]
-    [DataRow(typeof(ReaperLeviathan))]
-    [DataRow(typeof(CrabSnake))]
-    public void OtherCreaturesShowTheirOwnBites(Type creatureType)
+    public void ACopyOnlyStartsAndStopsTheActionsItReplays()
     {
-        Assert.IsFalse(ai.AreBitesShownFromSimulatingPlayer(creatureType));
+        Assert.IsTrue(AI.MayRunActionHere(true, false, true, false));
+        Assert.IsFalse(AI.MayRunActionHere(true, false, true, true));
+        Assert.IsFalse(AI.MayRunActionHere(true, false, false, false));
+        Assert.IsFalse(AI.MayRunActionHere(true, false, false, true));
     }
 
     [TestMethod]
-    public void UnsyncedCreatureBitesAreReported()
+    [DataRow(typeof(AttackLastTarget))]
+    [DataRow(typeof(RangedAttackLastTarget))]
+    [DataRow(typeof(AttackCyclops))]
+    [DataRow(typeof(Poop))]
+    [DataRow(typeof(SwimToMeat))]
+    [DataRow(typeof(SwimToHeroPeeper))]
+    public void PoseActionsAreReplayed(Type actionType)
     {
-        Assert.IsFalse(ai.IsAttackReplayedByVictim(typeof(CrabSnake)));
+        Assert.IsTrue(ai.IsReplayedAction(actionType));
+    }
+
+    [TestMethod]
+    [DataRow(typeof(SwimRandom))]
+    [DataRow(typeof(FleeOnDamage))]
+    [DataRow(typeof(CollectShiny))]
+    [DataRow(typeof(BurryInSand))]
+    public void ActionsThatMoveOrChangeTheCreatureAreNotReplayed(Type actionType)
+    {
+        Assert.IsFalse(ai.IsReplayedAction(actionType));
     }
 }
