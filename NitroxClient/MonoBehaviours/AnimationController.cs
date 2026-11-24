@@ -14,8 +14,12 @@ public class AnimationController : MonoBehaviour
     /// </summary>
     private const float MINIMUM_SWITCH_ON_SECONDS = 0.1f;
 
+    private static readonly int VIEW_TURN = Animator.StringToHash("view_turn");
+
     private readonly AnimatorPulseHold switchHold = new(MINIMUM_SWITCH_ON_SECONDS);
     private Animator animator;
+    private float previousYaw;
+    private float turnDampTime;
 
     public bool UpdatePlayerAnimations { get; set; } = true;
     public Quaternion AimingRotation { get; set; }
@@ -35,6 +39,11 @@ public class AnimationController : MonoBehaviour
     public void Awake()
     {
         animator = GetComponent<Animator>();
+        if (TryGetComponent(out ArmsController arms))
+        {
+            turnDampTime = arms.turnAnimationDampTime;
+        }
+        previousYaw = transform.eulerAngles.y;
 
         this["is_underwater"] = true;
         ApplyCinematicsEnabled();
@@ -106,6 +115,23 @@ public class AnimationController : MonoBehaviour
         {
             animator.SetBool(parameter, false);
         }
+        UpdateViewTurn();
+    }
+
+    /// <summary>
+    ///     As <c>ArmsController.SetPlayerSpeedParameters</c> does from the local camera: how fast the player turns, from
+    ///     how fast this body turns.
+    /// </summary>
+    private void UpdateViewTurn()
+    {
+        float deltaTime = Time.deltaTime;
+        float yaw = transform.eulerAngles.y;
+        if (UpdatePlayerAnimations && deltaTime > 0)
+        {
+            float turnSpeed = Mathf.DeltaAngle(previousYaw, yaw) / deltaTime;
+            animator.SetFloat(VIEW_TURN, turnSpeed, turnDampTime, deltaTime);
+        }
+        previousYaw = yaw;
     }
 
     /// <summary>

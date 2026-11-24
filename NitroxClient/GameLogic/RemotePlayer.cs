@@ -518,6 +518,19 @@ public class RemotePlayer : INitroxPlayer
                 break;
         }
 
+        // The Dive Reel animates along with the arm (DiveReel.UpdateEquipped, DiveReel.SetDiveReelOutOfAmmoAnimator)
+        if (HeldTool is DiveReel diveReel && diveReel.animationController)
+        {
+            if (type == AnimChangeType.DIVE_REEL_RESET)
+            {
+                diveReel.animationController.SetTrigger("divereel_reset");
+            }
+            else if (type == AnimChangeType.DIVE_REEL_OUT_OF_AMMO)
+            {
+                diveReel.animationController.SetBool("divereel_outofammo", state == AnimChangeState.ON);
+            }
+        }
+
         UpdateCollider();
     }
 
