@@ -67,7 +67,6 @@ public class PlayerMetadataProcessor : EntityMetadataProcessor<PlayerMetadata>
     {
         RemotePlayerIdentifier remotePlayerId = gameObject.RequireComponent<RemotePlayerIdentifier>();
 
-        List<TechType> equippedTechTypes = metadata.EquippedItems.Select(x => x.TechType.ToUnity()).ToList();
-        remotePlayerId.RemotePlayer.UpdateEquipmentVisibility(equippedTechTypes);
+        remotePlayerId.RemotePlayer.UpdateEquipmentVisibility(metadata.EquippedItems.Select(item => new KeyValuePair<string, TechType>(item.Slot, item.TechType.ToUnity())).ToList());
     }
 }

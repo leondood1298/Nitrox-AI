@@ -6,7 +6,6 @@ using NitroxClient.GameLogic.HUD;
 using NitroxClient.GameLogic.PlayerLogic;
 using NitroxClient.GameLogic.PlayerLogic.PlayerModel;
 using NitroxClient.GameLogic.PlayerLogic.PlayerModel.Abstract;
-using NitroxClient.GameLogic.PlayerLogic.PlayerModel.Equipment.Abstract;
 using NitroxClient.MonoBehaviours;
 using NitroxClient.MonoBehaviours.Cyclops;
 using NitroxClient.MonoBehaviours.Gui.HUD;
@@ -43,7 +42,7 @@ public class RemotePlayer : INitroxPlayer
     private readonly PlayerModelManager playerModelManager;
     private readonly PlayerVitalsManager playerVitalsManager;
     private readonly FMODWhitelist fmodWhitelist;
-    private List<IEquipmentVisibilityHandler> equipmentVisibilityHandlers = [];
+    private RemotePlayerEquipment? equipment;
 
     public PlayerContext PlayerContext { get; }
     public GameObject? Body { get; private set; }
@@ -119,7 +118,7 @@ public class RemotePlayer : INitroxPlayer
 
         CoroutineUtils.StartCoroutineSmart(playerModelManager.AttachPing(this));
         playerModelManager.BeginApplyPlayerColor(this);
-        equipmentVisibilityHandlers = playerModelManager.RegisterEquipmentVisibilityHandler(PlayerModel);
+        equipment = new RemotePlayerEquipment(Player.main.transform.Find("body"), Body.transform, PlayerName);
         SetupBody();
         SetupSkyAppliers();
         SetupPlayerSounds();
@@ -567,9 +566,10 @@ public class RemotePlayer : INitroxPlayer
         }
     }
 
-    public void UpdateEquipmentVisibility(List<TechType> equippedItems)
+    /// <param name="equippedItems">The item type in each equipment slot that holds one.</param>
+    public void UpdateEquipmentVisibility(IEnumerable<KeyValuePair<string, TechType>> equippedItems)
     {
-        PlayerModelManager.UpdateEquipmentVisibility(equipmentVisibilityHandlers, equippedItems);
+        equipment?.SetEquipped(equippedItems);
     }
 
     /// <summary>
