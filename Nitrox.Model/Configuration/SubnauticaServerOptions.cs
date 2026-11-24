@@ -60,6 +60,9 @@ public sealed partial class SubnauticaServerOptions
     [PropertyDescription("Determines whether the server will listen for and reply to LAN discovery requests.")]
     public bool LanDiscovery { get; set; } = true;
 
+    [PropertyDescription("If true, players who run Discord may publish this server's internet address so their Discord friends can ask to join. The address then reaches anyone a player accepts.")]
+    public bool AllowDiscordInvites { get; set; } = false;
+
     [PropertyDescription("Set to true to Cache entities for the whole map on next run. \nWARNING! Will make server load take longer on the cache run but players will gain a performance boost when entering new areas.")]
     public bool CreateFullEntityCache { get; set; } = false;
 

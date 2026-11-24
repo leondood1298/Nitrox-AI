@@ -1,5 +1,7 @@
 ﻿using System.Collections;
 using DiscordGameSDKWrapper;
+using NitroxClient.MonoBehaviours.Gui.Input;
+using NitroxClient.MonoBehaviours.Gui.Input.KeyBindings.Actions;
 using UnityEngine;
 using UnityEngine.Networking;
 using UnityEngine.UI;
@@ -13,6 +15,7 @@ public class DiscordJoinRequestGui : uGUI_InputGroup
 
     private static DiscordJoinRequestGui instance;
     private static User user;
+    private bool responded;
 
     private static Image profilePicture;
     private static GameObject pressToFocus;
@@ -33,7 +36,7 @@ public class DiscordJoinRequestGui : uGUI_InputGroup
         pressToFocus = guiGameObject.FindChild("PressToFocus");
         Text[] texts = pressToFocus.GetComponentsInChildren<Text>();
         texts[0].text = Language.main.Get("Nitrox_DiscordPressToFocus");
-        texts[3].text = GameInput.GetBinding(GameInput.Device.Keyboard, (GameInput.Button)46, GameInput.BindingSet.Primary);
+        texts[3].text = GameInput.GetBinding(GameInput.Device.Keyboard, KeyBindingManager.GetButton<DiscordFocusBindingAction>(), GameInput.BindingSet.Primary);
         pressToFocus.SetActive(true);
 
         pressButtons = guiGameObject.FindChild("PressButtons");
@@ -64,8 +67,18 @@ public class DiscordJoinRequestGui : uGUI_InputGroup
 
     private void CloseWindow(ActivityJoinRequestReply reply)
     {
+        responded = true;
         DiscordClient.RespondJoinRequest(user.Id, reply);
         DestroyImmediate(gameObject);
+    }
+
+    private void OnDestroy()
+    {
+        if (!responded)
+        {
+            DiscordClient.RespondJoinRequest(user.Id, ActivityJoinRequestReply.Ignore);
+        }
+        DiscordClient.OnJoinRequestWindowClosed();
     }
 
     public static void Select()

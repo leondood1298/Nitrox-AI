@@ -14,4 +14,13 @@ public static class KeyBindingManager
         new DiscordFocusBindingAction(),
         new PingKeyBindingAction()
     ];
+
+    /// <summary>
+    ///     The game button a Nitrox binding was registered as: they are numbered from <see cref="NITROX_BASE_ID" /> in list order.
+    /// </summary>
+    public static GameInput.Button GetButton<T>() where T : KeyBinding
+    {
+        int index = KeyBindings.FindIndex(binding => binding is T);
+        return (GameInput.Button)(NITROX_BASE_ID + index);
+    }
 }
