@@ -43,12 +43,15 @@ public sealed partial class FireExtinguisherHolder_TryStoreTank_Patch : NitroxPa
 
     public static void Callback(FireExtinguisherHolder holder, Pickupable pickupable)
     {
+        bool hasTankId = pickupable.TryGetIdOrWarn(out NitroxId pickupableId);
         if (holder.TryGetIdOrWarn(out NitroxId holderId))
         {
+            // The next taking of this holder is named after this tank (see FireExtinguisherHolders.TankToken)
+            Resolve<FireExtinguisherHolders>().SetStoredTank(holderId, hasTankId ? pickupableId : null);
             Resolve<Entities>().EntityMetadataChanged(holder, holderId);
         }
 
-        if (pickupable.TryGetIdOrWarn(out NitroxId pickupableId))
+        if (hasTankId)
         {
             Resolve<IPacketSender>().Send(new EntityDestroyed(pickupableId));
         }

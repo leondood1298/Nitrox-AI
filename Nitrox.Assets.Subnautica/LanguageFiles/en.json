@@ -67,6 +67,7 @@
     "Nitrox_PlayerKicked": "You've been kicked from the server",
     "Nitrox_PlayerLeft": "{PLAYER} left the game.",
     "Nitrox_PlayerListTabName": "Player List",
+    "Nitrox_PlayerPinged": "{PLAYER} pinged {TARGET}",
     "Nitrox_QueueInfo": "You are at position #{POSITION} in the join queue. Maximum possible wait: {TIME}",
     "Nitrox_RejectedSessionPolicy": "Reservation rejected…",
     "Nitrox_ReactorFuelEmpty": "Fuel: empty",

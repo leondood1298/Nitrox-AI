@@ -7,6 +7,7 @@ using NitroxClient.GameLogic.PlayerLogic.PlayerModel.Abstract;
 using NitroxClient.MonoBehaviours.Gui.Modals;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures.GameLogic;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.Packets;
 using UnityEngine;
 using UnityEngine.UI;
@@ -130,6 +131,7 @@ public class uGUI_PlayerPingEntry : uGUI_PingEntry
         Color playerColor = player.PlayerSettings.PlayerColor.ToUnity();
         icon.SetColors(playerColor, playerColor, playerColor);
         RefreshMuteButton();
+        RefreshShowButton();
 
         // We need to update each button's listener whether or not they have enough perms because they may become OP during playtime
         ClearButtonListeners();
@@ -139,7 +141,11 @@ public class uGUI_PlayerPingEntry : uGUI_PingEntry
             if (player is RemotePlayer remotePlayer)
             {
                 PingInstance pingInstance = remotePlayer.PlayerModel.GetComponentInChildren<PingInstance>();
-                pingInstance.SetVisible(toggled);
+                if (pingInstance)
+                {
+                    pingInstance.SetVisible(toggled);
+                }
+                showPing = toggled;
                 GetTooltip(ShowObject).TooltipText = GetLocalizedText(toggled ? "Nitrox_HidePing" : "Nitrox_ShowPing");
                 visibilityIcon.sprite = toggled ? spriteVisible : spriteHidden;
             }
@@ -199,8 +205,34 @@ public class uGUI_PlayerPingEntry : uGUI_PingEntry
         }
     }
 
+    /// <summary>
+    ///     The player's signal may be hidden by this player's saved preference: the entry starts from that.
+    /// </summary>
+    private void RefreshShowButton()
+    {
+        bool visible = true;
+        if (player is RemotePlayer remotePlayer)
+        {
+            PingInstance pingInstance = remotePlayer.PlayerModel ? remotePlayer.PlayerModel.GetComponentInChildren<PingInstance>() : null;
+            if (pingInstance)
+            {
+                visible = pingInstance.visible;
+            }
+            // The signal is attached a little after the player appears
+            else if (NitroxServiceLocator.LocateService<PingPreferences>().TryGet(remotePlayer.PlayerContext.PlayerNitroxId.ToString(), out PingInstancePreference preference))
+            {
+                visible = preference.Visible;
+            }
+        }
+        showPing = visible;
+        GetToggle(ShowObject).SetIsOnWithoutNotify(visible);
+        GetTooltip(ShowObject).TooltipText = GetLocalizedText(visible ? "Nitrox_HidePing" : "Nitrox_ShowPing");
+        visibilityIcon.sprite = visible ? spriteVisible : spriteHidden;
+    }
+
     private void ClearButtonListeners()
     {
+        GetToggle(ShowObject).onValueChanged = new Toggle.ToggleEvent();
         GetToggle(MuteObject).onValueChanged = new Toggle.ToggleEvent();
         GetToggle(KickObject).onValueChanged = new Toggle.ToggleEvent();
         GetToggle(TeleportToObject).onValueChanged = new Toggle.ToggleEvent();

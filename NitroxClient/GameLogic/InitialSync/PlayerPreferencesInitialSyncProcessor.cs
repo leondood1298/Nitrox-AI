@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using Nitrox.Model.Core;
 using NitroxClient.Communication;
 using NitroxClient.GameLogic.InitialSync.Abstract;
 using NitroxClient.MonoBehaviours;
@@ -38,27 +39,52 @@ public sealed class PlayerPreferencesInitialSyncProcessor : InitialSyncProcessor
         yield break;
     }
 
+    /// <summary>
+    ///     Whether <see cref="OnPingAdded" /> is subscribed to the game's static <see cref="PingManager.onAdd" />, which
+    ///     outlives the session.
+    /// </summary>
+    private static bool subscribed;
+
     private static IEnumerator UpdatePingInstancePreferences(InitialPlayerSync packet)
     {
-        Dictionary<string, PingInstancePreference> pingPreferences = packet.Preferences.PingPreferences;
-        void UpdateInstance(PingInstance instance)
-        {
-            ModifyPingInstanceIfPossible(instance, pingPreferences, () => UpdateInstance(instance));
-            RefreshPingEntryInPDA(instance);
-        }
+        NitroxServiceLocator.LocateService<PingPreferences>().Load(packet.Preferences.PingPreferences);
 
-        PingManager.onAdd += UpdateInstance;
-        UnityEngine.Object.FindObjectsOfType<PingInstance>().ForEach(UpdateInstance);
+        Unsubscribe();
+        PingManager.onAdd += OnPingAdded;
+        Multiplayer.OnAfterMultiplayerEnd += Unsubscribe;
+        subscribed = true;
+        UnityEngine.Object.FindObjectsOfType<PingInstance>().ForEach(OnPingAdded);
         yield break;
+    }
+
+    private static void Unsubscribe()
+    {
+        PingManager.onAdd -= OnPingAdded;
+        Multiplayer.OnAfterMultiplayerEnd -= Unsubscribe;
+        subscribed = false;
+    }
+
+    /// <summary>
+    ///     A ping is registered whenever it is enabled again, not only once: it gets the preference as it is now.
+    /// </summary>
+    private static void OnPingAdded(PingInstance instance)
+    {
+        // A delayed retry can come after the session ended
+        if (!subscribed || !instance)
+        {
+            return;
+        }
+        ModifyPingInstanceIfPossible(instance, NitroxServiceLocator.LocateService<PingPreferences>(), () => OnPingAdded(instance));
+        RefreshPingEntryInPDA(instance);
     }
 
     /// <summary>
     /// Updates the given pingInstance if it has a specified preference
     /// </summary>
-    private static void ModifyPingInstanceIfPossible(PingInstance pingInstance, Dictionary<string, PingInstancePreference> preferences, Action callback)
+    private static void ModifyPingInstanceIfPossible(PingInstance pingInstance, PingPreferences preferences, Action callback)
     {
         if (!TryGetKeyForPingInstance(pingInstance, out string pingKey, out bool isRemotePlayerPing, callback) ||
-            !preferences.TryGetValue(pingKey, out PingInstancePreference preference))
+            !preferences.TryGet(pingKey, out PingInstancePreference preference))
         {
             return;
         }

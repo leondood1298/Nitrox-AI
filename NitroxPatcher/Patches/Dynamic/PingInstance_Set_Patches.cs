@@ -2,6 +2,7 @@ using System;
 using System.Reflection;
 using HarmonyLib;
 using NitroxClient.Communication.Abstract;
+using NitroxClient.GameLogic;
 using NitroxClient.GameLogic.InitialSync;
 using Nitrox.Model.Subnautica.Packets;
 
@@ -25,7 +26,7 @@ public sealed class PingInstance_Set_Patches : NitroxPatch, IDynamicPatch
 
         if (PlayerPreferencesInitialSyncProcessor.TryGetKeyForPingInstance(__instance, out string pingKey, out bool _))
         {
-            Resolve<IPacketSender>().Send(new SignalPingPreferenceChanged(pingKey, __instance.visible, index));
+            Send(pingKey, __instance.visible, index);
         }
     }
 
@@ -39,8 +40,15 @@ public sealed class PingInstance_Set_Patches : NitroxPatch, IDynamicPatch
 
         if (PlayerPreferencesInitialSyncProcessor.TryGetKeyForPingInstance(__instance, out string pingKey, out bool _))
         {
-            Resolve<IPacketSender>().Send(new SignalPingPreferenceChanged(pingKey, value, __instance.colorIndex));
+            Send(pingKey, value, __instance.colorIndex);
         }
+    }
+
+    private static void Send(string pingKey, bool visible, int color)
+    {
+        Resolve<IPacketSender>().Send(new SignalPingPreferenceChanged(pingKey, visible, color));
+        // A ping that registers again later (a beacon thrown, moved by another player) is given this, not the join's value
+        Resolve<PingPreferences>().Remember(pingKey, visible, color);
     }
 
     public override void Patch(Harmony harmony)

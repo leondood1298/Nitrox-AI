@@ -127,6 +127,9 @@ namespace NitroxClient
             containerBuilder.RegisterType<BatteryCharges>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<OxygenTanks>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<Trashcans>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<PingPreferences>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<Beacons>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<BaseSpotLights>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<Repulsions>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<GravityTraps>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<DiveReels>().InstancePerLifetimeScope();
@@ -147,6 +150,7 @@ namespace NitroxClient
             containerBuilder.RegisterType<SeamothModulesEvent>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<Fires>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<FireExtinguishers>().InstancePerLifetimeScope();
+            containerBuilder.RegisterType<FireExtinguisherHolders>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<MapRoomCameras>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<MapRoomCameraPreviews>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<MapRoomCameraStates>().InstancePerLifetimeScope();

@@ -51,26 +51,57 @@ public class PlayerModelManager
         }
     }
 
-    private IEnumerator CreateSignalPrototype(IOut<GameObject> result)
+    /// <summary>
+    ///     One inactive copy of the signal prefab, cloned for every remote player. A new one per player stayed behind each
+    ///     time.
+    /// </summary>
+    private GameObject signalPrototype;
+
+    private bool loadingSignalPrototype;
+
+    private IEnumerator EnsureSignalPrototype()
     {
-        CoroutineTask<GameObject> signalHandle = AddressablesUtility.InstantiateAsync("WorldEntities/Environment/Generated/Signal.prefab", Multiplayer.Main.transform, awake: false);
-        yield return signalHandle;
+        while (loadingSignalPrototype)
+        {
+            yield return null;
+        }
+        if (signalPrototype)
+        {
+            yield break;
+        }
 
-        GameObject go = signalHandle.GetResult();
-        go.name = "RemotePlayerSignalPrototype";
-        go.transform.localScale = new Vector3(.5f, .5f, .5f);
-        go.transform.localPosition = new Vector3(0, 0.8f, 0);
-        go.SetActive(false);
+        loadingSignalPrototype = true;
+        try
+        {
+            CoroutineTask<GameObject> signalHandle = AddressablesUtility.InstantiateAsync("WorldEntities/Environment/Generated/Signal.prefab", Multiplayer.Main.transform, awake: false);
+            yield return signalHandle;
 
-        result.Set(go);
+            GameObject go = signalHandle.GetResult();
+            go.name = "RemotePlayerSignalPrototype";
+            go.transform.localScale = new Vector3(.5f, .5f, .5f);
+            go.transform.localPosition = new Vector3(0, 0.8f, 0);
+            go.SetActive(false);
+            // SignalPing is not required for player as we don't need to display text or anchor to a specific world position.
+            // The ping preferences also tell a remote player's signal from a story signal by its lack of SignalPing, so it
+            // must be gone before the ping registers.
+            Object.DestroyImmediate(go.GetComponent<SignalPing>());
+            signalPrototype = go;
+        }
+        finally
+        {
+            loadingSignalPrototype = false;
+        }
     }
 
     public IEnumerator AttachPing(INitroxPlayer player)
     {
-        TaskResult<GameObject> result = new();
-        yield return CreateSignalPrototype(result);
+        yield return EnsureSignalPrototype();
+        if (!signalPrototype || !player.PlayerModel)
+        {
+            yield break;
+        }
 
-        GameObject signalBase = Object.Instantiate(result.value, player.PlayerModel.transform, false);
+        GameObject signalBase = Object.Instantiate(signalPrototype, player.PlayerModel.transform, false);
         signalBase.name = $"signal_{player.PlayerName}";
         signalBase.SetActive(true);
 
@@ -80,10 +111,6 @@ public class PlayerModelManager
         ping.pingType = PingType.Signal;
         // ping will be moved to the player list tab
         ping.displayPingInManager = false;
-
-        // SignalPing is not required for player as we don't need to display text or anchor to a specific world position
-        // we also take a dependency on the lack of signalping later to differentiate remote player pings from others.
-        Object.DestroyImmediate(signalBase.GetComponent<SignalPing>());
 
         SetInGamePingColor(player, ping);
     }

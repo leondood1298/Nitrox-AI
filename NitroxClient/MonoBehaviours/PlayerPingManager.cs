@@ -111,29 +111,46 @@ internal sealed class PlayerPingManager : MonoBehaviour
         NitroxId pingId = new();
         SessionId sessionId = localPlayer.SessionId.Value;
         Color playerColor = localPlayer.PlayerSettings.PlayerColor.ToUnity();
-        string label = $"{localPlayer.PlayerName} pinged {entityHit.GetFriendlyName()}";
+        // What was pinged is sent, not a sentence: each player reads it in their own language
+        TechType targetTechType = CraftData.GetTechType(entityHit);
+        string targetTechTypeName = targetTechType == TechType.None ? string.Empty : targetTechType.AsString();
+        string targetName = entityHit.GetFriendlyName();
 
-        PlayerPing newPing = PlayerPing.SpawnPlayerPing(position.ToDto(), label, pingId, playerColor);
+        PlayerPing newPing = PlayerPing.SpawnPlayerPing(position.ToDto(), BuildLabel(localPlayer.PlayerName, targetTechTypeName, targetName), pingId, playerColor);
         if (newPing)
         {
             localPlayerPings.Add(newPing);
         }
 
-        packetSender.Send(new PlayerPingCreated(sessionId, label, position.ToDto(), pingId));
+        packetSender.Send(new PlayerPingCreated(sessionId, targetTechTypeName, targetName, position.ToDto(), pingId));
     }
 
-    public static void CreateRemotePing(SessionId sessionId, string labelText, NitroxVector3 position, NitroxId pingId)
+    private static string BuildLabel(string playerName, string targetTechType, string targetName)
+    {
+        return PlayerPingLabels.Build(Language.main.Get(PlayerPingLabels.TEMPLATE_KEY), playerName, targetTechType, targetName, techType => Language.main.Get(techType));
+    }
+
+    public static void CreateRemotePing(SessionId sessionId, string targetTechType, string targetName, NitroxVector3 position, NitroxId pingId)
     {
         if (!instance)
         {
             return;
         }
-        
-        instance.CreateRemotePingInternal(sessionId, labelText, position, pingId);
+
+        instance.CreateRemotePingInternal(sessionId, targetTechType, targetName, position, pingId);
     }
-    
-    private void CreateRemotePingInternal(SessionId sessionId, string labelText, NitroxVector3 position, NitroxId pingId)
+
+    private void CreateRemotePingInternal(SessionId sessionId, string targetTechType, string targetName, NitroxVector3 position, NitroxId pingId)
     {
+        PlayerManager playerManager = this.Resolve<PlayerManager>();
+        Optional<RemotePlayer> remotePlayerOptional = playerManager.Find(sessionId);
+        // The pinging player may have left before the ping is shown (it is held through the loading screen)
+        if (!remotePlayerOptional.HasValue)
+        {
+            return;
+        }
+        RemotePlayer remotePlayer = remotePlayerOptional.Value;
+
         if (!playerPings.TryGetValue(sessionId, out List<PlayerPing> pings))
         {
             pings = new List<PlayerPing>();
@@ -152,14 +169,8 @@ internal sealed class PlayerPingManager : MonoBehaviour
             pings.RemoveAt(0);
         }
         
-        PlayerManager playerManager = this.Resolve<PlayerManager>();
-        Optional<RemotePlayer> remotePlayerOptional = playerManager.Find(sessionId);
-        
-        Color playerColor = remotePlayerOptional.HasValue 
-            ? remotePlayerOptional.Value.PlayerSettings.PlayerColor.ToUnity() 
-            : Color.yellow;
-        
-        PlayerPing newPing = PlayerPing.SpawnPlayerPing(position, labelText, pingId, playerColor);
+        Color playerColor = remotePlayer.PlayerSettings.PlayerColor.ToUnity();
+        PlayerPing newPing = PlayerPing.SpawnPlayerPing(position, BuildLabel(remotePlayer.PlayerName, targetTechType, targetName), pingId, playerColor);
         if (newPing)
         {
             pings.Add(newPing);
