@@ -270,6 +270,19 @@ public class Items
     }
 
     /// <summary>
+    ///     Called after the game set an item aside for its player until the inventory has room (Inventory.AddPending). The
+    ///     server keeps it in the player's inventory meanwhile, so it is not lost if the player leaves first; the game
+    ///     picks it up for real once there is room.
+    /// </summary>
+    public void Pending(Pickupable pickupable)
+    {
+        if (pickupable && Multiplayer.Main && Multiplayer.Main.InitialSyncCompleted)
+        {
+            PickedUpByPlayer(pickupable.gameObject, pickupable.GetTechType());
+        }
+    }
+
+    /// <summary>
     ///     Called after the game secured everything the player carries (entering a base or vehicle): the server keeps it, so
     ///     that the items are safe on death after a rejoin too.
     /// </summary>
