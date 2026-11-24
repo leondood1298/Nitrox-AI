@@ -158,4 +158,19 @@ public sealed class ItemClaimsTest
         scenario.ItemClaims.TryTakeBatterySlot(new InstalledBatteryEntity(1, new NitroxId(), new NitroxTechType("PowerCell"), null, scenario.Locker.Id, []), out _).Should().BeTrue();
         scenario.ItemClaims.TryTakeBatterySlot(first, out _).Should().BeTrue();
     }
+
+    [TestMethod]
+    public void APickedFruitCountsAsPickedLatelyForAMoment()
+    {
+        TimeSpan now = TimeSpan.Zero;
+        ItemClaims claims = new(scenario.EntityRegistry, scenario.Players.PlayerManager, () => now);
+        NitroxId plant = new();
+
+        claims.NotePicked(plant, 2);
+
+        claims.PickedLately(plant, 2).Should().BeTrue();
+        claims.PickedLately(plant, 1).Should().BeFalse();
+        now = ItemClaims.RECENT_PICK;
+        claims.PickedLately(plant, 2).Should().BeFalse();
+    }
 }

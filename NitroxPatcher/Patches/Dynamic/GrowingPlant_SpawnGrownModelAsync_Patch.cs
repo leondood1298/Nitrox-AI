@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Reflection.Emit;
 using HarmonyLib;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
+using NitroxClient.GameLogic;
 using NitroxClient.GameLogic.Spawning;
 using NitroxClient.GameLogic.Spawning.Metadata.Processor;
 using UnityEngine;
@@ -39,16 +40,25 @@ public sealed partial class GrowingPlant_SpawnGrownModelAsync_Patch : NitroxPatc
 
     public static void OnGrown(GrownPlant grownPlant, GrowingPlant growingPlant)
     {
-        if (!grownPlant.TryGetComponent(out FruitPlant fruitPlant) || !growingPlant.TryGetReference(out FruitPlantMetadata fruitPlantMetadata))
+        bool hasMetadata = growingPlant.TryGetReference(out PlantableMetadata metadata);
+        if (grownPlant.TryGetComponent(out FruitPlant fruitPlant) && hasMetadata && metadata.FruitPlantMetadata != null)
+        {
+            // Only useful stuff from FruitPlant.OnGrown, whose picked states and timer the metadata replaces
+            fruitPlant.Initialize();
+            fruitPlant.fruitSpawnEnabled = true;
+        }
+        else
         {
             // Original call if we don't need to apply anything
             grownPlant.SendMessage("OnGrown", SendMessageOptions.DontRequireReceiver);
-            return;
         }
 
-        // Only useful stuff from FruitPlant.OnGrown
-        fruitPlant.Initialize();
-        fruitPlant.fruitSpawnEnabled = true;
-        Resolve<FruitPlantMetadataProcessor>().ProcessMetadata(grownPlant.seed.gameObject, fruitPlantMetadata);
+        // After OnGrown, which would make the FruitPlant added here grow its parts back
+        PickablePlants.Track(grownPlant.gameObject);
+
+        if (hasMetadata && grownPlant.seed)
+        {
+            Resolve<PlantableMetadataProcessor>().ApplyToGrownPlant(grownPlant.seed, metadata);
+        }
     }
 }

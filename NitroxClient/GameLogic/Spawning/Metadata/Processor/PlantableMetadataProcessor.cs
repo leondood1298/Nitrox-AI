@@ -35,11 +35,26 @@ public class PlantableMetadataProcessor(FruitPlantMetadataProcessor fruitPlantMe
                 plantable.plantAge = Mathf.Clamp((DayNightCycle.main.timePassedAsFloat - metadata.TimeStartGrowth) / growingPlant.GetGrowthDuration(), 0f, growingPlant.maxProgress);
             }
         }
-        
+
+        ApplyToGrownPlant(plantable, metadata);
+    }
+
+    /// <summary>
+    ///     The fruit and health of the grown plant. Also called once the plant has grown (see
+    ///     GrowingPlant_SpawnGrownModelAsync_Patch), as the grown plant is made some frames after the seed is planted.
+    /// </summary>
+    public void ApplyToGrownPlant(Plantable plantable, PlantableMetadata metadata)
+    {
         // TODO: Refer to the TODO in PlantableMetadata
         if (metadata.FruitPlantMetadata != null)
         {
-            fruitPlantMetadataProcessor.ProcessMetadata(gameObject, metadata.FruitPlantMetadata);
+            fruitPlantMetadataProcessor.ProcessMetadata(plantable.gameObject, metadata.FruitPlantMetadata);
+        }
+
+        // A health of zero is never applied: the plant's death is its removal (GrownPlant_OnKill_Patch)
+        if (metadata.Health > 0f && plantable.linkedGrownPlant && plantable.linkedGrownPlant.TryGetComponent(out LiveMixin liveMixin) && liveMixin.IsAlive())
+        {
+            Resolve<LiveMixinManager>().SyncRemoteHealth(liveMixin, Mathf.Min(metadata.Health, liveMixin.maxHealth));
         }
     }
 }
