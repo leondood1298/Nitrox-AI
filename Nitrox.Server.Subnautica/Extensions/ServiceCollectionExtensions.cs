@@ -166,6 +166,7 @@ internal static partial class ServiceCollectionExtensions
                     .AddSingleton<JoiningManager>()
                     .AddSingleton<BuildingManager>()
                     .AddSingleton<PlayerManager>()
+                    .AddSingleton<Models.Administration.ChatRateLimiter>()
                     .AddSingleton<SessionManager>()
                     .AddSingleton<SleepManager>()
                     .AddSingleton<BedOccupancy>()
