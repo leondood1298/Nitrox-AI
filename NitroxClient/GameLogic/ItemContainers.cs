@@ -59,9 +59,12 @@ public class ItemContainers
             return;
         }
 
-        if (!entities.IsKnownEntity(itemId))
+        // If the entity existed but was deleted (for example by module remove), fall back to respawning. An item known as
+        // something else than an inventory item (a power cell taken out of a slot, an item shot into a locker by a
+        // propulsion cannon) is respawned too: moved as it was, it would keep its old kind on the server, and the others
+        // would leave it in its slot or in the world.
+        if (!entities.IsKnownEntity(itemId) || entities.RequireEntityType(itemId) != typeof(InventoryItemEntity))
         {
-            // If the entity existed but was deleted (for example by module remove), fall back to respawning
             items.MovedIntoInventory(pickupable.gameObject, ownerId);
             return;
         }
@@ -125,8 +128,35 @@ public class ItemContainers
         Optional<EntityMetadata> metadata = entityMetadataManager.Extract(battery);
 
         InstalledBatteryEntity installedBattery = new(componentIndex, id, techType.ToDto(), metadata.OrNull(), parent.Id, []);
+        entities.MarkAsSpawned(installedBattery);
 
         EntitySpawnedByClient spawnedPacket = new(installedBattery);
         packetSender.Send(spawnedPacket);
+    }
+
+    /// <summary>
+    ///     Called after a battery or power cell left the slot of a tool or vehicle in this game. The player took it: it goes
+    ///     to this player's inventory, and the others take it out of the slot. Said before anything is put into the slot
+    ///     instead, so that the server does not find the slot taken.
+    /// </summary>
+    public void BatteryRemoved(EnergyMixin energyMixin, InventoryItem item)
+    {
+        NitroxEntity parent = energyMixin.gameObject.FindAncestor<NitroxEntity>();
+        if (parent)
+        {
+            BatteryChildEntityHelper.ForgetPendingInstalledBattery(energyMixin, parent.Id);
+        }
+
+        Pickupable battery = item?.item;
+        // A battery destroyed with its tool, or one removed because the server said so, was not taken by this player
+        if (!battery || battery.isDestroyed || PacketSuppressor<EntitySpawnedByClient>.IsSuppressed || !Multiplayer.Main || !Multiplayer.Main.InitialSyncCompleted)
+        {
+            return;
+        }
+        if (!battery.TryGetNitroxId(out NitroxId batteryId) || !entities.IsKnownEntity(batteryId) || !Player.main || !Player.main.TryGetNitroxId(out NitroxId playerId))
+        {
+            return;
+        }
+        items.MovedIntoInventory(battery.gameObject, playerId);
     }
 }

@@ -130,7 +130,7 @@ public class Items
         int level = gameObject.TryGetComponent(out LargeWorldEntity largeWorldEntity) ? (int)largeWorldEntity.cellLevel : 0;
 
         WorldEntity droppedItem;
-        List<Entity> childrenEntities = GetPrefabChildren(gameObject, id, entityMetadataManager).ToList();
+        List<Entity> childrenEntities = GetPrefabChildren(gameObject, id, entityMetadataManager).Concat(GetStoredItems(gameObject, id, entityMetadataManager)).ToList();
         // Reflects the tool's actual current battery state (if any); never assumes a default one, since a dropped item always already exists.
         // A Scanner Room camera's battery is not an entity of its own: its energy is synced with the camera itself
         // (see Battery_charge_set_Patch), so it must not be announced as a child here.
@@ -304,10 +304,31 @@ public class Items
         Optional<EntityMetadata> metadata = entityMetadataManager.Extract(gameObject);
         List<Entity> children = GetPrefabChildren(gameObject, itemId, entityMetadataManager).ToList();
 
+        children.AddRange(GetStoredItems(gameObject, itemId, entityMetadataManager));
         InventoryItemEntity inventoryItemEntity = new(itemId, classId, techType.ToDto(), metadata.OrNull(), parentId, children);
         BatteryChildEntityHelper.TryPopulateInstalledBattery(gameObject, inventoryItemEntity.ChildEntities, itemId, entityMetadataManager, allowDefaultBattery);
 
         return inventoryItemEntity;
+    }
+
+    /// <summary>
+    ///     The items stored in an item: the torpedoes in a torpedo module or a Prawn Suit torpedo arm (which come with two
+    ///     when crafted). They go wherever the item goes; without them, a module put into a vehicle or taken out of it would
+    ///     arrive empty on the server, for the other players and after a restart.
+    /// </summary>
+    public static IEnumerable<Entity> GetStoredItems(GameObject gameObject, NitroxId parentId, EntityMetadataManager entityMetadataManager)
+    {
+        if (!gameObject.TryGetComponent(out SeamothStorageContainer storage) || storage.container == null)
+        {
+            yield break;
+        }
+        foreach (InventoryItem stored in storage.container)
+        {
+            if (stored?.item && stored.item.GetComponent<PrefabIdentifier>())
+            {
+                yield return ConvertToInventoryItemEntity(stored.item.gameObject, parentId, entityMetadataManager, false);
+            }
+        }
     }
 
     /// <summary>
@@ -358,7 +379,7 @@ public class Items
                 string classId = pickupable.RequireComponent<PrefabIdentifier>().ClassId;
                 NitroxId itemId = NitroxEntity.GetIdOrGenerateNew(pickupable.gameObject);
                 Optional<EntityMetadata> metadata = entityMetadataManager.Extract(pickupable.gameObject);
-                List<Entity> children = GetPrefabChildren(pickupable.gameObject, itemId, entityMetadataManager).ToList();
+                List<Entity> children = GetPrefabChildren(pickupable.gameObject, itemId, entityMetadataManager).Concat(GetStoredItems(pickupable.gameObject, itemId, entityMetadataManager)).ToList();
 
                 entities.Add(new(itemEntry.Key, classId, itemId, pickupable.GetTechType().ToDto(), metadata.OrNull(), equipmentId, children));
             }
