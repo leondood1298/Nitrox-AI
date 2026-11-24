@@ -75,7 +75,7 @@ public class RemoteBedController : MonoBehaviour
                 FrameCount = 0
             };
             playerStates[player] = value;
-            player.AnimationController["cinematics_enabled"] = true;
+            player.AnimationController.ApplyCinematicsEnabled();
             player.AnimationController[cinematicController.playerViewAnimationName] = true;
             if (player.RigidBody)
             {
@@ -185,7 +185,6 @@ public class RemoteBedController : MonoBehaviour
             if (player.AnimationController != null && value.CinematicController != null)
             {
                 player.AnimationController[value.CinematicController.playerViewAnimationName] = false;
-                player.AnimationController["cinematics_enabled"] = false;
                 player.AnimationController.UpdatePlayerAnimations = true;
             }
             if (player.RigidBody)

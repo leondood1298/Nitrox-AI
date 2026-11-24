@@ -12,7 +12,7 @@ internal sealed class PlayerInCyclopsMovementProcessor(PlayerManager remotePlaye
     {
         if (remotePlayerManager.TryFind(movement.SessionId, out RemotePlayer remotePlayer) && remotePlayer.Pawn != null)
         {
-            remotePlayer.UpdatePositionInCyclops(movement.LocalPosition.ToUnity(), movement.LocalRotation.ToUnity());
+            remotePlayer.UpdatePositionInCyclops(movement.LocalPosition.ToUnity(), movement.LocalRotation.ToUnity(), movement.LocalAimingRotation.ToUnity());
         }
         return Task.CompletedTask;
     }

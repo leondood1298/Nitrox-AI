@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Generic;
+using Nitrox.Model.DataStructures.GameLogic;
 using NitroxClient.GameLogic;
+using NitroxClient.GameLogic.HUD;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -16,6 +19,22 @@ public class RemotePlayerVitals : MonoBehaviour
     private static readonly Color FOOD_BAR_BORDER_COLOR = new(0.957f, 0.914f, 0.251f, 1.0f);
     private static readonly Color WATER_BAR_COLOR = new(0.212f, 0.663f, 0.855f, 1.0f);
     private static readonly Color WATER_BAR_BORDER_COLOR = new(0.227f, 0.949f, 0.969f, 1.0f);
+    /// <summary>
+    ///     The canvas turns to the camera about the middle of the bars. Turning about the feet, as before, swung the bars
+    ///     around as the camera moved (upstream issue 2158).
+    /// </summary>
+    private const float CANVAS_HEIGHT = 0.29f;
+
+    /// <summary>
+    ///     Drawn after the game's transparent effects, so that clouds and particles behind the bars do not hide them
+    ///     (upstream issue 2158); walls still do.
+    /// </summary>
+    private const int OVERLAY_RENDER_QUEUE = 4000;
+
+    private readonly List<Material> overlayMaterials = [];
+    private SubnauticaGameMode gameMode;
+    private bool showsHealthAndOxygen = true;
+    private bool showsFoodAndWater = true;
     private Canvas canvas;
     private Bar foodBar;
     private Bar healthBar;
@@ -49,13 +68,29 @@ public class RemotePlayerVitals : MonoBehaviour
         return vitals;
     }
 
-    public void SetStatsVisible(bool visible)
+    public void SetGameMode(SubnauticaGameMode mode)
+    {
+        gameMode = mode;
+        UpdateBarsVisibility(true);
+    }
+
+    private void UpdateBarsVisibility(bool force)
     {
         EnsureBars();
-        oxygenBar.SetVisible(visible);
-        healthBar.SetVisible(visible);
-        foodBar.SetVisible(visible);
-        waterBar.SetVisible(visible);
+        Camera camera = Camera.main;
+        float distance = camera ? Vector3.Distance(camera.transform.position, transform.position) : 0f;
+        bool healthAndOxygen = RemotePlayerVitalsRules.ShowsHealthAndOxygen(gameMode, distance);
+        bool foodAndWater = RemotePlayerVitalsRules.ShowsFoodAndWater(gameMode, distance);
+        if (!force && healthAndOxygen == showsHealthAndOxygen && foodAndWater == showsFoodAndWater)
+        {
+            return;
+        }
+        showsHealthAndOxygen = healthAndOxygen;
+        showsFoodAndWater = foodAndWater;
+        oxygenBar.SetVisible(healthAndOxygen);
+        healthBar.SetVisible(healthAndOxygen);
+        foodBar.SetVisible(foodAndWater);
+        waterBar.SetVisible(foodAndWater);
     }
 
     public void SetOxygen(float oxygen, float maxOxygen)
@@ -85,7 +120,7 @@ public class RemotePlayerVitals : MonoBehaviour
 
     public void LateUpdate()
     {
-        EnsureBars();
+        UpdateBarsVisibility(false);
         oxygenBar.UpdateVisual();
         healthBar.UpdateVisual();
         foodBar.UpdateVisual();
@@ -109,6 +144,23 @@ public class RemotePlayerVitals : MonoBehaviour
             foodBar.Dispose();
             waterBar.Dispose();
             CreateStats(canvas);
+            oxygenBar.SetVisible(showsHealthAndOxygen);
+            healthBar.SetVisible(showsHealthAndOxygen);
+            foodBar.SetVisible(showsFoodAndWater);
+            waterBar.SetVisible(showsFoodAndWater);
+        }
+    }
+
+    /// <summary>
+    ///     Gives every graphic of the canvas a copy of its material that draws in the overlay queue.
+    /// </summary>
+    private void DrawOverEffects(GameObject root)
+    {
+        foreach (Graphic graphic in root.GetComponentsInChildren<Graphic>(true))
+        {
+            Material material = new(graphic.materialForRendering) { renderQueue = OVERLAY_RENDER_QUEUE };
+            overlayMaterials.Add(material);
+            graphic.material = material;
         }
     }
 
@@ -116,7 +168,7 @@ public class RemotePlayerVitals : MonoBehaviour
     {
         // Canvas
         transform.SetParent(playerTransform, false);
-        transform.localPosition = new Vector3(0, 0, 0);
+        transform.localPosition = new Vector3(0, CANVAS_HEIGHT, 0);
 
         Canvas vitalsCanvas = gameObject.AddComponent<Canvas>();
         vitalsCanvas.renderMode = RenderMode.WorldSpace;
@@ -139,6 +191,10 @@ public class RemotePlayerVitals : MonoBehaviour
         oxygenBar = CreateBar(uGUI.GetComponentInChildren<uGUI_OxygenBar>(true), canvas);
         foodBar = CreateBar(uGUI.GetComponentInChildren<uGUI_FoodBar>(true), canvas);
         waterBar = CreateBar(uGUI.GetComponentInChildren<uGUI_WaterBar>(true), canvas);
+        healthBar.DrawOverEffects(DrawOverEffects);
+        oxygenBar.DrawOverEffects(DrawOverEffects);
+        foodBar.DrawOverEffects(DrawOverEffects);
+        waterBar.DrawOverEffects(DrawOverEffects);
     }
 
     private Bar CreateBar<T>(T barBehaviour, Canvas canvas) where T : MonoBehaviour
@@ -162,13 +218,13 @@ public class RemotePlayerVitals : MonoBehaviour
             case uGUI_HealthBar:
                 newBar.color = HEALTH_BAR_COLOR;
                 newBar.borderColor = HEALTH_BAR_BORDER_COLOR;
-                cloned.transform.localPosition = new Vector3(-0.05f, 0.33f, 0f);
+                cloned.transform.localPosition = new Vector3(-0.05f, 0.33f - CANVAS_HEIGHT, 0f);
                 cloned.transform.localScale = new Vector3(0.0014f, 0.0014f, 1f);
                 break;
             case uGUI_OxygenBar:
                 newBar.color = OXYGEN_BAR_COLOR;
                 newBar.borderColor = OXYGEN_BAR_BORDER_COLOR;
-                cloned.transform.localPosition = new Vector3(0.05f, 0.33f, 0f);
+                cloned.transform.localPosition = new Vector3(0.05f, 0.33f - CANVAS_HEIGHT, 0f);
                 cloned.transform.localScale = new Vector3(0.0006f, 0.0006f, 1f);
                 // PulseWave is only present for uGUI_OxygenBar
                 Destroy(cloned.FindChild("PulseWave"));
@@ -176,13 +232,13 @@ public class RemotePlayerVitals : MonoBehaviour
             case uGUI_FoodBar:
                 newBar.color = FOOD_BAR_COLOR;
                 newBar.borderColor = FOOD_BAR_BORDER_COLOR;
-                cloned.transform.localPosition = new Vector3(-0.05f, 0.255f, 0f);
+                cloned.transform.localPosition = new Vector3(-0.05f, 0.255f - CANVAS_HEIGHT, 0f);
                 cloned.transform.localScale = new Vector3(0.0014f, 0.0014f, 1f);
                 break;
             case uGUI_WaterBar:
                 newBar.color = WATER_BAR_COLOR;
                 newBar.borderColor = WATER_BAR_BORDER_COLOR;
-                cloned.transform.localPosition = new Vector3(0.05f, 0.255f, 0f);
+                cloned.transform.localPosition = new Vector3(0.05f, 0.255f - CANVAS_HEIGHT, 0f);
                 cloned.transform.localScale = new Vector3(0.0014f, 0.0014f, 1f);
                 break;
             default:
@@ -213,7 +269,8 @@ public class RemotePlayerVitals : MonoBehaviour
 
         // Text position
         RectTransform namePosition = nameObject.GetComponent<RectTransform>();
-        namePosition.localPosition = new Vector3(0, 0.4f, 0);
+        namePosition.localPosition = new Vector3(0, 0.4f - CANVAS_HEIGHT, 0);
+        DrawOverEffects(nameObject);
         namePosition.sizeDelta = new Vector2(200, 100);
     }
 
@@ -224,6 +281,11 @@ public class RemotePlayerVitals : MonoBehaviour
         healthBar?.Dispose();
         foodBar?.Dispose();
         waterBar?.Dispose();
+        foreach (Material material in overlayMaterials)
+        {
+            Destroy(material);
+        }
+        overlayMaterials.Clear();
     }
 
     private class Bar : IDisposable
@@ -277,6 +339,8 @@ public class RemotePlayerVitals : MonoBehaviour
                 text.SetText(IntStringCache.GetStringForInt(Mathf.RoundToInt(target)));
             }
         }
+
+        public void DrawOverEffects(Action<GameObject> apply) => apply(gameObject);
 
         public void SetVisible(bool visible)
         {

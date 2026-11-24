@@ -1,6 +1,7 @@
 using System.Collections;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
+using NitroxClient.GameLogic.PlayerLogic;
 using NitroxClient.GameLogic.PlayerLogic.PlayerModel.Abstract;
 using NitroxClient.GameLogic.Spawning.Abstract;
 using NitroxClient.MonoBehaviours;
@@ -35,8 +36,9 @@ public class PlayerEntitySpawner(PlayerManager playerManager, ILocalNitroxPlayer
         }
 
         GameObject remotePlayerBody = CloneLocalPlayerBodyPrototype();
-        remotePlayer.Value.InitializeGameObject(remotePlayerBody);
+        remotePlayer.Value.InitializeGameObject(remotePlayerBody, localPlayer.BodyPrototype);
         playerManager.BodyCreated(remotePlayer.Value);
+        PlaceBody(remotePlayerBody.transform, entity, parent);
 
         if (parent.HasValue)
         {
@@ -55,6 +57,26 @@ public class PlayerEntitySpawner(PlayerManager playerManager, ILocalNitroxPlayer
         GameObject clone = Object.Instantiate(localPlayer.BodyPrototype, null, false);
         clone.SetActive(true);
         return clone;
+    }
+
+    private static void PlaceBody(Transform body, PlayerEntity entity, Optional<GameObject> parent)
+    {
+        if (entity.Transform == null)
+        {
+            return;
+        }
+
+        bool hasParent = parent.HasValue && parent.Value;
+        Transform parentTransform = hasParent ? parent.Value.transform : null;
+        bool parentIsBase = hasParent && parentTransform.TryGetComponent(out SubRoot subRoot) && subRoot.isBase;
+        (Vector3 position, Quaternion? rotation) = RemoteBodyPlacement.Place(entity.Transform.LocalPosition.ToUnity(), entity.Transform.LocalRotation.ToUnity(), hasParent,
+                                                                             hasParent ? parentTransform.position : Vector3.zero,
+                                                                             hasParent ? parentTransform.rotation : Quaternion.identity, parentIsBase);
+        body.position = position;
+        if (rotation.HasValue)
+        {
+            body.rotation = rotation.Value;
+        }
     }
 
     private void AttachToParent(RemotePlayer remotePlayer, GameObject parent)

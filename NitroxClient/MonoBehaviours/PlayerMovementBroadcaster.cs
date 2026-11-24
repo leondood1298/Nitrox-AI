@@ -165,7 +165,7 @@ public class PlayerMovementBroadcaster : MonoBehaviour
         if (!Player.main.isPiloting && Player.main.TryGetComponent(out CyclopsMotor cyclopsMotor) && cyclopsMotor.Pawn != null)
         {
             Transform pawnTransform = cyclopsMotor.Pawn.Handle.transform;
-            PlayerInCyclopsMovement packet = new(this.Resolve<LocalPlayer>().SessionId.Value, pawnTransform.localPosition.ToDto(), pawnTransform.localRotation.ToDto());
+            PlayerInCyclopsMovement packet = new(this.Resolve<LocalPlayer>().SessionId.Value, pawnTransform.localPosition.ToDto(), pawnTransform.localRotation.ToDto(), (Player.main.transform.parent.rotation.GetInverse() * Player.main.camRoot.GetAimingTransform().rotation).ToDto());
             this.Resolve<IPacketSender>().Send(packet);
             return true;
         }

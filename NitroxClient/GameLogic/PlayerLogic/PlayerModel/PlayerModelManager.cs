@@ -2,8 +2,6 @@ using System.Collections;
 using System.Collections.Generic;
 using NitroxClient.GameLogic.PlayerLogic.PlayerModel.Abstract;
 using NitroxClient.GameLogic.PlayerLogic.PlayerModel.ColorSwap;
-using NitroxClient.GameLogic.PlayerLogic.PlayerModel.Equipment;
-using NitroxClient.GameLogic.PlayerLogic.PlayerModel.Equipment.Abstract;
 using NitroxClient.MonoBehaviours;
 using UnityEngine;
 using Object = UnityEngine.Object;
@@ -22,33 +20,6 @@ public class PlayerModelManager
     public void BeginApplyPlayerColor(INitroxPlayer player)
     {
         Multiplayer.Main.StartCoroutine(ApplyPlayerColor(player, colorSwapManagers));
-    }
-
-    /// <remarks>
-    /// This manager is registered as a single shared instance (<c>InstancePerLifetimeScope</c>), so the returned handlers
-    /// must be kept by the caller (one list per remote player) instead of being cached here. Storing them on this manager
-    /// previously caused every remote player to share the same handler list, so only the most recently (re)spawned
-    /// remote player's equipment would ever be updated correctly.
-    /// </remarks>
-    public List<IEquipmentVisibilityHandler> RegisterEquipmentVisibilityHandler(GameObject playerModel)
-    {
-        return new List<IEquipmentVisibilityHandler>
-        {
-            new DiveSuitVisibilityHandler(playerModel),
-            new ScubaSuitVisibilityHandler(playerModel),
-            new FinsVisibilityHandler(playerModel),
-            new RadiationSuitVisibilityHandler(playerModel),
-            new ReinforcedSuitVisibilityHandler(playerModel),
-            new StillSuitVisibilityHandler(playerModel)
-        };
-    }
-
-    public static void UpdateEquipmentVisibility(List<IEquipmentVisibilityHandler> equipmentVisibilityHandlers, IReadOnlyList<TechType> currentEquipment)
-    {
-        foreach (IEquipmentVisibilityHandler equipmentVisibilityHandler in equipmentVisibilityHandlers)
-        {
-            equipmentVisibilityHandler.UpdateEquipmentVisibility(currentEquipment);
-        }
     }
 
     /// <summary>
@@ -118,6 +89,11 @@ public class PlayerModelManager
     private static void SetInGamePingColor(INitroxPlayer player, PingInstance ping)
     {
         uGUI_Pings pings = Object.FindObjectOfType<uGUI_Pings>();
+        if (!pings)
+        {
+            // Without the HUD's pings there is nothing to colour; the ping keeps the default colour
+            return;
+        }
 
         pings.OnColor(ping.Id, player.PlayerSettings.PlayerColor.ToUnity());
     }
@@ -128,6 +104,11 @@ public class PlayerModelManager
 
         swapOperation.BeginColorSwap();
         yield return new WaitUntil(() => swapOperation.IsColorSwapComplete());
+        // A player who left while the colours were worked out has no body any more
+        if (!player.PlayerModel)
+        {
+            yield break;
+        }
         swapOperation.ApplySwappedColors();
     }
 }

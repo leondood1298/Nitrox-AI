@@ -120,7 +120,7 @@ public class PlayerCinematics
         partner.PlayerModel.transform.localScale = new Vector3(-1, 1, 1);
         partner.ArmsController.enabled = false;
         partner.AnimationController.UpdatePlayerAnimations = false;
-        partner.AnimationController["cinematics_enabled"] = true;
+        partner.AnimationController.ApplyCinematicsEnabled();
         partner.AnimationController["escapepod_intro"] = true;
 
         IntroCinematicUpdater.Partner = partner;
@@ -149,7 +149,6 @@ public class PlayerCinematics
         }
 
         partner.PlayerModel.transform.localScale = new Vector3(1, 1, 1);
-        partner.AnimationController["cinematics_enabled"] = false;
         partner.AnimationController["escapepod_intro"] = false;
         partner.ArmsController.enabled = true;
         partner.AnimationController.UpdatePlayerAnimations = true;

@@ -16,15 +16,29 @@ public sealed partial class PlayerCinematicController_StartCinematicMode_Patch :
 {
     private static readonly MethodInfo TARGET_METHOD = Reflect.Method((PlayerCinematicController t) => t.StartCinematicMode(null));
 
-    public static void Prefix(PlayerCinematicController __instance)
+    public static void Prefix(PlayerCinematicController __instance, out bool __state)
     {
-        if (!__instance.cinematicModeActive && Player.main && Player.main.gameObject.activeInHierarchy && __instance.TryGetComponent<MultiplayerCinematicController>(out var component) && !__instance.GetComponentInParent<Bed>() && !__instance.GetComponentInParent<Bench>() && __instance.TryGetComponentInParent<NitroxEntity>(out var component2, includeInactive: true) && Resolve<LocalPlayer>().SessionId.HasValue)
+        MultiplayerCinematicController component = null;
+        __state = !__instance.cinematicModeActive && Player.main && Player.main.gameObject.activeInHierarchy && __instance.TryGetComponent(out component) &&!__instance.GetComponentInParent<Bed>() && !__instance.GetComponentInParent<Bench>() && __instance.TryGetComponentInParent<NitroxEntity>(out _, includeInactive: true) && Resolve<LocalPlayer>().SessionId.HasValue;
+        if (__state)
         {
             component.CallAllCinematicModeEnd();
-            int hashCode = __instance.gameObject.GetHierarchyPath(component2.gameObject).GetHashCode();
-            Dictionary<string, bool> animationParameters = CaptureAnimationParameters(__instance, component2.gameObject);
-            Resolve<PlayerCinematics>().StartCinematicMode(Resolve<LocalPlayer>().SessionId.Value, component2.Id, hashCode, __instance.playerViewAnimationName, animationParameters);
         }
+    }
+
+    /// <summary>
+    ///     Announced only once the cinematic has started: in VR the game may skip it (SkipCinematic), and then no end
+    ///     follows that would let the other players' copy of this player move again.
+    /// </summary>
+    public static void Postfix(PlayerCinematicController __instance, bool __state)
+    {
+        if (!__state || !__instance.cinematicModeActive || !__instance.TryGetComponentInParent<NitroxEntity>(out var component2, includeInactive: true) || !Resolve<LocalPlayer>().SessionId.HasValue)
+        {
+            return;
+        }
+        int hashCode = __instance.gameObject.GetHierarchyPath(component2.gameObject).GetHashCode();
+        Dictionary<string, bool> animationParameters = CaptureAnimationParameters(__instance, component2.gameObject);
+        Resolve<PlayerCinematics>().StartCinematicMode(Resolve<LocalPlayer>().SessionId.Value, component2.Id, hashCode, __instance.playerViewAnimationName, animationParameters);
     }
 
     private static Dictionary<string, bool> CaptureAnimationParameters(PlayerCinematicController cinematicController, GameObject entityRoot)
