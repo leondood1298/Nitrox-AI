@@ -69,7 +69,8 @@ internal sealed class ChatMessageProcessor(PlayerManager remotePlayerManager, Lo
 
     private void LogServerMessage(ChatMessage message)
     {
-        playerChatManager.AddMessage("Server", message.Text, serverMessageColor);
+        // Brackets are not allowed in player names, so no player's line can carry this sender name
+        playerChatManager.AddMessage(Language.main.Get("Nitrox_ChatServerName"), message.Text, serverMessageColor, true);
         if (NitroxPrefs.ChatAutoOpen.Value)
         {
             playerChatManager.ShowChat();

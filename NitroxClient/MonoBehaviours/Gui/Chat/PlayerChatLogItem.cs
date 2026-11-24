@@ -28,6 +28,8 @@ namespace NitroxClient.MonoBehaviours.Gui.Chat
             playerName.text = chatLogEntry.PlayerName;
             playerName.color = chatLogEntry.PlayerColor;
             time.text = chatLogEntry.Time;
+            // A player's text is shown as typed: tags in it must not resize or recolour anyone's chat
+            message.supportRichText = chatLogEntry.IsServer;
             message.text = chatLogEntry.MessageText;
             gameObject.SetActive(true);
         }
