@@ -500,6 +500,12 @@ public class RemotePlayer : INitroxPlayer
         pdaModel.SetActive(false);
     }
 
+    /// <summary>
+    ///     The PDA model in this body's hand. <c>ArmsController.Start</c> gives the arms the local player's PDA, whose
+    ///     being open would then decide this body's IK (see <c>ArmsController_Start_Patch</c>).
+    /// </summary>
+    public PDA? Pda => pdaModel ? pdaModel.GetComponent<PDA>() : null;
+
     private void SetPdaVisible(bool visible)
     {
         if (!pdaModel)
@@ -511,6 +517,7 @@ public class RemotePlayer : INitroxPlayer
         if (visible)
         {
             pdaModel.SetActive(true);
+            RequestArmsReconfigure();
             return;
         }
         // The game also keeps the PDA in the hand until the arm has gone down (PDA.Close and PDA.Deactivated).
@@ -523,12 +530,28 @@ public class RemotePlayer : INitroxPlayer
         if (change == pdaVisibilityChange && pdaModel)
         {
             pdaModel.SetActive(false);
+            RequestArmsReconfigure();
         }
     }
 
     public void SetHeldTool(PlayerTool? tool)
     {
         HeldTool = tool;
+        // ArmsController.Update sets this for the local player every frame; it does not run for this body
+        AnimationController.SetBoolIfPresent("holding_tool", tool);
+        RequestArmsReconfigure();
+    }
+
+    /// <summary>
+    ///     Has the arms' IK (hands on a two-handed tool, on vehicle controls, on the PDA) worked out again on the next
+    ///     frame, with this player's own tool and PDA (see <c>ArmsController_Update_Patch</c>).
+    /// </summary>
+    public void RequestArmsReconfigure()
+    {
+        if (ArmsController)
+        {
+            ArmsController.reconfigureWorldTarget = true;
+        }
     }
 
     /// <summary>

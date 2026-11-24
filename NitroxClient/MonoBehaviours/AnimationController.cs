@@ -71,6 +71,15 @@ public class AnimationController : MonoBehaviour
 		set => animator.SetBool(name, value);
 	}
 
+    /// <summary>
+    ///     Like the game's <see cref="SafeAnimator" />: a parameter that this animator does not have is left alone instead
+    ///     of logging a warning every time.
+    /// </summary>
+    public void SetBoolIfPresent(string name, bool value)
+    {
+        SafeAnimator.SetBool(animator, name, value);
+    }
+
 	internal void SetFloat(string name, float value)
 	{
 		animator.SetFloat(name, value);
