@@ -1,5 +1,4 @@
-﻿using Nitrox.Model.DataStructures.Unity;
-using Nitrox.Model.GameLogic.FMOD;
+﻿using Nitrox.Model.GameLogic.FMOD;
 using Nitrox.Server.Subnautica.Models.GameLogic;
 using Nitrox.Server.Subnautica.Models.Packets.Core;
 using Nitrox.Server.Subnautica.Services;
@@ -22,10 +21,8 @@ internal sealed class FMODAssetProcessor(PlayerManager playerManager, FmodServic
 
         foreach (Player player in playerManager.GetConnectedPlayers())
         {
-            float distance = NitroxVector3.Distance(player.Position, packet.Position);
-            if (player != context.Sender && (soundData.IsGlobal || player.SubRootId.Equals(context.Sender.SubRootId)) && distance <= soundData.Radius)
+            if (player != context.Sender && SoundRange.Reaches(soundData, packet.Position, context.Sender.SubRootId, player.Position, player.SubRootId))
             {
-                packet.Volume = SoundHelper.CalculateVolume(distance, soundData.Radius, packet.Volume);
                 await context.SendAsync(packet, player.SessionId);
             }
         }

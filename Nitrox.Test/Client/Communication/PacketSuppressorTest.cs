@@ -28,17 +28,17 @@ public class PacketSuppressorTest
         Assert.IsFalse(PacketSuppressor<FMODAssetPacket>.IsSuppressed);
         Assert.IsFalse(PacketSuppressor<FMODEventInstancePacket>.IsSuppressed);
         Assert.IsFalse(PacketSuppressor<FMODCustomEmitterPacket>.IsSuppressed);
-        Assert.IsFalse(PacketSuppressor<FMODCustomLoopingEmitterPacket>.IsSuppressed);
+        Assert.IsFalse(PacketSuppressor<FootstepPacket>.IsSuppressed);
         Assert.IsFalse(PacketSuppressor<FMODStudioEmitterPacket>.IsSuppressed);
 
-        using (PacketSuppressor<FMODAssetPacket, FMODEventInstancePacket, FMODCustomEmitterPacket, FMODCustomLoopingEmitterPacket, FMODStudioEmitterPacket>.Suppress())
+        using (PacketSuppressor<FMODAssetPacket, FMODEventInstancePacket, FMODCustomEmitterPacket, FootstepPacket, FMODStudioEmitterPacket>.Suppress())
         {
             Assert.IsFalse(PacketSuppressor<BedEnter>.IsSuppressed);
 
             Assert.IsTrue(PacketSuppressor<FMODAssetPacket>.IsSuppressed);
             Assert.IsTrue(PacketSuppressor<FMODEventInstancePacket>.IsSuppressed);
             Assert.IsTrue(PacketSuppressor<FMODCustomEmitterPacket>.IsSuppressed);
-            Assert.IsTrue(PacketSuppressor<FMODCustomLoopingEmitterPacket>.IsSuppressed);
+            Assert.IsTrue(PacketSuppressor<FootstepPacket>.IsSuppressed);
             Assert.IsTrue(PacketSuppressor<FMODStudioEmitterPacket>.IsSuppressed);
         }
 
@@ -46,7 +46,7 @@ public class PacketSuppressorTest
         Assert.IsFalse(PacketSuppressor<FMODAssetPacket>.IsSuppressed);
         Assert.IsFalse(PacketSuppressor<FMODEventInstancePacket>.IsSuppressed);
         Assert.IsFalse(PacketSuppressor<FMODCustomEmitterPacket>.IsSuppressed);
-        Assert.IsFalse(PacketSuppressor<FMODCustomLoopingEmitterPacket>.IsSuppressed);
+        Assert.IsFalse(PacketSuppressor<FootstepPacket>.IsSuppressed);
         Assert.IsFalse(PacketSuppressor<FMODStudioEmitterPacket>.IsSuppressed);
     }
 
