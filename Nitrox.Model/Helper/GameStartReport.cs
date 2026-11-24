@@ -43,6 +43,11 @@ public sealed record GameStartReport(DateTime WrittenUtc, bool Loaded, IReadOnly
     /// </summary>
     public void Write(string filePath)
     {
+        string? folder = Path.GetDirectoryName(filePath);
+        if (!string.IsNullOrEmpty(folder))
+        {
+            Directory.CreateDirectory(folder);
+        }
         string temporary = $"{filePath}.{Guid.NewGuid():N}.tmp";
         File.WriteAllText(temporary, Serialize());
         if (File.Exists(filePath))

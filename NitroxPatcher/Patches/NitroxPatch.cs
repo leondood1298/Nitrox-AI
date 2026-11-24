@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using HarmonyLib;
 using Nitrox.Model.Core;
@@ -21,20 +22,27 @@ public abstract class NitroxPatch : INitroxPatch
     /// <summary>
     ///     List of patches defined by the class that inherits.
     /// </summary>
-    private readonly List<MethodBase> activePatches = new();
+    private readonly List<(MethodBase Target, MethodInfo[] PatchMethods)> activePatches = new();
 
     public abstract void Patch(Harmony harmony);
 
     /// <summary>
     ///     Removes the (previously applied) patches from the process.
     /// </summary>
-    /// <param name="harmony"></param>
+    /// <remarks>
+    ///     Only this class's own patch methods come off: unpatching everything of the Nitrox Harmony id on a method would
+    ///     also remove a persistent patch on the same method.
+    /// </remarks>
     public void Restore(Harmony harmony)
     {
-        foreach (MethodBase targetMethod in activePatches)
+        foreach ((MethodBase target, MethodInfo[] patchMethods) in activePatches)
         {
-            harmony.Unpatch(targetMethod, HarmonyPatchType.All, harmony.Id);
+            foreach (MethodInfo patchMethod in patchMethods)
+            {
+                harmony.Unpatch(target, patchMethod);
+            }
         }
+        activePatches.Clear();
     }
 
     protected void PatchFinalizer(Harmony harmony, MethodBase targetMethod, MethodInfo finalizerMethod)
@@ -71,7 +79,7 @@ public abstract class NitroxPatch : INitroxPatch
         Validate.NotNull(targetMethod, "Target method cannot be null");
 
         harmony.Patch(targetMethod, AsHarmonyMethod(prefix), AsHarmonyMethod(postfix), AsHarmonyMethod(transpiler), AsHarmonyMethod(finalizer), AsHarmonyMethod(manipulator));
-        activePatches.Add(targetMethod); // Store our patched methods
+        activePatches.Add((targetMethod, new[] { prefix, postfix, transpiler, finalizer, manipulator }.Where(method => method != null).ToArray()));
     }
 
     /// <summary>

@@ -7,6 +7,7 @@ using Autofac;
 using HarmonyLib;
 using HarmonyLib.Tools;
 using NitroxClient;
+using NitroxClient.Helpers;
 using NitroxClient.MonoBehaviours;
 using Nitrox.Model.Core;
 using Nitrox.Model.DataStructures;
@@ -28,6 +29,11 @@ internal static class Patcher
     private static bool isApplied;
 
     /// <summary>
+    ///     Patches that could not be applied, one sentence each, for the launcher and the main menu.
+    /// </summary>
+    public static IReadOnlyList<string> Problems => StartupWarnings.FailedPatches;
+
+    /// <summary>
     ///     Applies all the dynamic patches defined in Patches namespace.
     ///     Persistent patches are applied when the game initializes (i.e. before main menu).
     ///     See <see cref="Patcher.Initialize"/>.
@@ -40,29 +46,18 @@ internal static class Patcher
             return;
         }
 
+        int failuresBefore = StartupWarnings.FailedPatches.Count;
         foreach (IDynamicPatch patch in container.Resolve<IDynamicPatch[]>())
         {
             Log.Debug($"Applying dynamic patch {patch.GetType().Name}");
-            try
-            {
-                patch.Patch(harmony);
-            }
-            catch (HarmonyException e)
-            {
-                Exception innerMost = e;
-                while (innerMost.InnerException != null)
-                {
-                    innerMost = innerMost.InnerException;
-                }
-                Log.Error($"Error patching {patch.GetType().Name}{Environment.NewLine}{innerMost}");
-            }
-            catch (Exception e)
-            {
-                Log.Error($"Error patching {patch.GetType().Name}{Environment.NewLine}{e}");
-            }
+            TryPatch(patch);
         }
-
         isApplied = true;
+
+        if (StartupWarnings.FailedPatches.Count > failuresBefore)
+        {
+            Log.InGame(StartupWarnings.DescribeFailedPatches(Language.main.Get("Nitrox_PatchesFailed"), StartupWarnings.FailedPatches.Skip(failuresBefore)));
+        }
     }
 
     /// <summary>
@@ -82,12 +77,23 @@ internal static class Patcher
         foreach (IDynamicPatch patch in container.Resolve<IDynamicPatch[]>())
         {
             Log.Debug($"Restoring dynamic patch {patch.GetType().Name}");
-            patch.Restore(harmony);
+            try
+            {
+                patch.Restore(harmony);
+            }
+            catch (Exception ex)
+            {
+                // The others must still come off, or single player would keep running multiplayer code.
+                Log.Error(ex, $"Error restoring {patch.GetType().Name}");
+            }
         }
 
         isApplied = false;
     }
 
+    /// <summary>
+    ///     Starts Nitrox. When it throws, every patch it made has been taken out again, so the game runs vanilla.
+    /// </summary>
     [MethodImpl(MethodImplOptions.NoInlining)]
     public static void Initialize()
     {
@@ -119,8 +125,18 @@ internal static class Patcher
             throw;
         }
 
-        InitPatches();
-        ApplyNitroxBehaviours();
+        try
+        {
+            InitPatches();
+            ApplyNitroxBehaviours();
+        }
+        catch
+        {
+            Multiplayer.OnBeforeMultiplayerStart -= Apply;
+            Multiplayer.OnAfterMultiplayerEnd -= Restore;
+            harmony.UnpatchSelf();
+            throw;
+        }
     }
 
     private static void InitPatches()
@@ -130,15 +146,45 @@ internal static class Patcher
         // Enabling this creates a log file on your desktop (why there?), showing the emitted IL instructions.
         HarmonyFileLog.Enabled = false;
 
+        // One patch that no longer fits the game (after a game update) must not stop the others.
         foreach (IPersistentPatch patch in container.Resolve<IEnumerable<IPersistentPatch>>())
         {
             Log.Debug($"Applying persistent patch {patch.GetType().Name}");
-            patch.Patch(harmony);
+            TryPatch(patch);
         }
 
         Multiplayer.OnBeforeMultiplayerStart += Apply;
         Multiplayer.OnAfterMultiplayerEnd += Restore;
-        Log.Info("Completed patching");
+        Log.Info(StartupWarnings.FailedPatches.Count == 0 ? "Completed patching" : $"Completed patching, {StartupWarnings.FailedPatches.Count} patches failed");
+    }
+
+    /// <summary>
+    ///     Applies one patch whole or not at all, recording a failure for the player.
+    /// </summary>
+    private static void TryPatch(INitroxPatch patch)
+    {
+        try
+        {
+            patch.Patch(harmony);
+        }
+        catch (Exception e)
+        {
+            Exception innerMost = e;
+            while (innerMost.InnerException != null)
+            {
+                innerMost = innerMost.InnerException;
+            }
+            Log.Error($"Error patching {patch.GetType().Name}{Environment.NewLine}{innerMost}");
+            StartupWarnings.AddFailedPatch(patch.GetType().Name, innerMost.Message);
+            try
+            {
+                patch.Restore(harmony);
+            }
+            catch (Exception restoreEx)
+            {
+                Log.Error(restoreEx, $"Error taking the half-applied {patch.GetType().Name} out again");
+            }
+        }
     }
 
     private static IContainer CreatePatchingContainer()
