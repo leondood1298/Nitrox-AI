@@ -1,4 +1,5 @@
 ﻿using System.Collections;
+using NitroxClient.GameLogic.PlayerLogic.PlayerModel;
 using NitroxClient.GameLogic.PlayerLogic.PlayerModel.ColorSwap;
 using UnityEngine;
 using UnityEngine.UI;
@@ -78,6 +79,8 @@ public static class RendererExtensions
     {
         Texture2D mainTexture = (Texture2D)material.mainTexture;
         Texture2D clonedTexture = mainTexture.Clone();
+        // Marks it as made for one player's body, to be destroyed with it (BodyRenderResources)
+        clonedTexture.name = BodyRenderResources.CLONED_TEXTURE_PREFIX + mainTexture.name;
         material.mainTexture = clonedTexture;
     }
 

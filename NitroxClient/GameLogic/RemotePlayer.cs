@@ -42,6 +42,7 @@ public class RemotePlayer : INitroxPlayer
     private const float INFECTION_REVEAL_GLOVES_HIDDEN_SECONDS = 12f;
 
     private readonly CyclopsWalkVelocity cyclopsWalk = new();
+    private GameObject? bodyPrototype;
 
     private GameObject pdaModel;
     private int pdaVisibilityChange;
@@ -94,9 +95,12 @@ public class RemotePlayer : INitroxPlayer
         this.fmodWhitelist = fmodWhitelist;
     }
 
-    public void InitializeGameObject(GameObject playerBody)
+    /// <param name="playerBody">A copy of <paramref name="bodyPrototype" />.</param>
+    /// <param name="bodyPrototype">What the body was copied from, to tell what was made for this body only.</param>
+    public void InitializeGameObject(GameObject playerBody, GameObject bodyPrototype)
     {
         Body = playerBody;
+        this.bodyPrototype = bodyPrototype;
         Body.name = PlayerName;
 
         RigidBody = Body.AddComponent<Rigidbody>();
@@ -447,6 +451,7 @@ public class RemotePlayer : INitroxPlayer
         Log.InGame(Language.main.Get("Nitrox_PlayerLeft").Replace("{PLAYER}", PlayerName));
         ResetStates();
         NitroxEntity.RemoveFrom(Body);
+        BodyRenderResources.Release(Body, bodyPrototype);
         Object.DestroyImmediate(Body);
     }
 
