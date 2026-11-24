@@ -141,6 +141,29 @@ public sealed class LoadingPacketGate
     }
 
     /// <summary>
+    ///     Takes the oldest held packet to replay. Packets that arrive while the replay runs over several frames are
+    ///     held behind the others, so that they keep their order; <see cref="FinishLoading" /> once none is left.
+    /// </summary>
+    public bool TryTakeHeld(out Packet packet)
+    {
+        if (held.Count == 0)
+        {
+            packet = null;
+            return false;
+        }
+        packet = held.Dequeue();
+        return true;
+    }
+
+    /// <summary>
+    ///     The snapshot is applied and every held packet replayed; from now on every packet passes.
+    /// </summary>
+    public void FinishLoading()
+    {
+        CurrentPhase = Phase.IN_GAME;
+    }
+
+    /// <summary>
     ///     The snapshot is applied. Returns the held packets in the order they arrived; from now on every packet passes.
     /// </summary>
     public List<Packet> Release()

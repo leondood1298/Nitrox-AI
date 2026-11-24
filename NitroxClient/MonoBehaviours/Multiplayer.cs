@@ -21,6 +21,7 @@ using NitroxClient.Communication.Packets.Processors.Core;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UWE;
+using Stopwatch = System.Diagnostics.Stopwatch;
 
 namespace NitroxClient.MonoBehaviours
 {
@@ -138,29 +139,50 @@ namespace NitroxClient.MonoBehaviours
             OnLoadingComplete?.Invoke();
         }
 
+        /// <summary>
+        ///     How long packets may be handled in one frame. A burst (many players busy, a big base resynced) used to be
+        ///     handled in a single frame however long it took; what is left over now waits for the next frame, in order.
+        /// </summary>
+        private const double PACKET_TIME_PER_FRAME_SECONDS = 0.008;
+
+        private static readonly long packetTicksPerFrame = (long)(PACKET_TIME_PER_FRAME_SECONDS * Stopwatch.Frequency);
+        private long packetTimeEnd;
+
         public void ProcessPackets()
         {
+            packetTimeEnd = Stopwatch.GetTimestamp() + packetTicksPerFrame;
             packetReceiver.ConsumePackets(static (packet, multiplayer) =>
             {
                 if (multiplayer.loadingPacketGate.Admit(packet))
                 {
                     multiplayer.Execute(packet);
                 }
-            }, this);
+            }, this, static multiplayer => Stopwatch.GetTimestamp() >= multiplayer.packetTimeEnd);
         }
 
         /// <summary>
         ///     Processes the packets that arrived while the game loaded, in the order they arrived, now that the snapshot
         ///     is applied. Called before the game reports that it finished joining.
         /// </summary>
-        public void ReplayHeldPackets()
+        /// <remarks>
+        ///     Spread over frames like other packets: with others playing during a long load these can be thousands, and
+        ///     all in one frame they froze the game as the loading screen went. Packets arriving meanwhile are held behind
+        ///     them until none is left.
+        /// </remarks>
+        public IEnumerator ReplayHeldPackets()
         {
-            List<Packet> held = loadingPacketGate.Release();
-            Log.Info($"Replaying {held.Count} packets that arrived while loading");
-            foreach (Packet packet in held)
+            Log.Info($"Replaying {loadingPacketGate.HeldCount} packets that arrived while loading");
+            long timeEnd = Stopwatch.GetTimestamp() + packetTicksPerFrame;
+            while (loadingPacketGate.TryTakeHeld(out Packet packet))
             {
                 Execute(packet);
+                if (Stopwatch.GetTimestamp() >= timeEnd)
+                {
+                    yield return null;
+                    timeEnd = Stopwatch.GetTimestamp() + packetTicksPerFrame;
+                }
             }
+            loadingPacketGate.FinishLoading();
         }
 
         private void Execute(Packet packet)
