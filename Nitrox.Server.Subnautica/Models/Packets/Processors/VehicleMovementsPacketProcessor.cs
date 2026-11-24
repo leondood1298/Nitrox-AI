@@ -15,7 +15,7 @@ internal sealed class VehicleMovementsPacketProcessor(EntityRegistry entityRegis
     ILogger<VehicleMovementsPacketProcessor> logger)
     : IAuthPacketProcessor<VehicleMovements>
 {
-    internal const int MAX_MOVEMENTS_PER_PACKET = 64;
+    internal const int MAX_MOVEMENTS_PER_PACKET = VehicleMovements.MAX_MOVEMENTS_PER_PACKET;
 
     private static readonly NitroxVector3 CyclopsSteeringWheelRelativePosition = new(-0.05f, 0.97f, -23.54f);
 
