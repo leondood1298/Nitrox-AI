@@ -954,7 +954,7 @@ event:/tools/beacon/draw;false;false;0
 event:/tools/builder/complete;false;false;0
 event:/tools/builder/deploy;true;false;10
 event:/tools/builder/first_use;false;false;0
-event:/tools/builder/loop;true;false;20
+event:/tools/builder/loop;false;false;20
 event:/tools/builder/place;true;false;20
 event:/tools/builder/remove;false;false;0
 event:/tools/constructor/bot_1_hover;false;false;0
