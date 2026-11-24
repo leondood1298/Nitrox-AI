@@ -41,6 +41,12 @@ internal sealed class ItemClaims
     /// </summary>
     public static readonly TimeSpan CRAFT_RESERVATION = TimeSpan.FromSeconds(10);
 
+    /// <summary>
+    ///     How long a picked fruit cannot be reported grown back. Much longer than a report takes to arrive, much shorter
+    ///     than any plant takes to grow a fruit back (150 seconds and more).
+    /// </summary>
+    public static readonly TimeSpan RECENT_PICK = TimeSpan.FromSeconds(10);
+
     private const string SOMEONE = "Someone";
 
     private readonly EntityRegistry entityRegistry;
@@ -51,6 +57,7 @@ internal sealed class ItemClaims
     private readonly Dictionary<(NitroxId SourceId, string PlayerName), TimeSpan> lostClaims = [];
     private readonly Dictionary<NitroxId, Craft> crafts = [];
     private readonly Dictionary<(NitroxId ParentId, string Slot), string> slotInstallers = [];
+    private readonly Dictionary<(NitroxId PlantId, int FruitIndex), TimeSpan> recentPicks = [];
 
     public ItemClaims(EntityRegistry entityRegistry, PlayerManager playerManager) : this(entityRegistry, playerManager, CreateClock())
     {
@@ -96,6 +103,31 @@ internal sealed class ItemClaims
             parentId = parent.ParentId;
         }
         return null;
+    }
+
+    /// <summary>
+    ///     A fruit (seed, sample) of a plant was picked: for a moment, a report that it grew back is a game that has not
+    ///     heard of the pick yet (see <see cref="Entities.PlantMetadataAuthority" />).
+    /// </summary>
+    public void NotePicked(NitroxId plantId, int fruitIndex)
+    {
+        lock (locker)
+        {
+            TimeSpan now = clock();
+            Forget(now);
+            recentPicks[(plantId, fruitIndex)] = now;
+        }
+    }
+
+    /// <summary>
+    ///     Whether the fruit at <paramref name="fruitIndex" /> was picked less than <see cref="RECENT_PICK" /> ago.
+    /// </summary>
+    public bool PickedLately(NitroxId plantId, int fruitIndex)
+    {
+        lock (locker)
+        {
+            return recentPicks.TryGetValue((plantId, fruitIndex), out TimeSpan pickedAt) && clock() - pickedAt < RECENT_PICK;
+        }
     }
 
     /// <summary>
@@ -245,6 +277,10 @@ internal sealed class ItemClaims
         foreach (NitroxId key in crafts.Where(pair => now > pair.Value.ReadyAt + CRAFT_RESERVATION).Select(pair => pair.Key).ToList())
         {
             crafts.Remove(key);
+        }
+        foreach ((NitroxId, int) key in recentPicks.Where(pair => now - pair.Value >= RECENT_PICK).Select(pair => pair.Key).ToList())
+        {
+            recentPicks.Remove(key);
         }
     }
 

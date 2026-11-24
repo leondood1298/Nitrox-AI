@@ -835,6 +835,62 @@ public sealed class EntityMetadataUpdateProcessorTest
         return cyclops;
     }
 
+    [TestMethod]
+    public async Task FruitPickedByOnePlayerIsNotBroughtBackByTheBaseSimulatorsOlderCopy()
+    {
+        InventoryItemEntity plant = AddPlant(new PlantableMetadata(5f, 0, new FruitPlantMetadata([false, false], 100f), PlantableMetadata.NO_HEALTH), simulator);
+
+        await Send(otherPlayer, plant, new PlantableMetadata(5f, 0, new FruitPlantMetadata([true, false], 300f), PlantableMetadata.NO_HEALTH));
+        packetSender.ClearReceivedCalls();
+        await Send(simulator, plant, new PlantableMetadata(5f, 0, new FruitPlantMetadata([false, false], 100f), PlantableMetadata.NO_HEALTH));
+
+        CollectionAssert.AreEqual(new[] { true, false }, ((PlantableMetadata)plant.Metadata).FruitPlantMetadata.PickedStates);
+        PlantableMetadata echoed = (PlantableMetadata)ConnectedPlayers.SentTo<EntityMetadataUpdate>(packetSender, simulator).Single().NewValue;
+        CollectionAssert.AreEqual(new[] { true, false }, echoed.FruitPlantMetadata.PickedStates, "The simulating player must hide the fruit too, or it is picked a second time.");
+    }
+
+    [TestMethod]
+    public async Task OnlyTheBaseSimulatorGrowsFruitBack()
+    {
+        InventoryItemEntity plant = AddPlant(new PlantableMetadata(5f, 0, new FruitPlantMetadata([true, true], 100f), PlantableMetadata.NO_HEALTH), simulator);
+
+        await Send(otherPlayer, plant, new PlantableMetadata(5f, 0, new FruitPlantMetadata([false, true], 100f), PlantableMetadata.NO_HEALTH));
+        CollectionAssert.AreEqual(new[] { true, true }, ((PlantableMetadata)plant.Metadata).FruitPlantMetadata.PickedStates);
+
+        await Send(simulator, plant, new PlantableMetadata(5f, 0, new FruitPlantMetadata([false, true], 250f), PlantableMetadata.NO_HEALTH));
+        CollectionAssert.AreEqual(new[] { false, true }, ((PlantableMetadata)plant.Metadata).FruitPlantMetadata.PickedStates);
+        Assert.AreEqual(250f, ((PlantableMetadata)plant.Metadata).FruitPlantMetadata.TimeNextFruit);
+    }
+
+    [TestMethod]
+    public async Task PlantHealthOnlyGoesDownExceptFromTheBaseSimulator()
+    {
+        InventoryItemEntity plant = AddPlant(new PlantableMetadata(5f, 2, null, 80f), simulator);
+
+        await Send(otherPlayer, plant, new PlantableMetadata(5f, 2, null, 100f));
+        Assert.AreEqual(80f, ((PlantableMetadata)plant.Metadata).Health);
+        await Send(otherPlayer, plant, new PlantableMetadata(5f, 2, null, 60f));
+        Assert.AreEqual(60f, ((PlantableMetadata)plant.Metadata).Health);
+        await Send(simulator, plant, new PlantableMetadata(5f, 2, null, 70f));
+        Assert.AreEqual(70f, ((PlantableMetadata)plant.Metadata).Health);
+        Assert.AreEqual(2, ((PlantableMetadata)plant.Metadata).SlotID);
+    }
+
+    private InventoryItemEntity AddPlant(PlantableMetadata metadata, Player baseSimulator)
+    {
+        BuildEntity builtBase = BuildEntity.MakeEmpty();
+        builtBase.Id = new NitroxId();
+        entityRegistry.AddEntity(builtBase);
+        Assert.IsTrue(simulationOwnershipData.TryAcquire(builtBase.Id, baseSimulator, SimulationLockType.TRANSIENT));
+        ModuleEntity planter = ModuleEntity.MakeEmpty();
+        planter.Id = new NitroxId();
+        planter.ParentId = builtBase.Id;
+        entityRegistry.AddEntity(planter);
+        InventoryItemEntity plant = new(new NitroxId(), "seed", new NitroxTechType("MelonSeed"), metadata, planter.Id, [], false);
+        entityRegistry.AddEntity(plant);
+        return plant;
+    }
+
     private Task Send(Player sender, Entity entity, EntityMetadata metadata)
     {
         return processor.Process(new AuthProcessorContext(sender, packetSender), new EntityMetadataUpdate(entity.Id, metadata));

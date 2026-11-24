@@ -6,6 +6,7 @@ using Nitrox.Server.Subnautica.Models.GameLogic.Entities;
 using Nitrox.Model.DataStructures.Unity;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
+using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Packets;
 using Nitrox.Test.Server.GameLogic;
 using Nitrox.Test.Server.Helper;
@@ -117,6 +118,31 @@ public sealed class EntitySpawnedByClientProcessorTest
         scenario.EntityRegistry.GetEntityById(bobsTitanium.Id).HasValue.Should().BeFalse();
         scenario.SentTo<ItemClaimLost>(scenario.PlayerB).Single().RemoveLocalCopy.Should().BeTrue();
     }
+
+    [TestMethod]
+    public async Task OfTwoSeedsPlantedInOneSlotTheFirstKeepsItAndTheLaterIsMovedByItsGame()
+    {
+        ItemClaimScenario scenario = new();
+        EntitySpawnedByClientProcessor processor = CreateProcessor(scenario);
+        InventoryItemEntity alicesSeed = scenario.AddItemIn(scenario.PlayerA.GameObjectId);
+        InventoryItemEntity bobsSeed = scenario.AddItemIn(scenario.PlayerB.GameObjectId);
+
+        await processor.Process(scenario.Context(scenario.PlayerA), new EntitySpawnedByClient(Planted(alicesSeed, scenario.Locker.Id, 0), true));
+        await processor.Process(scenario.Context(scenario.PlayerB), new EntitySpawnedByClient(Planted(bobsSeed, scenario.Locker.Id, 0), true));
+
+        scenario.Locker.ChildEntities.Should().ContainSingle(child => child.Metadata is PlantableMetadata).Which.Id.Should().Be(alicesSeed.Id);
+        scenario.EntityRegistry.GetEntityById(bobsSeed.Id).Value.ParentId.Should().Be(scenario.PlayerB.GameObjectId, "Bob's seed is still his until his game plants it again");
+        PlanterSlotTaken taken = scenario.SentTo<PlanterSlotTaken>(scenario.PlayerB).Single();
+        taken.PlantableId.Should().Be(bobsSeed.Id);
+        taken.SlotId.Should().Be(0);
+        scenario.SentTo<SpawnEntities>(scenario.PlayerA).Should().NotContain(spawn => spawn.Entities.Any(entity => entity.Id == bobsSeed.Id));
+
+        await processor.Process(scenario.Context(scenario.PlayerB), new EntitySpawnedByClient(Planted(bobsSeed, scenario.Locker.Id, 1), true));
+        scenario.Locker.ChildEntities.Count(child => child.Metadata is PlantableMetadata).Should().Be(2);
+    }
+
+    private static InventoryItemEntity Planted(InventoryItemEntity seed, NitroxId planterId, int slot) =>
+        new(seed.Id, seed.ClassId, seed.TechType, new PlantableMetadata(5f, slot), planterId, [], false);
 
     private static WorldEntity NewResource() => new(new NitroxVector3(1, -2, 3), NitroxQuaternion.Identity, NitroxVector3.One, new NitroxTechType("Titanium"), 0,
         ItemClaimScenario.TITANIUM_CLASS_ID, false, new NitroxId(), null);

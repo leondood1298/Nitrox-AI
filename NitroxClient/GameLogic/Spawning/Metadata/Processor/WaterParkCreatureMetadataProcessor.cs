@@ -31,8 +31,17 @@ public class WaterParkCreatureMetadataProcessor : EntityMetadataProcessor<WaterP
             waterParkCreature.timeNextBreed = -1;
         }
 
-        // Scaling according to WaterParkCreature.ManagedUpdate
-        waterParkCreature.transform.localScale = Mathf.Lerp(waterParkCreature.data.initialSize, waterParkCreature.data.maxSize, waterParkCreature.age) * Vector3.one;
+        if (waterParkCreature.currentWaterPark)
+        {
+            // Scaling according to WaterParkCreature.ManagedUpdate
+            waterParkCreature.transform.localScale = Mathf.Lerp(waterParkCreature.data.initialSize, waterParkCreature.data.maxSize, waterParkCreature.age) * Vector3.one;
+        }
+        else if (gameObject.TryGetComponent(out Creature creature))
+        {
+            // A creature released from a containment has the size the game gives it when it leaves one
+            // (WaterParkCreature.OnRemoveFromWP), not its size inside
+            creature.SetScale(waterParkCreature.data.outsideSize);
+        }
 
         waterParkCreature.isMature = waterParkCreature.age == 1f;
         waterParkCreature.bornInside = metadata.BornInside;

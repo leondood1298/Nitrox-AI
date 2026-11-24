@@ -70,7 +70,7 @@ public class Items
             ItemSource? source = IsNewItem(gameObject) ? itemSources.Take(techType, ItemSourceUse.PICKUP) : null;
             InventoryItemEntity inventoryItemEntity = ConvertToInventoryEntityUntracked(gameObject, containerId);
 
-            if (inventoryItemEntity.TechType.ToUnity() != techType)
+            if (inventoryItemEntity.TechType.ToUnity() != SyncedTechType(gameObject, techType))
             {
                 Log.Warn($"Provided TechType: {techType} is different than the one automatically attributed to the item {inventoryItemEntity.TechType}");
             }
@@ -111,7 +111,7 @@ public class Items
     /// </summary>
     public void Dropped(GameObject gameObject, TechType? techType = null)
     {
-        techType ??= CraftData.GetTechType(gameObject);
+        techType = SyncedTechType(gameObject, techType ?? CraftData.GetTechType(gameObject));
         // there is a theoretical possibility of a stray remote tracking packet that re-adds the monobehavior, this is purely a safety call.
         RemoveAnyRemoteControl(gameObject);
 
@@ -330,7 +330,7 @@ public class Items
     {
         NitroxId itemId = NitroxEntity.GetIdOrGenerateNew(gameObject); // id may not exist, create if missing
         string classId = gameObject.RequireComponent<PrefabIdentifier>().ClassId;
-        TechType techType = gameObject.RequireComponent<Pickupable>().GetTechType();
+        TechType techType = SyncedTechType(gameObject, gameObject.RequireComponent<Pickupable>().GetTechType());
         Optional<EntityMetadata> metadata = entityMetadataManager.Extract(gameObject);
         List<Entity> children = GetPrefabChildren(gameObject, itemId, entityMetadataManager).ToList();
 
@@ -368,6 +368,16 @@ public class Items
     private void RemoveAnyRemoteControl(GameObject gameObject)
     {
         UnityEngine.Object.Destroy(gameObject.GetComponent<RemotelyControlled>());
+    }
+
+    /// <summary>
+    ///     The kind an item is kept as. An egg whose creature the player does not know yet shows as an unknown egg
+    ///     (CreatureEgg.Awake overrides its kind locally); kept as such, the entity carried that name for everybody even
+    ///     once the creature was known. Every game works out the shown name itself from what its player knows.
+    /// </summary>
+    public static TechType SyncedTechType(GameObject gameObject, TechType shownTechType)
+    {
+        return gameObject.TryGetComponent(out CreatureEgg creatureEgg) && creatureEgg.eggType != TechType.None ? creatureEgg.eggType : shownTechType;
     }
 
     /// <param name="parent">Parent of the GameObject to check</param>

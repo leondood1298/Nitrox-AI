@@ -50,6 +50,26 @@ public class LiveMixinManager
         return (vehicle || (subRoot && subRoot.isCyclops));
     }
     
+    /// <summary>
+    ///     A wild plant cut to death with a knife (one whose harvest type gives samples while it is alive) gives nothing
+    ///     more in the game of the player who cut it. Its health is not synced, so the
+    ///     others could cut it again for more: it is removed for them and kept removed. A creature keeps its own path
+    ///     (RemoveCreatureCorpse), and a plant whose scripts bring it back to life after its death is left alone.
+    /// </summary>
+    public static bool IsHarvestedToDeath(LiveMixin liveMixin)
+    {
+        GameObject gameObject = liveMixin.gameObject;
+        bool isCreature = gameObject.GetComponent<Creature>() || gameObject.GetComponent<CreatureDeath>();
+        bool comesBack = gameObject.GetComponent<CoralBlendWhite>() || gameObject.GetComponent<RespawnOnKill>();
+        return RemovesHarvestableForEveryone(isCreature, comesBack, TechData.GetHarvestType(CraftData.GetTechType(gameObject)));
+    }
+
+    /// <inheritdoc cref="IsHarvestedToDeath" />
+    public static bool RemovesHarvestableForEveryone(bool isCreature, bool comesBack, HarvestType harvestType)
+    {
+        return !isCreature && !comesBack && harvestType == HarvestType.DamageAlive;
+    }
+
     public bool ShouldBroadcastDeath(LiveMixin liveMixin)
     {
         if (liveMixin.TryGetComponent(out UniqueIdentifier uniqueIdentifier) && !string.IsNullOrEmpty(uniqueIdentifier.classId))

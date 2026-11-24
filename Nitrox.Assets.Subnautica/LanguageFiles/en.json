@@ -102,6 +102,7 @@
     "Nitrox_ItemTakenFirst": "{PLAYER} got the {ITEM} first.",
     "Nitrox_ItemReservedForCrafter": "The {ITEM} is {PLAYER}'s for a few more seconds.",
     "Nitrox_FabricatorBusy": "Someone else is using this fabricator.",
+    "Nitrox_PlanterFull": "Someone else planted in this planter first. It is full, so your seed is back in your inventory.",
     "Nitrox_RocketLaunchPlayersNotAboard": "Everyone has to be aboard the rocket to launch. Not aboard: {PLAYERS}",
     "Nitrox_SafeBuilding": "Safe building",
     "Nitrox_SafeBuildingLog": "Safe building log",

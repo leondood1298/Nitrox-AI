@@ -1,4 +1,6 @@
+using System.Collections.Generic;
 using System.Linq;
+using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities;
@@ -55,6 +57,7 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
              GateTimeCapsuleMetadata(context.Sender, entity, packet.NewValue) ??
              GatePictureFrameMetadata(context.Sender, entity, packet.NewValue) ??
              GateDrillableMetadata(context.Sender, entity, packet.NewValue) ??
+             GatePlantMetadata(context.Sender, entity, packet.NewValue) ??
              GateCrafterMetadata(context.Sender, entity, packet.NewValue)) is { } result)
         {
             await SendResultAsync(context, entity, result);
@@ -218,6 +221,85 @@ internal sealed class EntityMetadataUpdateProcessor(PlayerManager playerManager,
         }
         entity.Metadata = accepted;
         return DrillableMetadataAuthority.SenderIsBehind(requested, accepted) ? MetadataUpdateResult.AcceptAndEcho(accepted) : MetadataUpdateResult.Accept(accepted);
+    }
+
+    /// <summary>
+    ///     A plant's picked fruit, seeds or samples and its health are merged per fruit (see
+    ///     <see cref="PlantMetadataAuthority" />): anyone may pick, only the player who decides the plant grows fruit back.
+    ///     A sender whose copy was behind gets the merged state.
+    /// </summary>
+    /// <returns>Null when the update is no plant state.</returns>
+    private MetadataUpdateResult? GatePlantMetadata(Player sender, Entity entity, EntityMetadata metadata)
+    {
+        switch (metadata)
+        {
+            // A wild plant (Creepvine, blood root, ...) holds its fruit itself; nobody grows them back
+            case FruitPlantMetadata requested:
+            {
+                FruitPlantMetadata? stored = entity.Metadata as FruitPlantMetadata;
+                bool senderDecides = simulationOwnershipData.GetPlayerForLock(entity.Id) == sender;
+                FruitPlantMetadata? accepted = PlantMetadataAuthority.MergeFruit(stored, requested, senderDecides, index => itemClaims.PickedLately(entity.Id, index));
+                if (accepted == null)
+                {
+                    logger.ZLogWarningOnce($"Player {sender.Name} sent the fruit of {entity.Id} with another number of fruit");
+                    return MetadataUpdateResult.Reject;
+                }
+                NotePicks(entity.Id, stored, accepted);
+                entity.Metadata = accepted;
+                return PlantMetadataAuthority.SenderIsBehind(requested, accepted) ? MetadataUpdateResult.AcceptAndEcho(accepted) : MetadataUpdateResult.Accept(accepted);
+            }
+            // A planted plant: its seed's entity holds its growth, fruit, health and slot
+            case PlantableMetadata requested:
+            {
+                PlantableMetadata? stored = entity.Metadata as PlantableMetadata;
+                NitroxId? deciderId = FindPlantDecider(entity);
+                bool senderDecides = deciderId != null && simulationOwnershipData.GetPlayerForLock(deciderId) == sender;
+                PlantableMetadata? accepted = PlantMetadataAuthority.MergePlantable(stored, requested, senderDecides, index => itemClaims.PickedLately(entity.Id, index));
+                if (accepted == null)
+                {
+                    logger.ZLogWarningOnce($"Player {sender.Name} sent the fruit of plant {entity.Id} with another number of fruit");
+                    return MetadataUpdateResult.Reject;
+                }
+                NotePicks(entity.Id, stored?.FruitPlantMetadata, accepted.FruitPlantMetadata);
+                entity.Metadata = accepted;
+                return stored != null && PlantMetadataAuthority.SenderIsBehind(requested, accepted) ? MetadataUpdateResult.AcceptAndEcho(accepted) : MetadataUpdateResult.Accept(accepted);
+            }
+            default:
+                return null;
+        }
+    }
+
+    private void NotePicks(NitroxId plantId, FruitPlantMetadata? stored, FruitPlantMetadata? accepted)
+    {
+        foreach (int index in PlantMetadataAuthority.NewlyPicked(stored, accepted))
+        {
+            itemClaims.NotePicked(plantId, index);
+        }
+    }
+
+    /// <summary>
+    ///     The entity whose simulating player decides a planted plant, as the games decide it (PlanterExtensions): the
+    ///     containment of a containment's planter, else the base or Cyclops the planter is in, else the outdoor planter.
+    /// </summary>
+    private NitroxId? FindPlantDecider(Entity plant)
+    {
+        NitroxId? planterId = plant.ParentId;
+        NitroxId? baseOrCyclopsId = null;
+        HashSet<NitroxId> visited = [plant.Id];
+        NitroxId? parentId = plant.ParentId;
+        while (parentId != null && visited.Add(parentId) && entityRegistry.TryGetEntityById(parentId, out Entity? parent))
+        {
+            switch (parent)
+            {
+                case InteriorPieceEntity { IsWaterPark: true }:
+                    return parent.Id;
+                case BuildEntity or VehicleEntity when baseOrCyclopsId == null:
+                    baseOrCyclopsId = parent.Id;
+                    break;
+            }
+            parentId = parent.ParentId;
+        }
+        return baseOrCyclopsId ?? planterId;
     }
 
     /// <summary>

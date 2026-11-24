@@ -3,6 +3,7 @@ using NitroxClient.Communication.Abstract;
 using NitroxClient.GameLogic;
 using NitroxClient.GameLogic.PlayerLogic;
 using NitroxClient.GameLogic.Spawning.Metadata;
+using NitroxClient.GameLogic.Spawning.Metadata.Extractor;
 using Nitrox.Model.DataStructures;
 using Nitrox.Model.Subnautica.DataStructures.GameLogic.Entities.Metadata;
 using Nitrox.Model.Subnautica.Packets;
@@ -84,6 +85,24 @@ public sealed partial class LiveMixin_TakeDamage_Patch : NitroxPatch, IDynamicPa
 
         Resolve<CreatureHealthManager>().OnHealthChanged(__instance);
         BroadcastDefaultTookDamage(__instance);
+        BroadcastPlantHealth(__instance);
+    }
+
+    /// <summary>
+    ///     A plant grown in a planter keeps its health on its seed's entity (PlantableMetadata), so that another player,
+    ///     a player who comes later and a restart see it hurt as well.
+    /// </summary>
+    private static void BroadcastPlantHealth(LiveMixin liveMixin)
+    {
+        if (!liveMixin.TryGetComponent(out GrownPlant grownPlant) || !grownPlant.seed || !grownPlant.seed.TryGetNitroxId(out NitroxId seedId))
+        {
+            return;
+        }
+        PlantableMetadata metadata = Resolve<PlantableMetadataExtractor>().Extract(grownPlant.seed);
+        if (metadata != null)
+        {
+            Resolve<IPacketSender>().Send(new EntityMetadataUpdate(seedId, metadata));
+        }
     }
 
     private static bool HandlePvP(LiveMixin liveMixin, GameObject dealer, float damage)
